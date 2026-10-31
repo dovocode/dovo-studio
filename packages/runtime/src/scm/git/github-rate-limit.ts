@@ -62,6 +62,7 @@ const graphqlResponse = mutableStruct({
         type: Schema.optional(Schema.String),
         code: Schema.optional(Schema.String),
         message: Schema.optional(Schema.String),
+        extensions: Schema.optional(mutableStruct({ code: Schema.optional(Schema.String) })),
       }),
     ),
   ),
@@ -72,7 +73,20 @@ export function githubGraphqlInfo(text: string) {
     if (!result.success) return undefined
     const rate = result.data.data?.rateLimit
     const resetAt = rate ? Date.parse(rate.resetAt) : NaN
+    const codes = new Set(
+      result.data.errors?.flatMap((error) => [error.type, error.code, error.extensions?.code]) ??
+        [],
+    )
+    const accessStatus =
+      codes.has('UNAUTHORIZED') || codes.has('UNAUTHENTICATED')
+        ? 401
+        : codes.has('FORBIDDEN') || codes.has('INSUFFICIENT_SCOPES')
+          ? 403
+          : codes.has('NOT_FOUND')
+            ? 404
+            : undefined
     return {
+      accessStatus,
       ...(rate && Number.isFinite(resetAt)
         ? { quota: { limit: rate.limit, remaining: rate.remaining, resetAt }, cost: rate.cost }
         : {}),

@@ -16,6 +16,7 @@ export type TaskState = {
   title: string
   running: boolean
   needsInput: boolean
+  inputIds?: readonly string[]
   failed: boolean
   /** Automation runs notify under their own setting; cancelled runs never notify. */
   automation?: boolean
@@ -30,32 +31,59 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
   for (const entry of entries) {
     const snapshot = entry.snapshot
     if (!snapshot || !entry.connected) continue
-    const waiting = new Set(
-      [
-        ...snapshot.approvals,
-        ...snapshot.questions.filter((question) => question.routing !== 'parent'),
-      ].map((item) => taskInputOwner(snapshot.workspace.tasks, item.taskId)),
-    )
+    const waiting = new Map<string, string[]>()
+    const addInput = (taskId: string, id: string) => {
+      const owner = taskInputOwner(snapshot.workspace.tasks, taskId)
+      const ids = waiting.get(owner) ?? []
+      ids.push(id)
+      waiting.set(owner, ids)
+    }
+    for (const approval of snapshot.approvals)
+      addInput(approval.taskId, JSON.stringify(['approval', approval.id]))
+    for (const question of snapshot.questions)
+      if (question.routing !== 'parent')
+        addInput(question.taskId, JSON.stringify(['question', question.id]))
     for (const task of snapshot.workspace.tasks)
+      for (const watch of task.threadWatches ?? []) {
+        if (
+          !watch.delegated ||
+          watch.status !== 'watching' ||
+          watch.offline ||
+          watch.paused ||
+          watch.snapshot?.phase !== 'needs-input'
+        )
+          continue
+        const inputs = watch.snapshot.humanInputs ?? []
+        for (const input of inputs)
+          addInput(
+            task.id,
+            JSON.stringify([
+              'delegated',
+              watch.runtimeId,
+              watch.threadId,
+              input.runtimeId,
+              input.taskId,
+              input.kind,
+              input.id,
+            ]),
+          )
+        // Older runtimes expose the waiting phase without individual human requests.
+        if (!inputs.length && !watch.snapshot.questions?.length)
+          addInput(task.id, JSON.stringify(['delegated', watch.runtimeId, watch.threadId]))
+      }
+    for (const task of snapshot.workspace.tasks) {
+      const inputIds = waiting.get(task.id) ?? []
       states.set(JSON.stringify([entry.profile.id, task.id]), {
         title: task.title,
         target: { runtimeId: entry.profile.id, viewId: 'tasks', entityId: task.id },
         running: task.status === 'running',
-        needsInput:
-          waiting.has(task.id) ||
-          !!task.threadWatches?.some(
-            (watch) =>
-              watch.delegated &&
-              watch.status === 'watching' &&
-              !watch.offline &&
-              !watch.paused &&
-              watch.snapshot?.phase === 'needs-input' &&
-              (!!watch.snapshot.humanInputs?.length || !watch.snapshot.questions?.length),
-          ),
+        needsInput: inputIds.length > 0,
+        inputIds,
         failed: task.status === 'failed',
         checks: task.pullStatus?.state === 'open' ? task.pullStatus.checks : undefined,
         pullNumber: task.pullStatus?.number,
       })
+    }
     const names = new Map(snapshot.workspace.automations.map((item) => [item.id, item.name]))
     for (const run of snapshot.runs)
       states.set(JSON.stringify([entry.profile.id, 'run', run.id]), {
@@ -89,9 +117,18 @@ export function taskNotificationEvents(
     const before = previous.get(key)
     if (!before) continue
     const automation = !!state.automation
-    if (state.needsInput && !before.needsInput)
-      events.push({ key, kind: 'input', title: state.title, automation, target: state.target })
-    else if (before.running && !state.running && !state.cancelled)
+    const previousInputs = new Set(before.inputIds ?? [])
+    const newInputs = state.inputIds?.filter((id) => !previousInputs.has(id)) ?? []
+    if (state.needsInput && (newInputs.length || !before.needsInput)) {
+      for (const id of newInputs.length ? newInputs : [undefined])
+        events.push({
+          key: id === undefined ? key : JSON.stringify([key, 'input', id]),
+          kind: 'input',
+          title: state.title,
+          automation,
+          target: state.target,
+        })
+    } else if (before.running && !state.running && !state.cancelled)
       events.push({
         key,
         kind: state.failed ? 'failed' : 'done',
@@ -116,6 +153,36 @@ export function taskNotificationEvents(
   return events
 }
 
+export type TaskNotice = { title: string; target: NotificationTarget }
+
+export function enqueueTaskNotices(
+  pending: readonly TaskNotice[],
+  events: ReturnType<typeof taskNotificationEvents>,
+  activeTarget?: NotificationTarget,
+): TaskNotice[] {
+  const visible = (target: NotificationTarget) =>
+    !activeTarget ||
+    target.runtimeId !== activeTarget.runtimeId ||
+    target.viewId !== activeTarget.viewId ||
+    target.entityId !== activeTarget.entityId
+  const labels = {
+    input: 'Needs input',
+    failed: 'Failed',
+    done: 'Finished',
+    'checks-passed': 'Checks passed',
+    'checks-failed': 'Checks failed',
+  }
+  return [
+    ...pending.filter((notice) => visible(notice.target)),
+    ...events
+      .filter((event) => visible(event.target))
+      .map((event) => ({
+        title: `${event.title} · ${labels[event.kind]}`,
+        target: event.target,
+      })),
+  ].slice(-50)
+}
+
 /** Settings → General → Notifications: tell the user while Dovo is in the background. */
 export function useTaskNotifications(
   onOpen: (target: NotificationTarget) => void,
@@ -124,7 +191,8 @@ export function useTaskNotifications(
   enabled = true,
   browserMode = false,
 ) {
-  const [notice, setNotice] = useState<{ title: string; target: NotificationTarget } | null>(null)
+  const [notices, setNotices] = useState<TaskNotice[]>([])
+  const notice = notices[0]
   const { runtimes } = useWorkspace()
   const preferences = useAppPreferences()
   useEffect(() => {
@@ -164,27 +232,19 @@ export function useTaskNotifications(
   )
   const previous = useRef<Map<string, TaskState> | null>(null)
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      previous.current = null
+      return
+    }
     const current = taskNotificationStates(runtimes)
     const before = previous.current
     previous.current = current
     if (!before) return
     if (!document.hidden && document.hasFocus()) {
       if (readAppPreferences().inAppNotifications) {
-        const event = taskNotificationEvents(before, current)
-          .reverse()
-          .find(
-            (event) =>
-              !activeTarget ||
-              event.target.runtimeId !== activeTarget.runtimeId ||
-              event.target.entityId !== activeTarget.entityId ||
-              event.target.viewId !== activeTarget.viewId,
-          )
-        if (event)
-          setNotice({
-            title: `${event.title} · ${event.kind === 'input' ? 'Needs input' : event.kind === 'failed' ? 'Failed' : event.kind === 'done' ? 'Finished' : event.kind === 'checks-passed' ? 'Checks passed' : 'Checks failed'}`,
-            target: event.target,
-          })
+        const events = taskNotificationEvents(before, current)
+        if (events.length)
+          setNotices((pending) => enqueueTaskNotices(pending, events, activeTarget))
       }
       return
     }
@@ -225,9 +285,26 @@ export function useTaskNotifications(
     enabled,
   ])
   useEffect(() => {
+    setNotices((pending) =>
+      enabled && preferences.inAppNotifications
+        ? enqueueTaskNotices(pending, [], activeTarget)
+        : [],
+    )
+  }, [
+    enabled,
+    preferences.inAppNotifications,
+    activeTarget?.runtimeId,
+    activeTarget?.viewId,
+    activeTarget?.entityId,
+  ])
+  useEffect(() => {
     if (!notice) return
-    const timer = setTimeout(() => setNotice(null), 8000)
+    const timer = setTimeout(() => setNotices((pending) => pending.slice(1)), 8000)
     return () => clearTimeout(timer)
   }, [notice])
-  return { notice, dismiss: () => setNotice(null) }
+  return {
+    notice,
+    pendingCount: notices.length,
+    dismiss: () => setNotices((pending) => pending.slice(1)),
+  }
 }

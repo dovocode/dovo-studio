@@ -1,3 +1,4 @@
+import { ThreadInfoUsage } from './thread-info-usage'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
@@ -13,6 +14,7 @@ import {
   buildThreadTree,
   threadChildRows,
   type RepositoryOpenTarget,
+  type ThreadInfoSectionId,
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -59,12 +61,14 @@ import { fileStats, DiffAmounts } from '../files/presentation'
 import type { TaskSurface } from './task-header'
 export function TaskProjectPanel({
   task,
+  active = true,
   onPullLink,
   onTerminal,
   onSurface,
   onBrowser,
 }: {
   task: Task
+  active?: boolean
   onPullLink?: (url: string) => boolean
   onTerminal?: (terminalId: string) => void
   onSurface: (surface: TaskSurface) => void
@@ -116,7 +120,8 @@ export function TaskProjectPanel({
   const [linking, setLinking] = useApplicationState(false)
   const [openError, setOpenError] = useApplicationState('')
   const [openBusy, setOpenBusy] = useApplicationState(false)
-  const { preferredRepositoryOpenTarget } = useAppPreferences()
+  const { preferredRepositoryOpenTarget, threadInfoSections } = useAppPreferences()
+  const show = (id: ThreadInfoSectionId) => threadInfoSections[id] !== false
   const openRepository = useRepositoryOpen()
   const openTarget = (target: RepositoryOpenTarget) => {
     if (openBusy || !repo) return
@@ -259,7 +264,7 @@ export function TaskProjectPanel({
           <Download className="size-3.5" /> Server update
         </Button>
       )}
-      {repo && (
+      {show('openIn') && repo && (
         <div className="studio-project-split-row">
           {preferredRepositoryOpenTarget && (
             <Button
@@ -315,7 +320,9 @@ export function TaskProjectPanel({
           </DropdownMenu.Root>
         </div>
       )}
-      {onTerminal && <TaskProjectActions panel task={task} onTerminal={onTerminal} />}
+      {show('scripts') && onTerminal && (
+        <TaskProjectActions panel task={task} onTerminal={onTerminal} />
+      )}
       {openError && (
         <span
           role="alert"
@@ -460,163 +467,179 @@ export function TaskProjectPanel({
     </div>
   )
   return (
-    <section aria-label="Thread project" className="studio-project-panel flex min-h-0 flex-col">
+    <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
       <div className="studio-project-card">
-        <div className="studio-project-section">
-          <div
-            className="mb-4 flex min-w-0 items-center gap-3"
-            title={[
-              executionHost ?? 'Selected computer',
-              snapshot?.releaseVersion,
-              !connected && 'Offline',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          >
-            {repo?.kind === 'scratch' ? (
-              <MessageCircleDashed className="size-9 shrink-0 text-muted-foreground" />
-            ) : (
-              <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
-            )}
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-medium text-foreground">
-                {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
-              </h2>
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span
-                  className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-status-success' : 'bg-muted-foreground'}`}
-                  aria-hidden="true"
-                />
-                {executionHost ?? 'Selected computer'}
-                {!connected && ' · Offline'}
-              </p>
-              {repo?.kind !== 'scratch' && (
-                <p
-                  className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
-                  title={task.existingWorktreePath || repo?.path || 'No local checkout'}
-                >
-                  {task.existingWorktreePath || repo?.path || 'No local checkout'}
-                </p>
-              )}
-            </div>
-          </div>
-          {repo && !repo.kind && (
-            <div className="studio-project-checkout mb-3">
-              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
-              </p>
-              <TaskBranchMenu
-                panel
-                task={task}
-                label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
-              />
-              <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
-                {gitError
-                  ? `Git status unavailable: ${gitError}`
-                  : !connected
-                    ? 'Connect to refresh Git status'
-                    : !gitState
-                      ? 'Checking Git status…'
-                      : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
-              </p>
-            </div>
-          )}
-          {actions}
-        </div>
-        {onBrowser && <ThreadServers taskId={task.id} onOpen={onBrowser} />}
-        <section
-          aria-label="Pull requests"
-          className="studio-project-section border-t border-border/60"
-        >
-          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pull requests
-          </h3>
-          {!!displayedPulls.length && (
-            <div
-              aria-label="Linked pull requests"
-              className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-            >
-              {displayedPulls.map((pull) =>
-                taskPullStatusFor(task, pull.url) ? (
-                  <TaskPullStatus
-                    key={pull.url}
-                    title={pull.title}
-                    task={task}
-                    url={pull.url}
-                    onPullLink={onPullLink}
-                  />
+        {(show('project') || show('openIn') || show('scripts')) && (
+          <div className="studio-project-section">
+            {show('project') && (
+              <div
+                className="mb-4 flex min-w-0 items-center gap-3"
+                title={[
+                  executionHost ?? 'Selected computer',
+                  snapshot?.releaseVersion,
+                  !connected && 'Offline',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              >
+                {repo?.kind === 'scratch' ? (
+                  <MessageCircleDashed className="size-9 shrink-0 text-muted-foreground" />
                 ) : (
-                  <Button
-                    key={pull.url}
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 min-w-0 gap-1.5 px-1.5 text-xs"
-                    onClick={() => openPull(pull.url)}
-                    title={pull.title}
-                    aria-label={`Open PR #${pull.number}: ${pull.title}`}
-                  >
-                    <GitPullRequest size={14} className="shrink-0 text-muted-foreground" />#
-                    {pull.number}
-                  </Button>
-                ),
-              )}
-            </div>
-          )}
-          {!displayedPulls.length && (
+                  <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-medium text-foreground">
+                    {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
+                  </h2>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span
+                      className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-status-success' : 'bg-muted-foreground'}`}
+                      aria-hidden="true"
+                    />
+                    {executionHost ?? 'Selected computer'}
+                    {!connected && ' · Offline'}
+                  </p>
+                  {repo?.kind !== 'scratch' && (
+                    <p
+                      className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
+                      title={task.existingWorktreePath || repo?.path || 'No local checkout'}
+                    >
+                      {task.existingWorktreePath || repo?.path || 'No local checkout'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            {show('project') && repo && !repo.kind && (
+              <div className="studio-project-checkout mb-3">
+                <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
+                </p>
+                <TaskBranchMenu
+                  panel
+                  task={task}
+                  label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
+                />
+                <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
+                  {gitError
+                    ? `Git status unavailable: ${gitError}`
+                    : !connected
+                      ? 'Connect to refresh Git status'
+                      : !gitState
+                        ? 'Checking Git status…'
+                        : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
+                </p>
+              </div>
+            )}
+            {actions}
+          </div>
+        )}
+        {show('usage') && <ThreadInfoUsage task={task} />}
+        {show('servers') && onBrowser && <ThreadServers taskId={task.id} onOpen={onBrowser} />}
+        {show('pulls') && (
+          <section
+            aria-label="Pull requests"
+            className="studio-project-section border-t border-border/60"
+          >
+            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Pull requests
+            </h3>
+            {!!displayedPulls.length && (
+              <div
+                aria-label="Linked pull requests"
+                className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+              >
+                {displayedPulls.map((pull) =>
+                  taskPullStatusFor(task, pull.url) ? (
+                    <TaskPullStatus
+                      key={pull.url}
+                      title={pull.title}
+                      task={task}
+                      url={pull.url}
+                      onPullLink={onPullLink}
+                    />
+                  ) : (
+                    <Button
+                      key={pull.url}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 min-w-0 gap-1.5 px-1.5 text-xs"
+                      onClick={() => openPull(pull.url)}
+                      title={pull.title}
+                      aria-label={`Open PR #${pull.number}: ${pull.title}`}
+                    >
+                      <GitPullRequest size={14} className="shrink-0 text-muted-foreground" />#
+                      {pull.number}
+                    </Button>
+                  ),
+                )}
+              </div>
+            )}
+            {!displayedPulls.length && (
+              <Button
+                variant="ghost"
+                className="studio-project-row"
+                onClick={() => setLinking(true)}
+                disabled={!connected}
+              >
+                <GitPullRequest size={18} /> Link pull request
+              </Button>
+            )}
+          </section>
+        )}
+        {(show('git') || show('changes')) && (
+          <div className="studio-project-section border-t border-border/60">
+            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Version control
+            </h3>
+            {show('git') && gitActions}
+            {show('changes') && (
+              <Button
+                variant="ghost"
+                className="studio-project-row studio-project-changes w-full justify-between"
+                onClick={() => onSurface('changes')}
+              >
+                <span className="flex items-center gap-3">
+                  <FileDiff size={18} /> Changes
+                  {task.files.length > 0 &&
+                    ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
+                </span>
+                <span className="studio-project-diff">
+                  <DiffAmounts stats={stats} />
+                </span>
+              </Button>
+            )}
+          </div>
+        )}
+        {show('projects') && (
+          <div className="studio-project-section border-t border-border/60">
             <Button
               variant="ghost"
-              className="studio-project-row"
-              onClick={() => setLinking(true)}
-              disabled={!connected}
+              className="studio-project-row w-full justify-start"
+              onClick={() => onSurface('projects')}
             >
-              <GitPullRequest size={18} /> Link pull request
+              <FolderSymlink size={18} />
+              {(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length
+                ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
+                : 'Link projects'}
             </Button>
-          )}
-        </section>
-        <div className="studio-project-section border-t border-border/60">
-          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Changes
-          </h3>
-          {gitActions}
-          <Button
-            variant="ghost"
-            className="studio-project-row studio-project-changes w-full justify-between"
-            onClick={() => onSurface('changes')}
-          >
-            <span className="flex items-center gap-3">
-              <FileDiff size={18} /> Changes
-              {task.files.length > 0 &&
-                ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
-            </span>
-            <span className="studio-project-diff">
-              <DiffAmounts stats={stats} />
-            </span>
-          </Button>
-        </div>
-        <div className="studio-project-section border-t border-border/60">
-          <Button
-            variant="ghost"
-            className="studio-project-row w-full justify-start"
-            onClick={() => onSurface('projects')}
-          >
-            <FolderSymlink size={18} />
-            {(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length
-              ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
-              : 'Link projects'}
-          </Button>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Use project checkouts or worktrees on this computer.
-          </p>
-        </div>
-        <TaskWaitingPanel
-          onPullLink={onPullLink}
-          panel
-          key={`${activeRuntimeId}:${task.id}`}
-          taskId={task.id}
-        />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use project checkouts or worktrees on this computer.
+            </p>
+          </div>
+        )}
+        {show('activity') && (
+          <TaskWaitingPanel
+            active={active}
+            onPullLink={onPullLink}
+            panel
+            key={`${activeRuntimeId}:${task.id}`}
+            taskId={task.id}
+          />
+        )}
       </div>
-      <TaskAgentLineage task={task} />
-      {thread && childRows.length > 0 && (
+      {show('lineage') && <TaskAgentLineage task={task} />}
+      {show('lineage') && thread && childRows.length > 0 && (
         <>
           <NestedThreads
             threads={childRows}

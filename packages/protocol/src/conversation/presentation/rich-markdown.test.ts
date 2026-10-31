@@ -72,6 +72,28 @@ it('leaves malformed citations, nested citations and examples literal', () => {
   ])
     expect(renderFileCitations(text)).toBe(text)
 })
+it('renders citations without changing code, links, unsafe paths or incomplete directives', () => {
+  const citation = ':codex-file-citation{path="src/a.ts" line_range_start="7"}'
+  const text = [
+    citation,
+    '`' + citation + '`',
+    '```md\n' + citation + '\n```',
+    '[' + citation + '](https://example.com)',
+    ':codex-file-citation{path="javascript:alert(1)"}',
+    ':codex-file-citation{path="src/incomplete',
+  ].join('\n\n')
+  expect(richMarkdown(text)).toEqual([
+    { kind: 'markdown', text: text.replace(citation, '[a.ts:7](<src/a.ts#L7>)'), offset: 0 },
+  ])
+})
+
+it('does not promote later links on the same line and still promotes links on later lines', () => {
+  const text = '[one](https://example.com) [two](two.png)\n[three](three.png)\n[four](four.pdf)'
+  expect(richMarkdown(text).filter((part) => part.kind !== 'markdown')).toEqual([
+    { kind: 'image', path: 'three.png', label: 'three', offset: text.indexOf('[three]') },
+    { kind: 'file', path: 'four.pdf', label: 'four', offset: text.indexOf('[four]') },
+  ])
+})
 it('renders valid artifact templates without interpreting arbitrary directives', () => {
   const directive =
     '::artifact-template{artifact_kind="site" display_name="Landing page" skill_name="artifact-template-site" skill_directory="/tmp/skills/site"}'

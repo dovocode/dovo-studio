@@ -13,12 +13,47 @@ function store() {
 }
 
 describe('conversation send attempts across navigation', () => {
+  it('keeps pause-preservation intent through retry and process recovery', () => {
+    const attempts = store()
+    const first = attempts.begin(scope, { ...input, preserveQueuePause: true })
+    expect(attempts.begin(scope, input)).toBe(first)
+    expect(first.preserveQueuePause).toBe(true)
+    const restarted = store()
+    restarted.restore(scope, JSON.parse(JSON.stringify(first)))
+    expect(restarted.begin(scope, input)).toMatchObject({
+      id: first.id,
+      preserveQueuePause: true,
+    })
+    const explicit = attempts.begin(scope, { ...input, text: 'Explicit resume' })
+    expect(
+      attempts.begin(scope, { ...input, text: 'Explicit resume', preserveQueuePause: true }),
+    ).toBe(explicit)
+    expect(explicit.preserveQueuePause).toBeUndefined()
+  })
+  it('retains staged delivery identity across retries and restore, distinct from Send', () => {
+    const attempts = store()
+    const staged = attempts.begin(scope, { ...input, mode: 'stage', plan: true })
+    expect(attempts.begin(scope, { ...input, mode: 'stage', plan: true })).toBe(staged)
+    const restored = store()
+    restored.restore(scope, JSON.parse(JSON.stringify(staged)))
+    expect(restored.begin(scope, { ...input, mode: 'stage', plan: true }).id).toBe(staged.id)
+    expect(attempts.begin(scope, { ...input, plan: true }).id).not.toBe(staged.id)
+  })
   it('preserves entered line breaks and indentation in sent messages and retries', () => {
     const attempts = store()
     const text = 'First line\nSecond line\n\n  Indented line'
     const first = attempts.begin(scope, { ...input, text })
     expect(first.text).toBe(text)
     expect(attempts.begin(scope, { ...input, text })).toBe(first)
+  })
+  it('keeps plan mode in a retried attempt and starts a new message when it changes', () => {
+    const attempts = store()
+    const planned = attempts.begin(scope, { ...input, plan: true })
+    expect(planned.plan).toBe(true)
+    expect(attempts.begin(scope, { ...input, plan: true })).toBe(planned)
+    const normal = attempts.begin(scope, input)
+    expect(normal.id).not.toBe(planned.id)
+    expect(normal.plan).toBeUndefined()
   })
   it('freezes the steering run through a lost response and only targets a new run after an edit', () => {
     const attempts = store()

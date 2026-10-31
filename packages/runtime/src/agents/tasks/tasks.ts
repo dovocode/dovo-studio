@@ -1,4 +1,6 @@
-import { taskInputOwner } from '@dovo/protocol'
+import { isAbsolute, relative, sep } from 'node:path'
+import { taskInputOwner, planModeAgent, planModeRequested } from '@dovo/protocol'
+import { requireImportedCodexSession } from '../providers/codex/session-import.js'
 import {
   type TurnSettings,
   noStudioTools,
@@ -16,6 +18,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'eff
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   decode,
+  checkpointCanUndo,
   nextQueuedMessage,
   defaultTaskHarness,
   resolveTaskAgent,
@@ -48,6 +51,7 @@ import { pendingReviewComments, taskFeedbackSchema } from '@dovo/protocol'
 import type { Commands } from '../../storage/commands.js'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout.js'
 import { randomUUID, createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import type { Task, TaskMetadata, QuestionPrompt } from '@dovo/protocol'
 import { WorkspaceStore } from '../../storage/workspace.js'
 import { GitService } from '../../scm/git/git.js'
@@ -91,6 +95,15 @@ type Running = {
   directories?: string[]
   steer?: (messageId: string) => Promise<void>
 }
+/** Nested terminal working directories still share their ancestor checkout's admission. */
+function checkoutPathsOverlap(first: string, second: string) {
+  const contains = (root: string, path: string) => {
+    const rest = relative(root, path)
+    return rest === '' || (rest !== '..' && !rest.startsWith(`..${sep}`) && !isAbsolute(rest))
+  }
+  return contains(first, second) || contains(second, first)
+}
+
 export class Tasks {
   onStopChildren?: (parentId: string) => void
   private scheduleTimer?: ReturnType<typeof setInterval>
@@ -101,12 +114,15 @@ export class Tasks {
   private restartLease: { id: string; expiresAt: number; resumeInterrupted?: boolean } | undefined
   private steering = new Map<string, symbol>()
   private checkoutMutations = new Set<string>()
+  private checkoutEdits = new Map<string, number>()
   private running = new Map<string, Running>()
   private nativeSessions = new Map<
     string,
     { sessionId: string; control: NativeAgentSession; directories: string[] }
   >()
   private nativeStopping = new Map<string, Promise<void>>()
+  private nativeDirectories = new Map<string, string[]>()
+  private nativeConfirmations = new Map<string, Promise<void>>()
   readonly queue: TaskQueue
   private runner: TaskTurnRunner
   private readonly unsubscribePolicy: () => void
@@ -151,11 +167,15 @@ export class Tasks {
       linkedProjectsEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
-    this.runner.setNativeSessions((taskId, sessionId, control, directories) => {
-      if (control) this.nativeSessions.set(taskId, { sessionId, control, directories })
-      else if (this.nativeSessions.get(taskId)?.sessionId === sessionId)
-        this.nativeSessions.delete(taskId)
-    })
+    this.runner.setNativeSessions(
+      (taskId, sessionId, control, directories) => {
+        if (control) this.nativeSessions.set(taskId, { sessionId, control, directories })
+        else if (this.nativeSessions.get(taskId)?.sessionId === sessionId)
+          this.nativeSessions.delete(taskId)
+        this.refreshNativeDirectory(taskId)
+      },
+      (taskId, sessionId) => this.nativeSessions.get(taskId)?.sessionId === sessionId,
+    )
     this.queue = new TaskQueue(store, activity)
     questions.setRouting(
       (id) => {
@@ -192,6 +212,7 @@ export class Tasks {
       for (const task of after.tasks) {
         const old = previous.get(task.id)
         if (old === task && before.agents === after.agents) continue
+        this.refreshNativeDirectory(task.id)
         const oldAgent = old && resolveTaskAgent(old, before.agents)
         const agent = resolveTaskAgent(task, after.agents)
         if (!oldAgent || !agent || samePermissionPolicy(oldAgent, agent)) continue
@@ -414,10 +435,12 @@ export class Tasks {
   }
   /** Undoes a turn's file changes (back to its before snapshot) or redoes them. The current
    * files are saved first, and a note tells the agent, so nothing is lost and it stays in sync. */
-  async restoreTurn(id: string, turnId: string, direction: 'undo' | 'redo') {
+  async restoreTurn(id: string, turnId: string, direction: 'undo' | 'redo', note = true) {
     const task = this.store.task(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the agent before undoing or redoing a turn.')
+    if (task.turns?.some((item) => item.id !== turnId && item.checkpoint?.restorePending))
+      throw new HttpError(409, 'Finish the pending undo or redo before restoring another turn.')
     const turn = task.turns?.find((item) => item.id === turnId)
     const checkpoint = turn?.checkpoint
     if (!turn || !checkpoint || (!checkpoint.before && !checkpoint.linked?.length))
@@ -425,6 +448,7 @@ export class Tasks {
     if (turn.status === 'running') throw new HttpError(409, 'This turn is still running.')
     if (
       direction === 'undo' &&
+      !checkpoint.restorePending &&
       (checkpoint.undone || (!checkpoint.before && checkpoint.linked?.every((item) => item.undone)))
     )
       return { ok: true }
@@ -439,7 +463,7 @@ export class Tasks {
       ...(checkpoint.before ? [{ key: 'primary', directory: cwd, checkpoint }] : []),
       ...(await Promise.all(
         (checkpoint.linked ?? []).map(async (value) => ({
-          key: value.checkoutId,
+          key: `linked/${value.checkoutId}`,
           directory: await this.checkouts.linked.checkpointDirectory(value, true),
           checkpoint: value,
         })),
@@ -449,31 +473,132 @@ export class Tasks {
       paths.length
         ? this.withCheckoutMutation(paths[0], () => lockAll(paths.slice(1), action))
         : action()
+    const validateCheckpoint = (current: Task, expected = checkpoint) => {
+      if (
+        !isDeepStrictEqual(current.turns?.find((item) => item.id === turnId)?.checkpoint, expected)
+      )
+        throw new HttpError(
+          409,
+          'This turn checkpoint changed. Refresh before undoing or redoing it.',
+        )
+    }
     return lockAll([...new Set(entries.map((entry) => entry.directory))].sort(), async () => {
+      validateCheckpoint(this.store.task(id))
       const at = new Date().toISOString()
+      const restoreId = randomUUID()
+      const active = entries.filter((entry) =>
+        direction === 'undo'
+          ? !entry.checkpoint.undone || checkpoint.restorePending
+          : !!entry.checkpoint.undone,
+      )
       const backups = new Map<string, string>()
-      for (const entry of entries) {
-        if (direction === 'redo' && !entry.checkpoint.undone) continue
+      for (const entry of active) {
         const backup = await this.git.snapshot(
           entry.directory,
-          `refs/dovo/checkpoints/${turnId}/${entry.key}/restore-backup`,
+          `refs/dovo/checkpoints/${turnId}/${entry.key}/restore-backup-${restoreId}`,
         )
         backups.set(entry.key, backup)
       }
+      if (direction === 'undo' && checkpoint.restorePending) {
+        for (const entry of active) {
+          const current = backups.get(entry.key)
+          if (!current || !entry.checkpoint.undone) continue
+          const changed = async (target: string) =>
+            (
+              await this.git.command(entry.directory, [
+                'diff',
+                '--name-only',
+                '--no-renames',
+                '-z',
+                target,
+                current,
+                '--',
+              ])
+            )
+              .split('\0')
+              .filter(Boolean)
+          const fromBefore = new Set(await changed(entry.checkpoint.before))
+          const edited = (await changed(entry.checkpoint.undone.backup)).filter((path) =>
+            fromBefore.has(path),
+          )
+          if (edited.length)
+            throw new HttpError(
+              409,
+              `Files changed after the interrupted undo in ${entry.directory}. Recovery is still pending. Inspect those edits before restoring; their current snapshot is ${current}, retained in refs/dovo/checkpoints/${turnId}/${entry.key}/restore-backup-${restoreId}.`,
+            )
+        }
+      }
+      const undoState = (key: string, saved: typeof checkpoint.undone) => {
+        if (direction === 'redo') return undefined
+        // An interrupted undo keeps its original redo target, even if some files are already undone.
+        if (checkpoint.restorePending && saved) return saved
+        const backup = backups.get(key)
+        return backup ? { at, backup } : saved
+      }
+      const next = {
+        ...checkpoint,
+        restorePending: undefined,
+        undone: undoState('primary', checkpoint.undone),
+        ...(checkpoint.linked
+          ? {
+              linked: checkpoint.linked.map((entry) => ({
+                ...entry,
+                undone: undoState(`linked/${entry.checkoutId}`, entry.undone),
+              })),
+            }
+          : {}),
+      }
+      const withCheckpoint = (current: Task, value: typeof checkpoint): Task => ({
+        ...current,
+        turns: current.turns?.map((item) =>
+          item.id === turnId && item.checkpoint ? { ...item, checkpoint: value } : item,
+        ),
+      })
       const applied: typeof entries = []
+      let recorded: typeof checkpoint | undefined
       try {
-        for (const entry of entries) {
+        if (direction === 'undo') {
+          // Persist recovery intent before the first file write, including across a process restart.
+          this.store.updateTaskHistory(id, (current) => {
+            validateCheckpoint(current)
+            return withCheckpoint(current, { ...next, restorePending: true })
+          })
+          recorded = this.store.task(id).turns?.find((item) => item.id === turnId)?.checkpoint
+          if (!recorded) throw new HttpError(409, 'The turn checkpoint disappeared before undo.')
+        }
+        for (const entry of active) {
           const target =
             direction === 'undo' ? entry.checkpoint.before : entry.checkpoint.undone?.backup
           if (!target) continue
-          // Include the current entry in rollback even if Git fails partway through restoring it.
           applied.push(entry)
           await this.git.restoreSnapshot(
             entry.directory,
             target,
-            `refs/dovo/checkpoints/${turnId}/${entry.key}/${direction}`,
+            `refs/dovo/checkpoints/${turnId}/${entry.key}/${direction}-${restoreId}`,
           )
         }
+        const files = await this.git.changes(cwd).catch(() => undefined)
+        this.store.updateTaskHistory(id, (current) => {
+          validateCheckpoint(current, recorded ?? checkpoint)
+          return {
+            ...withCheckpoint(current, next),
+            ...(files ? { files: retainChangedFiles(current.files, files) } : {}),
+            messages: note
+              ? [
+                  ...current.messages,
+                  {
+                    id: randomUUID(),
+                    role: 'user',
+                    text:
+                      direction === 'undo'
+                        ? 'I undid the file changes from one of your earlier turns, so those files are back to how they were before it. Check the current files before continuing.'
+                        : 'I restored the file changes from that earlier turn again. Check the current files before continuing.',
+                    createdAt: at,
+                  },
+                ]
+              : current.messages,
+          }
+        })
       } catch (error) {
         const rollback = await Promise.allSettled(
           applied.map((entry) => {
@@ -482,50 +607,29 @@ export class Tasks {
               ? this.git.restoreSnapshot(
                   entry.directory,
                   backup,
-                  `refs/dovo/checkpoints/${turnId}/${entry.key}/rollback`,
+                  `refs/dovo/checkpoints/${turnId}/${entry.key}/rollback-${restoreId}`,
                 )
               : Promise.resolve()
           }),
         )
         const failed = rollback.some((result) => result.status === 'rejected')
+        let pending = !!recorded || !!checkpoint.restorePending
+        if (recorded && !failed) {
+          try {
+            this.store.updateTaskHistory(id, (current) => {
+              validateCheckpoint(current, recorded)
+              return withCheckpoint(current, checkpoint)
+            })
+            pending = !!checkpoint.restorePending
+          } catch {
+            // Keep the durable intent when clearing it fails. A later undo can safely resume it.
+          }
+        }
         throw new HttpError(
-          500,
-          `${errorMessage(error)}${failed ? ' Some checkouts could not be rolled back; backups remain in Git checkpoint refs.' : ' All checkouts restored to their previous contents.'}`,
+          error instanceof HttpError ? error.status : 500,
+          `${errorMessage(error)}${failed ? ' Some checkouts could not be rolled back; backups remain in Git checkpoint refs.' : ' All checkouts restored to their previous contents.'}${pending ? ' Undo recovery is pending. Undo again to finish, or redo to recover the files saved before this undo.' : ''}`,
         )
       }
-      const undone =
-        direction === 'undo' && backups.get('primary')
-          ? { at, backup: backups.get('primary') ?? '' }
-          : undefined
-      const linked = checkpoint.linked?.map((entry) => ({
-        ...entry,
-        undone:
-          direction === 'undo' && backups.get(entry.checkoutId)
-            ? { at, backup: backups.get(entry.checkoutId) ?? '' }
-            : undefined,
-      }))
-      const files = await this.git.changes(cwd).catch(() => undefined)
-      this.store.updateTaskHistory(id, (current) => ({
-        ...current,
-        ...(files ? { files: retainChangedFiles(current.files, files) } : {}),
-        turns: current.turns?.map((item) =>
-          item.id === turnId && item.checkpoint
-            ? { ...item, checkpoint: { ...item.checkpoint, undone, ...(linked ? { linked } : {}) } }
-            : item,
-        ),
-        messages: [
-          ...current.messages,
-          {
-            id: randomUUID(),
-            role: 'user',
-            text:
-              direction === 'undo'
-                ? 'I undid the file changes from one of your earlier turns, so those files are back to how they were before it. Check the current files before continuing.'
-                : 'I restored the file changes from that earlier turn again. Check the current files before continuing.',
-            createdAt: at,
-          },
-        ],
-      }))
       this.activity?.add(
         'task',
         id,
@@ -593,6 +697,7 @@ export class Tasks {
     checkoutId?: string,
     working = false,
     full = false,
+    includePatch = false,
   ) {
     const task = this.store.task(id)
     const saved = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
@@ -611,11 +716,18 @@ export class Tasks {
         !checkpoint.omitted.includes(path)
       )
         throw new HttpError(404, 'This file was not changed in this turn.')
-      return this.git.checkpointFilePreview(cwd, checkpoint.before, checkpoint.after, path, full)
+      return this.git.checkpointFilePreview(
+        cwd,
+        checkpoint.before,
+        checkpoint.after,
+        path,
+        full,
+        includePatch,
+      )
     }
-    if (working) return this.git.workingFilePreview(cwd, path, undefined, full)
-    const trees = await this.git.branchTrees(cwd)
-    return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path, full)
+    if (working) return this.git.workingFilePreview(cwd, path, undefined, full, includePatch)
+    const trees = await this.git.branchTrees(cwd, this.checkouts.branchBase(id, checkoutId))
+    return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path, full, includePatch)
   }
   /** Runs the latest turn's request again, optionally with another model of the same
    * provider. That turn's file changes are undone first (saved to a ref, never lost). */
@@ -624,62 +736,40 @@ export class Tasks {
       const task = this.store.task(id)
       if (task.status === 'running' || this.running.has(id))
         throw new HttpError(409, 'Stop the agent before trying again.')
+      if (task.turns?.some((item) => item.id !== turnId && item.checkpoint?.restorePending))
+        throw new HttpError(409, 'Finish the pending undo or redo before retrying another turn.')
       const turn = task.turns?.at(-1)
       if (!turn || turn.id !== turnId)
         throw new HttpError(409, 'Only the latest turn can be tried again.')
       const end = task.messages.findIndex((message) => message.id === turn.assistantId)
       const earlier = end >= 0 ? task.messages.slice(0, end) : task.messages
       const previousReply = earlier.map((message) => message.role).lastIndexOf('assistant')
-      const request = earlier
+      const requests = earlier
         .slice(previousReply + 1)
         .filter((message) => message.role === 'user' && !message.file && message.text.trim())
-        .map((message) => message.text.trim())
-        .join('\n\n')
+      const request = requests.map((message) => message.text.trim()).join('\n\n')
+      // Repeating a plan request is still a plan; it must not run with the thread's access.
+      const plan = planModeRequested(requests)
       if (!request) throw new HttpError(409, 'This turn has no request to repeat.')
-      const checkpoint = turn.checkpoint
-      const undo =
-        !!checkpoint?.after &&
-        !checkpoint.error &&
-        !checkpoint.undone &&
-        checkpoint.files.length + checkpoint.omitted.length > 0
-      let backup: string | undefined
-      if (
-        checkpoint?.linked?.some(
-          (item) => item.after && !item.undone && (item.files.length || item.omitted.length),
-        )
-      ) {
-        await this.restoreTurn(id, turnId, 'undo')
-      } else if (undo && checkpoint) {
-        const cwd = await this.checkouts.directory(id)
-        backup = await this.withCheckoutMutation(cwd, () =>
-          this.git.restoreSnapshot(cwd, checkpoint.before, `refs/dovo/checkpoints/${turnId}/retry`),
-        )
-      }
-      const at = new Date().toISOString()
-      this.store.updateTaskHistory(id, (current) => ({
-        ...current,
-        ...(model?.trim()
-          ? { agentOverrides: { ...current.agentOverrides, model: model.trim() } }
-          : {}),
-        turns: backup
-          ? current.turns?.map((item) =>
-              item.id === turnId && item.checkpoint
-                ? {
-                    ...item,
-                    checkpoint: {
-                      ...item.checkpoint,
-                      undone: { at, backup: backup ?? item.checkpoint.before },
-                    },
-                  }
-                : item,
-            )
-          : current.turns,
-      }))
+      const undo = checkpointCanUndo(turn.checkpoint)
+      if (undo) await this.restoreTurn(id, turnId, 'undo', false)
+      if (model?.trim())
+        this.store.updateTaskHistory(id, (current) => ({
+          ...current,
+          agentOverrides: { ...current.agentOverrides, model: model.trim() },
+        }))
       this.activity?.add('task', id, model ? `Trying again with ${model}` : 'Trying again', {
         turnId,
       })
-      return `Try this again from scratch${model?.trim() ? ` (you now run as ${model.trim()})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''} The request was:\n\n${request}`
-    }).pipe(Effect.flatMap((text) => this.sendEffect(id, randomUUID(), text)))
+      return {
+        plan,
+        text: `Try this again from scratch${model?.trim() ? ` (you now run as ${model.trim()})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''} The request was:\n\n${request}`,
+      }
+    }).pipe(
+      Effect.flatMap(({ text, plan }) =>
+        this.sendEffect(id, randomUUID(), text, [], false, false, undefined, undefined, plan),
+      ),
+    )
   }
   /** Starts a new draft task from a turn: the conversation up to that turn, and (with a saved
    * after-snapshot) a worktree holding exactly that turn's files once it first runs. */
@@ -837,7 +927,7 @@ export class Tasks {
         agentOverrides: source.agentOverrides,
         execution: 'worktree',
         ...(mode === 'reuse'
-          ? { existingWorktreePath: cwd }
+          ? { existingWorktreePath: source.existingWorktreePath ?? cwd }
           : {
               forkedFrom: { taskId: id, title: source.title, head, snapshot },
               setupCommand: source.setupCommand,
@@ -877,6 +967,9 @@ export class Tasks {
     resumePaused = false,
     turnSettings?: TurnSettings,
     source?: MessageSource,
+    plan = false,
+    queueOnly = false,
+    preserveQueuePause = false,
   ) {
     return runtimeOperation(() => {
       if (this.deletionReservations.has(id))
@@ -895,28 +988,61 @@ export class Tasks {
             attachments,
             undefined,
             review,
-            resumePaused && !this.running.has(id),
+            resumePaused && !preserveQueuePause && !queueOnly && !this.running.has(id),
             undefined,
             {
               turnSettings,
+              queueOnly,
               source,
               reopenSettled: resumePaused,
               unsnooze: true,
               clearCompletedTodos: resumePaused && !review,
+              plan,
             },
           )
+          const task = this.store.taskSummary(id)
           return (
-            this.store.taskSummary(id).queue?.some((message) => message.id === messageId) &&
+            !queueOnly &&
+            task.queue?.some((message) => message.id === messageId) &&
             !this.running.has(id) &&
-            !this.store.taskSummary(id).queuePaused
+            !task.queuePaused &&
+            (!preserveQueuePause || !task.queue[0]?.paused)
           )
         }),
       ),
       Effect.flatMap((start) =>
         start
-          ? this.startEffect(id).pipe(
-              // Input is accepted durably; start failures are persisted on the task.
-              Effect.catch(() => Effect.void),
+          ? this.startEffect(
+              id,
+              false,
+              preserveQueuePause
+                ? () => {
+                    const task = this.store.taskSummary(id)
+                    return (
+                      !this.running.has(id) &&
+                      !task.queuePaused &&
+                      !task.queue?.[0]?.paused &&
+                      !!task.queue?.some((message) => message.id === messageId)
+                    )
+                  }
+                : undefined,
+            ).pipe(
+              Effect.catch((error) =>
+                runtimeOperation(() => {
+                  // Admission can fail before a worker exists, for example during a restart lease.
+                  // Keep the accepted input visible and explicitly resumable in that case.
+                  if (this.running.has(id)) return
+                  this.store.updateTask(id, (task) =>
+                    task.queue?.some((message) => message.id === messageId)
+                      ? {
+                          ...task,
+                          queuePaused: true,
+                          error: `Message saved in the queue. Could not start: ${errorMessage(error)}`,
+                        }
+                      : task,
+                  )
+                }),
+              ),
               Effect.asVoid,
             )
           : Effect.void,
@@ -955,6 +1081,8 @@ export class Tasks {
       }
       if (queued.turnSettings)
         throw new HttpError(409, 'Messages with their own model settings must run as a queued turn')
+      if (queued.plan)
+        throw new HttpError(409, 'Plan-mode messages must run as their own read-only turn')
       return queued
     }).pipe(
       Effect.flatMap((queued) =>
@@ -998,6 +1126,9 @@ export class Tasks {
       if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
       if (expectedRunId !== undefined && run.id !== expectedRunId)
         throw new HttpError(409, 'This run ended. Send your instruction as a follow-up instead.')
+      // Steered input would join the read-only plan turn instead of the access the user expects.
+      if (planModeRequested(this.store.task(id).messages))
+        throw new HttpError(409, 'The agent is planning read-only. Queue this message instead.')
       const finalizing = this.store.taskSummary(id).runPhase === 'finalizing'
       if (fromQueue) {
         const queued = this.store.taskSummary(id).queue?.find((message) => message.id === messageId)
@@ -1150,6 +1281,25 @@ export class Tasks {
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
       const next = this.store.taskSummary(id)
+      if (next.importedCodexSession && !nextQueuedMessage(next) && !next.subagentInbox?.length) {
+        const history = this.store.task(id)
+        if (
+          !history.messages.some(
+            (message) =>
+              message.role === 'user' && !history.consumedMessageIds?.includes(message.id),
+          )
+        )
+          return Effect.fail(
+            new HttpError(409, 'Send a new message to continue this imported Codex session'),
+          )
+      }
+      if (next.subagents?.some(nativeAgentWorking) && !this.nativeSessions.has(id))
+        return Effect.fail(
+          new HttpError(
+            409,
+            'The native agent session is unavailable. Confirm its shutdown before starting another turn.',
+          ),
+        )
       if (retryFailed && next.status !== 'failed')
         return Effect.fail(new HttpError(409, 'Only a failed task can be retried.'))
       if (
@@ -1166,6 +1316,11 @@ export class Tasks {
           ? Effect.void
           : this.resolveModel(id)
       ).pipe(
+        Effect.flatMap(() =>
+          this.nativeSessions.has(id)
+            ? Effect.void
+            : runtimeOperation(() => requireImportedCodexSession(this.store.taskSummary(id))),
+        ),
         Effect.flatMap(() => runtimeOperation(() => this.store.task(id))),
         Effect.flatMap((task) => {
           if (retryFailed && task.status !== 'failed')
@@ -1265,6 +1420,10 @@ export class Tasks {
             return Effect.fail(
               new HttpError(400, 'Send the first prompt before starting this task'),
             )
+          if (task.turns?.some((turn) => turn.checkpoint?.restorePending))
+            return Effect.fail(
+              new HttpError(409, 'Finish the pending undo or redo before running this task.'),
+            )
           if (this.running.has(id))
             return Effect.fail(new HttpError(409, 'This task is already running'))
           if (
@@ -1345,10 +1504,17 @@ export class Tasks {
               this.checkouts.linked.resolve(id, run.controller.signal),
             )
             const hasGit = !this.checkouts.executionRepository(id).kind
-            if (!task.delegation && linked.some((item) => item.directory === cwd))
+            if (
+              !task.delegation &&
+              linked.some((item) => checkoutPathsOverlap(item.directory, cwd))
+            )
               throw new HttpError(400, 'The primary checkout is already part of this thread')
+            const primaryDirectory =
+              task.importedCodexSession && hasGit
+                ? (yield* runtimeOperation(() => this.git.inspect(cwd))).path
+                : cwd
             const directories = [
-              cwd,
+              primaryDirectory,
               ...linked.filter((item) => item.access === 'edit').map((item) => item.directory),
             ]
             yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
@@ -1366,20 +1532,31 @@ export class Tasks {
                     }
                   : current,
               )
+            yield* runtimeOperation(async () => {
+              for (const directory of directories) await this.git.assertCheckoutAvailable(directory)
+            })
+            // No asynchronous work between overlap checks and publishing ownership: another
+            // run may finish preparation while the availability checks are reading Git locks.
             if (
               [...this.running.entries()].some(
                 ([otherId, other]) =>
                   other !== run &&
                   directories.some((path) =>
-                    (other.directories ?? (other.cwd ? [other.cwd] : [])).includes(path),
+                    (other.directories ?? (other.cwd ? [other.cwd] : [])).some((owned) =>
+                      checkoutPathsOverlap(owned, path),
+                    ),
                   ) &&
-                  this.delegationRoot(otherId) !== this.delegationRoot(id),
+                  (other.shutdownUnconfirmed !== undefined ||
+                    this.delegationRoot(otherId) !== this.delegationRoot(id)),
               ) ||
-              [...this.nativeSessions.entries()].some(
-                ([otherId, session]) =>
-                  this.store.taskSummary(otherId).subagents?.some(nativeAgentWorking) &&
-                  session.directories.some((path) => directories.includes(path)) &&
-                  this.delegationRoot(otherId) !== this.delegationRoot(id),
+              [...this.nativeDirectories.entries()].some(
+                ([otherId, owned]) =>
+                  (!owned.length ||
+                    owned.some((path) =>
+                      directories.some((directory) => checkoutPathsOverlap(path, directory)),
+                    )) &&
+                  (this.nativeStopRequested(otherId) ||
+                    this.delegationRoot(otherId) !== this.delegationRoot(id)),
               )
             )
               return yield* Effect.fail(
@@ -1388,7 +1565,11 @@ export class Tasks {
                   'Another task is running in this repository. Wait or cancel it first.',
                 ),
               )
-            if (directories.some((path) => this.checkoutMutations.has(path)))
+            if (
+              directories.some((path) =>
+                [...this.checkoutMutations].some((owned) => checkoutPathsOverlap(path, owned)),
+              )
+            )
               return yield* Effect.fail(
                 new HttpError(
                   409,
@@ -1488,32 +1669,56 @@ export class Tasks {
                   yield* Deferred.fail(ready, error)
                   return
                 }
-                this.store.updateTaskHistory(id, (task) => ({
-                  ...task,
-                  status:
-                    task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
-                      ? 'review'
-                      : run.controller.signal.aborted &&
-                          !(run.controller.signal.reason instanceof TurnStoreFailure)
-                        ? 'cancelled'
-                        : 'failed',
-                  runPhase: task.runPhase === 'finalizing' ? 'finalizing' : undefined,
-                  // Keep the step a checkout failed on, so the card can show it with Retry.
-                  // A cancelled run has nothing to retry and drops it.
-                  preparation:
-                    task.preparation &&
-                    task.runPhase === 'preparing' &&
-                    !run.controller.signal.aborted
-                      ? { ...task.preparation, failed: true }
-                      : undefined,
-                  queuePaused: true,
-                  restartRecovery:
-                    !run.controller.signal.aborted && recoveringTurn
-                      ? { kind: 'turn', automatic: false }
-                      : task.restartRecovery,
-                  activity: undefined,
-                  error: errorMessage(run.controller.signal.reason ?? error),
-                }))
+                this.store.updateTaskHistory(id, (task) => {
+                  const cancelled =
+                    run.controller.signal.aborted &&
+                    !(run.controller.signal.reason instanceof TurnStoreFailure)
+                  const continuation =
+                    cancelled && task.quotaContinuation?.turnId === run.id
+                      ? task.quotaContinuation
+                      : undefined
+                  return {
+                    ...task,
+                    status:
+                      task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
+                        ? 'review'
+                        : cancelled
+                          ? 'cancelled'
+                          : 'failed',
+                    runPhase: task.runPhase === 'finalizing' ? 'finalizing' : undefined,
+                    // Keep the step a checkout failed on, so the card can show it with Retry.
+                    // A cancelled run has nothing to retry and drops it.
+                    preparation:
+                      task.preparation &&
+                      task.runPhase === 'preparing' &&
+                      !run.controller.signal.aborted
+                        ? { ...task.preparation, failed: true }
+                        : undefined,
+                    quotaContinuation: continuation ? undefined : task.quotaContinuation,
+                    snoozedUntil:
+                      continuation && task.snoozedUntil === continuation.at
+                        ? null
+                        : task.snoozedUntil,
+                    turns: cancelled
+                      ? task.turns?.map((turn) =>
+                          turn.id === run.id && turn.status === 'failed'
+                            ? {
+                                ...turn,
+                                status: 'cancelled',
+                                error: errorMessage(run.controller.signal.reason ?? error),
+                              }
+                            : turn,
+                        )
+                      : task.turns,
+                    queuePaused: true,
+                    restartRecovery:
+                      !run.controller.signal.aborted && recoveringTurn
+                        ? { kind: 'turn', automatic: false }
+                        : task.restartRecovery,
+                    activity: undefined,
+                    error: errorMessage(run.controller.signal.reason ?? error),
+                  }
+                })
                 yield* Deferred.fail(ready, error)
               }),
             ),
@@ -1523,13 +1728,42 @@ export class Tasks {
                 yield* Effect.yieldNow
                 if (this.running.get(id) === run) {
                   run.retiring = true
-                  yield* this.drainChildren(
-                    id,
-                    run.controller.signal.aborted ||
-                      (this.store.taskSummary(id).status === 'failed' && !run.preserveNativeSession)
-                      ? undefined
-                      : run.id,
-                  )
+                  // Admission failures own no provider or children. Draining here would
+                  // cancel the healthy family whose checkout prevented this start.
+                  const drained =
+                    run.directories === undefined
+                      ? Exit.void
+                      : yield* Effect.exit(
+                          this.drainChildren(
+                            id,
+                            run.controller.signal.aborted ||
+                              (this.store.taskSummary(id).status === 'failed' &&
+                                !run.preserveNativeSession)
+                              ? undefined
+                              : run.id,
+                          ),
+                        )
+                  if (Exit.isFailure(drained)) {
+                    const error = runtimeFailure(Cause.squash(drained.cause))
+                    run.shutdownUnconfirmed =
+                      error instanceof RuntimeOperationError &&
+                      error.cause instanceof OwnedProcessShutdownError
+                        ? error.cause
+                        : new OwnedProcessShutdownError(errorMessage(error))
+                    yield* runtimeOperation(() =>
+                      this.store.updateTask(id, (task) => ({
+                        ...task,
+                        status: run.controller.signal.aborted ? 'cancelled' : 'failed',
+                        activity: undefined,
+                        queuePaused: true,
+                        error: run.shutdownUnconfirmed?.message,
+                      })),
+                    ).pipe(
+                      Effect.catch((error) =>
+                        Effect.logError('Could not record unconfirmed native shutdown', error),
+                      ),
+                    )
+                  }
                   // A settled fiber does not prove the provider stopped. Release
                   // ownership only if this error can later confirm the entire tree's exit.
                   if (run.shutdownUnconfirmed) {
@@ -1616,11 +1850,17 @@ export class Tasks {
   }
   requireCheckoutReferencesAvailable(task: TaskMetadata) {
     const paths = [
+      task.importedCodexSession?.cwd,
       task.existingWorktreePath,
       ...(task.linkedCheckouts ?? []).map((link) => link.existingWorktreePath),
       ...(task.pendingLinkedCheckouts ?? []).map((link) => link.existingWorktreePath),
     ]
-    if (paths.some((path) => path && this.checkoutMutations.has(path)))
+    if (
+      paths.some(
+        (path) =>
+          path && [...this.checkoutMutations].some((owned) => checkoutPathsOverlap(path, owned)),
+      )
+    )
       throw new HttpError(
         409,
         'Wait for the checkout operation to finish before linking this worktree',
@@ -1631,20 +1871,21 @@ export class Tasks {
       Effect.try({
         try: () => {
           if (
-            this.checkoutMutations.has(cwd) ||
+            [...this.checkoutMutations].some((owned) => checkoutPathsOverlap(cwd, owned)) ||
+            [...this.checkoutEdits.keys()].some((owned) => checkoutPathsOverlap(cwd, owned)) ||
             [...this.running.values()].some(
-              (run) => !run.cwd || run.cwd === cwd || run.directories?.includes(cwd),
+              (run) =>
+                !run.cwd ||
+                checkoutPathsOverlap(run.cwd, cwd) ||
+                run.directories?.some((owned) => checkoutPathsOverlap(cwd, owned)),
             ) ||
-            [...this.nativeSessions.entries()].some(
-              ([id, session]) =>
-                (this.store.taskSummary(id).subagents?.some(nativeAgentWorking) ||
-                  this.nativeStopping.has(id)) &&
-                session.directories.includes(cwd),
+            [...this.nativeDirectories.values()].some(
+              (owned) => !owned.length || owned.some((path) => checkoutPathsOverlap(cwd, path)),
             )
           )
             throw new HttpError(
               409,
-              'Wait for the running agent or checkout operation to finish before switching branches.',
+              'Wait for the running agent or checkout operation to finish before changing this checkout.',
             )
           this.checkoutMutations.add(cwd)
         },
@@ -1654,6 +1895,26 @@ export class Tasks {
       () =>
         Effect.sync(() => {
           this.checkoutMutations.delete(cwd)
+        }),
+    )
+  }
+  /** Explicit edits may coexist with agent work, but keep branch/restore operations out. */
+  withCheckoutEditEffect<A, E>(cwd: string, action: Effect.Effect<A, E>) {
+    return Effect.acquireUseRelease(
+      Effect.try({
+        try: () => {
+          if ([...this.checkoutMutations].some((owned) => checkoutPathsOverlap(cwd, owned)))
+            throw new HttpError(409, 'Wait for the checkout operation to finish before editing.')
+          this.checkoutEdits.set(cwd, (this.checkoutEdits.get(cwd) ?? 0) + 1)
+        },
+        catch: runtimeFailure,
+      }),
+      () => action,
+      () =>
+        Effect.sync(() => {
+          const remaining = (this.checkoutEdits.get(cwd) ?? 1) - 1
+          if (remaining) this.checkoutEdits.set(cwd, remaining)
+          else this.checkoutEdits.delete(cwd)
         }),
     )
   }
@@ -1790,7 +2051,17 @@ export class Tasks {
           : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
         const messageId = `answer:${receipt.id}`
         // The answer receipt and input are one transaction, before HTTP acknowledgement.
-        this.queue.add(id, messageId, text, [], receipt)
+        // Answer attachments become ordinary message files, never composer draft files.
+        const attachments = receipt.attachments ?? []
+        // An answer never ends an unapproved plan, even for an older form; only a user prompt,
+        // sent or queued, decides the next access. Replays keep the accepted flag.
+        const current = this.store.task(id)
+        const input = [...current.messages, ...(current.queue ?? [])]
+        const saved = input.find((message) => message.id === messageId)
+        const plan = saved ? !!saved.plan : planModeRequested(input)
+        this.queue.add(id, messageId, text, attachments, receipt, false, false, undefined, {
+          plan,
+        })
         if (!this.store.taskSummary(id).queue?.some((message) => message.id === messageId)) return
         const active = this.running.get(id)
         const nativeSteer = active?.id === runId ? active.steer : undefined
@@ -1805,7 +2076,17 @@ export class Tasks {
                     if (this.steering.get(id) === token) this.steering.delete(id)
                   }),
               )
-            : this.sendEffect(id, messageId, text)
+            : this.sendEffect(
+                id,
+                messageId,
+                text,
+                attachments.map((file) => file.id),
+                false,
+                false,
+                undefined,
+                undefined,
+                plan,
+              )
         this.executor.runFork(
           deliver.pipe(
             Effect.catchCause((cause) =>
@@ -1837,12 +2118,14 @@ export class Tasks {
     return Effect.suspend(() => {
       const natives =
         parentRunId === undefined ? this.stopNativeFamily(parentTaskId) : Promise.resolve()
+      // Attach rejection immediately while durable child fibers finish draining.
+      void natives.catch(() => undefined)
       const fibers = this.stopChildren(parentTaskId, parentRunId)
       // Child failures are already persisted. Await settlement without joining their failure
       // into the parent, and keep parent ownership until descendant finalizers have drained.
       return Effect.forEach(fibers, (fiber) => Fiber.await(fiber), { discard: true }).pipe(
         Effect.andThen(
-          Effect.promise(async () => {
+          runtimeOperation(async () => {
             await natives
             for (const id of taskFamilyIds(this.store.get().tasks, parentTaskId)) {
               const stopping = this.nativeStopping.get(id)
@@ -1853,32 +2136,131 @@ export class Tasks {
       )
     })
   }
+  private nativeStopRequested(id: string) {
+    return (
+      this.nativeStopping.has(id) ||
+      this.store
+        .get()
+        .tasks.find((task) => task.id === id)
+        ?.subagents?.some(
+          (agent) => nativeAgentWorking(agent) && agent.completion === 'disposed',
+        ) === true
+    )
+  }
+  private refreshNativeDirectory(id: string) {
+    const task = this.store.get().tasks.find((task) => task.id === id)
+    if (!task?.subagents?.some(nativeAgentWorking) && !this.nativeStopping.has(id)) {
+      this.nativeDirectories.delete(id)
+      return
+    }
+    const directories =
+      this.nativeSessions.get(id)?.directories ?? this.running.get(id)?.directories
+    // An unknown native owner excludes every checkout until its session is confirmed closed.
+    this.nativeDirectories.set(id, directories ?? this.nativeDirectories.get(id) ?? [])
+  }
+  private nativeStopConfirmed(taskId: string, selected: NonNullable<TaskMetadata['subagents']>) {
+    const key = JSON.stringify([
+      taskId,
+      selected.map(({ id, provider, sessionId }) => [id, provider, sessionId]),
+    ])
+    const existing = this.nativeConfirmations.get(key)
+    if (existing) return existing
+    const confirmed = new Promise<void>((resolve) => {
+      const check = () => {
+        const current = this.store.get().tasks.find((task) => task.id === taskId)
+        if (
+          !current ||
+          !selected.every((old) => {
+            const agent = current.subagents?.find(
+              (agent) =>
+                agent.id === old.id &&
+                agent.provider === old.provider &&
+                agent.sessionId === old.sessionId,
+            )
+            return agent !== undefined && !nativeAgentWorking(agent)
+          })
+        )
+          return
+        unsubscribe()
+        this.nativeConfirmations.delete(key)
+        resolve()
+      }
+      const unsubscribe = this.store.onCommitted(check)
+      queueMicrotask(check)
+    })
+    this.nativeConfirmations.set(key, confirmed)
+    return confirmed
+  }
   private async stopNativeFamily(id: string, childId?: string) {
-    const stops: Promise<void>[] = []
-    const family = taskFamilyIds(this.store.get().tasks, id)
-    // Revoke every owner before any provider shutdown can stall or fail.
-    if (!childId) for (const taskId of family) runCredentials(this.store).revokeTask(taskId)
-    for (const taskId of family) {
-      const task = this.store.taskSummary(taskId)
-      const selected = (task.subagents ?? []).filter(
-        (agent) => agent.source !== 'dovo' && (!childId || (taskId === id && agent.id === childId)),
+    const family = childId ? new Set([id]) : taskFamilyIds(this.store.get().tasks, id)
+    const revocationErrors: unknown[] = []
+    // Revoke all owners and attempt all siblings even when one shutdown fails.
+    if (!childId)
+      for (const taskId of family) {
+        try {
+          runCredentials(this.store).revokeTask(taskId)
+        } catch (error) {
+          revocationErrors.push(error)
+        }
+      }
+    const results = await Promise.allSettled(
+      [...family].map((taskId) => this.stopNativeTask(taskId, childId)),
+    )
+    const errors = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [],
+    )
+    if (errors.length || revocationErrors.length)
+      throw new OwnedProcessShutdownError(
+        `Native agent shutdown was not confirmed. Its checkout is still owned. ${errors.map(errorMessage).join('; ')}`,
+        {
+          cause: new AggregateError([...revocationErrors, ...errors]),
+          confirmed: Promise.all(
+            errors.map((error) =>
+              error instanceof OwnedProcessShutdownError && error.confirmed
+                ? error.confirmed
+                : new Promise<void>(() => {}),
+            ),
+          ).then(() => undefined),
+        },
       )
-      if (!selected.length) continue
+  }
+  private async stopNativeTask(taskId: string, childId?: string): Promise<void> {
+    const task = this.store.taskSummary(taskId)
+    const selected = (task.subagents ?? []).filter(
+      (agent) => agent.source !== 'dovo' && (!childId || agent.id === childId),
+    )
+    if (!selected.length) return
+    const confirmed = this.nativeStopConfirmed(taskId, selected)
+    const preparationErrors: unknown[] = []
+    const prepare = (action: () => void) => {
+      try {
+        action()
+      } catch (error) {
+        preparationErrors.push(error)
+      }
+    }
+    const reportPreparation = () => {
+      if (preparationErrors.length)
+        throw new AggregateError(preparationErrors, 'Could not persist all native stop state')
+    }
+    try {
       const messageIds = new Set(
         selected.flatMap((agent) => (agent.completionId ? [agent.completionId] : [])),
       )
-      this.store.updateTask(taskId, (current) => ({
-        ...current,
-        queue: current.queue?.filter(
-          (message) => !message.subagentResultId || !messageIds.has(message.subagentResultId),
-        ),
-        subagentInbox: current.subagentInbox?.filter(
-          (message) => !message.subagentResultId || !messageIds.has(message.subagentResultId),
-        ),
-        subagents: current.subagents?.map((agent) =>
-          selected.includes(agent) ? { ...agent, completion: 'disposed' as const } : agent,
-        ),
-      }))
+      prepare(() =>
+        this.store.updateTask(taskId, (current) => ({
+          ...current,
+          queue: current.queue?.filter(
+            (message) => !message.subagentResultId || !messageIds.has(message.subagentResultId),
+          ),
+          subagentInbox: current.subagentInbox?.filter(
+            (message) => !message.subagentResultId || !messageIds.has(message.subagentResultId),
+          ),
+          subagents: current.subagents?.map((agent) =>
+            selected.includes(agent) ? { ...agent, completion: 'disposed' as const } : agent,
+          ),
+        })),
+      )
       if (
         childId &&
         !this.running.has(taskId) &&
@@ -1891,54 +2273,67 @@ export class Tasks {
               nativeAgentWorking(agent),
           )
       )
-        runCredentials(this.store).revokeTask(taskId)
-      if (!selected.some(nativeAgentWorking)) continue
+        prepare(() => runCredentials(this.store).revokeTask(taskId))
+      if (!selected.some(nativeAgentWorking)) {
+        reportPreparation()
+        return
+      }
       const session = this.nativeSessions.get(taskId)
       if (!session)
-        throw new HttpError(
-          409,
-          'The native agent session is unavailable. Refresh its state before stopping it.',
+        throw new Error(
+          'The native agent session is unavailable. Its checkout remains owned until closure is confirmed.',
         )
-      let stopping = this.nativeStopping.get(taskId)
-      if (stopping) {
-        stops.push(stopping.then(() => this.stopNativeFamily(taskId, childId)))
-        continue
+      const pending = this.nativeStopping.get(taskId)
+      if (pending) {
+        await pending
+        await this.stopNativeTask(taskId, childId)
+        reportPreparation()
+        return
       }
-      if (!stopping) {
-        stopping = session.control.stop(childId).then(async () => {
-          const deadline = Date.now() + 30000
-          while (
-            this.store
-              .task(taskId)
-              .subagents?.some(
-                (agent) =>
-                  selected.some((old) => old.id === agent.id && old.provider === agent.provider) &&
-                  nativeAgentWorking(agent),
-              )
-          ) {
-            if (Date.now() >= deadline)
-              throw new OwnedProcessShutdownError(
-                'Native agent shutdown was not confirmed. Its checkout is still owned.',
-              )
-            await new Promise<void>((resolve) => setTimeout(resolve, 25))
-          }
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const stopping = Promise.race([
+        Promise.resolve()
+          .then(() => session.control.stop(childId))
+          .then(() => confirmed),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Native agent shutdown timed out before confirmation')),
+            30000,
+          )
+        }),
+      ])
+      this.nativeStopping.set(taskId, stopping)
+      this.refreshNativeDirectory(taskId)
+      try {
+        await stopping
+      } finally {
+        clearTimeout(timer)
+        if (this.nativeStopping.get(taskId) === stopping) this.nativeStopping.delete(taskId)
+        this.refreshNativeDirectory(taskId)
+      }
+      reportPreparation()
+    } catch (error) {
+      const failure = new OwnedProcessShutdownError(
+        `Native agent shutdown was not confirmed. ${errorMessage(error)}`,
+        { cause: error, confirmed },
+      )
+      try {
+        this.store.updateTask(taskId, (current) => ({
+          ...current,
+          queuePaused: true,
+          error: failure.message,
+        }))
+      } catch (persistenceError) {
+        throw new OwnedProcessShutdownError(failure.message, {
+          cause: new AggregateError(
+            [failure, persistenceError],
+            'Native shutdown and persistence failed',
+          ),
+          confirmed,
         })
-        this.nativeStopping.set(taskId, stopping)
-        void stopping.then(
-          () => this.nativeStopping.delete(taskId),
-          (error: unknown) => {
-            this.nativeStopping.delete(taskId)
-            this.store.updateTask(taskId, (current) => ({
-              ...current,
-              queuePaused: true,
-              error: errorMessage(error),
-            }))
-          },
-        )
       }
-      stops.push(stopping)
+      throw failure
     }
-    return Promise.all(stops).then(() => undefined)
   }
   private stopChildren(parentTaskId: string, parentRunId?: string) {
     if (!this.stopping && parentRunId === undefined) this.onStopChildren?.(parentTaskId)
@@ -2232,6 +2627,16 @@ export class Tasks {
       .update(JSON.stringify([taskId, id, key]))
       .digest('hex')}`
     if (!prompt.trim()) throw new HttpError(400, 'Add a follow-up prompt')
+    // A plan turn must not wake a child that can still write; replays stay acknowledged.
+    if (
+      !this.store.taskSubmission(id, messageId) &&
+      planModeRequested(this.store.task(taskId).messages)
+    ) {
+      const ceiling = this.delegationCeiling(this.store.taskSummary(taskId))
+      const childAgent = resolveTaskAgent(child, this.store.get().agents)
+      if (!ceiling || !childAgent || !permissionPolicyWithinCeiling(ceiling, childAgent))
+        throw new HttpError(403, 'The parent is planning read-only; this child can still write')
+    }
     if (
       !this.store.taskSubmission(id, messageId) &&
       !this.hasWorkingFamily(id) &&
@@ -2450,6 +2855,13 @@ export class Tasks {
     if (depth >= 3) throw new HttpError(409, 'Maximum child agent nesting reached')
     return { id: run.id, signal: run.controller.signal, depth }
   }
+  /** An unanswered plan request caps delegation at read-only, like the plan turn itself. */
+  delegationCeiling(task: Parameters<typeof resolveTaskAgent>[0]) {
+    const agent = resolveTaskAgent(task, this.store.get().agents)
+    return agent && planModeRequested(this.store.task(task.id).messages)
+      ? planModeAgent(agent)
+      : agent
+  }
   subagentSpawn(input: SubagentSpawn) {
     const parent = this.store.taskSummary(input.taskId)
     const scope = this.childLaunchScope(input.taskId, input.parentRunId)
@@ -2497,7 +2909,7 @@ export class Tasks {
         `Wait for a child to finish before launching another (maximum ${maxActiveChildren} active children)`,
       )
     const agents = this.store.agentsFor(parent.repositoryId)
-    const parentAgent = resolveTaskAgent(parent, this.store.get().agents)
+    const parentAgent = this.delegationCeiling(parent)
     if (!parentAgent) throw new HttpError(400, 'Choose a parent agent before delegation')
     const preset = input.agentId ? agents.find((agent) => agent.id === input.agentId) : undefined
     if (input.agentId && !preset)

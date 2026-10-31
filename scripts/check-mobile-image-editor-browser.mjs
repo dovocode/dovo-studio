@@ -10,7 +10,7 @@ const built = await bundleBrowser(
       contents: `
 import {ChatImageEditProvider} from './src/tasks/composer/chat-image-edit';import {EditChatImage} from './src/tasks/composer/chat-image-edit-context';import {useState} from 'react';import {useScreenshotAttachment} from './src/tasks/preview/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
 window.data={};window.deleted=[];window.calls=[];window.rows=[];window.stored={};window.fail=false;
-window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:'data:image/png;base64,'+window.data['photo.png']};if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:1}};
+window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:'data:image/png;base64,'+window.data['photo.png']};if(path==='/api/attachments/draft-guard')return {guard:JSON.stringify(window.rows.map(f=>f.id))};if(path==='/api/attachments/commit-upload'){if(input.guard!==JSON.stringify(window.rows.map(f=>f.id)))throw Error('draft changed');const saved=window.stored[input.id];window.rows=saved.replaceId?window.rows.map(f=>f.id===saved.replaceId?saved.attachment:f):[...window.rows,saved.attachment];return {attachment:saved.attachment,revision:1,nextGuard:JSON.stringify(window.rows.map(f=>f.id))}}if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data,replaceId:input.replaceId};return {attachment,revision:1}};
 function App(){const[revision,setRevision]=useState(0);window.refresh=()=>setRevision(v=>v+1);const[loading,setLoading]=useState(false);const picker=useAttachmentPicker('task');const screenshots=useScreenshotAttachment('task');window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.captureError=screenshots.error;window.upload=picker.upload;window.edit=picker.edit;window.busy=picker.busy;return <ChatImageEditProvider upload={picker.upload} busy={loading||picker.busy} onBusy={setLoading} disabled={false}><EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/>{picker.editor}{screenshots.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></ChatImageEditProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -39,7 +39,7 @@ function App(){const[revision,setRevision]=useState(0);window.refresh=()=>setRev
     {
       path: '../../runtime/connection/provider',
       importer: mobile,
-      contents: `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,snapshot:{workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}},readEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error}),callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
+      contents: `import {Effect} from 'effect';const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>({connected:true,profile:{id:'host',connection:{address:'host',token:'token'}},snapshot:{workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}},readEffect:request,callEffect:request,readRuntimeEffect:(_profile,path,input)=>request(path,input),requestAttachmentEffect:(_profile,input,replace)=>request(replace?'/api/attachments/recoverable-replace':'/api/attachments/recoverable-upload',input),reviewAttachments:()=>{},refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.void});`,
     },
     {
       path: '../../ui/controls/use-action',
@@ -147,7 +147,8 @@ try {
   assert.equal(await editor.locator('svg').first().getAttribute('viewBox'), '100 60 200 120')
   await editor.getByRole('button', { name: 'Done', exact: true }).click()
   await page.waitForFunction(
-    () => !window.busy && window.calls.some((c) => c.path === '/api/attachments/replace'),
+    () =>
+      !window.busy && window.calls.some((c) => c.path === '/api/attachments/recoverable-replace'),
   )
   assert.equal(await page.evaluate(() => window.rows.length), 1)
   assert.notEqual(await page.evaluate(() => window.rows[0].id), originalId)
@@ -285,8 +286,18 @@ try {
   await page.getByRole('button', { name: 'Edit and attach Sent image', exact: true }).click()
   await editor.getByRole('button', { name: 'Use original', exact: true }).click()
   await page.waitForFunction(() => !window.busy && window.rows.length === 1)
-  assert.equal(await page.evaluate(() => window.calls.at(-1).path), '/api/attachments/upload')
-  assert.equal(await page.evaluate(() => window.calls.at(-1).input.replaceId), undefined)
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1).path),
+    '/api/attachments/commit-upload',
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.filter((c) => c.path === '/api/attachments/recoverable-upload').at(-1).input
+          .replaceId,
+    ),
+    undefined,
+  )
   assert.equal(
     await page.evaluate(() => window.stored.sent.data === window.data['photo.png']),
     true,

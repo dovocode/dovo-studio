@@ -89,6 +89,23 @@ it('hides finished subagents by default and remembers showing their history', as
   expect(reopened.readAppPreferences().hideFinishedSubagents).toBe(false)
 })
 
+it('restores Thread Info customization across restarts and resets it independently', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  preferences.updateAppPreferences({
+    threadInfoSections: { usage: false, scripts: false },
+    theme: 'light',
+  })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().threadInfoSections).toEqual({ usage: false, scripts: false })
+  reopened.updateAppPreferences({ threadInfoSections: {} })
+  expect(reopened.readAppPreferences().theme).toBe('light')
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences().threadInfoSections).toEqual({})
+})
+
 it('persists a palette independently of color scheme and restores it on reopening', async () => {
   vi.stubGlobal('localStorage', storage())
   const { updateAppPreferences } = await import('./preferences')

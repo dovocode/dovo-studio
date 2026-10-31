@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
+import { randomUUID } from 'expo-crypto'
 import {
+  nextThreadDraft,
   defaultTaskProjectSelection,
   resolveTaskDefaults,
   taskMachineDraft,
@@ -13,15 +15,18 @@ import { useTheme } from '../../ui/theme'
 import { TaskDetail } from '../detail/task-detail'
 import { saveRuntimeDraft } from '../draft/use-draft'
 import { FolderPicker } from './folder-picker'
+import { useNavigation } from '../../shell/navigation'
 import { TemporaryTaskRuntime } from './temporary-task-runtime'
 
 export function StartupThread({
   onCommit,
+  onDraft,
   onBrowse,
   onNewThread,
   taskId,
   runtimeId: initialRuntimeId,
 }: {
+  onDraft?: (runtimeId: string, taskId: string) => void
   onCommit: (runtimeId: string, taskId: string) => void
   onBrowse: () => void
   onNewThread: () => void
@@ -30,6 +35,21 @@ export function StartupThread({
 }) {
   const { styles } = useTheme()
 
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const { focused } = useNavigation()
+  const lifecycle = useRef({ focused, generation: 0 })
+  if (lifecycle.current.focused !== focused) {
+    lifecycle.current = { focused, generation: lifecycle.current.generation + 1 }
+  }
+  const backgroundTask = useRef<object | null>(null)
+  const backgroundDraft = useRef<{ taskId: string; attemptId: string; next: Task } | null>(null)
+  const currentTask = useRef(taskId)
   const runtime = useRuntime()
   const [selection, setSelection] = useState<{ runtimeId: string; task: Task } | null>(() => {
     const task = runtime.overviews
@@ -63,6 +83,7 @@ export function StartupThread({
           example: false,
         }
       : null)
+  currentTask.current = task?.id ?? taskId
   if (!entry?.snapshot)
     return (
       <View style={styles.content}>
@@ -77,7 +98,11 @@ export function StartupThread({
         <TemporaryTaskRuntime
           key={`${runtimeId}:${task.id}`}
           task={task}
-          onCommit={(created) => onCommit(runtimeId, created.id)}
+          onCommit={(created) => {
+            if (backgroundTask.current || !mounted.current || !lifecycle.current.focused)
+              return false
+            onCommit(runtimeId, created.id)
+          }}
         >
           {(draft, temporary) => (
             <TaskDetail
@@ -85,6 +110,40 @@ export function StartupThread({
               onBack={onBrowse}
               startup={{
                 temporary,
+                onStartInBackground: (configuration, attemptId) => {
+                  // A retry may observe an already resolved automatic project/model selection.
+                  // Keep the choices captured before the first dispatch of this message.
+                  if (
+                    backgroundDraft.current?.taskId !== draft.id ||
+                    backgroundDraft.current.attemptId !== attemptId
+                  )
+                    backgroundDraft.current = {
+                      taskId: draft.id,
+                      attemptId,
+                      next: nextThreadDraft(configuration, randomUUID()),
+                    }
+                  const next = backgroundDraft.current.next
+                  const token = {}
+                  backgroundTask.current = token
+                  const generation = lifecycle.current.generation
+                  const active = () =>
+                    mounted.current &&
+                    lifecycle.current.focused &&
+                    lifecycle.current.generation === generation &&
+                    currentTask.current === draft.id &&
+                    backgroundTask.current === token
+                  return {
+                    confirmed: () => {
+                      if (!active()) return
+                      currentTask.current = next.id
+                      setSelection({ runtimeId, task: next })
+                      onDraft?.(runtimeId, next.id)
+                    },
+                    settled: () => {
+                      if (backgroundTask.current === token) backgroundTask.current = null
+                    },
+                  }
+                },
                 onNewThread,
                 onSelectRemote: async (
                   targetId,

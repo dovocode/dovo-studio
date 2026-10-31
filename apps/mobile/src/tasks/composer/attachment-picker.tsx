@@ -1,16 +1,19 @@
 import { useImageEditor } from './image-editor'
-import { Effect } from 'effect'
-import { useRef } from 'react'
+import { Effect, Schema } from 'effect'
+import { useEffect, useRef, useState } from 'react'
+import { clipboardImageData } from './clipboard-image'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { Alert, Keyboard, Linking, Platform } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
+import * as Clipboard from 'expo-clipboard'
 import { optimizeAttachmentImage } from './optimize-attachment-image'
 import * as DocumentPicker from 'expo-document-picker'
 import { File, Paths } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
 import {
-  attachmentResultSchema,
   attachmentReadSchema,
+  attachmentCommitResultSchema,
+  mutableStruct,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   type Attachment,
@@ -18,7 +21,7 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 
-export type AttachmentAsset = { uri: string; name: string; mimeType?: string | null }
+export type AttachmentAsset = { id?: string; uri: string; name: string; mimeType?: string | null }
 
 // This controller belongs to the conversation, not a button that moves when the keyboard closes.
 export function useAttachmentPicker(
@@ -26,13 +29,55 @@ export function useAttachmentPicker(
   editing?: {
     messageId: string
     files: Attachment[]
-    uploaded: (file: Attachment, replaceId?: string) => void
+    uploaded: (file: Attachment, replaceId?: string) => boolean
+  },
+  detached?: {
+    key: string
+    files: Attachment[]
+    count?: number
+    uploaded: (file: Attachment) => boolean
   },
 ) {
-  const { connected, callEffect, snapshot } = useRuntime()
+  const {
+    connected,
+    callEffect,
+    snapshot,
+    profile,
+    requestAttachmentEffect,
+    reviewAttachments,
+    readRuntimeEffect,
+    refreshRuntimeEffect,
+    finishAttachmentEffect,
+  } = useRuntime()
   const { busy, error, act, run } = useAction()
   const imageEditor = useImageEditor()
   const uploading = useRef(false)
+  const [pasting, setPasting] = useState(false)
+  const scopeKey = JSON.stringify([
+    taskId,
+    profile?.id,
+    profile?.connection.address,
+    profile?.connection.token,
+    editing?.messageId,
+    detached?.key,
+  ])
+  const ownership = useRef({ key: scopeKey, generation: 0, mounted: true })
+  if (ownership.current.key !== scopeKey) {
+    ownership.current.key = scopeKey
+    ownership.current.generation++
+  }
+  useEffect(() => {
+    ownership.current.mounted = true
+    return () => {
+      ownership.current.mounted = false
+    }
+  }, [])
+  useEffect(
+    () => () => {
+      if (profile) reviewAttachments(profile)
+    },
+    [profile, reviewAttachments],
+  )
   const prepare = async (asset: AttachmentAsset, replacing: boolean, editChatImage: boolean) => {
     const temporary = new Set<string>()
     let prepared: AttachmentAsset | null = null
@@ -53,16 +98,51 @@ export function useAttachmentPicker(
     replaceId?: string,
     editChatImage = false,
     signal?: AbortSignal,
+    initialGuard?: string,
+    initialGeneration?: number,
+    requireCommitted = false,
   ) =>
     mobileWorkflow(function* () {
+      if (!ownership.current.mounted || ownership.current.key !== scopeKey)
+        throw new Error('Attachment cancelled because the conversation changed.')
+      const generation = initialGeneration ?? ownership.current.generation
       const count =
-        (editing
-          ? editing.files.length
-          : snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments
-              ?.length) ?? 0
+        (detached
+          ? (detached.count ?? detached.files.length)
+          : editing
+            ? editing.files.length
+            : snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments
+                ?.length) ?? 0
       let accepted = 0
+      let held = 0
+      let stopped = false
       const rejected: string[] = []
+      if (!profile) throw new Error('Connect a computer first.')
+      let guard =
+        !editing && !detached && assets.length
+          ? (initialGuard ??
+            (yield* readRuntimeEffect(
+              profile,
+              '/api/attachments/draft-guard',
+              { taskId },
+              mutableStruct({ guard: Schema.String }),
+            )).guard)
+          : null
       for (const asset of assets) {
+        // Native share replays keep their attachment IDs, including a crash after server commit.
+        if (
+          asset.id &&
+          snapshot?.workspace.tasks
+            .find((task) => task.id === taskId)
+            ?.draftAttachments?.some((file) => file.id === asset.id)
+        )
+          continue
+        if (stopped) {
+          rejected.push(
+            `${asset.name}: not uploaded because the previous attachment did not complete.`,
+          )
+          continue
+        }
         if (count - (replaceId ? 1 : 0) + accepted >= MAX_ATTACHMENTS) {
           rejected.push(`${asset.name}: attach up to 5 files per message.`)
           continue
@@ -80,20 +160,65 @@ export function useAttachmentPicker(
               if (prepared.uri !== asset.uri) file.delete()
             }
           })
-          if (signal?.aborted) throw new Error('Attachment cancelled.')
-          const result = yield* callEffect(
-            replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
+          if (
+            signal?.aborted ||
+            !ownership.current.mounted ||
+            ownership.current.generation !== generation
+          )
+            throw new Error('Attachment cancelled because the conversation changed.')
+          stopped = true
+          const result = yield* requestAttachmentEffect(
+            profile,
             {
               taskId,
               queuedMessageId: editing?.messageId,
-              id: randomUUID(),
+              detached: !editing,
+              id: asset.id ?? randomUUID(),
               name: prepared.name,
               data,
               ...(replaceId ? { replaceId } : {}),
             },
-            attachmentResultSchema,
+            !!replaceId,
           )
-          editing?.uploaded(result.attachment, replaceId)
+          if (
+            !ownership.current.mounted ||
+            ownership.current.generation !== generation ||
+            signal?.aborted
+          ) {
+            held++
+            reviewAttachments(profile)
+          } else if (detached) {
+            if (detached.uploaded(result.attachment)) stopped = false
+            else {
+              held++
+              reviewAttachments(profile)
+            }
+          } else if (editing) {
+            if (!editing.uploaded(result.attachment, replaceId)) {
+              held++
+              reviewAttachments(profile)
+            } else stopped = false
+          } else {
+            const committed = yield* Effect.result(
+              readRuntimeEffect(
+                profile,
+                '/api/attachments/commit-upload',
+                { id: result.attachment.id, guard },
+                attachmentCommitResultSchema,
+              ),
+            )
+            if (committed._tag === 'Failure') {
+              held++
+              reviewAttachments(profile)
+            } else {
+              guard = committed.success.nextGuard
+              stopped = false
+              yield* refreshRuntimeEffect(profile).pipe(Effect.catch(() => Effect.void))
+              yield* finishAttachmentEffect(profile, result.attachment.id).pipe(
+                Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),
+              )
+            }
+          }
           accepted++
         }).pipe(
           Effect.catch((cause) =>
@@ -103,7 +228,16 @@ export function useAttachmentPicker(
           ),
         )
       }
+      if (held)
+        Alert.alert(
+          'Attachments saved for review',
+          'Open connection status to attach them to the current draft of this task.',
+        )
       if (rejected.length) throw new Error(rejected.join('\n'))
+      if (held && requireCommitted)
+        throw new Error(
+          'Shared files are saved for review. Restore them to this draft in connection status, then try again.',
+        )
     })
   const upload = (assets: AttachmentAsset[], editChatImage = false) => {
     if (!connected) return Promise.reject(new Error('Reconnect to attach files.'))
@@ -114,7 +248,13 @@ export function useAttachmentPicker(
       uploading.current = false
     })
   }
-  const uploadContext = async (assets: AttachmentAsset[], signal: AbortSignal) => {
+  const uploadContext = async (
+    assets: AttachmentAsset[],
+    signal: AbortSignal,
+    requireCommitted = false,
+  ) => {
+    if (signal.aborted || !ownership.current.mounted || ownership.current.key !== scopeKey)
+      throw new Error('Attachment cancelled because the conversation changed.')
     if (!connected) throw new Error('Reconnect to attach files.')
     if (busy || uploading.current)
       throw new Error('Wait for the current attachment operation to finish.')
@@ -122,7 +262,7 @@ export function useAttachmentPicker(
     let failure: Error | undefined
     try {
       await run(() =>
-        uploadAssets(assets, undefined, false, signal).pipe(
+        uploadAssets(assets, undefined, false, signal, undefined, undefined, requireCommitted).pipe(
           Effect.tapError((cause) =>
             Effect.sync(() => {
               failure = cause
@@ -223,12 +363,54 @@ export function useAttachmentPicker(
       { cancelable: true },
     )
   }
+  const pasteImage = () => {
+    if (!connected || busy || uploading.current || !profile) return
+    uploading.current = true
+    setPasting(true)
+    const generation = ownership.current.generation
+    void run(() =>
+      mobileWorkflow(function* () {
+        const guard =
+          editing || detached
+            ? undefined
+            : (yield* readRuntimeEffect(
+                profile,
+                '/api/attachments/draft-guard',
+                { taskId },
+                mutableStruct({ guard: Schema.String }),
+              )).guard
+        const image = yield* nativeEffect(() => Clipboard.getImageAsync({ format: 'png' }))
+        if (!image) throw new Error('No image found on the clipboard.')
+        if (!ownership.current.mounted || ownership.current.generation !== generation)
+          throw new Error('The conversation changed before the image was pasted.')
+        const data = clipboardImageData(image.data)
+        const file = new File(Paths.cache, `clipboard-${randomUUID()}.png`)
+        try {
+          yield* nativeEffect(() => file.write(data, { encoding: 'base64' }))
+          yield* uploadAssets(
+            [{ uri: file.uri, name: 'clipboard.png', mimeType: 'image/png' }],
+            undefined,
+            false,
+            undefined,
+            guard,
+            generation,
+          )
+        } finally {
+          if (file.exists) file.delete()
+        }
+      }),
+    ).finally(() => {
+      uploading.current = false
+      setPasting(false)
+    })
+  }
   return {
     edit,
     editor: imageEditor.editor,
-    busy,
+    busy: busy || pasting,
     error,
     pick,
+    pasteImage,
     select,
     upload,
     uploadContext,

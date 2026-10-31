@@ -1,4 +1,9 @@
+import {
+  projectDirectorySchema,
+  projectContentSearchSchema,
+} from '../../scm/repositories/project-browser.js'
 import { sshAddressSchema } from './ssh-address.js'
+import { localCommitsSchema } from '../../scm/local-commits.js'
 import { remoteDesktopSessionSchema } from '../remote-desktop.js'
 import { peerConfigSchema, peerRelayIdentitySchema, peerRelayProviderSchema } from './peer.js'
 import { projectTransferSchema } from '../../scm/repositories/project-transfer.js'
@@ -151,6 +156,7 @@ export const snapshotSchema = mutableStruct({
   autoProjectModelSelection: Schema.optional(taskModelSelectionSchema),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
   permissionPolicySupported: Schema.optional(Schema.Boolean),
+  secretReferencesSupported: Schema.optional(Schema.Boolean),
   workspaceReconciliationSupported: Schema.optional(Schema.Boolean),
   taskListUndoSupported: Schema.optional(Schema.Literal(true)),
   queueRestoreReceiptsSupported: Schema.optional(Schema.Literal(true)),
@@ -160,7 +166,12 @@ export const snapshotSchema = mutableStruct({
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
   fullTurnSettingsSupported: Schema.optional(Schema.Boolean),
+  /** Messages and queue edits accept `plan`, enforced as a read-only turn. */
+  planModeSupported: Schema.optional(Schema.Literal(true)),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
+  promptQueueStagingSupported: Schema.optional(Schema.Boolean),
+  /** Automatic additions can preserve a pause made by another client. */
+  queuePausePreservationSupported: Schema.optional(Schema.Literal(true)),
   /** Queued model/reasoning choices become thread defaults when their turn starts. */
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
@@ -366,6 +377,12 @@ export const responses = {
     ok: Schema.Boolean,
     pending: Schema.optional(Schema.Boolean),
   }),
+  queueAction: mutableStruct({
+    ok: Schema.Boolean,
+    duplicateMessageId: Schema.optional(Schema.String),
+    queueMessageIds: Schema.optional(mutableArray(Schema.String)),
+    recovered: Schema.optional(Schema.Boolean),
+  }),
   pairCode: mutableStruct({
     peer: Schema.optional(peerConfigSchema),
     addresses: Schema.optional(
@@ -392,16 +409,27 @@ export const responses = {
   files: mutableStruct({
     files: taskSchema.fields.files,
   }),
+  localCommits: localCommitsSchema,
   branchDiff: mutableStruct({
     files: taskSchema.fields.files,
     omitted: mutableArray(Schema.String),
     base: Schema.String,
   }),
+  projectDirectory: projectDirectorySchema,
+  projectContentSearch: projectContentSearchSchema,
   projectFileList: mutableStruct({
     files: mutableArray(Schema.String),
     truncated: Schema.optional(Schema.Boolean),
   }),
-  projectFile: mutableStruct({ path: Schema.String, contents: Schema.String }),
+  projectFile: mutableStruct({
+    path: Schema.String,
+    contents: Schema.String,
+    size: Schema.optional(Schema.Number),
+    complete: Schema.optional(Schema.Boolean),
+    truncated: Schema.optional(Schema.Boolean),
+    startLine: Schema.optional(Schema.Number),
+    hasMore: Schema.optional(Schema.Boolean),
+  }),
   gitActionState: mutableStruct({
     dirty: Schema.Boolean,
     branch: Schema.String,

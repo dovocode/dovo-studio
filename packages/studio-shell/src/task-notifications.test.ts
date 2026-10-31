@@ -9,6 +9,7 @@ import {
 import {
   taskNotificationEvents,
   taskNotificationStates,
+  enqueueTaskNotices,
   type TaskState,
 } from './task-notifications'
 
@@ -76,7 +77,7 @@ it('retains the destination for task and automation notifications', () => {
   expect(events.map((event) => event.target)).toEqual([task.target, run.target])
 })
 
-it('notifies in the main conversation for child approvals and waits for question escalation', () => {
+function fixture() {
   const profile = runtimeProfile(
     { address: 'http://server.lan:8787', token: 'notification-test-device-token' },
     'Server',
@@ -128,6 +129,11 @@ it('notifies in the main conversation for child approvals and waits for question
     pulls: null,
     pullError: null,
   }
+  return { runtime, snapshot, profile }
+}
+
+it('notifies in the main conversation for child approvals and waits for question escalation', () => {
+  const { runtime, snapshot, profile } = fixture()
   const before = taskNotificationStates([runtime])
   snapshot.questions.push(
     decode(pendingQuestionSchema, {
@@ -163,4 +169,121 @@ it('notifies in the main conversation for child approvals and waits for question
       (event) => event.target.entityId,
     ),
   ).toEqual(['parent'])
+})
+
+it('notifies separately for new approvals and questions while earlier requests still wait', () => {
+  const { runtime, snapshot } = fixture()
+  snapshot.approvals.push({
+    id: 'approval-1',
+    taskId: 'child',
+    title: 'First',
+    detail: '',
+    createdAt: '',
+  })
+  const before = taskNotificationStates([runtime])
+  snapshot.approvals.push({
+    id: 'approval-2',
+    taskId: 'parent',
+    title: 'Second',
+    detail: '',
+    createdAt: '',
+  })
+  snapshot.questions.push(
+    decode(pendingQuestionSchema, {
+      id: 'approval-2',
+      taskId: 'child',
+      createdAt: '',
+      prompt: {
+        title: 'Question',
+        questions: [{ id: 'choice', header: 'Choice', question: 'Which?' }],
+      },
+    }),
+  )
+  const current = taskNotificationStates([runtime])
+  const events = taskNotificationEvents(before, current)
+  expect(events).toHaveLength(2)
+  expect(new Set(events.map((event) => event.key)).size).toBe(2)
+  expect(events.every((event) => event.target.entityId === 'parent')).toBe(true)
+  expect(taskNotificationEvents(current, current)).toEqual([])
+  snapshot.approvals.shift()
+  expect(taskNotificationEvents(current, taskNotificationStates([runtime]))).toEqual([])
+  const disconnected = taskNotificationStates([{ ...runtime, connected: false }])
+  expect(taskNotificationEvents(current, disconnected)).toEqual([])
+  expect(taskNotificationEvents(disconnected, taskNotificationStates([runtime]))).toEqual([])
+})
+
+it('retains individual delegated request identities and gates unavailable watches', () => {
+  const { runtime, snapshot } = fixture()
+  const input = {
+    id: 'request',
+    runtimeId: 'remote',
+    taskId: 'remote-child',
+    threadTitle: 'Worker',
+    title: 'Review',
+    kind: 'approval' as const,
+  }
+  const watch = {
+    runtimeId: 'paired',
+    threadId: 'child',
+    computerName: 'Remote',
+    relation: 'spawned' as const,
+    delegated: true,
+    status: 'watching' as const,
+    offline: false,
+    paused: false,
+    snapshot: {
+      title: 'Worker',
+      revision: '1',
+      phase: 'needs-input' as const,
+      attention: ['approval'],
+      watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+      humanInputs: [input],
+    },
+  }
+  snapshot.workspace.tasks[1]!.threadWatches = [watch]
+  const before = taskNotificationStates([runtime])
+  watch.snapshot.humanInputs.push({ ...input, id: 'second' })
+  const current = taskNotificationStates([runtime])
+  expect(taskNotificationEvents(before, current)).toEqual([
+    expect.objectContaining({
+      kind: 'input',
+      target: expect.objectContaining({ entityId: 'parent' }),
+    }),
+  ])
+  const parentKey = JSON.stringify([runtime.profile.id, 'parent'])
+  expect(current.get(parentKey)?.inputIds).toHaveLength(2)
+  for (const gate of ['offline', 'paused'] as const) {
+    watch[gate] = true
+    expect(taskNotificationStates([runtime]).get(parentKey)?.needsInput).toBe(false)
+    watch[gate] = false
+  }
+})
+
+it('queues all attention events in order, suppresses the active destination and bounds retention', () => {
+  const states = (running: boolean) =>
+    new Map(
+      ['one', 'two', 'three'].map((id) => [
+        id,
+        state({
+          title: id,
+          running,
+          target: { runtimeId: 'computer', viewId: 'tasks', entityId: id },
+        }),
+      ]),
+    )
+  const events = taskNotificationEvents(states(true), states(false))
+  const queue = enqueueTaskNotices([], events, events[1]!.target)
+  expect(queue.map((notice) => notice.title)).toEqual(['one · Finished', 'three · Finished'])
+  const more = enqueueTaskNotices(queue, [events[1]!])
+  expect(more[0]).toBe(queue[0])
+  expect(more.map((notice) => notice.target.entityId)).toEqual(['one', 'three', 'two'])
+  expect(
+    enqueueTaskNotices(more, [], events[0]!.target).map((notice) => notice.target.entityId),
+  ).toEqual(['three', 'two'])
+  expect(
+    enqueueTaskNotices(
+      [],
+      Array.from({ length: 70 }, () => events[0]!),
+    ),
+  ).toHaveLength(50)
 })

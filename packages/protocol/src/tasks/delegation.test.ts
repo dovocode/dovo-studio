@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import type { Task, Subagent } from '../index.js'
+import { decode } from '../shared/schema.js'
 import {
   taskFamilyIds,
   taskFamilyInputIds,
@@ -8,7 +9,18 @@ import {
   taskFamilyWorking,
   taskFamilyRunToken,
   taskRemoteHumanInputs,
+  subagentSpawnSchema,
 } from './delegation.js'
+
+it('rejects misspelled permission fields at the delegation request boundary', () => {
+  const input = { taskId: 'parent', key: 'review', name: 'Review', prompt: 'Inspect files' }
+  expect(() => decode(subagentSpawnSchema, { ...input, permissions: 'read-only' })).toThrow(
+    /permissions/,
+  )
+  expect(decode(subagentSpawnSchema, { ...input, permission: 'read-only' })).toMatchObject({
+    permission: 'read-only',
+  })
+})
 
 const task = (id: string, parentTaskId?: string): Task => ({
   id,

@@ -22,7 +22,6 @@ import { MobileFileReview } from '../../review/file-review'
 import { Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { pullFilePatch, type PullDetail } from '@dovo/protocol'
-import { Sheet } from '../../../ui/layout/sheet'
 import { Icon } from '../../../ui/controls/icon'
 import { pullFragment } from './pull-destination'
 import { Action } from '../../../ui/controls/action'
@@ -64,7 +63,6 @@ export function PullChanges({
   const [kind, setKind] = useState<FileKind | undefined>(undefined)
   const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [wrapLines, setWrapLines] = useState(false)
-  const [options, setOptions] = useState(false)
   const [feedbackPath, setFeedbackPath] = useState('')
   const [controlsHeight, setControlsHeight] = useState(88)
   const { headSha, baseSha } = detail.pull
@@ -224,7 +222,6 @@ export function PullChanges({
             busy={review.busy}
             error={review.error}
             onRetry={review.reload}
-            onOptions={() => setOptions(true)}
           />
         </View>
         {file.previousPath && (
@@ -314,11 +311,16 @@ export function PullChanges({
           />
         </View>
       )}
-      {options && (
-        <Sheet title="File actions" presentation="dialog" onClose={() => setOptions(false)}>
-          <MobileOrganizeReview review={review} onOrganized={() => setRelated(true)} />
-        </Sheet>
-      )}
+      <View style={{ paddingHorizontal: 12 }}>
+        <MobileOrganizeReview
+          onOpenFile={(path) => {
+            setKind(undefined)
+            setSelected(path)
+          }}
+          review={review}
+          onOrganized={() => setRelated(true)}
+        />
+      </View>
     </View>
   )
 }

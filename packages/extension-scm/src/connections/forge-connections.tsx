@@ -1,8 +1,16 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { validationMessages, parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
+import {
+  validationMessages,
+  parseAgentEnvironment,
+  formatAgentEnvironment,
+  defaultSecretReference,
+  secretReferenceProviders,
+  type AgentSecretReference,
+} from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { CliProfilePicker } from './cli-profile-picker'
 import { GithubConnectionStatus } from './github-connection-status'
+import { SecretReferenceFields } from './secret-reference-fields'
 import { useEffect, useRef } from 'react'
 import { Link2, LoaderCircle, Plus, Save } from 'lucide-react'
 import {
@@ -126,14 +134,20 @@ function ConnectionForm({
     formatAgentEnvironment(value?.cliEnv),
   )
   const [tokenEnv, setTokenEnv] = useApplicationState(value?.tokenEnv ?? '')
+  // Saved references are host-private; a replacement is only sent when the user enters one.
+  const [secret, setSecret] = useApplicationState<AgentSecretReference | undefined>(undefined)
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const running = useRef(false)
-  const retainsToken =
-    value?.credential === 'token' &&
-    value.provider === provider &&
+  const sameAccount =
+    value?.provider === provider &&
     value.baseUrl === baseUrl.trim().replace(/\/+$/, '') &&
     value.username === (username.trim() || undefined)
+  const retainsToken = sameAccount && value?.credential === 'token'
+  const retainedSecretName =
+    sameAccount && value?.credential === 'reference'
+      ? secretReferenceProviders.find((item) => item.id === value.secretProvider)?.name
+      : undefined
   let githubHost = ''
   try {
     githubHost = new URL(baseUrl).hostname
@@ -189,6 +203,7 @@ function ConnectionForm({
                 tokenEnv: tokenEnv.trim(),
               }
             : {}),
+          ...(credential === 'reference' && secret ? { secret } : {}),
         })
         if (!parsed.success) {
           setError(validationMessages(parsed.error)[0] ?? 'Check the connection details.')
@@ -200,6 +215,7 @@ function ConnectionForm({
         void request('/api/scm/connections/save', parsed.data, forgeConnectionSchema)
           .then(() => {
             setToken('')
+            setSecret(undefined)
             onDone()
           })
           .catch((error: unknown) =>
@@ -230,6 +246,7 @@ function ConnectionForm({
               setToken('')
               setUsername('')
               setCliProfile('')
+              setSecret(undefined)
               setCredential(chosen === 'github' ? 'gh' : chosen === 'gitlab' ? 'token' : 'cli')
               setError('')
             }}
@@ -329,9 +346,19 @@ function ConnectionForm({
                   disabled={busy || !connected}
                   value={credential}
                   onValueChange={(next) => {
-                    if (next === 'token' || next === 'environment' || next === 'cli') {
+                    if (
+                      next === 'token' ||
+                      next === 'environment' ||
+                      next === 'cli' ||
+                      (next === 'reference' && provider === 'bitbucket')
+                    ) {
                       setCredential(next)
                       setToken('')
+                      setSecret(
+                        next === 'reference' && !retainedSecretName
+                          ? defaultSecretReference('onepassword')
+                          : undefined,
+                      )
                     }
                   }}
                 >
@@ -344,6 +371,9 @@ function ConnectionForm({
                     )}
                     <SelectItem value="token">API token</SelectItem>
                     <SelectItem value="environment">Runtime environment variable</SelectItem>
+                    {provider === 'bitbucket' && (
+                      <SelectItem value="reference">Secret manager reference</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </FormField>
@@ -379,6 +409,44 @@ function ConnectionForm({
                   own credential helper for fj/tea.
                 </p>
               </>
+            ) : credential === 'reference' ? (
+              secret ? (
+                <>
+                  <SecretReferenceFields
+                    value={secret}
+                    onChange={setSecret}
+                    disabled={busy || !connected}
+                  />
+                  {retainedSecretName && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="justify-self-start"
+                      onClick={() => setSecret(undefined)}
+                    >
+                      Keep saved {retainedSecretName} reference
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <div className="grid gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {retainedSecretName
+                      ? `${retainedSecretName} reference saved on this runtime. It is not shown on other devices.`
+                      : 'Enter the secret manager reference for this account.'}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="justify-self-start"
+                    onClick={() => setSecret(defaultSecretReference('onepassword'))}
+                  >
+                    {retainedSecretName ? 'Replace reference' : 'Add reference'}
+                  </Button>
+                </div>
+              )
             ) : credential === 'token' ? (
               <FormField label={retainsToken ? 'Replace token (optional)' : 'API token'}>
                 <Input
@@ -413,7 +481,9 @@ function ConnectionForm({
                     : 'Allow access to the repositories, issues and pipeline actions you use. Add user read access to browse repositories and identify your review requests.'}{' '}
                 {credential === 'environment'
                   ? 'Set the variable on the runtime host and restart it.'
-                  : 'The token stays on this runtime and is never returned to clients.'}
+                  : credential === 'reference'
+                    ? 'The runtime reads the token with its own secret manager login and never returns the token or reference to clients. A rejected token or an explicit refresh reads the reference again.'
+                    : 'The token stays on this runtime and is never returned to clients.'}
               </p>
             )}
           </>
@@ -580,7 +650,9 @@ function ConnectionsContent({
                         ? connection.tokenEnv
                         : connection.credential === 'cli'
                           ? `CLI · ${connection.cliProfile || connection.cliTool || 'az'}`
-                          : 'Token saved'}
+                          : connection.credential === 'reference'
+                            ? `${secretReferenceProviders.find((item) => item.id === connection.secretProvider)?.name ?? 'Secret manager'} reference`
+                            : 'Token saved'}
                 </p>
                 {connection.provider === 'github' && (
                   <div className="mt-3 grid gap-3">

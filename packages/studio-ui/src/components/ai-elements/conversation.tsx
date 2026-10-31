@@ -1,4 +1,5 @@
 import { reducedMotion } from '@dovo/studio-core'
+import { createReadingPositionCache, readingPositionOffset } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/conversation.tsx.
 import {
@@ -10,6 +11,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -25,16 +27,19 @@ export function ConversationContent({
   ...props
 }: ComponentProps<typeof StickToBottom.Content>) {
   const ready = useContext(HistoryReady)
+  const positioned = useContext(HistoryPositioned)
   return (
     <SharedConversationContent
       {...props}
       className={className}
       // Keep scroll measurements available while the initial position settles.
-      style={ready ? style : { ...style, visibility: 'hidden' }}
+      style={ready && positioned ? style : { ...style, visibility: 'hidden' }}
     />
   )
 }
 const HistoryReady = createContext(true)
+const HistoryPositioned = createContext(true)
+const readingPositions = createReadingPositionCache()
 /** Mount the latest content before allowing old turns to enter the render window. */
 export function ConversationHistory({
   children,
@@ -43,6 +48,11 @@ export function ConversationHistory({
   onReady,
   active = true,
   settled = false,
+  positionKey,
+  navigationKey,
+  hasEarlier = false,
+  loadingEarlier = false,
+  onRestoreAnchor,
 }: {
   children: ReactNode
   onLoadEarlier?: () => void
@@ -50,19 +60,40 @@ export function ConversationHistory({
   onReady?: () => void
   active?: boolean
   settled?: boolean
+  positionKey?: string
+  navigationKey?: string
+  hasEarlier?: boolean
+  loadingEarlier?: boolean
+  onRestoreAnchor?: (id: string | undefined) => void
 }) {
-  const { scrollToBottom, scrollRef, escapedFromLock } = useStickToBottomContext()
+  const { scrollToBottom, scrollRef, escapedFromLock, stopScroll } = useStickToBottomContext()
   const [ready, setReady] = useState(false)
+  const [positioned, setPositioned] = useState(false)
+  const restoring = useRef(false)
+  const cancelRestoration = useRef<(() => void) | undefined>(undefined)
+  const callbacks = useRef({
+    onLoadEarlier,
+    onRestoreAnchor,
+    hasEarlier,
+    loadingEarlier,
+    navigationKey,
+  })
+  callbacks.current = { onLoadEarlier, onRestoreAnchor, hasEarlier, loadingEarlier, navigationKey }
   const previous = useRef({ active, settled })
   useEffect(() => {
     const before = previous.current
     previous.current = { active, settled }
     // Reopening an already mounted thread restores following just like a fresh visit.
-    if (active && (!before.active || (before.settled && !settled)))
+    if (!positionKey && active && (!before.active || (before.settled && !settled)))
       void scrollToBottom({ animation: 'instant' })
-  }, [active, settled, scrollToBottom])
+  }, [active, settled, scrollToBottom, positionKey])
   useEffect(() => {
     let disposed = false
+    if (callbacks.current.navigationKey) {
+      setReady(true)
+      onReady?.()
+      return
+    }
     void Promise.resolve(scrollToBottom({ animation: 'instant' })).then(() => {
       if (!disposed) {
         setReady(true)
@@ -73,6 +104,118 @@ export function ConversationHistory({
       disposed = true
     }
   }, [scrollToBottom, onReady])
+  useLayoutEffect(() => {
+    if (!ready || !active) return
+    const root = scrollRef.current
+    if (!root) return
+    const saved = positionKey ? readingPositions.read(positionKey) : undefined
+    let cancelled = false
+    let frame: number | undefined
+    let captureFrame: number | undefined
+    let attempts = 0
+    let stable = 0
+    const navigation = callbacks.current.navigationKey
+    const finish = () => {
+      if (cancelled) return
+      cancelled = true
+      restoring.current = false
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      callbacks.current.onRestoreAnchor?.(undefined)
+      setPositioned(true)
+    }
+    cancelRestoration.current = finish
+    restoring.current = !!saved && !saved.atEnd && !navigation
+    setPositioned(!restoring.current)
+    const capture = () => {
+      if (!positionKey || restoring.current || !root.getClientRects().length) return
+      const top = root.getBoundingClientRect().top
+      const anchors = root.querySelectorAll<HTMLElement>('[data-conversation-anchor]')
+      let start = 0
+      let end = anchors.length
+      while (start < end) {
+        const middle = (start + end) >>> 1
+        if (anchors[middle].getBoundingClientRect().bottom <= top) start = middle + 1
+        else end = middle
+      }
+      const anchor = anchors[start]
+      readingPositions.remember(positionKey, {
+        anchorId: anchor?.id,
+        anchorOffset: anchor ? anchor.getBoundingClientRect().top - top : 0,
+        scrollOffset: root.scrollTop,
+        atEnd: root.scrollHeight - root.clientHeight - root.scrollTop <= 80,
+      })
+    }
+    const captureLater = () => {
+      if (captureFrame !== undefined) return
+      captureFrame = requestAnimationFrame(() => {
+        captureFrame = undefined
+        capture()
+      })
+    }
+    const restore = () => {
+      frame = undefined
+      if (cancelled || !saved || !restoring.current) return
+      if (callbacks.current.navigationKey !== navigation) {
+        finish()
+        return
+      }
+      const anchor = saved.anchorId ? document.getElementById(saved.anchorId) : null
+      if (!anchor || !root.contains(anchor)) {
+        if (callbacks.current.hasEarlier) {
+          if (!callbacks.current.loadingEarlier) callbacks.current.onLoadEarlier?.()
+          return
+        }
+        root.scrollTop = saved.scrollOffset
+        finish()
+        return
+      }
+      const measured = anchor.getBoundingClientRect().top - root.getBoundingClientRect().top
+      const desired = readingPositionOffset(root.scrollTop, measured, saved.anchorOffset)
+      attempts++
+      if (Math.abs(desired - root.scrollTop) > 1) {
+        stable = 0
+        root.scrollTop = desired
+      } else stable++
+      if (stable >= 3 || attempts >= 60) {
+        finish()
+        return
+      }
+      frame = requestAnimationFrame(restore)
+    }
+    const schedule = () => {
+      if (restoring.current && !cancelled && frame === undefined)
+        frame = requestAnimationFrame(restore)
+    }
+    const navigate = () => {
+      if (restoring.current) finish()
+    }
+    const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+    const interactionRoot = root.parentElement ?? root
+    for (const event of events) interactionRoot.addEventListener(event, navigate, { passive: true })
+    root.addEventListener('scroll', captureLater, { passive: true })
+    const observer = new MutationObserver(schedule)
+    observer.observe(root, { childList: true, subtree: true })
+    if (restoring.current) {
+      stopScroll()
+      callbacks.current.onRestoreAnchor?.(saved?.anchorId)
+      schedule()
+    } else if (navigation) stopScroll()
+    else if (saved?.atEnd) void scrollToBottom({ animation: 'instant' })
+    return () => {
+      capture()
+      cancelled = true
+      restoring.current = false
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      if (captureFrame !== undefined) cancelAnimationFrame(captureFrame)
+      observer.disconnect()
+      if (cancelRestoration.current === finish) cancelRestoration.current = undefined
+      for (const event of events) interactionRoot.removeEventListener(event, navigate)
+      root.removeEventListener('scroll', captureLater)
+    }
+  }, [ready, active, positionKey, scrollRef, stopScroll, scrollToBottom])
+  useLayoutEffect(() => {
+    if (navigationKey) cancelRestoration.current?.()
+  }, [navigationKey])
   useEffect(() => {
     const root = scrollRef.current
     if (!escapedFromLock || !onReadingHistory || !root) return
@@ -93,7 +236,11 @@ export function ConversationHistory({
     loadNearStart()
     return () => root.removeEventListener('scroll', loadNearStart)
   }, [ready, onLoadEarlier, scrollRef])
-  return <HistoryReady.Provider value={ready}>{children}</HistoryReady.Provider>
+  return (
+    <HistoryReady.Provider value={ready}>
+      <HistoryPositioned.Provider value={positioned}>{children}</HistoryPositioned.Provider>
+    </HistoryReady.Provider>
+  )
 }
 export function useConversationHistory() {
   const ready = useContext(HistoryReady)

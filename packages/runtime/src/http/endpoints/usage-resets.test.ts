@@ -124,3 +124,75 @@ it('checks credits from a verified account configuration without starting a thre
     await f.cleanup()
   }
 })
+
+it('resolves reset credentials before recording an attempt and preserves references in storage', async () => {
+  const token = randomBytes(32).toString('base64url'),
+    f = await fixture()
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  try {
+    vi.stubEnv('DOVO_TEST_RESET_HOME', '/reset-account')
+    runtime.services.store.update(() => ({
+      ...f.workspace,
+      agents: f.workspace.agents.map((agent) => ({
+        ...agent,
+        envSecrets: {
+          CODEX_HOME: { provider: 'environment' as const, reference: 'DOVO_TEST_RESET_HOME' },
+        },
+      })),
+      planLimits: [
+        {
+          provider: 'codex',
+          window: 'Session',
+          agentId: 'agent',
+          account: { id: 'verified', label: 'Account' },
+          usedPercent: 40,
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    }))
+    const call = (action: string) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/usage/resets/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId: 'agent',
+          accountId: 'verified',
+          idempotencyKey: 'secret-attempt',
+        }),
+      })
+    vi.mocked(readResetCredits).mockResolvedValue({
+      credits: { supported: true, availableCount: 1, credits: [] },
+      limits: [],
+    })
+    expect((await call('read')).status).toBe(200)
+    expect(readResetCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ env: { CODEX_HOME: '/reset-account' }, envSecrets: undefined }),
+      expect.objectContaining({ id: 'verified' }),
+    )
+    vi.stubEnv('DOVO_TEST_RESET_HOME', undefined)
+    runtime.services.agents.secretReferences.refresh()
+    const before = vi.mocked(consumeResetCredit).mock.calls.length
+    expect((await call('consume')).ok).toBe(false)
+    expect(consumeResetCredit).toHaveBeenCalledTimes(before)
+    expect(
+      runtime.services.db
+        .prepare('SELECT value FROM documents WHERE id = ?')
+        .get('usage-reset:verified'),
+    ).toBeUndefined()
+    vi.stubEnv('DOVO_TEST_RESET_HOME', '/reset-account-two')
+    runtime.services.agents.secretReferences.refresh()
+    vi.mocked(consumeResetCredit).mockResolvedValue('reset')
+    expect((await call('consume')).status).toBe(200)
+    expect(consumeResetCredit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ env: { CODEX_HOME: '/reset-account-two' } }),
+      expect.objectContaining({ id: 'verified' }),
+      undefined,
+      'secret-attempt',
+    )
+    expect(JSON.stringify(runtime.services.store.get())).not.toContain('/reset-account')
+  } finally {
+    vi.unstubAllEnvs()
+    await runtime.close()
+    await f.cleanup()
+  }
+})

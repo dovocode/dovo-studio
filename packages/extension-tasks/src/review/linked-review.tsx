@@ -11,11 +11,29 @@ import { useEffect, useState } from 'react'
 import { useWorkspace, responses, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
 import { SavedFilePreview } from '../files/saved-file-preview'
+import { LocalCommitPicker } from './local-commit-picker'
+import type { LocalCommit } from '@dovo/protocol'
 import { CheckpointDiff } from '../chat/thread/turn-checkpoint'
 
 export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: string }) {
-  const { request, workspace, setWorkspace, connected } = useWorkspace()
+  const { request, workspace, setWorkspace, connected, activeRuntimeId, connection } =
+    useWorkspace()
   const [turnId, setTurnId] = useState('')
+  const [commit, setCommit] = useState<LocalCommit | null>(null)
+  const commitKey = JSON.stringify([
+    activeRuntimeId,
+    connection?.address,
+    connection?.token,
+    task.id,
+    checkoutId,
+    commit?.sha,
+  ])
+  const [commitResult, setCommitResult] = useState<{
+    key: string
+    files: ChangedFile[]
+    error: string
+  }>()
+  const commitDiff = commitResult?.key === commitKey ? commitResult : undefined
   const [path, setPath] = useState('')
   const [live, setLive] = useState<ChangedFile[]>([])
   const [error, setError] = useState('')
@@ -25,8 +43,15 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
     ?.find((turn) => turn.id === turnId)
     ?.checkpoint?.linked?.find((item) => item.checkoutId === checkoutId)
   const sourceFiles = useMemo(
-    () => (turnId ? (history ? checkpointFiles(history) : []) : live),
-    [turnId, history, live],
+    () =>
+      commit
+        ? (commitDiff?.files ?? [])
+        : turnId
+          ? history
+            ? checkpointFiles(history)
+            : []
+          : live,
+    [commit, commitDiff, turnId, history, live],
   )
   const fingerprints = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, changedFileFingerprint(file)])),
@@ -38,7 +63,8 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
       kind: 'task',
       taskId: task.id,
       checkoutId,
-      source: turnId ? 'turn' : 'working',
+      source: commit ? 'commit' : turnId ? 'turn' : 'working',
+      commitSha: commit?.sha,
       turnId: turnId || undefined,
     },
     reviewVersion,
@@ -62,7 +88,7 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
   const name =
     workspace.repositories.find((repo) => repo.id === link?.repositoryId)?.name ?? 'Linked checkout'
   useEffect(() => {
-    if (turnId || !connected) return
+    if (turnId || commit || !connected) return
     let active = true
     setLoading(true)
     setError('')
@@ -83,7 +109,32 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
     return () => {
       active = false
     }
-  }, [request, task.id, checkoutId, turnId, connected, refresh])
+  }, [request, task.id, checkoutId, turnId, commit, connected, refresh])
+  useEffect(() => {
+    if (!commit || !connected) return
+    let active = true
+    setCommitResult(undefined)
+    void request(
+      '/api/tasks/commits/changes',
+      { id: task.id, checkoutId, sha: commit.sha },
+      responses.files,
+    ).then(
+      (result) => {
+        if (active) setCommitResult({ key: commitKey, files: result.files, error: '' })
+      },
+      (cause: unknown) => {
+        if (active)
+          setCommitResult({
+            key: commitKey,
+            files: [],
+            error: cause instanceof Error ? cause.message : String(cause),
+          })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [request, task.id, checkoutId, commit, commitKey, connected, refresh])
   return (
     <section
       className="flex min-h-0 flex-1 flex-col gap-3 p-3"
@@ -92,13 +143,20 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
       <div className="flex flex-wrap items-center gap-2">
         <ChoicePicker
           aria-label="Linked change history"
-          value={turnId}
+          value={commit ? `commit:${commit.sha}` : turnId}
           onValueChange={(id) => {
+            if (id.startsWith('commit:')) return
+            setCommit(null)
             setTurnId(id)
             setPath('')
           }}
         >
           <option value="">Current changes</option>
+          {commit && (
+            <option value={`commit:${commit.sha}`}>
+              Commit {commit.sha.slice(0, 8)} · {commit.subject}
+            </option>
+          )}
           {task.turns
             ?.filter((turn) =>
               turn.checkpoint?.linked?.some((item) => item.checkoutId === checkoutId),
@@ -109,10 +167,20 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
               </option>
             ))}
         </ChoicePicker>
+        <LocalCommitPicker
+          taskId={task.id}
+          checkoutId={checkoutId}
+          disabled={!!task.example}
+          onSelect={(selected) => {
+            setCommit(selected)
+            setTurnId('')
+            setPath('')
+          }}
+        />
         <Button
           size="sm"
           variant="ghost"
-          disabled={!connected || loading || !!turnId}
+          disabled={!connected || (!commit && loading) || !!turnId}
           onClick={() => setRefresh((value) => value + 1)}
         >
           Reload
@@ -139,13 +207,28 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
         </Button>
         <span className="text-xs text-muted-foreground">{files.length} files</span>
       </div>
+      {commit && (
+        <p className="text-xs text-muted-foreground">
+          {commit.subject} · Read-only changes against the first parent.
+        </p>
+      )}
+      {commit && !commitDiff && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading commit changes…
+        </p>
+      )}
+      {commit && commitDiff?.error && (
+        <p role="alert" className="text-xs text-destructive">
+          {commitDiff.error}
+        </p>
+      )}
       {(error || history?.error) && (
         <p role="alert" className="text-xs text-destructive">
           {error || history?.error}
         </p>
       )}
-      {loading && <p className="text-xs text-muted-foreground">Loading changes…</p>}
-      <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
+      {!commit && loading && <p className="text-xs text-muted-foreground">Loading changes…</p>}
+      <OrganizeReview onOpenFile={setPath} review={review} onOrganized={() => setRelated(true)} />
       <FileReviewControls
         files={files}
         selected={file?.path ?? ''}
@@ -179,7 +262,8 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
                 file={file}
                 taskId={task.id}
                 turnId={turnId || undefined}
-                working={!turnId}
+                commitSha={commit?.sha}
+                working={!turnId && !commit}
                 checkoutId={checkoutId}
               />
             ) : (

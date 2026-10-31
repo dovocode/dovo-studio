@@ -1,5 +1,6 @@
 import { ConnectionProgress } from './connection-progress'
 import { runtimeSyncStatus, retryRuntimeSync, runtimeComputerName } from '@dovo/protocol'
+import { attachmentUploadSchema, decodeResult } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Alert, View } from 'react-native'
@@ -22,7 +23,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
 
   const runtime = useRuntime()
   const account = useOptionalMobileAccount()
-  const { busy, act } = useAction()
+  const { busy, error, act } = useAction()
   const [visibleFor, setVisibleFor] = useState<string | null>(null)
   const [attempted, setAttempted] = useApplicationState(false)
   const [details, setDetails] = useApplicationState(false)
@@ -114,6 +115,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
       />
       {details && (
         <Sheet title="Connection" onClose={() => setDetails(false)}>
+          {!!error && (
+            <Text selectable style={styles.error}>
+              {error}
+            </Text>
+          )}
           <Text style={styles.text}>
             {revoked.length
               ? 'This phone is no longer paired with a computer below. It was removed on that computer, or the runtime was reset. Pair it again from Devices in Settings.'
@@ -123,6 +129,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
           </Text>
           {saved.map((entry) => {
             const status = runtime.mutationStatus(entry.profile)
+            const uploads = runtime.attachmentUploads(entry.profile)
             return (
               <View key={`saved:${entry.profile.id}`} style={{ gap: 6 }}>
                 <Text style={styles.title}>
@@ -133,43 +140,106 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                     {status.error}
                   </Text>
                 )}
-                <Action
-                  label="Retry saved actions"
-                  disabled={busy || !entry.connected}
-                  onPress={() =>
-                    status.reviewRequired
-                      ? Alert.alert(
-                          `Retry saved actions on ${runtimeComputerName(entry)}?`,
-                          'Access to this computer was renewed. Some saved actions may already have run and retrying could repeat them. Check the computer before continuing. Messages keep their original delivery identity.',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Retry actions',
-                              onPress: () => act(() => runtime.retryMutations(entry.profile, true)),
-                            },
-                          ],
-                        )
-                      : act(() => runtime.retryMutations(entry.profile))
-                  }
-                />
-                <Action
-                  label="Discard saved actions"
-                  disabled={busy}
-                  onPress={() =>
-                    Alert.alert(
-                      'Discard saved actions?',
-                      'Actions already applied on the computer will remain applied. Unsent actions will be removed from this phone.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Discard',
-                          style: 'destructive',
-                          onPress: () => act(() => runtime.discardMutations(entry.profile)),
-                        },
-                      ],
-                    )
-                  }
-                />
+                {status.pending > uploads.length && (
+                  <Action
+                    label="Retry saved actions"
+                    disabled={busy || !entry.connected}
+                    onPress={() =>
+                      status.reviewRequired
+                        ? Alert.alert(
+                            `Retry saved actions on ${runtimeComputerName(entry)}?`,
+                            'Access to this computer was renewed. Some saved actions may already have run and retrying could repeat them. Check the computer before continuing. Messages keep their original delivery identity.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Retry actions',
+                                onPress: () =>
+                                  act(() => runtime.retryMutations(entry.profile, true)),
+                              },
+                            ],
+                          )
+                        : act(() => runtime.retryMutations(entry.profile))
+                    }
+                  />
+                )}
+                {status.pending > uploads.length && (
+                  <Action
+                    label="Discard saved actions"
+                    disabled={busy}
+                    onPress={() =>
+                      Alert.alert(
+                        'Discard saved actions?',
+                        'Actions already applied on the computer will remain applied. Unsent actions will be removed from this phone.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Discard',
+                            style: 'destructive',
+                            onPress: () => act(() => runtime.discardMutations(entry.profile)),
+                          },
+                        ],
+                      )
+                    }
+                  />
+                )}
+                {uploads.map((item) => {
+                  const parsed = decodeResult(attachmentUploadSchema, item.input)
+                  const input = parsed.success ? parsed.data : null
+                  const title = input
+                    ? entry.snapshot?.workspace.tasks.find((task) => task.id === input.taskId)
+                        ?.title
+                    : undefined
+                  return (
+                    <View key={item.id} style={{ gap: 6 }}>
+                      <Text selectable>
+                        {input
+                          ? `${input.name}${title ? ` · ${title}` : ''}${input.queuedMessageId ? ' · queued edit' : ''}`
+                          : 'Saved attachment'}
+                      </Text>
+                      <Text style={styles.muted}>
+                        Attach to the task’s current draft or discard the upload. Existing files
+                        remain unchanged.
+                      </Text>
+                      <Action
+                        label="Attach to current task draft"
+                        disabled={busy || !entry.connected || !input}
+                        onPress={() =>
+                          Alert.alert(
+                            'Attach saved file?',
+                            'This adds the saved file to the current draft of its original task. It does not modify a queued message.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Attach',
+                                onPress: () =>
+                                  act(() => runtime.recoverAttachment(entry.profile, item.id)),
+                              },
+                            ],
+                          )
+                        }
+                      />
+                      <Action
+                        label="Discard saved upload"
+                        disabled={busy || !entry.connected}
+                        onPress={() =>
+                          Alert.alert(
+                            'Discard saved upload?',
+                            'This permanently abandons this upload. An attachment already saved in a message or draft is not removed.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Discard',
+                                style: 'destructive',
+                                onPress: () =>
+                                  act(() => runtime.discardAttachment(entry.profile, item.id)),
+                              },
+                            ],
+                          )
+                        }
+                      />
+                    </View>
+                  )
+                })}
               </View>
             )
           })}

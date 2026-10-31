@@ -460,3 +460,70 @@ it('rejects a backup with a different account fingerprint even before any public
   expect(target.state.saved).toBe(key)
   expect(target.write).not.toHaveBeenCalled()
 })
+
+it('uses a five minute settled cadence while foreground refresh bypasses it', async () => {
+  vi.useFakeTimers()
+  const broker = recoveryBroker(newSharingKey())
+  const client = managedClient(device(), broker)
+  const recovery = vi.spyOn(client, 'syncKey')
+  let active = true
+  const stop = client.startSync(() => active)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(client.recoveryState).toBe('ready')
+  expect(recovery).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(299_999)
+  expect(recovery).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(recovery).toHaveBeenCalledTimes(2)
+  active = false
+  client.refreshSync()
+  await vi.advanceTimersByTimeAsync(900_000)
+  expect(recovery).toHaveBeenCalledTimes(2)
+  active = true
+  client.refreshSync()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(recovery).toHaveBeenCalledTimes(3)
+  stop()
+  stop()
+  await vi.advanceTimersByTimeAsync(900_000)
+  expect(recovery).toHaveBeenCalledTimes(3)
+})
+
+it('backs off failures to five minutes and permits immediate explicit retries', async () => {
+  vi.useFakeTimers()
+  const request = vi.fn<SyncRequest>().mockRejectedValue(new Error('offline'))
+  const client = clientFor(device(), request)
+  const stop = client.startSync()
+  await vi.advanceTimersByTimeAsync(0)
+  for (const delay of [10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000]) {
+    const calls = request.mock.calls.length
+    await vi.advanceTimersByTimeAsync(delay - 1)
+    expect(request).toHaveBeenCalledTimes(calls)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(request).toHaveBeenCalledTimes(calls + 1)
+  }
+  const calls = request.mock.calls.length
+  await expect(client.syncKey()).rejects.toThrow('offline')
+  expect(request).toHaveBeenCalledTimes(calls + 1)
+  stop()
+})
+
+it('does not rearm an in-flight background sync after its last owner releases', async () => {
+  vi.useFakeTimers()
+  let complete!: (value: unknown) => void
+  const request = vi.fn<SyncRequest>(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve
+      }),
+  )
+  const client = clientFor(device(), request)
+  const stop = client.startSync()
+  await vi.advanceTimersByTimeAsync(0)
+  stop()
+  stop()
+  complete({ keyHash: null, requests: [], answer: null })
+  await vi.advanceTimersByTimeAsync(900_000)
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(vi.getTimerCount()).toBe(0)
+})

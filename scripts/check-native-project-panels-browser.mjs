@@ -9,7 +9,11 @@ const action = `export const Action=({label,onPress,disabled})=><button disabled
 const theme = `export const useTheme=()=>({mode:'dark',colors:{background:'#101014',text:'#efeff2',muted:'#92929e',border:'#303036',accent:'#7297ff',success:'#43c983',error:'#fa7185',elevated:'#26262d'},styles:{text:{color:'#efeff2'},muted:{color:'#92929e',fontSize:13},error:{color:'#fa7185'},row:{display:'flex',flexDirection:'row',flexWrap:'wrap',gap:8},card:{border:'1px solid #303036',padding:12,borderRadius:12},separator:{borderTop:'1px solid #303036'}}});`
 const mocks = {
   '@dovo/studio-core': `export {useTaskWaiting} from '${root}/packages/studio-core/src/use-task-waiting.ts';`,
-  'react-native': controls,
+  'react-native':
+    controls +
+    `export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`,
+  '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
+  './harness-settings': `export const HarnessSettings=()=> <p>Model controls</p>;`,
   'expo-router': `export const router={push:href=>window.route=href};`,
   'lucide-react-native': `export * from 'lucide-react';`,
   'expo-crypto': `let n=0;export const randomUUID=()=>'00000000-0000-4000-8000-'+String(++n).padStart(12,'0');`,
@@ -37,6 +41,7 @@ const mocks = {
   '../../scm/pulls/detail/pull-detail': `export const PullDetail=({repositoryId,number,onBack})=><div>Native PR #{number} {repositoryId}<button onClick={onBack}>Back to linked PRs</button></div>;`,
   './task-source': `export const TaskSource=()=>null;`,
   './commit-section': `export const CommitSection=()=> <p>Commit controls</p>;`,
+  '../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   '../../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
 }
@@ -49,13 +54,13 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';impor
 import {TaskProjectSheet} from '${mobile}/tasks/detail/task-project-sheet';import {TaskLinkedPullSheet} from '${mobile}/tasks/detail/task-linked-pull-sheet';import {TaskThreadBehavior} from '${mobile}/tasks/detail/task-thread-behavior';import {ProjectIconSettings} from '${mobile}/scm/connections/project-icon-settings';import {PipelineJobs} from '${mobile}/scm/pulls/detail/pipeline-details';
 window.calls=[];window.alerts=[];window.refreshes=0;
 const repo={id:'repo',name:'Dovo Studio',path:'/studio',branch:'main',gitIdentity:'github.com/dovocode/dovo-studio',actions:[]};
-const task={id:'thread',title:'Fix sync',repositoryId:'repo',agentId:'',status:'done',createdAt:'',execution:'local',files:[],messages:[],example:false,pullRequest:{number:7,url:'https://github.com/dovocode/dovo-studio/pull/7',repositoryUrl:'https://github.com/dovocode/dovo-studio',title:'Fix reconnection'},linkedPullRequests:[{number:8,url:'https://github.com/foreign/project/pull/8',repositoryUrl:'https://github.com/foreign/project',title:'Foreign project'}]};
+const task=window.task={id:'thread',title:'Fix sync',repositoryId:'repo',agentId:'',status:'done',createdAt:'',execution:'local',files:[],messages:[],example:false,pullRequest:{number:7,url:'https://github.com/dovocode/dovo-studio/pull/7',repositoryUrl:'https://github.com/dovocode/dovo-studio',title:'Fix reconnection'},linkedPullRequests:[{number:8,url:'https://github.com/foreign/project/pull/8',repositoryUrl:'https://github.com/foreign/project',title:'Foreign project'}]};
 window.setPullStatuses=()=>{task.pullStatus={number:7,url:task.pullRequest.url,state:'open',checks:'failed',checkedAt:'',title:'Fix reconnection',failedChecks:['Browser tests']};task.pullStatuses=[{number:8,url:task.linkedPullRequests[0].url,state:'merged',checks:'passed',checkedAt:''}]};
 const read=async(path,input)=>{window.calls.push({path,input});if(path==='/api/scm/open-targets')return{targets:['zed','finder']};if(path==='/api/tasks/waiting')return{dependencies:[{kind:'pipeline',repositoryId:'repo',target:'run-1',url:'https://github.com/dovocode/dovo-studio/actions/runs/1',project:'Studio',label:'Pipeline 1'}],related:[]};return{ok:true}};
 window.runtime={connected:true,profile:{id:'mac',name:'MacBook',connection:{address:'http://mac.local',token:'paired'}},snapshot:{workspace:{repositories:[repo],tasks:[task]}},read,call:read,refresh:async()=>window.refreshes++,callEffect:(path,input)=>Effect.promise(()=>read(path,input))};
 const jobs=[{id:'test',name:'Tests',status:'success',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Run tests',status:'success'}]},{id:'release',name:'Release',status:'in_progress',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Sign app',status:'in_progress'}]}];
 const graph=[{id:'check',name:'Tests',needs:[],jobIds:['test']},{id:'publish',name:'Release',needs:['check'],jobIds:['release']}];
-function App(){const[page,setPage]=useState('project');window.show=setPage;return page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Project information <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet onProjects={()=>window.projectsLinked=true} inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet onProjects={()=>window.projectsLinked=true} task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
+function App(){const[page,setPage]=useState('project');const[,render]=useState(0);window.setContextUsage=usage=>{task.contextUsage=usage;render(n=>n+1)};window.show=setPage;return page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Thread info <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet onProjects={()=>window.projectsLinked=true} inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet onProjects={()=>window.projectsLinked=true} task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
@@ -95,10 +100,65 @@ try {
     errors.push(e.message)
     console.error('Native fixture:', e.message)
   })
+  await page.route('http://thread-info.test/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<html></html>' }),
+  )
+  await page.goto('http://thread-info.test')
   await page.setContent(
     '<style>body{margin:0;background:#101014;color:#efeff2;font-family:system-ui}button{color:inherit;background:#26262d;border:1px solid #40404a;border-radius:8px;min-height:36px;padding:8px}input,select{display:block;max-width:100%}#app{width:100vw}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
+
+  await page.getByText('Not reported', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.setContextUsage({ used: 170000, limit: 200000, updatedAt: new Date().toISOString() }),
+  )
+  await page.getByText('85% used', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+  const usageChoice = page.getByRole('switch', { name: 'Context usage', exact: true })
+  await usageChoice.uncheck()
+  await page.getByLabel('Context usage', { exact: true }).first().waitFor()
+  assert.equal(await page.getByText('85% used', { exact: true }).count(), 0)
+  await page.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadInfoSections.usage ===
+      false,
+  )
+  await page.getByRole('switch', { name: 'Project scripts', exact: true }).uncheck()
+  assert.equal(
+    await page.getByRole('button', { name: 'Add project script', exact: true }).count(),
+    0,
+  )
+  await page.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadInfoSections.scripts ===
+      false,
+  )
+  await page.reload()
+  await page.setContent(
+    '<style>body{margin:0;background:#101014;color:#efeff2;font-family:system-ui}button{color:inherit;background:#26262d;border:1px solid #40404a;border-radius:8px;min-height:36px;padding:8px}input,select{display:block;max-width:100%}#app{width:100vw}</style><div id="app"></div>',
+  )
+  await page.addScriptTag({ content: bundle.outputFiles[0].text })
+  await page.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('[role="switch"][aria-label="Context usage"]')?.disabled === false,
+  )
+  assert.equal(await usageChoice.isChecked(), false)
+  assert.equal(
+    await page.getByRole('switch', { name: 'Project scripts', exact: true }).isChecked(),
+    false,
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Add project script', exact: true }).count(),
+    0,
+  )
+  await page.getByRole('button', { name: 'Reset to default', exact: true }).click()
+  await page.getByRole('button', { name: 'Done customizing thread info', exact: true }).click()
+  await page.evaluate(() =>
+    window.setContextUsage({ used: 42000, updatedAt: new Date().toISOString() }),
+  )
+  await page.getByText('42k tokens', { exact: true }).waitFor()
+  assert.equal(await page.getByText(/% used/).count(), 0)
   const linked = page.getByLabel('Linked pull requests', { exact: true })
   await linked.waitFor()
   assert.equal(

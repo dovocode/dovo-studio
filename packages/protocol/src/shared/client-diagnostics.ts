@@ -8,11 +8,35 @@ export type ClientDiagnosticContext = {
   surface?: string
 }
 
+/** Supported credential assignments, headers and embedded JSON; not arbitrary secret detection. */
+export function redactCredentialText(text: string) {
+  return text
+    .replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
+      try {
+        const url = new URL(value)
+        if (!url.username && !url.password) return value
+        url.username = ''
+        url.password = ''
+        return url.href
+      } catch {
+        return value
+      }
+    })
+    .replace(/\b(Bearer|Basic)\s+[^\s,;"']+/gi, '$1 [redacted]')
+    .replace(
+      /(\b(?:[\w.-]*(?:token|secret|password)|(?:proxy-)?authorization|(?:x[-_])?api[-_]?key|ticket|pairing[-_]?code|management[-_]?key|content[-_]?key|signing[-_]?seed)["']?\s*[:=]\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\[redacted\]|[^\s,;&}\]]+)/gi,
+      (_match, prefix: string, value: string) => {
+        const quote = value.startsWith('"') ? '"' : value.startsWith("'") ? "'" : ''
+        return `${prefix}${quote}[redacted]${quote}`
+      },
+    )
+}
+
 /** Keep useful failure context local and remove common credentials before copying or displaying. */
 export function diagnosticMessage(error: unknown) {
   const text = error instanceof Error ? error.message : String(error)
-  return text
-    .replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
+  return redactCredentialText(
+    text.replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
       try {
         const url = new URL(value)
         url.username = ''
@@ -23,13 +47,8 @@ export function diagnosticMessage(error: unknown) {
       } catch {
         return '[address]'
       }
-    })
-    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
-    .replace(
-      /\b((?:access[_-]|refresh[_-]|device[_-])?token|password|secret|authorization|api[_-]?key)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
-      '$1=[redacted]',
-    )
-    .slice(0, 2000)
+    }),
+  ).slice(0, 2000)
 }
 
 export function clientDiagnostic(error: unknown, context: ClientDiagnosticContext = {}) {

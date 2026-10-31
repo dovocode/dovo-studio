@@ -6,12 +6,26 @@ import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { backupRuntimeDatabase } from './backup.js'
 import { acquireProcessLock } from './process-lock.js'
+import { errorMessage } from '../errors.js'
 
 const MAX_BACKUPS = 5
 const MAX_BYTES = 512 * 1024 * 1024
 const AUTOMATIC_RETRY_MS = 60 * 60 * 1000
 const retentionBytes = (newestSize = 0) => Math.max(MAX_BYTES, newestSize * 2)
 const failureSchema = Schema.NullOr(mutableStruct({ at: Schema.String, message: Schema.String }))
+// Verification can create WAL sidecars even for a read-only staged snapshot. Only use this
+// for temporary databases owned by this operation, after all SQLite handles have closed.
+async function removeStagedDatabase(path: string, primaryError?: unknown) {
+  const results = await Promise.allSettled(
+    ['', '-wal', '-shm'].map((suffix) => rm(path + suffix, { force: true })),
+  )
+  const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+  if (errors.length)
+    throw new AggregateError(
+      primaryError === undefined ? errors : [primaryError, ...errors],
+      `${primaryError === undefined ? '' : `${errorMessage(primaryError)}. `}Could not clean staged database files`,
+    )
+}
 export function verifyRuntimeBackup(path: string) {
   const db = new Database(path, { readonly: true, fileMustExist: true })
   try {
@@ -123,7 +137,8 @@ export class RuntimeBackups {
   private async write() {
     // A killed writer may leave partial snapshots. The OS lock proves none is still active.
     for (const name of await readdir(this.directory))
-      if (/^runtime-backup-.*\.sqlite\.partial$/.test(name)) await rm(join(this.directory, name))
+      if (/^runtime-backup-.*\.sqlite\.partial(?:-wal|-shm)?$/.test(name))
+        await rm(join(this.directory, name), { force: true })
     // Keep the last verified backup intact if the replacement cannot fit.
     const source = await stat(this.databasePath)
     const wal = await stat(this.databasePath + '-wal').catch((error: unknown) => {
@@ -137,6 +152,7 @@ export class RuntimeBackups {
       )
     const path = join(this.directory, `runtime-backup-${Date.now()}-${randomUUID()}.sqlite`)
     const temporary = path + '.partial'
+    let failure: unknown
     try {
       await backupRuntimeDatabase(this.databasePath, temporary)
       verifyRuntimeBackup(temporary)
@@ -146,8 +162,11 @@ export class RuntimeBackups {
       await this.pruneEntries()
       await this.saveFailure()
       return { path, size: info.size, createdAt: info.mtime.toISOString() }
+    } catch (error) {
+      failure = error
+      throw error
     } finally {
-      await rm(temporary, { force: true })
+      await removeStagedDatabase(temporary, failure)
     }
   }
   async prune() {
@@ -181,24 +200,30 @@ export async function restoreRuntimeBackup(databasePath: string, source: string)
   verifyRuntimeBackup(source)
   const release = acquireProcessLock(join(dirname(resolve(databasePath)), 'runtime-process.lock'))
   const temporary = databasePath + `.restore-${randomUUID()}`
+  let failure: unknown
   try {
     // Stage the selected source before retention can remove an older in-directory backup.
     await backupRuntimeDatabase(source, temporary)
     verifyRuntimeBackup(temporary)
     const backups = new RuntimeBackups(databasePath)
     // Keep the pre-restore database even if its conversation records cannot hydrate.
-    try {
-      await backups.create()
-    } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'SQLITE_CANTOPEN'))
-        throw error
-    }
+    const existing = await stat(databasePath).catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    })
+    if (existing) await backups.create()
     await rm(databasePath + '-wal', { force: true })
     await rm(databasePath + '-shm', { force: true })
     await rename(temporary, databasePath)
     return { restored: databasePath, backup: source }
+  } catch (error) {
+    failure = error
+    throw error
   } finally {
-    await rm(temporary, { force: true })
-    release()
+    try {
+      await removeStagedDatabase(temporary, failure)
+    } finally {
+      release()
+    }
   }
 }

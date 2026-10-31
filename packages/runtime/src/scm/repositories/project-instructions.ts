@@ -5,6 +5,7 @@ import { createPatch } from 'diff'
 import { HttpError } from '../../errors.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import { safeFile } from './paths.js'
+import { withFileWrite } from './file-writes.js'
 
 type Name = 'AGENTS.md' | 'CLAUDE.md'
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -44,19 +45,22 @@ export class ProjectInstructions {
     return { diff: createPatch(name, current.text, text), changed: current.text !== text }
   }
   async save(repositoryId: string, name: Name, text: string, version: string) {
-    const preview = await this.preview(repositoryId, name, text, version)
-    if (!preview.changed) return { version }
     const path = await this.file(repositoryId, name)
-    const temp = join(dirname(path), `.dovo-${randomUUID()}.tmp`)
-    try {
-      await writeFile(temp, text, { flag: 'wx', mode: 0o644 })
-      // Recheck immediately before replacement; another editor may have changed the file.
-      if ((await this.read(repositoryId, name)).version !== version)
-        throw new HttpError(409, 'Instructions changed on disk. Reload before saving.')
-      await rename(temp, path)
-    } finally {
-      await rm(temp, { force: true })
-    }
-    return { version: digest(text) }
+    return withFileWrite(path, async () => {
+      const preview = await this.preview(repositoryId, name, text, version)
+      if (!preview.changed) return { version }
+      await this.file(repositoryId, name)
+      const temp = join(dirname(path), `.dovo-${randomUUID()}.tmp`)
+      try {
+        await writeFile(temp, text, { flag: 'wx', mode: 0o644 })
+        // Recheck immediately before replacement; another editor may have changed the file.
+        if ((await this.read(repositoryId, name)).version !== version)
+          throw new HttpError(409, 'Instructions changed on disk. Reload before saving.')
+        await rename(temp, path)
+      } finally {
+        await rm(temp, { force: true })
+      }
+      return { version: digest(text) }
+    })
   }
 }

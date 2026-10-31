@@ -647,3 +647,191 @@ it('rebuilds expired malformed Codex dedupe baselines so valid copies are not lo
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+const smallTranscriptLimits = {
+  lineBytes: 1024,
+  cacheBytes: 16 * 1024,
+  files: 2,
+  resultBytes: 8 * 1024,
+  idleMs: 1000,
+}
+it('discards oversized partial and complete rows, then resumes at the next line across refreshes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-line-budget-'))
+  const source = join(directory, 'sessions')
+  const path = join(source, 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  const usage = new UsageTranscripts(smallTranscriptLimits)
+  try {
+    await mkdir(source)
+    await writeFile(path, 'x'.repeat(8192))
+    const partial = await usage.read([agent], new Set(), true)
+    expect(partial.notices.join(' ')).toContain('usage may be incomplete')
+    const scan = usage['cache'].get(await realpath(path))!
+    expect(scan.trailingBytes).toBe(0)
+    expect(scan.trailing).toEqual([])
+    await appendFile(path, 'x'.repeat(8192) + '\n' + JSON.stringify(codexEvent(15)) + '\n')
+    const recovered = await usage.read([agent], new Set(), true)
+    expect(recovered.records).toHaveLength(1)
+    await appendFile(path, 'x'.repeat(8192) + '\r\n' + JSON.stringify(codexEvent(30)) + '\n')
+    const next = await usage.read([agent], new Set(), true)
+    expect(next.records).toHaveLength(2)
+    expect(next).toEqual(
+      await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true),
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('bounds retained scan count and bytes without truncating usage results', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-cache-budget-'))
+  const source = join(directory, 'sessions')
+  try {
+    await mkdir(source)
+    for (let index = 0; index < 4; index++)
+      await writeFile(join(source, `${index}.jsonl`), JSON.stringify(codexEvent(15)) + '\n')
+    const agent = cliAgent('codex', directory)
+    const usage = new UsageTranscripts(smallTranscriptLimits)
+    expect((await usage.read([agent], new Set(), true)).records).toHaveLength(4)
+    expect(usage['cache'].size).toBe(2)
+    const tiny = new UsageTranscripts({ ...smallTranscriptLimits, cacheBytes: 1, resultBytes: 1 })
+    expect((await tiny.read([agent], new Set(), true)).records).toHaveLength(4)
+    expect(tiny['cache'].size).toBe(0)
+    expect(tiny['completed']).toBeUndefined()
+    expect((await tiny.read([agent], new Set())).records).toHaveLength(4)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('releases cached results and transcript buffers after inactivity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-idle-budget-'))
+  try {
+    await mkdir(join(directory, 'sessions'))
+    await writeFile(join(directory, 'sessions', 'a.jsonl'), JSON.stringify(codexEvent(15)) + '\n')
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const usage = new UsageTranscripts(smallTranscriptLimits)
+    const agent = cliAgent('codex', directory)
+    const initial = await usage.read([agent], new Set())
+    expect(usage['cache'].size).toBe(1)
+    await vi.advanceTimersByTimeAsync(1001)
+    expect(usage['cache'].size).toBe(0)
+    expect(usage['completed']).toBeUndefined()
+    expect(await usage.read([agent], new Set())).toEqual(initial)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('reuses admitted scans on repeated full walks larger than the cache capacity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-cache-churn-'))
+  const source = join(directory, 'sessions')
+  try {
+    await mkdir(source)
+    for (let index = 0; index < 4; index++)
+      await writeFile(join(source, `${index}.jsonl`), JSON.stringify(codexEvent(15)) + '\n')
+    const usage = new UsageTranscripts(smallTranscriptLimits)
+    const agent = cliAgent('codex', directory)
+    const first = await usage.read([agent], new Set(), true)
+    vi.mocked(createReadStream).mockClear()
+    expect(await usage.read([agent], new Set(), true)).toEqual(first)
+    expect(createReadStream).toHaveBeenCalledTimes(2) // Only the two non-resident files.
+    vi.mocked(createReadStream).mockClear()
+    await usage.read([agent], new Set(['codex:unrelated-new-session']), true)
+    expect(createReadStream).toHaveBeenCalledTimes(2)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+it('streams compressed Codex histories, caches unchanged archives and fully reparses rewrites', async () => {
+  const { zstdCompressSync, constants } = await import('node:zlib')
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-zstd-'))
+  const sessions = join(directory, 'sessions')
+  const path = join(sessions, 'session.jsonl')
+  const agent: Agent = {
+    id: 'codex',
+    name: 'Codex',
+    provider: 'codex',
+    model: '',
+    instructions: '',
+    endpoint: '',
+    permission: 'ask',
+    env: { CODEX_HOME: directory },
+  }
+  const text = (tokens: number) =>
+    [
+      { type: 'session_meta', payload: { id: 'compressed-session' } },
+      {
+        type: 'event_msg',
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { total_tokens: tokens },
+            last_token_usage: { input_tokens: tokens, output_tokens: 0 },
+          },
+        },
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n') + '\n'
+  try {
+    await mkdir(sessions)
+    const original = text(10)
+    await writeFile(path, original)
+    await writeFile(`${path}.zst`, zstdCompressSync(original))
+    await writeFile(`${path}.zst.bak`, zstdCompressSync(text(999)))
+    const reader = new UsageTranscripts()
+    const both = await reader.read([agent], new Set(), true)
+    expect(both.records).toHaveLength(1)
+    expect(both.records[0].turn.tokens).toBe(10)
+    await rm(path)
+    vi.mocked(createReadStream).mockClear()
+    expect((await reader.read([agent], new Set(), true)).records).toEqual(both.records)
+    expect(createReadStream).not.toHaveBeenCalled()
+    expect((await new UsageTranscripts().read([agent], new Set(), true)).records).toEqual(
+      both.records,
+    )
+    expect(
+      (await reader.read([agent], new Set(['codex:compressed-session']), true)).records,
+    ).toEqual([])
+    await writeFile(`${path}.zst`, zstdCompressSync(text(20)))
+    expect((await reader.read([agent], new Set(), true)).records[0].turn.tokens).toBe(20)
+    // Concatenated checksummed frames must work even when stream chunks split every header.
+    const frames = Buffer.concat([
+      zstdCompressSync(original, { params: { [constants.ZSTD_c_checksumFlag]: 1 } }),
+      zstdCompressSync('\n'),
+    ])
+    await writeFile(`${path}.zst`, frames)
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    vi.mocked(createReadStream).mockImplementationOnce((path, options) =>
+      fs.createReadStream(path, {
+        ...(typeof options === 'object' ? options : {}),
+        highWaterMark: 1,
+      }),
+    )
+    expect((await reader.read([agent], new Set(), true)).records).toEqual(both.records)
+    const archive = zstdCompressSync(text(30))
+    for (const bytes of [
+      Buffer.alloc(0),
+      Buffer.from('invalid zstd'),
+      ...[1, 2, 5, archive.length - 1].map((length) => archive.subarray(0, length)),
+    ]) {
+      await writeFile(`${path}.zst`, bytes)
+      const failed = await reader.read([agent], new Set(), true)
+      expect(failed.records).toEqual([])
+      expect(failed.notices).toContain('codex: a transcript could not be read.')
+    }
+    await writeFile(`${path}.zst`, zstdCompressSync('x'.repeat(5000) + '\n' + original))
+    const bounded = new UsageTranscripts({
+      lineBytes: 1024,
+      cacheBytes: 100000,
+      files: 10,
+      resultBytes: 100000,
+      idleMs: 1000,
+    })
+    const result = await bounded.read([agent], new Set(), true)
+    expect(result.records).toEqual(both.records)
+    expect(result.notices.some((notice) => notice.includes('exceeding 1024 bytes'))).toBe(true)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})

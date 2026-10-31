@@ -1,6 +1,22 @@
 import { expect, it } from 'vite-plus/test'
 import { contextUsage, turnTokenCounter } from './context-usage'
 
+it('ignores synthetic error usage without discarding genuine zero context', () => {
+  const assistant = (model: string, input: number) => ({
+    type: 'assistant',
+    parent_tool_use_id: null,
+    message: { id: model, model, usage: { input_tokens: input, output_tokens: 0 } },
+  })
+  let current = contextUsage('claude', 'assistant', assistant('claude', 85_000))
+  current = contextUsage('claude', 'assistant', assistant('<synthetic>', 0)) ?? current
+  expect(current).toEqual({ used: 85_000 })
+  expect(contextUsage('claude', 'assistant', assistant('claude', 0))).toEqual({ used: 0 })
+  const counter = turnTokenCounter('claude', () => 'session')
+  counter.accept('assistant', assistant('<synthetic>', 0))
+  expect(counter.model()).toBeUndefined()
+  expect(counter.mixedModels()).toBe(false)
+})
+
 it('sums Claude steering segments and counts child messages once across results', () => {
   const counter = turnTokenCounter('claude', () => 'session')
   counter.accept('assistant', {

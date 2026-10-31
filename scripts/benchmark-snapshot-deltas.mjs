@@ -24,6 +24,9 @@ async function compile(source) {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(process.cwd() + '/package.json');",
+    },
     write: false,
   })
   return import(

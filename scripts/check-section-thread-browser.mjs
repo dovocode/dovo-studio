@@ -54,7 +54,8 @@ const mocks = {
     'export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
   './settings-nav': 'export const SettingsNav=()=>null;',
   './title-bar': 'export const TitleBar=()=>null;',
-  './command-palette': 'export const CommandPalette=()=>null;',
+  './command-palette':
+    'export const CommandPalette=({open})=>open?<div role="dialog" aria-label="Command palette" tabIndex={0}>Palette</div>:null;',
   './task-launcher': 'export const TaskLauncher=()=>null;',
 }
 const built = await build({
@@ -62,16 +63,17 @@ const built = await build({
     resolveDir: root + 'packages/studio-ui',
     loader: 'tsx',
     contents: `
-      import {useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
+      import {useState,useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
       import {Workbench} from '../studio-shell/src/workbench';
+      import {TerminalCloseDialog} from '../extension-tasks/src/terminal/terminal-close-dialog';
       import {useStudioHost,useWorkspace} from '@dovo/studio-core';
       import {useComposerDraft} from '../extension-tasks/src/chat/composer/use-composer-draft';
       window.allowSettings=true;
       function Composer({task}){const {controller,update}=useComposerDraft(task);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={text} onChange={e=>update(e.target.value)}/>;}
-      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output>{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
+      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const [closing,setClosing]=useState(false);const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output><button onClick={()=>setClosing(true)}>Close terminal tab</button>{closing&&<TerminalCloseDialog labels={['Terminal 1']} onCancel={()=>setClosing(false)} onConfirm={()=>setClosing(false)} onRestoreFocus={()=>document.querySelector('[aria-label="Message"]')?.focus()}/ >}{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
       function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'settings',title:'Settings',navigationGroup:'settings',order:2,load:async()=>({default:Settings})}]}];
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
       const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions}/>);window.restart();
     `,
   },
@@ -116,6 +118,27 @@ try {
       .getByRole('button', { name, exact: true })
       .click()
   await selected('fresh')
+  for (const modifier of ['Control', 'Meta']) {
+    await page.getByRole('button', { name: 'Close terminal tab' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Close terminal?' })
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: 'Cancel' }).focus()
+    await page.keyboard.press(`${modifier}+/`)
+    await dialog.waitFor()
+    assert.equal(await page.locator('#selected').textContent(), 'fresh')
+    await page.keyboard.press(`${modifier}+k`)
+    assert.equal(await page.getByRole('dialog', { name: 'Command palette' }).count(), 0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    await page.keyboard.press(`${modifier}+/`)
+    await page.getByText('Shortcuts section', { exact: true }).waitFor()
+    await section('Threads')
+    await selected('fresh')
+  }
+  await page.keyboard.press('Control+k')
+  await page.getByRole('dialog', { name: 'Command palette' }).waitFor()
+  await page.keyboard.press('Control+k')
+  assert.equal(await page.getByRole('dialog', { name: 'Command palette' }).count(), 0)
   const setupBar = page.getByRole('button', { name: 'Set up defaults', exact: true })
   await page.evaluate(() => window.configureDefaults({}))
   await setupBar.waitFor()

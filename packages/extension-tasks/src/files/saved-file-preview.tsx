@@ -14,12 +14,14 @@ export function SavedFilePreview({
   file,
   taskId,
   turnId,
+  commitSha,
   checkoutId,
   working = false,
 }: {
   file: ChangedFile
   taskId?: string
   turnId?: string
+  commitSha?: string
   checkoutId?: string
   working?: boolean
 }) {
@@ -32,6 +34,7 @@ export function SavedFilePreview({
     connection?.token,
     taskId,
     turnId,
+    commitSha,
     checkoutId,
     working,
     file.path,
@@ -67,8 +70,8 @@ export function SavedFilePreview({
     let active = true
     if (!taskId) return
     void request(
-      '/api/tasks/file/preview',
-      { id: taskId, path: file.path, turnId, checkoutId, working, full },
+      commitSha ? '/api/tasks/commits/file-preview' : '/api/tasks/file/preview',
+      { id: taskId, path: file.path, turnId, checkoutId, working, full, sha: commitSha },
       filePreviewSchema,
     ).then(
       (result) => {
@@ -87,7 +90,7 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [request, taskId, turnId, checkoutId, working, file.path, key, full, file])
+  }, [request, taskId, turnId, commitSha, checkoutId, working, file.path, key, full, file])
   if (diff) return <CheckpointDiff file={diff} />
   return (
     <div className="space-y-3 p-4 text-xs">

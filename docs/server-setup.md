@@ -102,6 +102,50 @@ written by older versions. If an older installation reports
 restart that service. Reloading alone does not fix an invalid path. Updating or removing the service
 preserves its database and pairings.
 
+### Optional Linux memory-pressure protection
+
+By default, systemd stops a whole service when the kernel kills any one of its processes for memory,
+so a single runaway agent can take the runtime and every other agent down with it. Protection is
+opt-in and changes nothing until you run `enable`:
+
+```sh
+dovo-server service protect preview   # print the drop-in and why, change nothing
+dovo-server service protect enable    # write it and reload systemd; restart later to apply
+dovo-server service protect status    # effective settings, overrides and running scores
+dovo-server service protect disable   # remove Dovo's drop-in only
+```
+
+Use `pnpm server service protect …` from a source checkout. Enable writes one file,
+`~/.config/systemd/user/dovo-server-*.service.d/90-dovo-protect.conf`, marked as Dovo's. Dovo
+refuses to overwrite or remove a file of that name that it did not write, leaves other drop-ins
+alone, never uses sudo and never edits system units. `service remove` also removes this drop-in. The
+drop-in sets:
+
+- `OOMPolicy=continue`, so the runtime and other agents keep running when one process is OOM-killed.
+- `OOMScoreAdjust` at the user manager's own score, when that is lower than the default for user
+  services. This is the lowest score an unprivileged service may request. Linux copies the score
+  into every child, so the service supervisor raises the agents, terminals and tools in the
+  service's own cgroup back to the default score within about two seconds of starting. They can
+  inherit the lower score during that interval. Dovo only lowers the runtime score when unified
+  cgroup membership is readable; cgroup v1 hosts keep their existing score. If the scores cannot be
+  read or there is no difference, the score is left alone. If membership becomes unavailable after
+  enabling, the supervisor returns its own and the runtime's scores to normal.
+- `MemoryLow` only when you pass `--memory-low <size>` (for example `512M`). Dovo picks no size for
+  you. It covers the whole service, agents included, and protects nothing unless an administrator
+  grants protection to every ancestor cgroup; `status` names the first ancestor without it.
+
+Run `service restart` when no work is running to apply the score. This makes losing the runtime less
+likely but does not guarantee it: the kernel can still kill it, and `systemd-oomd`, when active,
+acts on whole cgroups and ignores user-service preferences. It does not protect SSH, Tailscale,
+NetBird or any other system service: a user service cannot configure those, so remote access under
+memory pressure depends on your administrator's settings. HTTP LAN/VPN access, pairing codes and
+device tokens are unchanged.
+
+Runtime readiness diagnostics in Settings also show the runtime's memory, the resident memory of the
+processes it started (Linux only), recent expensive snapshot, history, diff and file operations, and
+heap spike reports with the operations that were running. Heap growth includes concurrent work and
+garbage collection, so the listed operations are leads rather than proof.
+
 ## Homebrew
 
 With [Homebrew](https://brew.sh/) installed, add the tap explicitly (the tap is hosted in the Studio
@@ -214,7 +258,8 @@ agent cannot keep the runtime reachable while the Mac is asleep or logged out.
 
 - Node **24.11 or newer** and the pnpm version pinned in the root `package.json`.
 - This repository and its locked dependencies. Run commands from its root.
-- Git; GitHub CLI (`gh`) and `gh auth login` for GitHub PRs and private GitHub repositories.
+- Git (2.36 or newer for worktree creation); GitHub CLI (`gh`) and `gh auth login` for GitHub PRs
+  and private GitHub repositories.
 - The agents you want to use, installed and authenticated **on the runtime host**, under the same
   operating-system account that runs Dovo. See [agent adapters](#agent-adapters-and-updates).
 - Reachability between client and server: the same LAN or a connected private VPN on both devices.
@@ -851,13 +896,33 @@ complete log retention is required. Server startup and source-update commands al
 before opening a log. Source-build `update.log` files rotate in their release directory. The OS
 journal remains managed by the OS.
 
-Archive and Homebrew update activation now covers stopping, SQLite backup, launcher selection,
-startup and authenticated version verification in one recovery operation. A failed candidate
-restores the old release and database only after the candidate is confirmed stopped. If stopping or
-recovery fails, the error names the retained backup; Dovo does not overwrite a database beneath a
-live process.
+Archive and Homebrew service updates durably record activation before stopping: SQLite backup,
+immutable launcher selection, startup, and the requested remote-release version check share one
+recovery journal (`server-update-transaction.json`). Service restart/update and automatic service
+boot resolve an interrupted activation before opening the database. A failed candidate restores the
+old release and database only after the candidate is confirmed stopped. If stopping or recovery
+fails, the error names the retained backup; Dovo does not overwrite a database beneath a live
+process.
 
 Homebrew activation keeps the previous Cellar installation by disabling automatic install cleanup
 during the upgrade. Recovery pins the service to that previous launcher; keep it until the updated
 runtime is confirmed healthy. After a failed upgrade, select a verified replacement explicitly with
 `dovo-server service update --launcher /path/to/bin/dovo-server`.
+
+A killed updater may leave the service stopped, especially after macOS unregisters the old job.
+Resume with the updated package's `dovo-server service restart --data-dir /path/to/data`. When the
+selected package is available,
+`/path/to/data/service-launcher service restart --data-dir /path/to/data` uses that selection. Do
+not delete the journal or start a different older package against a pending migration. Package
+journals use version 2; source journals retain version 1. Older source-journal CLIs refuse the
+package record; use the updated package CLI to finish recovery.
+
+During Homebrew preparation, the service stays pinned to the previous resolved Cellar launcher. If
+preparation is interrupted, that pin remains even when the public Homebrew path still points at the
+previous version: the orphaned package-manager command may change it later. Keep the retained
+package installed until a service update succeeds. `service status` and `doctor` report retained or
+missing launchers. Successful activation restores the package-manager path only when it resolves to
+the verified candidate, so later ordinary package-manager upgrades continue to work. If the old
+pinned package has been removed, reinstall it before recovery; Dovo does not select another release
+automatically. Failed rollback preserves the journal and backup, and a successful rollback retains
+the candidate database separately. A failure to restart the restored release is reported separately.

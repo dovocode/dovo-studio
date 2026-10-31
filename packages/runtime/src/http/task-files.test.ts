@@ -1,9 +1,11 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, writeFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, symlink, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { decode, taskFileShareSchema } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
+import { runtimeIntegration } from '../testing/integration.js'
+vi.setConfig(runtimeIntegration)
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -290,4 +292,28 @@ it('resolves authorized files for client editors without launching a remote appl
     kind: 'file',
   })
   expect(launch).not.toHaveBeenCalled()
+})
+
+it('previews contained final-component aliases and revalidates grants after alias replacement', async () => {
+  const { directory, origin, share } = await setup()
+  await writeFile(join(directory, 'safe.txt'), 'safe preview')
+  await symlink('safe.txt', join(directory, 'alias.txt'))
+  const response = await share('alias.txt')
+  expect(response.status).toBe(200)
+  const { url } = decode(taskFileShareSchema, await response.json())
+  expect(await (await fetch(origin + url)).text()).toContain('safe preview')
+  expect(await (await fetch(origin + url + '?content=1')).text()).toBe('safe preview')
+  await mkdir(join(directory, '.git'))
+  await writeFile(join(directory, '.git', 'private.txt'), 'Git metadata')
+  await symlink('.git/private.txt', join(directory, 'git.txt'))
+  await symlink('absent.txt', join(directory, 'dangling.txt'))
+  expect((await share('git.txt')).status).toBe(400)
+  expect((await share('dangling.txt')).status).toBe(404)
+  const outside = await mkdtemp(join(tmpdir(), 'dovo-preview-grant-replacement-'))
+  cleanup.push(() => rm(outside, { recursive: true, force: true }))
+  await writeFile(join(outside, 'private.txt'), 'private')
+  await rm(join(directory, 'alias.txt'))
+  await symlink(join(outside, 'private.txt'), join(directory, 'alias.txt'))
+  expect((await share('alias.txt')).status).toBe(400)
+  expect((await fetch(origin + url + '?content=1')).status).toBe(400)
 })

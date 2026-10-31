@@ -12,6 +12,47 @@ import {
   type PendingMessage,
 } from './pending-message'
 
+it('projects batched previews with the same ordering and handoff semantics as individual checks', () => {
+  const message = (id: string) => ({ id, role: 'user' as const, text: id, createdAt: '' })
+  const pending: PendingMessage[] = [
+    { taskId: 't', message: message('new'), state: 'sending' },
+    { taskId: 'other', message: message('foreign'), state: 'saved' },
+    { taskId: 't', message: message('delivered'), state: 'saved' },
+    { taskId: 't', message: message('steering'), state: 'failed' },
+    { taskId: 't', message: message('new'), state: 'failed' },
+  ]
+  for (const status of ['running', 'cancelled'] as const) {
+    const task = {
+      id: 't',
+      status,
+      messages: [message('delivered')],
+      queue: [
+        { ...message('steering'), steering: true },
+        { ...message('delivered'), steering: true },
+      ],
+    }
+    for (let count = 0; count <= pending.length; count++) {
+      const items = pending.slice(0, count)
+      const expected = new Map<string, PendingMessage>()
+      for (const item of items)
+        if (visiblePendingMessage(task, item)) expected.set(item.message.id, item)
+      for (const queued of task.queue)
+        if (
+          queued.steering &&
+          status === 'running' &&
+          !task.messages.some((entry) => entry.id === queued.id)
+        )
+          expected.set(queued.id, {
+            taskId: task.id,
+            message: queued,
+            state: 'sending',
+            destination: 'thread',
+          })
+      expect(visiblePendingMessages(task, items)).toEqual([...expected.values()])
+    }
+  }
+})
+
 it('shows local delivery immediately but removes it on message or queue acknowledgement', () => {
   const task = decode(taskSchema, {
     id: 't',
@@ -222,4 +263,31 @@ it('waits at a paused starter and only shows runnable input at the front', () =>
   expect(
     startingConversationMessage({ ...task, queue: [{ ...paused, paused: false }, ready] })?.id,
   ).toBe('held')
+})
+
+it('keeps staged first prompts and their plan settings in the queue across reconnect', () => {
+  const task = decode(taskSchema, {
+    id: 't',
+    title: 'Task',
+    repositoryId: 'r',
+    agentId: '',
+    status: 'draft',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  expect(pendingMessageDestination(task, 'stage')).toBe('queue')
+  expect(pendingMessageDestination(task, 'queue')).toBe('thread')
+  const pending = savedPendingMessages(task, [
+    {
+      id: 'mutation',
+      path: '/api/tasks/message',
+      method: 'POST',
+      input: { id: 't', messageId: 'staged', text: 'Plan this first', queueOnly: true, plan: true },
+    },
+  ])
+  expect(pending).toMatchObject([{ destination: 'queue', message: { id: 'staged', plan: true } }])
+  expect(pendingMessageQueue(task, pending).map((message) => message.id)).toEqual(['staged'])
 })

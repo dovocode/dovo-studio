@@ -54,6 +54,7 @@ import {
 } from '../../scm/git/worktrees.js'
 import { branchChanges } from '../../scm/work/change-summary.js'
 import { ProjectInstructions } from '../../scm/repositories/project-instructions.js'
+import { repositoryPath } from '../../scm/repositories/paths.js'
 import sharp from 'sharp'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
@@ -65,7 +66,7 @@ import {
   pullCreateSchema,
 } from '@dovo/protocol'
 import { RuntimeServices } from '../../runtime-services.js'
-import { HttpError } from '../../errors.js'
+import { HttpError, runtimeOperation } from '../../errors.js'
 import { body } from '../support/body.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 export function scmRoute(request: IncomingMessage, path: string) {
@@ -211,10 +212,16 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* serviceResult(
             editor.preview(input.repositoryId, input.name, input.text, input.version),
           )
-        if (path === '/api/scm/instructions/save')
-          return yield* serviceResult(
-            editor.save(input.repositoryId, input.name, input.text, input.version),
+        if (path === '/api/scm/instructions/save') {
+          const repo = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
+          if (!repo) throw new HttpError(404, 'Project not found')
+          const cwd = yield* serviceResult(repositoryPath(repo.path))
+          const { text, version } = input
+          return yield* s.tasks.withCheckoutEditEffect(
+            cwd,
+            runtimeOperation(() => editor.save(input.repositoryId, input.name, text, version)),
           )
+        }
       }
       if (method === 'POST' && path === '/api/scm/worktrees/read')
         return yield* listWorktreesEffect(s)
@@ -804,12 +811,14 @@ export function scmRoute(request: IncomingMessage, path: string) {
             files,
           })
         }
-        if (path === '/api/scm/branch-changes')
+        if (path === '/api/scm/branch-changes') {
+          const base = input.taskId ? s.checkouts.branchBase(input.taskId) : undefined
           return yield* serviceResult(
             input.includeWorking === true
-              ? s.git.reviewBranchChangesFiles(cwd)
-              : s.git.branchChangesFiles(cwd),
+              ? s.git.reviewBranchChangesFiles(cwd, base)
+              : s.git.branchChangesFiles(cwd, base),
           )
+        }
         if (path === '/api/scm/apply') {
           const data = decode(
             mutableStruct({
@@ -819,31 +828,34 @@ export function scmRoute(request: IncomingMessage, path: string) {
             }),
             input,
           )
-          yield* serviceResult(s.git.save(cwd, data.path, data.expected, data.contents))
+          yield* s.tasks.withCheckoutEditEffect(
+            cwd,
+            runtimeOperation(() => s.git.save(cwd, data.path, data.expected, data.contents)),
+          )
           return yield* serviceResult({
             ok: true,
           })
         }
         if (path === '/api/scm/stage') {
-          yield* serviceResult(
-            s.git.stage(cwd, decode(maxValue(mutableArray(Schema.String), 200), input.paths)),
+          const paths = decode(maxValue(mutableArray(Schema.String), 200), input.paths)
+          yield* s.tasks.withCheckoutEditEffect(
+            cwd,
+            runtimeOperation(() => s.git.stage(cwd, paths)),
           )
           return yield* serviceResult({
             ok: true,
           })
         }
         if (path === '/api/scm/commit') {
-          return yield* serviceResult({
-            commit: yield* serviceResult(
-              s.git.commit(
-                cwd,
-                decode(
-                  maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
-                  input.message,
-                ),
-              ),
-            ),
-          })
+          const message = decode(
+            maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
+            input.message,
+          )
+          const commit = yield* s.tasks.withCheckoutEditEffect(
+            cwd,
+            runtimeOperation(() => s.git.commit(cwd, message)),
+          )
+          return { commit }
         }
         if (path === '/api/scm/pulls')
           return yield* serviceResult({

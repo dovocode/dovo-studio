@@ -1,0 +1,9 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.dovoshareinbox'
+version = '1.0.0'
+android {
+  namespace 'expo.modules.dovoshareinbox'
+  defaultConfig { versionCode 1; versionName '1.0.0' }
+}

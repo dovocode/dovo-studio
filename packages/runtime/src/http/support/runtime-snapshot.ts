@@ -121,11 +121,12 @@ export function runtimeSnapshot(
       {
         publicTask: (id) => s.store.publicTask(id),
         publicCompleteTasks: (reuse) => s.store.publicCompleteTasks(reuse),
-        publicPagedTask: (summary) => {
-          const page = s.store.historyPage(summary.id)
-          if (!page) throw new Error(`History for ${summary.id} could not be read.`)
-          return pagedSummaryTask(s.db, summary, page)
-        },
+        publicPagedTask: (summary) =>
+          pagedSummaryTask(s.db, summary, () => {
+            const page = s.store.historyPage(summary.id)
+            if (!page) throw new Error(`History for ${summary.id} could not be read.`)
+            return page
+          }),
       },
       {
         overview,
@@ -199,17 +200,17 @@ export function runtimeSnapshot(
                 iconOverride: retargeted ? undefined : repo.iconOverride,
                 gitIdentityError: undefined,
               }
-              const migrated = migrateProjectIcons(s.defaults.get(), [confirmed], {
+              const projectDefaults = s.defaults.get()
+              const migrated = migrateProjectIcons(projectDefaults, [confirmed], {
                 updatedAt: Date.now(),
                 changeId: randomUUID(),
               })
               if (migrated) s.defaults.save(migrated, false)
               const sharedIcon =
                 gitIdentity &&
-                s.defaults
-                  .get()
-                  .scopedSettings?.shared.find((entry) => entry.key === `project:${gitIdentity}`)
-                  ?.value.projectIcon !== undefined
+                (migrated ?? projectDefaults).scopedSettings?.shared.find(
+                  (entry) => entry.key === `project:${gitIdentity}`,
+                )?.value.projectIcon !== undefined
               const iconOverride = retargeted || sharedIcon ? undefined : repo.iconOverride
               if (
                 repo.gitIdentity !== gitIdentity ||
@@ -257,10 +258,11 @@ export function runtimeSnapshot(
         }),
       { concurrency: 4 },
     )
+    const currentDefaults = s.defaults.get()
     const enrichedWorkspace = projectWorkspace(
       s,
       storedWorkspace,
-      repositories.map((repository) => sharedProjectPresentation(s.defaults.get(), repository)),
+      repositories.map((repository) => sharedProjectPresentation(currentDefaults, repository)),
     )
     const selectedWorkspace = enrichedWorkspace
     return yield* serviceResult({
@@ -286,9 +288,10 @@ export function runtimeSnapshot(
         process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop'
           ? canUpdateDesktop()
           : canUpdateServer(),
-      defaults: decode(runtimeDefaultsSchema, s.store.publicValue(s.defaults.get())),
+      defaults: decode(runtimeDefaultsSchema, s.store.publicValue(currentDefaults)),
       scopedAgentsSupported: true,
       permissionPolicySupported: true,
+      secretReferencesSupported: true,
       workspaceReconciliationSupported: true,
       taskListUndoSupported: true,
       checkedDraftMoveSupported: true,
@@ -298,7 +301,10 @@ export function runtimeSnapshot(
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,
       queuedTurnSettingsSupported: true,
+      promptQueueStagingSupported: true,
+      queuePausePreservationSupported: true,
       fullTurnSettingsSupported: true,
+      planModeSupported: true,
       persistentTurnModelsSupported: true,
       projectTransfersSupported: true,
       projectWorktreeTransfersSupported: true,

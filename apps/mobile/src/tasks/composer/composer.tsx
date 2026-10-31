@@ -8,11 +8,16 @@ import { draftStashScope } from '@dovo/protocol'
 import { contentColumn } from '../../ui/layout/content-column'
 import { ThreadStartModes } from '../creation/thread-start-modes'
 import { TurnModelControls } from './turn-model-controls'
-import { applyTurnSettings, selectedCatalogModel, serviceTierValue } from '@dovo/protocol'
+import {
+  applyTurnSettings,
+  planModeIssue,
+  selectedCatalogModel,
+  serviceTierValue,
+} from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
-import { checkpointCanUndo } from '@dovo/protocol'
+import { checkpointUndoTurn } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
@@ -61,8 +66,10 @@ import {
 } from '@dovo/protocol'
 import { Effect, Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
+import type { BackgroundStart } from '../conversation/state/use-actions'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
+import { QueueMenu } from './queue-menu'
 import { ComposerField } from './composer-field'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
@@ -81,10 +88,12 @@ export function Composer({
   task,
   onAsk,
   onSelectRemote,
+  onStartInBackground,
   renderAbove,
   queuedMessages,
 }: {
   task: Task
+  onStartInBackground?: (configuration: Task, attemptId: string) => BackgroundStart
   queuedMessages?: ReactNode
   renderAbove?: (setup: ReactNode, startModes?: ReactNode) => ReactNode
   onAsk?: (chatId?: string) => void
@@ -124,11 +133,17 @@ export function Composer({
     checkoutEditable,
     hasInput,
     canSend,
+    submitting,
+    defaultSendMode,
+    stageSupported,
     patch,
     editing,
     cancelEdit,
     turnSettings,
     setTurnSettings,
+    plan,
+    planSupported,
+    setPlan,
   } = actions
   const nextTurnControls =
     !!snapshot?.queuedTurnSettingsSupported &&
@@ -361,10 +376,12 @@ export function Composer({
           },
         ],
       )
-    const turn = [...(task.turns ?? [])]
-      .reverse()
-      .find((item) => item.status !== 'running' && checkpointCanUndo(item.checkpoint))
-    if (!turn) return Alert.alert('Nothing to undo', 'No turn has file changes left to undo.')
+    const turn = checkpointUndoTurn(task.turns ?? [])
+    const turnId =
+      (turn?.checkpoint?.restorePending ? turn.id : task.historyTotals?.pendingUndoTurnId) ??
+      turn?.id ??
+      task.historyTotals?.undoableTurnId
+    if (!turnId) return Alert.alert('Nothing to undo', 'No turn has file changes left to undo.')
     Alert.alert(
       'Undo the last turn’s changes?',
       'Those files go back to how they were before it. Your current files are saved first, so you can redo this.',
@@ -377,7 +394,7 @@ export function Composer({
             commandAction.act(() =>
               commandCall(
                 '/api/tasks/turn/restore',
-                { id: task.id, turnId: turn.id, direction: 'undo' },
+                { id: task.id, turnId, direction: 'undo' },
                 responses.ok,
               ),
             ),
@@ -403,40 +420,96 @@ export function Composer({
     !draft.pendingFork &&
     !draft.pendingRestore
   const showFork = hasGit && !!task.repositoryId
-  const messageMenuActions: MenuAction[] = [
-    ...(showFork
-      ? [
+  const showBackgroundStart =
+    !!onStartInBackground && !editing && !task.messages.length && task.status !== 'running'
+  const showMessageMenu =
+    !editing && (task.status === 'running' || stageSupported || showBackgroundStart)
+  const normalSendLabel = defaultSendMode === 'stage' ? 'Add and run queue' : 'Add to queue'
+  const backgroundStartActions: MenuAction[] = showBackgroundStart
+    ? [
+        {
+          title: actions.backgroundSubmitting ? 'Starting in background…' : 'Start in background',
+          label: 'Start in background',
+          icon: 'send' as const,
+          disabled: machineMoving || !canSend || !actions.canStartInBackground || fork.busy,
+          onPress: () => {
+            if (!onStartInBackground) return
+            const configuration = {
+              ...task,
+              draftTurnSettings: actions.turnSettings ?? undefined,
+              draftPlan: actions.plan,
+            }
+            send('queue', (attemptId) => onStartInBackground(configuration, attemptId))
+          },
+        },
+      ]
+    : []
+  const messageMenuActions: MenuAction[] =
+    !stageSupported && task.status !== 'running'
+      ? backgroundStartActions
+      : [
+          ...backgroundStartActions,
+          ...(stageSupported && defaultSendMode !== 'stage'
+            ? [
+                {
+                  title: 'Add without starting',
+                  label: 'Add without starting',
+                  icon: 'queue' as const,
+                  disabled: !canSend || busy,
+                  onPress: () => send('stage'),
+                },
+              ]
+            : []),
+          ...(task.status !== 'running'
+            ? [
+                {
+                  title: normalSendLabel,
+                  label: normalSendLabel,
+                  icon: 'send' as const,
+                  disabled: !canSend || busy || !!task.queue?.[0]?.paused,
+                  onPress: () => send('queue'),
+                },
+              ]
+            : []),
+          ...(showFork
+            ? [
+                {
+                  title: 'Fork',
+                  label: 'Fork',
+                  icon: 'changes' as const,
+                  disabled: !canSend || busy || !!turnSettings || plan,
+                  onPress: fork.start,
+                },
+              ]
+            : []),
           {
-            title: 'Fork',
-            label: 'Fork',
-            icon: 'changes' as const,
-            disabled: !canSend || busy || !!turnSettings,
-            onPress: fork.start,
+            title:
+              task.status === 'running' && defaultSendMode === 'stage'
+                ? 'Add and run queue'
+                : 'Queue follow-up',
+            label:
+              task.status === 'running' && defaultSendMode === 'stage'
+                ? 'Add and run queue'
+                : 'Queue follow-up',
+            icon: 'queue',
+            disabled: !canSend || busy,
+            onPress: () => send('queue'),
+          },
+          {
+            title: 'Steer agent',
+            label: 'Steer agent',
+            icon: 'steer',
+            disabled: !canSend || busy || !!turnSettings || plan,
+            onPress: () => send('steer'),
+          },
+          {
+            title: 'Stop',
+            label: 'Stop',
+            icon: 'stop',
+            disabled: !connected || stopping || machineMoving,
+            onPress: stop,
           },
         ]
-      : []),
-    {
-      title: 'Queue follow-up',
-      label: 'Queue follow-up',
-      icon: 'queue',
-      disabled: !canSend || busy,
-      onPress: () => send(),
-    },
-    {
-      title: 'Steer agent',
-      label: 'Steer agent',
-      icon: 'steer',
-      disabled: !canSend || busy || !!turnSettings,
-      onPress: () => send('steer'),
-    },
-    {
-      title: 'Stop',
-      label: 'Stop',
-      icon: 'stop',
-      disabled: !connected || stopping || machineMoving,
-      onPress: stop,
-    },
-  ]
   const draftMenuActions: MenuAction[] = [
     ...(
       [
@@ -457,6 +530,19 @@ export function Composer({
         !!task.archivedAt,
       onPress: () => attachmentPicker.select(source),
     })),
+    {
+      title: 'Paste Image',
+      label: 'Paste Image',
+      icon: 'fileImage',
+      disabled:
+        (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+        !connected ||
+        busy ||
+        attaching ||
+        dictation.active ||
+        !!task.archivedAt,
+      onPress: attachmentPicker.pasteImage,
+    },
     {
       title: 'Stashed drafts',
       label: 'Stashed drafts',
@@ -962,7 +1048,20 @@ export function Composer({
                   value={draft.text}
                   revision={draft.revision}
                   onChangeText={type}
-                  editable={draft.ready && !busy && !dictation.active && !task.archivedAt}
+                  editable={
+                    !actions.backgroundSubmitting &&
+                    draft.ready &&
+                    (!busy ||
+                      (submitting &&
+                        !editing &&
+                        !machineMoving &&
+                        !fork.busy &&
+                        !checkoutAction.busy &&
+                        !asideCreating &&
+                        !linkedProjectsAction.busy)) &&
+                    !dictation.active &&
+                    !task.archivedAt
+                  }
                   showOptions={showOptions}
                   trailingControlCount={2}
                 />
@@ -1175,6 +1274,45 @@ export function Composer({
                     </Pressable>
                   </Animated.View>
                 )}
+                {showOptions && !dictation.active && planSupported && (
+                  <Animated.View entering={reveal} exiting={conceal}>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityLabel="Plan"
+                      accessibilityHint="Runs the next message read-only and replies with a plan"
+                      accessibilityState={{
+                        checked: plan,
+                        disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
+                      }}
+                      disabled={busy || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
+                      onPress={() => setPlan(!plan)}
+                      style={({ pressed }) => ({
+                        minWidth: 44,
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 3,
+                        opacity: pressed || busy || (!plan && !!planModeIssue(agent)) ? 0.5 : 1,
+                      })}
+                    >
+                      <Icon
+                        name="checklist"
+                        size={15}
+                        color={plan ? colors.accent : colors.muted}
+                      />
+                      <Text
+                        style={[
+                          styles.muted,
+                          { fontSize: 12 },
+                          plan && { color: colors.accent, fontWeight: '600' },
+                        ]}
+                      >
+                        Plan
+                      </Text>
+                    </Pressable>
+                  </Animated.View>
+                )}
                 {showOptions &&
                   !dictation.active &&
                   !(task.status === 'running' && hasInput) &&
@@ -1214,26 +1352,39 @@ export function Composer({
                       }
                 }
               />
+              {!editing && stageSupported && task.status !== 'running' && (
+                <QueueMenu
+                  label="More message actions"
+                  actions={messageMenuActions.filter(
+                    (item) =>
+                      item.title === 'Add without starting' || item.title === normalSendLabel,
+                  )}
+                />
+              )}
               <View ref={messageTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
                 <IconButton
                   variant="filled"
                   icon={
                     editing
                       ? 'send'
-                      : task.status === 'running'
-                        ? hasInput
-                          ? 'queue'
-                          : 'stop'
-                        : 'send'
+                      : defaultSendMode === 'stage' && hasInput
+                        ? 'queue'
+                        : task.status === 'running'
+                          ? hasInput
+                            ? 'queue'
+                            : 'stop'
+                          : 'send'
                   }
                   label={
                     editing
                       ? 'Save changes'
-                      : task.status === 'running'
-                        ? hasInput
-                          ? 'Queue follow-up'
-                          : 'Stop'
-                        : 'Send'
+                      : defaultSendMode === 'stage' && hasInput
+                        ? 'Add to queue'
+                        : task.status === 'running'
+                          ? hasInput
+                            ? 'Queue follow-up'
+                            : 'Stop'
+                          : 'Send'
                   }
                   disabled={
                     machineMoving ||
@@ -1242,11 +1393,9 @@ export function Composer({
                       : !canSend || fork.busy)
                   }
                   onPress={!editing && task.status === 'running' && !hasInput ? stop : () => send()}
-                  menuActions={
-                    !editing && task.status === 'running' ? messageMenuActions : undefined
-                  }
+                  menuActions={showMessageMenu ? messageMenuActions : undefined}
                   onLongPress={
-                    !editing && task.status === 'running'
+                    showMessageMenu
                       ? () => {
                           setToolsAnchor(null)
                           messageTrigger.current?.measureInWindow((x, y, width, height) =>
@@ -1260,7 +1409,7 @@ export function Composer({
             </Animated.View>
             <ActionMenu
               label="Message actions"
-              anchor={!editing && task.status === 'running' ? messageActions : null}
+              anchor={showMessageMenu ? messageActions : null}
               onClose={() => setMessageActions(null)}
               actions={messageMenuActions}
             />

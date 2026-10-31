@@ -21,6 +21,11 @@ export class GithubTriggers {
   private next = new Map<string, number>()
   private signatures = new Map<string, string>()
   private errors = new Map<string, string>()
+  /** Committed state of enabled triggers. This class is the only writer of these documents, so
+   * idle ticks need neither SQL nor parsing; a failed write drops the entry to reload it. */
+  private states = new Map<string, State>()
+  /** Enabled trigger ids at the last stale-document sweep. */
+  private reconciled?: string
   constructor(
     private db: Database.Database,
     private events: Pick<GithubEvents, 'collect'> & Partial<Pick<GithubEvents, 'dispose'>>,
@@ -29,11 +34,25 @@ export class GithubTriggers {
     private report: (id: string, message: string) => void,
   ) {}
   private save(id: string, state: State) {
+    this.states.delete(id)
     this.db
       .prepare(
         'INSERT INTO documents VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
       )
       .run(`github-trigger:${id}`, JSON.stringify(state))
+    this.states.set(id, state)
+  }
+  private load(id: string): State | undefined {
+    const row = this.db
+      .prepare('SELECT value FROM documents WHERE id=?')
+      .get(`github-trigger:${id}`)
+    return row ? stateSchema.parse(JSON.parse(rowSchema.parse(row).value)) : undefined
+  }
+  private forget(id: string) {
+    this.states.delete(id)
+    this.next.delete(id)
+    this.signatures.delete(id)
+    this.errors.delete(id)
   }
   private current(id: string, signature: string) {
     const flow = this.flows().find((flow) => flow.id === id && flow.enabled)
@@ -59,16 +78,19 @@ export class GithubTriggers {
           .map((flow) => flow.id),
       )
       // Pausing or deleting a trigger discards queued external deliveries. Re-enable starts fresh.
-      for (const row of this.db
-        .prepare("SELECT id FROM documents WHERE id LIKE 'github-trigger:%'")
-        .all()) {
-        const id = z.object({ id: z.string() }).parse(row).id.slice('github-trigger:'.length)
-        if (!enabled.has(id)) {
-          this.db.prepare('DELETE FROM documents WHERE id=?').run(`github-trigger:${id}`)
-          this.next.delete(id)
-          this.signatures.delete(id)
-          this.errors.delete(id)
+      // Only a changed set of enabled triggers, or a new process, can leave stale documents.
+      const reconciled = [...enabled].sort().join('\n')
+      if (this.reconciled !== reconciled) {
+        for (const row of this.db
+          .prepare("SELECT id FROM documents WHERE id LIKE 'github-trigger:%'")
+          .all()) {
+          const id = z.object({ id: z.string() }).parse(row).id.slice('github-trigger:'.length)
+          if (!enabled.has(id))
+            this.db.prepare('DELETE FROM documents WHERE id=?').run(`github-trigger:${id}`)
         }
+        for (const ids of [this.states, this.next, this.signatures, this.errors])
+          for (const id of ids.keys()) if (!enabled.has(id)) this.forget(id)
+        this.reconciled = reconciled
       }
       for (const flow of flows) {
         if (!enabled.has(flow.id) || this.stopped) continue
@@ -82,13 +104,16 @@ export class GithubTriggers {
           this.next.delete(flow.id)
           this.signatures.set(flow.id, signature)
         }
+        const cached = this.states.get(flow.id)
+        // Nothing to poll or deliver until the next poll is due.
+        if (
+          cached?.signature === signature &&
+          !cached.pending.length &&
+          (this.next.get(flow.id) ?? 0) > now
+        )
+          continue
         try {
-          const row = this.db
-            .prepare('SELECT value FROM documents WHERE id=?')
-            .get(`github-trigger:${flow.id}`)
-          let state: State | undefined = row
-            ? stateSchema.parse(JSON.parse(rowSchema.parse(row).value))
-            : undefined
+          let state = cached ?? this.load(flow.id)
           if (!state || state.signature !== signature) {
             state = {
               signature,

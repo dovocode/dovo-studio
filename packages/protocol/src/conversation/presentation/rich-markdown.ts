@@ -68,11 +68,12 @@ export function markdownMediaKind(path: string): 'image' | 'video' | undefined {
 export function artifactTemplatePrompt(template: ArtifactTemplate) {
   return `Use $${template.skill} to create a ${template.kind.replaceAll('-', ' ')} about…`
 }
+const markdownOptions = {
+  extensions: [gfm(), directive()],
+  mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown()],
+}
 function parse(text: string) {
-  return fromMarkdown(text, {
-    extensions: [gfm(), directive()],
-    mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown()],
-  })
+  return fromMarkdown(text, markdownOptions)
 }
 /** Hosted thread readers render this AST as React nodes, without HTML or remote media. */
 export const parseSharedMarkdown = parse
@@ -105,6 +106,9 @@ function citation(node: Nodes): string | undefined {
 /** Convert only valid citations outside code/links. Unknown or incomplete directives stay literal. */
 export function renderFileCitations(text: string) {
   if (!text.includes(':codex-file-citation')) return text
+  return renderCitations(text, parse(text))
+}
+function renderCitations(text: string, root: Nodes) {
   const edits: Array<{ start: number; end: number; text: string }> = []
   const visit = (node: Nodes, inLink = false) => {
     const rendered = inLink ? undefined : citation(node)
@@ -122,10 +126,20 @@ export function renderFileCitations(text: string) {
       for (const child of node.children)
         visit(child, inLink || node.type === 'link' || node.type === 'linkReference')
   }
-  visit(parse(text))
-  for (const edit of edits.reverse())
-    text = text.slice(0, edit.start) + edit.text + text.slice(edit.end)
-  return text
+  visit(root)
+  if (edits.some((edit, index) => index > 0 && edit.start < edits[index - 1]!.end)) {
+    for (const edit of edits.reverse())
+      text = text.slice(0, edit.start) + edit.text + text.slice(edit.end)
+    return text
+  }
+  const pieces: string[] = []
+  let offset = 0
+  for (const edit of edits) {
+    pieces.push(text.slice(offset, edit.start), edit.text)
+    offset = edit.end
+  }
+  pieces.push(text.slice(offset))
+  return pieces.join('')
 }
 export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[] {
   if (
@@ -145,6 +159,7 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
   const parts: RichMarkdownPart[] = []
   let offset = 0
   const edits: Array<{ start: number; end: number; part: RichMarkdownPart }> = []
+  let previousLinkLineEnd = -1
   const add = (start: number, end: number, part: RichMarkdownPart) =>
     edits.push({ start, end, part })
   for (const node of root.children) {
@@ -207,6 +222,9 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
         to = child.position?.end.offset
       if (from === undefined || to === undefined) continue
       // Own line at the top level; prose, lists, quotes and code keep normal links.
+      if (from <= previousLinkLineEnd) continue
+      const lineEnd = text.indexOf('\n', from)
+      previousLinkLineEnd = lineEnd === -1 ? text.length : lineEnd
       const before = text.slice(text.lastIndexOf('\n', from - 1) + 1, from)
       const next = text.indexOf('\n', to)
       const after = text.slice(to, next === -1 ? text.length : next)
@@ -222,6 +240,14 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
       add(from, to, { kind, path, label, offset: from })
     }
   }
+  if (!edits.length)
+    return [
+      {
+        kind: 'markdown',
+        text: text.includes(':codex-file-citation') ? renderCitations(text, root) : text,
+        offset: 0,
+      },
+    ]
   for (const edit of edits.sort((a, b) => a.start - b.start)) {
     if (edit.start < offset) continue
     if (edit.start > offset)

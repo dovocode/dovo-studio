@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import { Schema } from 'effect'
 import {
   sharedContentSchema,
@@ -34,62 +43,137 @@ export function useEncryptedSharing({
   active?: boolean
 }) {
   useSyncExternalStore(client.sharing.subscribe, client.sharing.snapshot, client.sharing.snapshot)
-  const [origin, setOrigin] = useState(''),
-    [share, setShare] = useState<OpenShare | null>(null)
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [loaded, setLoaded] = useState(false)
-  const [hasKey, setHasKey] = useState(false),
-    [hasShares, setHasShares] = useState(false)
-  const [recovery, setRecovery] = useState(''),
-    [preview, setPreview] = useState<SharedContent | null>(null)
-  const [sync, setSync] = useState<{ enabled: boolean; error: string } | null>(null)
+  const [origin, writeOrigin] = useState(''),
+    [share, writeShare] = useState<OpenShare | null>(null)
+  const [busy, writeBusy] = useState(false),
+    [error, writeError] = useState(''),
+    [loaded, writeLoaded] = useState(false)
+  const [hasKey, writeHasKey] = useState(false),
+    [hasShares, writeHasShares] = useState(false)
+  const [recovery, writeRecovery] = useState(''),
+    [preview, writePreview] = useState<SharedContent | null>(null)
+  const [sync, writeSync] = useState<{ enabled: boolean; error: string } | null>(null)
   const scope = JSON.stringify([client.origin, client.sessionId(), sourceId, kind])
-  const current = useRef(scope),
-    inFlight = useRef(false),
+  const context = useMemo(
+    () => ({ mounted: false, recovered: false, pending: null as Promise<boolean> | null }),
+    [client, scope],
+  )
+  const current = useRef(context),
     options = useRef({ runtime, content })
-  current.current = scope
+  current.current = context
   options.current = { runtime, content }
+  const valid = () =>
+    current.current === context &&
+    context.mounted &&
+    scope === JSON.stringify([client.origin, client.sessionId(), sourceId, kind])
   const check = (captured: string) => {
-    if (current.current !== captured) throw new Error('Sharing context changed. Reopen sharing.')
+    if (!valid() || scope !== captured) throw new Error('Sharing context changed. Reopen sharing.')
   }
+  const latest = useRef<{
+    client: AccountClient
+    scope: string
+    key: string | null
+    origin: string
+    metadata: string
+    share: OpenShare
+  } | null>(null)
+  // Every async action keeps the session/source it started with, including UI writes.
+  const guarded =
+    <T>(write: Dispatch<SetStateAction<T>>) =>
+    (value: SetStateAction<T>) => {
+      check(scope)
+      write(value)
+    }
+  const setOrigin = guarded(writeOrigin)
+  const setShare = (value: SetStateAction<OpenShare | null>) => {
+    check(scope)
+    latest.current = null
+    writeShare(value)
+  }
+  const setBusy = guarded(writeBusy)
+  const setError = guarded(writeError)
+  const setLoaded = guarded(writeLoaded)
+  const setHasKey = guarded(writeHasKey)
+  const setHasShares = guarded(writeHasShares)
+  const setRecovery = guarded(writeRecovery)
+  const setPreview = guarded(writePreview)
+  const setSync = guarded(writeSync)
   const load = useCallback(async () => {
     const captured = scope
+    const target = options.current.runtime
     const destination = await client.sharingService()
     check(captured)
     setOrigin(destination)
     if (!client.snapshot().directory) {
+      setShare(null)
+      setHasKey(false)
+      setHasShares(false)
+      setSync(null)
       setLoaded(true)
       return
     }
-    try {
-      await client.sharing.syncKey()
-    } catch (cause) {
+    // The account owner handles periodic recovery. Opening settings still attempts
+    // recovery once so standalone consumers and first-open recovery remain useful.
+    if (!context.recovered) {
+      context.recovered = true
+      try {
+        await client.sharing.syncKey()
+      } catch (cause) {
+        check(captured)
+        setError(cause instanceof Error ? cause.message : 'Sharing recovery is unavailable')
+      }
       check(captured)
-      setError(cause instanceof Error ? cause.message : 'Sharing recovery is unavailable')
     }
+    const key = await client.sharing.recoveryKey()
     check(captured)
-    const key = await client.sharing.recoveryKey(),
-      records = await client.sharing.list(destination)
+    const records = await client.sharing.list(destination)
     check(captured)
     setHasKey(!!key)
     setHasShares(records.length > 0)
     const existing = key
       ? records.find((record) => record.source === client.sharing.source(kind, sourceId, key))
       : undefined
-    const opened = existing ? await client.sharing.refresh(destination, existing.id) : null
+    const previous = latest.current
+    const unchanged =
+      existing &&
+      previous &&
+      previous.key === key &&
+      previous.origin === destination &&
+      previous.scope === scope &&
+      previous.client === client &&
+      JSON.stringify(existing) === previous.metadata
+    const opened = existing
+      ? unchanged
+        ? previous.share
+        : await client.sharing.refresh(destination, existing.id)
+      : null
     check(captured)
-    setShare(opened)
+    latest.current =
+      existing && opened
+        ? {
+            client,
+            scope,
+            key,
+            origin: destination,
+            metadata: JSON.stringify(existing),
+            share: opened,
+          }
+        : null
+    writeShare(opened)
+    setSync(null)
     if (opened?.record.kind === 'thread') {
-      if (options.current.runtime) {
-        const status = await options.current.runtime.status(opened.record.id)
+      if (target) {
+        const status = await target.status(opened.record.id)
         check(captured)
-        setSync(status)
+        if (options.current.runtime === target) setSync(status)
       }
     }
     setLoaded(true)
-  }, [client, scope, kind, sourceId])
+  }, [client, scope, kind, sourceId, context])
   useEffect(() => {
+    context.mounted = true
+    latest.current = null
+    setBusy(false)
     setShare(null)
     setLoaded(false)
     setHasKey(false)
@@ -98,38 +182,75 @@ export function useEncryptedSharing({
     setPreview(null)
     setSync(null)
     setError('')
-  }, [scope])
-  const act = async (work: () => Promise<void>) => {
-    if (inFlight.current) return false
-    inFlight.current = true
+    return () => {
+      context.mounted = false
+    }
+  }, [context])
+  // A disconnected or retargeted runtime must stop displaying the previous
+  // runtime's status immediately, even while a load is still pending.
+  useEffect(() => {
+    writeSync(null)
+  }, [runtime])
+  const act = async (work: () => Promise<void>, periodic = false) => {
+    if (periodic && context.pending) return context.pending
+    while (context.pending) await context.pending
+    if (!valid()) return false
     setBusy(true)
     setError('')
-    const captured = scope
-    try {
-      await work()
-      return true
-    } catch (cause) {
-      if (current.current === captured)
-        setError(cause instanceof Error ? cause.message : 'Sharing failed')
-      return false
-    } finally {
-      inFlight.current = false
-      if (current.current === captured) setBusy(false)
-    }
+    if (!periodic) latest.current = null
+    const operation = Promise.resolve().then(async () => {
+      try {
+        check(scope)
+        await work()
+        check(scope)
+        return true
+      } catch (cause) {
+        if (valid()) setError(cause instanceof Error ? cause.message : 'Sharing failed')
+        return false
+      } finally {
+        context.pending = null
+        if (valid()) setBusy(false)
+      }
+    })
+    context.pending = operation
+    return operation
   }
   useEffect(() => {
-    if (!active) return
     let stopped = false
+    let queued = false
+    let timer: ReturnType<typeof setInterval> | undefined
+    const visible = () =>
+      active && (typeof document === 'undefined' || document.visibilityState !== 'hidden')
     const refresh = () => {
-      if (!stopped && !inFlight.current) void act(load)
+      if (stopped || !visible()) return
+      if (context.pending) {
+        if (!queued) {
+          queued = true
+          void context.pending.then(() => {
+            queued = false
+            refresh()
+          })
+        }
+        return
+      }
+      void act(load, true)
     }
-    refresh()
+    const visibility = () => {
+      clearInterval(timer)
+      timer = undefined
+      if (!visible()) return
+      refresh()
+      timer = setInterval(refresh, 30000)
+    }
+    visibility()
     const unsubscribe = client.sharing.subscribe(refresh)
-    const timer = setInterval(refresh, 30000)
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
     return () => {
       stopped = true
       unsubscribe()
       clearInterval(timer)
+      if (typeof document !== 'undefined')
+        document.removeEventListener('visibilitychange', visibility)
     }
   }, [load, active])
   const resume = async (opened: OpenShare) => {
@@ -154,6 +275,7 @@ export function useEncryptedSharing({
           : null,
       )
     } catch (cause) {
+      check(scope)
       const paused = await client.sharing.setPaused(origin, result.share, true)
       setShare(paused.share)
       throw cause
@@ -167,7 +289,9 @@ export function useEncryptedSharing({
     if (share) return share
     const captured = scope
     if (!hasKey) {
-      if ((await client.sharing.list(origin)).length)
+      const records = await client.sharing.list(origin)
+      check(captured)
+      if (records.length)
         throw new Error('Restore your recovery key to access your existing shared content')
       await client.sharing.recoveryKey(true)
       check(captured)
@@ -196,10 +320,18 @@ export function useEncryptedSharing({
     recovery,
     preview,
     sync,
-    refresh: () => act(load),
+    refresh: () =>
+      act(async () => {
+        await client.sharing.syncKey()
+        check(scope)
+        context.recovered = true
+        await load()
+      }),
     createKey: () =>
       act(async () => {
-        if ((await client.sharing.list(origin)).length)
+        const records = await client.sharing.list(origin)
+        check(scope)
+        if (records.length)
           throw new Error('Restore your existing recovery key to access published content')
         const key = await client.sharing.recoveryKey(true)
         if (key) setRecovery(key)
@@ -213,7 +345,10 @@ export function useEncryptedSharing({
     restore: (key: string) =>
       act(async () => {
         await client.sharing.restoreKey(key, origin)
+        check(scope)
         await client.sharing.syncKey()
+        check(scope)
+        context.recovered = true
         await load()
       }),
     resetLegacySharing: () =>

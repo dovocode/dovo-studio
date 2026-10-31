@@ -5,12 +5,15 @@ import {
   encodeBrowserFrame,
   remoteBrowserFrameAckSchema,
   remoteBrowserInputSchema,
+  remoteBrowserUploadSchema,
+  remoteBrowserDownloadCommandSchema,
   simulatorInputSchema,
 } from '@dovo/protocol'
 import type { BrowserFrame, BrowserOutput } from '../../previews/browser.js'
 import type { Services } from '../../services.js'
-import { errorMessage } from '../../errors.js'
+import { errorMessage, HttpError } from '../../errors.js'
 import { BrowserFrameEncoder } from './browser-frame-encoder.js'
+import { browserDownloadGrant } from '../endpoints/browser-downloads.js'
 export function attachBrowserSocket(
   client: WebSocket,
   taskId: string,
@@ -154,6 +157,7 @@ export function attachBrowserSocket(
     : undefined
   watchdog?.unref()
   const cleanup = () => {
+    if (closed) return
     closed = true
     clearTimeout(flush)
     clearInterval(watchdog)
@@ -161,6 +165,10 @@ export function attachBrowserSocket(
     inFlight.clear()
     detach?.()
     detach = undefined
+    if (!simulatorId)
+      void services.browsers
+        .disconnectUploads(resourceId, authorize)
+        .catch((error) => console.error('Could not release disconnected browser upload:', error))
   }
   client.on('close', cleanup)
   client.on('error', cleanup)
@@ -272,6 +280,66 @@ export function attachBrowserSocket(
         windowStart = Date.now()
       }
       if (++count > (simulatorId ? 200 : 400)) throw new Error('Too many browser commands')
+      const download = !simulatorId && decodeResult(remoteBrowserDownloadCommandSchema, value)
+      if (download && download.success) {
+        const command = download.data
+        if (command.type === 'downloadCancel') {
+          void services.browsers.cancelDownload(resourceId, command.id, authorize).catch((error) =>
+            send({
+              type: 'error',
+              message:
+                error instanceof HttpError
+                  ? error.message
+                  : 'Could not cancel this browser download.',
+            }),
+          )
+        } else {
+          void browserDownloadGrant(
+            services,
+            token,
+            resourceId,
+            taskId,
+            command.id,
+            authorize,
+          ).then(
+            (file) =>
+              send({
+                type: 'downloadReady',
+                id: command.id,
+                requestId: command.requestId,
+                ...file,
+              }),
+            (error) =>
+              send({
+                type: 'downloadError',
+                id: command.id,
+                requestId: command.requestId,
+                message:
+                  error instanceof HttpError
+                    ? error.message
+                    : 'Could not save this browser download. Try again.',
+              }),
+          )
+        }
+        return
+      }
+      const upload = !simulatorId && decodeResult(remoteBrowserUploadSchema, value)
+      if (upload && upload.success) {
+        const command = upload.data
+        void services.browsers.upload(resourceId, command, authorize).then(
+          () => send({ type: 'fileUploadAck', requestId: command.requestId }),
+          (error) =>
+            send({
+              type: 'fileUploadAck',
+              requestId: command.requestId,
+              error:
+                error instanceof HttpError
+                  ? error.message
+                  : 'Could not transfer the selected file. Open the upload control and try again.',
+            }),
+        )
+        return
+      }
       const input = simulatorId
         ? decode(simulatorInputSchema, value)
         : decode(remoteBrowserInputSchema, value)

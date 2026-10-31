@@ -452,7 +452,7 @@ it('verifies a named GitHub profile without switching the globally active accoun
     host: repo.host,
     repository: repo.nameWithOwner,
     profile: 'selected-user',
-    credential: async (cwd) => ({ token: await token(cwd), onUnauthorized }),
+    credential: async (cwd) => ({ token: await token(cwd), onUnauthorized, source: 'gh' }),
   })
   const identity = await pulls.identity('/checkout')
   expect(identity).toContain('selected-user')
@@ -461,7 +461,12 @@ it('verifies a named GitHub profile without switching the globally active accoun
     ['api', '--hostname', repo.host, 'user'],
     { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
     '/checkout',
-    { host: repo.host, token: 'fixture-private-token', onUnauthorized },
+    {
+      host: repo.host,
+      token: 'fixture-private-token',
+      onUnauthorized,
+      access: { host: repo.host, repository: repo.nameWithOwner, source: 'gh' },
+    },
     false,
   )
   run.mockResolvedValue(JSON.stringify({ login: 'unexpected-user' }))

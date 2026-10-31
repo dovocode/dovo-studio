@@ -104,6 +104,17 @@ export const disconnectedRuntime = {
   discardMutations: async () => {
     throw disabled('Runtime mutations')
   },
+  attachmentUploads: () => [],
+  attachmentPendingEffect: () => Effect.fail(disabled('Attachment uploads')),
+  requestAttachmentEffect: () => Effect.fail(disabled('Attachment uploads')),
+  finishAttachmentEffect: () => Effect.fail(disabled('Attachment uploads')),
+  reviewAttachments: () => {},
+  recoverAttachment: async () => {
+    throw disabled('Attachment uploads')
+  },
+  discardAttachment: async () => {
+    throw disabled('Attachment uploads')
+  },
   read: noRuntimeResponse,
   readRuntime: (_profile, path, input, schema) => noRuntimeResponse(path, input, schema),
   cacheForRuntime: () => emptyCache,

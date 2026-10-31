@@ -49,7 +49,11 @@ async function read(s: Services, force: boolean): Promise<Result> {
     }
     if (!agents.has(agent.id)) agents.set(agent.id, agent)
   }
-  const key = JSON.stringify([...configurations].map(([key, agents]) => [key, [...agents.keys()]]))
+  const generation = s.agents.secretGeneration
+  const key = JSON.stringify([
+    generation,
+    [...configurations].map(([key, agents]) => [key, [...agents.keys()]]),
+  ])
   const previous = cache.get(s)
   if (previous?.key === key && previous.pending) return previous.pending
   if (
@@ -78,7 +82,10 @@ async function read(s: Services, force: boolean): Promise<Result> {
             JSON.stringify(limit),
           ]),
         )
-        const result = await readUsageLimits(agent)
+        const resolved = await s.agents.secretReferences.resolve(s.agents.configure(agent))
+        const result = await readUsageLimits(resolved)
+        if (s.agents.secretGeneration !== generation)
+          throw new Error('Secret references changed. Refresh account limits again.')
         const accountId = result.account?.id
         const used = accountId ? s.store.usage.taskIds(accountId) : new Set<string>()
         const sourceTask = workspace.tasks.find(

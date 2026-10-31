@@ -282,6 +282,237 @@ it('fails closed on missing task rows, invalid manifests and newer formats', () 
     db.close()
   }
 })
+it('reserves malformed version 2 tasks across migration, failures and restart', () => {
+  const db = openDatabase(':memory:')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    storeVersion2(db, { ...workspace, tasks: [task, second] })
+    const envelope = JSON.parse(value(db, 'workspace'))
+    envelope.workspace.tasks[1].title = 4
+    const raw = JSON.stringify(envelope)
+    db.prepare("UPDATE documents SET value = ? WHERE id = 'workspace'").run(raw)
+    const history = db
+      .prepare("SELECT * FROM conversation_items WHERE task_id = 'second' ORDER BY kind, item_id")
+      .all()
+    new WorkspaceDocuments(db)
+    db.exec(
+      "CREATE TRIGGER reject_unreadable BEFORE INSERT ON workspace_tasks WHEN NEW.task_id = 'second' BEGIN SELECT RAISE(ABORT, 'injected migration failure'); END",
+    )
+    expect(() => new WorkspaceStore(db)).toThrow('injected migration failure')
+    expect(value(db, 'workspace')).toBe(raw)
+    expect(db.prepare('SELECT * FROM workspace_tasks').all()).toEqual([])
+    expect(
+      db
+        .prepare("SELECT * FROM conversation_items WHERE task_id = 'second' ORDER BY kind, item_id")
+        .all(),
+    ).toEqual(history)
+    db.exec('DROP TRIGGER reject_unreadable')
+    const store = new WorkspaceStore(db)
+    expect(store.get().tasks.map((entry) => entry.id)).toEqual(['thread'])
+    expect(JSON.parse(value(db, 'workspace')).taskIds).toEqual(['thread', 'second'])
+    expect(
+      db
+        .prepare("SELECT value, messages, turns FROM workspace_tasks WHERE task_id = 'second'")
+        .get(),
+    ).toEqual({ value: JSON.stringify(envelope.workspace.tasks[1]), messages: 2, turns: 1 })
+    db.exec(`CREATE TRIGGER reject_unneeded_shell BEFORE UPDATE ON documents WHEN NEW.id = 'workspace' BEGIN SELECT RAISE(ABORT, 'unneeded shell rewrite'); END;
+      CREATE TRIGGER reject_unneeded_recovery BEFORE INSERT ON workspace_tasks WHEN NEW.task_id = 'second' BEGIN SELECT RAISE(ABORT, 'unneeded recovery insert'); END`)
+    store.updateTask('thread', (current) => ({ ...current, title: 'Edited' }))
+    store.updateTaskHistory('thread', (current) => ({
+      ...current,
+      messages: [...current.messages, { id: 'streamed', role: 'assistant', text: 'new' }],
+    }))
+    db.exec('DROP TRIGGER reject_unneeded_shell; DROP TRIGGER reject_unneeded_recovery')
+    const reopened = new WorkspaceStore(db)
+    expect(() =>
+      reopened.update((current) => ({ ...current, tasks: [...current.tasks, second] })),
+    ).toThrow(/unreadable/)
+    expect(
+      db
+        .prepare("SELECT * FROM conversation_items WHERE task_id = 'second' ORDER BY kind, item_id")
+        .all(),
+    ).toEqual(history)
+    expect(JSON.parse(value(db, 'workspace')).taskIds).toEqual(['thread', 'second'])
+  } finally {
+    error.mockRestore()
+    db.close()
+  }
+})
+
+it('recovers an orphan from an already migrated v2 backup without overwriting its history', () => {
+  const db = openDatabase(':memory:')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    storeVersion2(db, { ...workspace, tasks: [task, second] })
+    const envelope = JSON.parse(value(db, 'workspace'))
+    envelope.workspace.tasks[1].title = 4
+    const legacy = JSON.stringify(envelope)
+    db.prepare("UPDATE documents SET value = ? WHERE id = 'workspace'").run(legacy)
+    const history = db
+      .prepare("SELECT * FROM conversation_items WHERE task_id = 'second' ORDER BY kind, item_id")
+      .all()
+    const store = new WorkspaceStore(db)
+    const shell = JSON.parse(value(db, 'workspace'))
+    shell.taskIds = ['thread']
+    db.prepare("UPDATE documents SET value = ? WHERE id = 'workspace'").run(JSON.stringify(shell))
+    db.prepare("DELETE FROM workspace_tasks WHERE task_id = 'second'").run()
+    db.prepare("DELETE FROM documents WHERE id = 'workspace-v2-recovery-checked'").run()
+    expect(store.get().tasks.map((entry) => entry.id)).toEqual(['thread'])
+    db.prepare('INSERT INTO workspace_tasks VALUES (?, ?, ?, ?)').run('second', '{}', 0, 0)
+    expect(() => new WorkspaceStore(db)).toThrow(/conflicting recovery records/)
+    expect(db.prepare("SELECT value FROM workspace_tasks WHERE task_id = 'second'").get()).toEqual({
+      value: '{}',
+    })
+    db.prepare("DELETE FROM workspace_tasks WHERE task_id = 'second'").run()
+    db.prepare('INSERT INTO workspace_tasks VALUES (?, ?, ?, ?)').run(
+      'unknown',
+      '{unreadable',
+      0,
+      0,
+    )
+    db.exec(
+      "CREATE TRIGGER reject_recovery BEFORE INSERT ON workspace_tasks WHEN NEW.task_id = 'second' BEGIN SELECT RAISE(ABORT, 'injected recovery failure'); END",
+    )
+    expect(() => new WorkspaceStore(db)).toThrow('injected recovery failure')
+    expect(JSON.parse(value(db, 'workspace')).taskIds).toEqual(['thread'])
+    expect(
+      db.prepare("SELECT 1 FROM documents WHERE id = 'workspace-v2-recovery-checked'").get(),
+    ).toBeUndefined()
+    expect(
+      db
+        .prepare("SELECT * FROM conversation_items WHERE task_id = 'second' ORDER BY kind, item_id")
+        .all(),
+    ).toEqual(history)
+    db.exec('DROP TRIGGER reject_recovery')
+    const recovered = new WorkspaceStore(db)
+    expect(JSON.parse(value(db, 'workspace')).taskIds).toEqual(['thread', 'second'])
+    expect(db.prepare("SELECT value FROM workspace_tasks WHERE task_id = 'unknown'").get()).toEqual(
+      { value: '{unreadable' },
+    )
+    expect(db.prepare("SELECT value FROM workspace_tasks WHERE task_id = 'second'").get()).toEqual({
+      value: JSON.stringify(envelope.workspace.tasks[1]),
+    })
+    db.exec(`CREATE TRIGGER reject_repeated_marker BEFORE INSERT ON documents WHEN NEW.id = 'workspace-v2-recovery-checked' BEGIN SELECT RAISE(ABORT, 'repeated recovery marker'); END;
+      CREATE TRIGGER reject_repeated_shell BEFORE UPDATE ON documents WHEN NEW.id = 'workspace' BEGIN SELECT RAISE(ABORT, 'repeated recovery shell'); END`)
+    recovered.updateTask('thread', (current) => ({ ...current, title: 'Edited after recovery' }))
+    db.exec('DROP TRIGGER reject_repeated_marker; DROP TRIGGER reject_repeated_shell')
+    expect(() =>
+      recovered.update((current) => ({ ...current, tasks: [...current.tasks, second] })),
+    ).toThrow(/unreadable/)
+    expect(
+      db
+        .prepare("SELECT * FROM conversation_items WHERE task_id = 'second' ORDER BY kind, item_id")
+        .all(),
+    ).toEqual(history)
+    expect(() =>
+      new WorkspaceStore(db).update((current) => ({
+        ...current,
+        tasks: [...current.tasks, second],
+      })),
+    ).toThrow(/unreadable/)
+  } finally {
+    error.mockRestore()
+    db.close()
+  }
+})
+
+it('only notifies document recovery after an outer workspace batch commits', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((current) => ({ ...current, tasks: [task] }))
+    const committed = vi.spyOn(WorkspaceDocuments.prototype, 'committed')
+    expect(() =>
+      store.transaction(() => {
+        store.updateTask('thread', (current) => ({ ...current, title: 'Tentative' }))
+        store.transaction(() =>
+          store.updateTask('thread', (current) => ({ ...current, title: 'Nested' })),
+        )
+        expect(committed).not.toHaveBeenCalled()
+        throw new Error('injected outer failure')
+      }),
+    ).toThrow('injected outer failure')
+    expect(committed).not.toHaveBeenCalled()
+    store.transaction(() => {
+      store.updateTask('thread', (current) => ({ ...current, title: 'Committed' }))
+      expect(committed).not.toHaveBeenCalled()
+    })
+    expect(committed).toHaveBeenCalledOnce()
+    committed.mockRestore()
+  } finally {
+    db.close()
+  }
+})
+
+it('retries pending recovery after an outer workspace batch rolls back', () => {
+  const db = openDatabase(':memory:')
+  const legacyDb = openDatabase(':memory:')
+  const preserve = vi.spyOn(WorkspaceDocuments.prototype, 'preserveUnreadableTasks')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((current) => ({ ...current, tasks: [task] }))
+    const documents = preserve.mock.instances.at(-1)
+    if (!(documents instanceof WorkspaceDocuments)) throw new Error('Missing workspace documents')
+    storeVersion2(legacyDb, { ...workspace, tasks: [task, second] })
+    const envelope = JSON.parse(value(legacyDb, 'workspace'))
+    envelope.workspace.tasks[1].title = 4
+    legacyDb
+      .prepare("UPDATE documents SET value = ? WHERE id = 'workspace'")
+      .run(JSON.stringify(envelope))
+    const legacy = new WorkspaceDocuments(legacyDb).read()
+    const insert = db.prepare('INSERT INTO conversation_items VALUES (?, ?, ?, ?, ?)')
+    second.messages.forEach((message, index) =>
+      insert.run('second', 'message', message.id, index, JSON.stringify(message)),
+    )
+    second.turns?.forEach((turn, index) =>
+      insert.run('second', 'turn', turn.id, index, JSON.stringify(turn)),
+    )
+    documents.preserveUnreadableTasks(legacy, store.get().tasks)
+    expect(() =>
+      store.transaction(() => {
+        store.updateTask('thread', (current) => ({ ...current, title: 'Tentative' }))
+        expect(JSON.parse(value(db, 'workspace')).taskIds).toContain('second')
+        throw new Error('injected outer failure')
+      }),
+    ).toThrow('injected outer failure')
+    expect(JSON.parse(value(db, 'workspace')).taskIds).toEqual(['thread'])
+    expect(
+      db.prepare("SELECT 1 FROM workspace_tasks WHERE task_id = 'second'").get(),
+    ).toBeUndefined()
+    store.transaction(() =>
+      store.updateTask('thread', (current) => ({ ...current, title: 'Committed' })),
+    )
+    expect(JSON.parse(value(db, 'workspace')).taskIds).toEqual(['thread', 'second'])
+    expect(db.prepare("SELECT value FROM workspace_tasks WHERE task_id = 'second'").get()).toEqual({
+      value: JSON.stringify(envelope.workspace.tasks[1]),
+    })
+  } finally {
+    preserve.mockRestore()
+    legacyDb.close()
+    db.close()
+  }
+})
+
+it('refuses migration when an unreadable v2 task has no usable identity', () => {
+  const db = openDatabase(':memory:')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    storeVersion2(db, { ...workspace, tasks: [task] })
+    const envelope = JSON.parse(value(db, 'workspace'))
+    delete envelope.workspace.tasks[0].id
+    const raw = JSON.stringify(envelope)
+    db.prepare("UPDATE documents SET value = ? WHERE id = 'workspace'").run(raw)
+    expect(() => new WorkspaceStore(db)).toThrow(/manifest is invalid/)
+    expect(value(db, 'workspace')).toBe(raw)
+    expect(db.prepare('SELECT COUNT(*) AS count FROM conversation_items').get()).toEqual({
+      count: 201,
+    })
+  } finally {
+    error.mockRestore()
+    db.close()
+  }
+})
+
 it('loads the remaining tasks when one metadata row is unreadable and keeps that row', () => {
   const db = openDatabase(':memory:')
   try {
@@ -305,6 +536,71 @@ it('loads the remaining tasks when one metadata row is unreadable and keeps that
       db.prepare("SELECT COUNT(*) AS count FROM conversation_items WHERE task_id = 'second'").get(),
     ).toEqual({ count: 3 })
   } finally {
+    db.close()
+  }
+})
+it('preserves unreadable task rows and their manifest through rewrites and failed writes', () => {
+  const db = openDatabase(':memory:')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    new WorkspaceStore(db).update((current) => ({ ...current, tasks: [task, second] }))
+    db.prepare("UPDATE workspace_tasks SET value = '{broken' WHERE task_id = 'second'").run()
+    const history = db
+      .prepare("SELECT * FROM workspace_task_histories WHERE task_id = 'second'")
+      .get()
+    db.prepare("DELETE FROM workspace_task_histories WHERE task_id = 'thread'").run()
+    const rowsBefore = db.prepare('SELECT * FROM workspace_tasks ORDER BY task_id').all()
+    db.exec(
+      "CREATE TRIGGER reject_rewrite BEFORE INSERT ON workspace_tasks BEGIN SELECT RAISE(ABORT, 'rewrite failure'); END",
+    )
+    expect(() => new WorkspaceStore(db)).toThrow(/rewrite failure/)
+    db.exec('DROP TRIGGER reject_rewrite')
+    expect(db.prepare('SELECT * FROM workspace_tasks ORDER BY task_id').all()).toEqual(rowsBefore)
+    expect(
+      db.prepare("SELECT * FROM workspace_task_histories WHERE task_id = 'second'").get(),
+    ).toEqual(history)
+    const store = new WorkspaceStore(db)
+    expect(db.prepare("SELECT value FROM workspace_tasks WHERE task_id = 'second'").get()).toEqual({
+      value: '{broken',
+    })
+    expect(
+      db.prepare("SELECT * FROM workspace_task_histories WHERE task_id = 'second'").get(),
+    ).toEqual(history)
+    store.update((current) => ({ ...current, tasks: [...current.tasks, { ...task, id: 'third' }] }))
+    const shell = decode(
+      mutableStruct({ value: Schema.String }),
+      db.prepare("SELECT value FROM documents WHERE id = 'workspace'").get(),
+    ).value
+    expect(JSON.parse(shell).taskIds).toContain('second')
+    expect(() =>
+      store.update((current) => ({ ...current, tasks: [...current.tasks, second] })),
+    ).toThrow(/unreadable/)
+    expect(
+      decode(
+        mutableStruct({ value: Schema.String }),
+        db.prepare("SELECT value FROM documents WHERE id = 'workspace'").get(),
+      ).value,
+    ).toBe(shell)
+    db.exec(
+      "CREATE TRIGGER reject_workspace BEFORE UPDATE ON documents WHEN NEW.id = 'workspace' BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+    )
+    expect(() =>
+      store.update((current) => ({
+        ...current,
+        tasks: current.tasks.filter((entry) => entry.id !== 'third'),
+      })),
+    ).toThrow(/injected failure/)
+    db.exec('DROP TRIGGER reject_workspace')
+    expect(db.prepare("SELECT value FROM workspace_tasks WHERE task_id = 'second'").get()).toEqual({
+      value: '{broken',
+    })
+    const reopened = new WorkspaceStore(db)
+    expect(reopened.get().tasks.map((entry) => entry.id)).toEqual(['thread', 'third'])
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_items WHERE task_id = 'second'").get(),
+    ).toEqual({ count: 3 })
+  } finally {
+    error.mockRestore()
     db.close()
   }
 })

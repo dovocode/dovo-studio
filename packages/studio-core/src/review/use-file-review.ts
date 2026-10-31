@@ -9,8 +9,8 @@ import {
 } from '@dovo/protocol'
 import { useWorkspace } from '../workspace/context'
 export function useFileReview(context: ReviewContext, version: string, enabled = true) {
-  const { request, connected, activeRuntimeId } = useWorkspace()
-  const key = JSON.stringify([activeRuntimeId, context])
+  const { request, connected, activeRuntimeId, connection } = useWorkspace()
+  const key = JSON.stringify([activeRuntimeId, connection?.address, connection?.token, context])
   const [value, setValue] = useState<{ key: string; state: ReviewSessionState } | null>(null)
   const session = useRef<{ key: string; session: ReturnType<typeof createReviewSession> } | null>(
     null,
@@ -36,15 +36,18 @@ export function useFileReview(context: ReviewContext, version: string, enabled =
   const previousVersion = useRef(`${key}:${version}`)
   useEffect(() => {
     const current = `${key}:${version}`
-    if (previousVersion.current !== current) void session.current?.session.refresh()
+    if (previousVersion.current !== current) session.current?.session.invalidate()
     previousVersion.current = current
   }, [key, version])
   const [organized, setOrganized] = useState<{ key: string; progress: ReviewProgress } | null>(null)
+  const [hiddenGroups, setHiddenGroups] = useState('')
+  const organizing = useRef(false)
   const [organizingKey, setOrganizingKey] = useState('')
   const [organizeFailure, setOrganizeFailure] = useState<{ key: string; message: string } | null>(
     null,
   )
-  const state = value?.key === key ? value.state : null
+  const state =
+    value?.key === key && previousVersion.current === `${key}:${version}` ? value.state : null
   const evidence = useMemo(
     () =>
       JSON.stringify(state?.progress?.files.map(({ path, fingerprint }) => [path, fingerprint])),
@@ -56,14 +59,36 @@ export function useFileReview(context: ReviewContext, version: string, enabled =
   return {
     progress:
       organized?.key === analysisKey && state?.progress
-        ? { ...state.progress, groups: organized.progress.groups }
-        : (state?.progress ?? null),
-    featureGroups: organized?.key === analysisKey,
+        ? {
+            ...state.progress,
+            groups: hiddenGroups === analysisKey ? [] : organized.progress.groups,
+          }
+        : state?.progress
+          ? { ...state.progress, groups: hiddenGroups === analysisKey ? [] : state.progress.groups }
+          : null,
+    featureGroups:
+      hiddenGroups !== analysisKey &&
+      (organized?.key === analysisKey ||
+        !!state?.progress?.groups.some((group) => group.basis === 'feature')),
     organizing: !!organizingKey,
     organizeError: organizeFailure?.key === analysisKey ? organizeFailure.message : '',
-    clearGroups: () => setOrganized(null),
-    organize: async (selection?: TitleGenerationSettings) => {
-      if (!state?.progress || organizingKey) return false
+    clearGroups: () => {
+      setOrganized(null)
+      setHiddenGroups(analysisKey)
+    },
+    moveGuide: (position: number, reviewed?: number) => {
+      const guide = state?.progress?.guide
+      if (!guide || session.current?.key !== key) return Promise.resolve(false)
+      return session.current.session.moveGuide({
+        id: guide.id,
+        version: guide.version,
+        position,
+        reviewed,
+      })
+    },
+    organize: async (selection?: TitleGenerationSettings, guided = false) => {
+      if (!state?.progress || organizing.current) return false
+      organizing.current = true
       const currentKey = analysisKey
       setOrganizingKey(currentKey)
       setOrganizeFailure(null)
@@ -73,12 +98,17 @@ export function useFileReview(context: ReviewContext, version: string, enabled =
           {
             context,
             selection,
+            ...(guided ? { guided: true, revision: state.progress.revision } : {}),
             files: state.progress.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
           },
           reviewProgressSchema,
         )
         if (analysisRef.current === currentKey) {
-          setOrganized({ key: currentKey, progress })
+          setHiddenGroups('')
+          if (guided && session.current?.key === key) {
+            session.current.session.adopt(progress)
+            setOrganized(null)
+          } else setOrganized({ key: currentKey, progress })
           return true
         }
         return false
@@ -90,6 +120,7 @@ export function useFileReview(context: ReviewContext, version: string, enabled =
           })
         return false
       } finally {
+        organizing.current = false
         setOrganizingKey('')
       }
     },

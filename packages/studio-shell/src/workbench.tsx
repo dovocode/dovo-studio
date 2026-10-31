@@ -51,6 +51,7 @@ import { useConfirmSettingsNavigation } from '@dovo/studio-core'
 import { appSettingsExtension } from './app-extension'
 import { useAppearance, type WindowColors } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
+import { TaskNotificationNotice } from './task-notice'
 import { createExtensionCatalog } from './extension-catalog'
 import { ActivityBar } from './activity-bar'
 import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
@@ -723,7 +724,7 @@ function WorkbenchContent({
         !(
           event.target instanceof Element &&
           event.target.closest(
-            'input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]',
+            'input, textarea, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"]',
           )
         )
       ) {
@@ -755,7 +756,11 @@ function WorkbenchContent({
         event.key === '/' &&
         !event.defaultPrevented &&
         !event.isComposing &&
-        !event.repeat
+        !event.repeat &&
+        !(
+          event.target instanceof Element &&
+          event.target.closest('[role="dialog"], [role="alertdialog"]')
+        )
       ) {
         event.preventDefault()
         setPalette(false)
@@ -838,25 +843,12 @@ function WorkbenchContent({
         }
       >
         <div className="studio" data-platform={desktopPlatform} data-thread-window={!!threadWindow}>
-          {taskNotice.notice && (
-            <div
-              role="status"
-              className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg"
-            >
-              <button
-                className="text-left"
-                onClick={() => {
-                  if (taskNotice.notice) openNotification(taskNotice.notice.target)
-                  taskNotice.dismiss()
-                }}
-              >
-                {taskNotice.notice.title}
-              </button>
-              <button aria-label="Dismiss notification" onClick={taskNotice.dismiss}>
-                ×
-              </button>
-            </div>
-          )}
+          <TaskNotificationNotice
+            notice={taskNotice.notice}
+            pendingCount={taskNotice.pendingCount}
+            onOpen={openNotification}
+            onDismiss={taskNotice.dismiss}
+          />
           <HeaderFallback>
             {browserWindowId ? (
               <header className="studio-titlebar" data-platform={desktopPlatform}>

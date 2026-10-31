@@ -1,4 +1,4 @@
-import { mutableStruct, mutableArray } from '@dovo/protocol'
+import { mutableStruct, mutableArray, redactCredentialText } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
@@ -27,11 +27,7 @@ export function redact(value: unknown): unknown {
             : redact(v),
       ]),
     )
-  if (typeof value === 'string')
-    return value
-      .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
-      .replace(/([?&](?:token|ticket|secret)=)[^&\s]+/gi, '$1[redacted]')
-      .replace(/((?:token|secret|password|authorization)=)[^\s]+/gi, '$1[redacted]')
+  if (typeof value === 'string') return redactCredentialText(value)
   return value
 }
 const record = mutableStruct({
@@ -89,7 +85,7 @@ export class Activity {
       'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC); CREATE INDEX IF NOT EXISTS activity_scope_time ON activity(scope,time DESC,id DESC)',
     )
     // Remove previously recorded literal MCP values and API-key fields once per database.
-    if (!db.prepare('SELECT value FROM documents WHERE id=?').get('activity-redaction-v3')) {
+    if (!db.prepare('SELECT value FROM documents WHERE id=?').get('activity-redaction-v4')) {
       db.transaction(() => {
         const rows = decode(mutableArray(record), db.prepare('SELECT * FROM activity').all())
         const update = db.prepare('UPDATE activity SET payload=?,summary=? WHERE id=?')
@@ -105,7 +101,7 @@ export class Activity {
           }
           update.run(JSON.stringify(redact(payload)), String(redact(row.summary)), row.id)
         }
-        db.prepare('INSERT INTO documents VALUES (?, ?)').run('activity-redaction-v3', 'done')
+        db.prepare('INSERT INTO documents VALUES (?, ?)').run('activity-redaction-v4', 'done')
       })()
     }
   }

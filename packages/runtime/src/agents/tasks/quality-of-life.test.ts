@@ -373,9 +373,14 @@ it('moves a task into its own worktree with its uncommitted changes, and back', 
   expect(
     (await exec('git', ['diff', '--cached', '--name-only'], { cwd: worktree })).stdout.trim(),
   ).toBe('staged.txt')
-  // The project folder is clean again, and no stash entry is left behind.
+  // The project folder is clean again; the applied recovery copy stays addressable.
   expect((await exec('git', ['status', '--porcelain'], { cwd: f.directory })).stdout).toBe('')
-  expect((await exec('git', ['stash', 'list'], { cwd: f.directory })).stdout).toBe('')
+  expect((await exec('git', ['stash', 'list'], { cwd: f.directory })).stdout).toContain(
+    'dovo: move task',
+  )
+  expect(s.store.task(task.id).messages.at(-1)?.text).toContain(
+    'Changes are already applied; a recovery copy remains',
+  )
 
   const back = await call('/api/tasks/handoff', { id: task.id, target: 'main' })
   expect(back.status).toBe(200)
@@ -417,7 +422,7 @@ it('reports the recoverable stash when handoff removal and rollback both fail', 
   })
   const result = await call('/api/tasks/handoff', { id: task.id, target: 'main' })
   expect(result.status).toBe(409)
-  expect(result.body.error).toContain('safe in stash')
+  expect(result.body.error).toContain(`safe in Git ref refs/dovo/handoff/${task.id}/`)
   expect(result.body.error).toContain('Rollback failed')
   expect((await exec('git', ['stash', 'list'], { cwd: f.directory })).stdout).toContain(
     'dovo: move task',
@@ -807,4 +812,48 @@ it('loads larger working diffs through the authenticated task route without expa
     await call('/api/tasks/file/preview', { ...input, turnId: 'missing', full: true }),
   ).toMatchObject({ status: 404 })
   expect(JSON.stringify(s.store.task(task.id))).not.toContain(contents)
+})
+
+it('retains external stash entries inserted during handoff instead of deleting by a stale reflog index', async () => {
+  const { f, s, call } = await setup()
+  const task = s.tasks.create({
+    title: 'Concurrent stash',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    run: async () => {},
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  await writeFile(join(f.directory, 'hello.txt'), 'handoff changes\n')
+  const command = s.git.command.bind(s.git)
+  let applied = false
+  const addExternal = async (label: string) => {
+    await writeFile(join(f.directory, `${label}.txt`), label)
+    await command(f.directory, ['stash', 'push', '--include-untracked', '-m', label])
+  }
+  vi.spyOn(s.git, 'command').mockImplementation(async (cwd, args, env) => {
+    const result = await command(cwd, args, env)
+    if (args[0] === 'stash' && args[1] === 'apply') {
+      applied = true
+      await addExternal('external-one')
+    }
+    // Reproduce an external insertion after numeric lookup but before deletion.
+    if (applied && args[0] === 'stash' && args[1] === 'list' && args.includes('--format=%H'))
+      await addExternal('external-two')
+    return result
+  })
+  const moved = await call('/api/tasks/handoff', { id: task.id, target: 'worktree' })
+  expect(moved.status).toBe(200)
+  const cwd = String(moved.body.cwd)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('handoff changes\n')
+  const stashes = await command(f.directory, ['stash', 'list', '--format=%gs'])
+  expect(stashes).toContain('external-one')
+  expect(stashes).toContain('dovo: move task')
+  expect(s.store.task(task.id).messages.at(-1)?.text).toContain('recovery copy remains')
 })

@@ -7,11 +7,12 @@ import { nativeEffect } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { clientTaskScope, startPolling, runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/state/application-state'
-import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { useRuntime } from '../runtime/connection/provider'
+import { useRuntimeSelector } from '../runtime/connection/provider'
+import { selectTaskSurfaces, sameTaskSurfaces } from '../runtime/connection/task-surfaces'
 const preferenceKey = 'dovo.live-activities.enabled'
 const Context = createContext({
   enabled: true,
@@ -52,38 +53,47 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
       : {}),
   }
   const active = useAppActive()
-  const { overviews, readRuntimeEffect, ready } = useRuntime()
+  const { overviews, readRuntimeEffect, ready } = useRuntimeSelector(
+    selectTaskSurfaces,
+    sameTaskSurfaces,
+  )
   const [enabled, updateEnabled, enabledRef] = useApplicationState(true),
     [error, setError] = useApplicationState('')
   const [supported] = useApplicationState(
     () => Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoWidgets'),
   )
   // Native activity reads only need to follow visible state, not assistant text tokens.
-  const activityRevision = JSON.stringify(
-    (active && supported && enabled ? overviews : []).map((source) => {
-      const snapshot = source.snapshot
-      const tasks = snapshot?.workspace.tasks ?? []
-      const running = tasks.filter((task) => task.status === 'running' && !task.archived)
-      const needsInput = new Set(
-        [...(snapshot?.questions ?? []), ...(snapshot?.approvals ?? [])].map((item) => item.taskId),
-      )
-      return [
-        source.profile,
-        source.connected,
-        tasks.map((task) => [task.id, task.status, task.archived, task.turns?.at(-1)?.id]),
-        running.map((task) =>
-          liveTaskProps(
-            task,
-            runtimeComputerName(source),
-            snapshot?.workspace.repositories.find(
-              (repository) => repository.id === task.repositoryId,
-            )?.name ?? '',
-            needsInput.has(task.id),
-            running.length,
-          ),
-        ),
-      ]
-    }),
+  const activityRevision = useMemo(
+    () =>
+      JSON.stringify(
+        (active && supported && enabled ? overviews : []).map((source) => {
+          const snapshot = source.snapshot
+          const tasks = snapshot?.workspace.tasks ?? []
+          const running = tasks.filter((task) => task.status === 'running' && !task.archived)
+          const needsInput = new Set(
+            [...(snapshot?.questions ?? []), ...(snapshot?.approvals ?? [])].map(
+              (item) => item.taskId,
+            ),
+          )
+          return [
+            source.profile,
+            source.connected,
+            tasks.map((task) => [task.id, task.status, task.archived, task.turns?.at(-1)?.id]),
+            running.map((task) =>
+              liveTaskProps(
+                task,
+                runtimeComputerName(source),
+                snapshot?.workspace.repositories.find(
+                  (repository) => repository.id === task.repositoryId,
+                )?.name ?? '',
+                needsInput.has(task.id),
+                running.length,
+              ),
+            ),
+          ]
+        }),
+      ),
+    [active, supported, enabled, overviews],
   )
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const refresh = useRef<() => void>(() => {})

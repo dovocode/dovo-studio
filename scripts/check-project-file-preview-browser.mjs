@@ -11,7 +11,7 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {TaskFiles} from '${detail}task-files.tsx';
 window.fail=true;window.requests=[];window.opened=[];
-const request=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/list')&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/list'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'],...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
+const request=async(path,input)=>{window.requests.push({path,input});if((path.endsWith('/directory')||path.endsWith('/search-paths'))&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/directory'))return {entries:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].map(path=>({path,kind:'file'})),truncated:false};if(path.endsWith('/search-paths'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].filter(path=>path.includes(input.query)),...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
 window.runtime={connected:true,connection:{address:'http://runtime.test:7777',token:'paired-token'},request};
 createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',files:[]}}/>);`,
     },
@@ -33,11 +33,11 @@ createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',fi
     },
     {
       path: '@dovo/studio-core',
-      contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.runtime;export const useStudioHost=()=>({openExternalLink:async url=>window.opened.push(url)});export const useDiffOptions=()=>({options:{}});`,
+      contents: `import {Effect} from 'effect';export {responses} from '@dovo/protocol';const requestEffect=(...args)=>Effect.tryPromise({try:signal=>{if(args[0].endsWith('/search-content'))(window.searchSignals??=[]).push({query:args[1].query,signal});return window.runtime.request(...args)},catch:error=>error});export const useWorkspace=()=>({...window.runtime,requestEffect});export const useStudioHost=()=>({openExternalLink:async url=>window.opened.push(url)});export const useDiffOptions=()=>({options:{}});`,
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
+      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const FileChangeCounts=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -111,7 +111,7 @@ try {
   await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
   assert.equal(await page.getByTestId('file-preview').count(), 1)
   const listingsBeforeSelection = await page.evaluate(
-    () => window.requests.filter((item) => item.path.endsWith('/list')).length,
+    () => window.requests.filter((item) => item.path.endsWith('/directory')).length,
   )
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.getByRole('button', { name: 'large.txt', exact: true }).click()
@@ -120,7 +120,9 @@ try {
     .waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit', exact: true }).isDisabled(), true)
   assert.equal(
-    await page.evaluate(() => window.requests.filter((item) => item.path.endsWith('/list')).length),
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path.endsWith('/directory')).length,
+    ),
     listingsBeforeSelection,
   )
   await page.evaluate(() => {

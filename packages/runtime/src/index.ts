@@ -1,5 +1,6 @@
 import { serveRetrieval } from './retrieval/host.js'
 import { disposeRuntimeSync } from './http/support/runtime-sync.js'
+import { disposeMemoryAttribution } from './diagnostics/memory-attribution.js'
 import { Housekeeping } from './agents/tasks/housekeeping.js'
 import { TaskPullWatcher } from './scm/tasks/task-pulls.js'
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect'
@@ -12,6 +13,7 @@ export { exportRuntimeRecovery } from './storage/recovery.js'
 export { rotateRuntimeLogs } from './storage/log-rotation.js'
 export { recordLastCrash } from './storage/last-crash.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
+export { stopOwnedChild } from './agents/execution/stop-owned-child.js'
 export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/execution/diagnostics.js'
 
 export interface RuntimeOptions {
@@ -86,6 +88,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTitles,
         closeTasks,
         () => services.agents.dispose(),
+        () => services.forges.dispose(),
         () => services.runCredentials.dispose(),
         () => services.store.usageHubs.dispose(),
         () => services.artifactFeeds.dispose(),
@@ -106,6 +109,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.approvals.dispose(),
         () => services.pullCache.dispose(),
         () => disposeRuntimeSync(services),
+        () => disposeMemoryAttribution(services),
       ]
       for (const close of [...finalizers].reverse())
         yield* Effect.addFinalizer(() => release(close))

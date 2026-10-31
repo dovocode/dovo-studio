@@ -132,6 +132,38 @@ it('reads merge request details and all notes/diffs, preserving draft and accoun
   expect(detail.capabilities?.actions).not.toContain('inline-comment')
   expect(requests.some(({ url }) => url.searchParams.get('page') === '2')).toBe(true)
 })
+it.each(['head', 'base'] as const)(
+  'rejects %s revision changes during ordinary GitLab diff loading',
+  async (revision) => {
+    let changed = false
+    const { pulls, requests } = setup((url) => {
+      if (url.pathname === '/api/v4/user') return user
+      if (url.pathname === root) return project
+      if (url.pathname.endsWith('/notes')) return []
+      if (url.pathname.endsWith('/diffs')) {
+        changed = true
+        return [
+          {
+            old_path: 'file.ts',
+            new_path: 'file.ts',
+            new_file: false,
+            deleted_file: false,
+            renamed_file: false,
+            diff: '@@ -1 +1 @@\n-old\n+new',
+          },
+        ]
+      }
+      return changed
+        ? revision === 'head'
+          ? { ...mergeRequest, sha: 'd'.repeat(40) }
+          : { ...mergeRequest, diff_refs: { ...mergeRequest.diff_refs, base_sha: 'd'.repeat(40) } }
+        : mergeRequest
+    })
+    await expect(pulls.detail(42)).rejects.toMatchObject({ status: 409 })
+    expect(requests.some(({ url }) => url.pathname.endsWith('/raw_diffs'))).toBe(false)
+  },
+)
+
 it.each([
   'complete',
   'truncated',

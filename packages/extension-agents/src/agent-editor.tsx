@@ -1,4 +1,6 @@
 import { settingsChanges } from '@dovo/protocol'
+import { secretReferenceIssue, responses } from '@dovo/protocol'
+import { SecretEnvironmentEditor } from './secret-environment-editor'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useEffect, useRef, type ReactNode } from 'react'
@@ -66,7 +68,7 @@ export function AgentEditor({
   onDirtyChange?: (dirty: boolean) => void
   fixedProvider?: boolean
 }) {
-  const { connected, snapshot } = useWorkspace()
+  const { connected, snapshot, request } = useWorkspace()
   const pending = useRef(false)
   const form = useRef<HTMLFormElement>(null)
   const [busy, setBusy] = useApplicationState(false)
@@ -134,6 +136,11 @@ export function AgentEditor({
             return
           }
           let env: Record<string, string>
+          const secretIssue = secretReferenceIssue(agent.envSecrets)
+          if (secretIssue) {
+            setError(secretIssue)
+            return
+          }
           try {
             env = parseAgentEnvironment(environment)
           } catch (cause) {
@@ -486,6 +493,16 @@ export function AgentEditor({
                       computer’s own environment.
                     </p>
                   </FormField>
+                  {snapshot?.secretReferencesSupported && (
+                    <SecretEnvironmentEditor
+                      value={agent.envSecrets}
+                      onChange={(envSecrets) => setAgent({ ...agent, envSecrets })}
+                      disabled={busy || !connected}
+                      onRefresh={async () => {
+                        await request('/api/agents/secrets/refresh', {}, responses.ok)
+                      }}
+                    />
+                  )}
                 </div>
               </details>
             </>

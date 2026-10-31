@@ -1,5 +1,11 @@
-import { expect, it } from 'vite-plus/test'
-import { taskBudgetUsage, summarizeTask, type Task, type Workspace } from '@dovo/protocol'
+import { expect, it, vi } from 'vite-plus/test'
+import {
+  taskBudgetUsage,
+  summarizeTask,
+  type Task,
+  type Workspace,
+  type ConversationPage,
+} from '@dovo/protocol'
 import { scopedWorkspace, snapshotWorkspace, pagedSummaryTask } from './snapshot-overview'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
@@ -122,7 +128,7 @@ it('loads complete history only for subscribed tasks and keeps legacy reads comp
   expect(legacy.tasks[0]?.messages).toHaveLength(80)
 })
 
-it.each(['plain', 'linked', 'error', 'undone'] as const)(
+it.each(['plain', 'linked', 'error', 'undone', 'pending', 'pending-error'] as const)(
   'builds a database page with identical %s checkpoint and budget totals without full hydration',
   (mode) => {
     const db = openDatabase(':memory:')
@@ -149,14 +155,21 @@ it.each(['plain', 'linked', 'error', 'undone'] as const)(
                           },
                         ],
                       }
-                    : mode === 'error'
-                      ? { ...checkpoint, error: 'Capture failed' }
-                      : mode === 'undone'
-                        ? {
-                            ...checkpoint,
-                            undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
-                          }
-                        : checkpoint,
+                    : mode === 'pending' || mode === 'pending-error'
+                      ? {
+                          ...checkpoint,
+                          restorePending: true,
+                          undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
+                          ...(mode === 'pending-error' ? { error: 'Capture failed' } : {}),
+                        }
+                      : mode === 'error'
+                        ? { ...checkpoint, error: 'Capture failed' }
+                        : mode === 'undone'
+                          ? {
+                              ...checkpoint,
+                              undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
+                            }
+                          : checkpoint,
               },
         ),
       }
@@ -164,7 +177,8 @@ it.each(['plain', 'linked', 'error', 'undone'] as const)(
       writer.update(() => ({ ...workspace, tasks: [source] }))
       const store = new WorkspaceStore(db)
       const summary = store.publicWorkspace().tasks[0]!
-      const paged = pagedSummaryTask(db, summary, store.historyPage(source.id)!)
+      const readPage = vi.fn<() => ConversationPage>(() => store.historyPage(source.id)!)
+      const paged = pagedSummaryTask(db, summary, readPage)
       const expected = scopedWorkspace({ ...workspace, tasks: [source] }, [source.id], true)
         .tasks[0]!
       expect(paged.messages).toEqual(expected.messages)
@@ -173,7 +187,8 @@ it.each(['plain', 'linked', 'error', 'undone'] as const)(
       expect(paged.historyTotals).toEqual(expected.historyTotals)
       expect(taskBudgetUsage(paged)).toEqual(taskBudgetUsage(source))
       expect(store.retainedHistories().tasks).toEqual([])
-      expect(pagedSummaryTask(db, summary, store.historyPage(source.id)!)).toBe(paged)
+      expect(pagedSummaryTask(db, summary, readPage)).toBe(paged)
+      expect(readPage).toHaveBeenCalledTimes(1)
     } finally {
       db.close()
     }

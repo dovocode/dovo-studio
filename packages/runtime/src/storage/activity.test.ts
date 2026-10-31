@@ -236,7 +236,7 @@ it('redacts historical literal credentials when upgrading the activity database'
   const db = openDatabase(':memory:')
   try {
     new Activity(db)
-    db.prepare('DELETE FROM documents WHERE id=?').run('activity-redaction-v3')
+    db.prepare('DELETE FROM documents WHERE id=?').run('activity-redaction-v4')
     db.prepare('INSERT INTO activity VALUES (?, ?, ?, ?, ?, ?)').run(
       'old',
       new Date().toISOString(),
@@ -481,6 +481,30 @@ it('tracks only watched thread activity and invalidates pruning without retainin
     log.pruneBefore(new Date(Date.now() + 60000).toISOString())
     expect(resumed.revision()).toBeGreaterThan(beforePrune)
     resumed.stop()
+  } finally {
+    db.close()
+  }
+})
+
+it('redacts supported embedded credential formats before persistence and on upgrade', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const text =
+      'X-API-Key: header-secret Authorization: Basic dXNlcjpwYXNz JSON {"access_token":"json-secret","password":"escaped \\"quoted\\" secret"} ?ticket=url-secret&keep=visible'
+    const log = new Activity(db)
+    log.add('command', 'task', text, { output: text })
+    const saved = JSON.stringify(log.list('', '', 0))
+    for (const secret of ['header-secret', 'dXNlcjpwYXNz', 'json-secret', 'url-secret', 'quoted'])
+      expect(saved).not.toContain(secret)
+    expect(saved).toContain('keep=visible')
+    db.prepare('DELETE FROM documents WHERE id=?').run('activity-redaction-v4')
+    db.prepare('UPDATE activity SET payload=?,summary=?').run(
+      JSON.stringify({ output: text }),
+      text,
+    )
+    const upgraded = JSON.stringify(new Activity(db).list('', '', 0))
+    for (const secret of ['header-secret', 'dXNlcjpwYXNz', 'json-secret', 'url-secret'])
+      expect(upgraded).not.toContain(secret)
   } finally {
     db.close()
   }

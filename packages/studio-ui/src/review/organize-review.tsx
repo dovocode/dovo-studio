@@ -14,16 +14,19 @@ import { providers, useFileReview, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Button } from '../components/ui/button'
 import { ChoicePicker } from '../choice-picker'
+import { ReviewGuideCard } from './review-guide'
 import { ModelSettings } from '../model-settings'
 
 export function OrganizeReview({
   review,
   disabled = false,
   onOrganized,
+  onOpenFile,
 }: {
   review: ReturnType<typeof useFileReview>
   disabled?: boolean
   onOrganized: () => void
+  onOpenFile: (path: string) => void
 }) {
   const { workspace, request, connected, snapshot } = useWorkspace()
   const [agent, setAgent] = useApplicationState<Agent | null>(null)
@@ -143,6 +146,22 @@ export function OrganizeReview({
                   ? 'Regroup by feature'
                   : 'Organize by feature'}
             </Button>
+            {!!review.progress?.revision && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={blocked}
+                onClick={() => {
+                  void review
+                    .organize(agent ? titleSettingsForHarness(agent) : undefined, true)
+                    .then((success) => {
+                      if (success) onOrganized()
+                    })
+                }}
+              >
+                Generate guided review
+              </Button>
+            )}
             {review.featureGroups && (
               <Button
                 size="sm"
@@ -156,6 +175,20 @@ export function OrganizeReview({
           </div>
         </div>
       </details>
+      {review.progress?.guide && (
+        <ReviewGuideCard
+          guide={review.progress.guide}
+          busy={review.busy}
+          disabled={disabled || !review.ready}
+          onMove={review.moveGuide}
+          onOpenFile={onOpenFile}
+        />
+      )}
+      {!!review.error && (
+        <p role="alert" className="text-destructive">
+          {review.error}
+        </p>
+      )}
       {review.organizeError && (
         <p role="alert" className="mt-2 text-destructive">
           {review.organizeError}

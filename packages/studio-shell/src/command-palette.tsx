@@ -101,7 +101,7 @@ export function CommandPalette({
               setSelected(0)
             }}
             onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing || e.defaultPrevented) return
+              if (e.nativeEvent.isComposing || e.keyCode === 229 || e.defaultPrevented) return
               if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
                 e.preventDefault()
                 setSelected(

@@ -6,7 +6,7 @@ import {
   studioUICommandSchema,
   studioDiagnosticsCommandSchema,
   type StudioTools,
-} from '@dovo/protocol'
+} from '@dovo/protocol/agent-tools'
 import type { JSONSchema } from 'zod/v4/core'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 

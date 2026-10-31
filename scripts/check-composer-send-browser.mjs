@@ -124,7 +124,9 @@ try {
     window.response()
     window.response = null
   })
-  await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+  await page.waitForFunction(
+    () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+  )
   await page.waitForFunction(() => typeof window.finishTitle === 'function')
   // A later browser handoff may intentionally insert the same text as a previous send.
   await page.evaluate(() =>
@@ -189,7 +191,9 @@ try {
     window.response()
     window.response = null
   })
-  await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+  await page.waitForFunction(
+    () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+  )
   await remount()
   assert.equal(await input.inputValue(), '', 'A sent reference reappeared')
   // Keep the remaining send scenarios independent of the reference regression.
@@ -287,7 +291,9 @@ try {
       window.response()
       window.response = null
     }, fail)
-    await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+    await page.waitForFunction(
+      () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+    )
   }
   const acknowledge = async (destination) => {
     await page.evaluate(
@@ -421,7 +427,7 @@ try {
     reasoning: 'low',
   })
   assert.equal(edit.input.expectedTurnSettings, null)
-  // Duplicate leaves the composer alone and reuses its id after a failed response.
+  // Duplicate leaves the composer alone. Durable journal retry identity is covered in protocol tests; this fixture mocks requests before that layer.
   const duplicateButton = page.getByRole('button', {
     name: 'Duplicate queued message 1',
     exact: true,
@@ -439,14 +445,15 @@ try {
   })
   await duplicateButton.click()
   await page.waitForFunction(() => !document.querySelector('[role="alert"]'))
-  assert.equal(
-    await page.evaluate(() => window.requests.at(-1).input.duplicateMessageId),
-    duplicateId,
+  const retriedCandidateId = await page.evaluate(
+    () => window.requests.at(-1).input.duplicateMessageId,
   )
+  assert.ok(retriedCandidateId)
+  assert.notEqual(retriedCandidateId, duplicateId)
   await duplicateButton.click()
   await page.waitForFunction(
     (id) => window.requests.at(-1).input.duplicateMessageId !== id,
-    duplicateId,
+    retriedCandidateId,
   )
   assert.equal(await input.inputValue(), draftBeforeDuplicate)
 
@@ -513,8 +520,8 @@ try {
     .getByRole('button', { name: 'Drag queued message 1 to reorder', exact: true })
     .dragTo(input)
   if ((await moves()).length !== 4) throw Error('Canceled drag sent a mutation')
-  assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 0)
-  assert.equal(await queued.getByRole('button', { name: /Move queued message/ }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 1)
+  assert.equal(await queued.getByRole('button', { name: /Move queued message/ }).count(), 8)
   await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).click()
   await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).waitFor()
   assert.equal(
@@ -957,7 +964,7 @@ try {
   await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
   await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
   await page.getByRole('menuitemradio', { name: /Fast/, exact: false }).click()
-  await page.getByRole('button', { name: 'Task information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await page.getByRole('button', { name: 'Configure task permissions', exact: true }).click()
   await page.locator('[role=menuitemradio][data-value=full-access]').click()
   assert.equal(await input.inputValue(), 'Use the full composer')

@@ -1598,6 +1598,7 @@ export function WorkspaceProvider({
       },
       active: () => inputPreview || document.visibilityState === 'visible',
       onWake: () => wakeFallback(),
+      onStatus: () => wakeFallback(),
       onSnapshot: (value) => {
         if (stopped || !synchronization.acceptsRevision(value.revision, value.runtimeInstanceId))
           return
@@ -1735,6 +1736,8 @@ export function WorkspaceProvider({
       )
     })
     const polling = startPolling(poll, {
+      enabled: () =>
+        !live.shared && !live.online() && (inputPreview || document.visibilityState === 'visible'),
       interval: 1000,
       // An unreachable host is not hammered every second; returning or reconnecting retries at once.
       backoff: connection.token === localOwnerToken.current ? 2000 : 10000,
@@ -1742,10 +1745,9 @@ export function WorkspaceProvider({
     })
     wakeFallback = polling.refresh
     const wake = () => {
-      if (document.visibilityState === 'visible') {
-        live.refresh()
-        polling.refresh()
-      }
+      if (document.visibilityState === 'visible') live.refresh()
+      // Hidden windows park the fallback timer; becoming visible resumes it immediately.
+      polling.refresh()
     }
     window.addEventListener('online', wake)
     window.addEventListener('focus', wake)

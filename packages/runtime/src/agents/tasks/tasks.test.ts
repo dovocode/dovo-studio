@@ -30,6 +30,78 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+it('rechecks overlapping runs after asynchronous checkout availability checks', async () => {
+  const s = await setup()
+  const cwd = s.store.get().repositories[0]!.path
+  vi.spyOn(s.checkouts, 'directory').mockResolvedValue(cwd)
+  vi.spyOn(s.checkouts.linked, 'resolve').mockResolvedValue([])
+  let releaseChecks!: () => void
+  const checked = new Promise<void>((resolve) => {
+    releaseChecks = resolve
+  })
+  let arrivals = 0
+  vi.spyOn(s.git, 'assertCheckoutAvailable').mockImplementation(async () => {
+    if (++arrivals === 2) releaseChecks()
+    await checked
+  })
+  let finishProvider!: () => void
+  const providerDone = new Promise<void>((resolve) => {
+    finishProvider = resolve
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (run) => {
+    await providerDone
+    run.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const tasks = ['First', 'Second'].map((title) =>
+    s.tasks.create({ title, repositoryId: 'repo', agentId: 'agent', objective: 'Work' }),
+  )
+  try {
+    const results = await Promise.allSettled(tasks.map((task) => s.tasks.start(task.id)))
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      { status: 'rejected', reason: expect.objectContaining({ status: 409 }) },
+    ])
+    finishProvider()
+    for (const result of results) if (result.status === 'fulfilled') await result.value.done
+    expect(run).toHaveBeenCalledTimes(1)
+  } finally {
+    releaseChecks()
+    finishProvider()
+  }
+})
+it('pauses accepted input when restart admission fails and resumes it exactly once', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (run) => {
+    run.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Restart',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const lease = s.tasks.prepareRestart(true)
+  await expect(s.tasks.send(task.id, 'restart-message', 'Continue after restart')).resolves.toEqual(
+    { ok: true },
+  )
+  expect(s.store.taskSummary(task.id)).toMatchObject({
+    queuePaused: true,
+    queue: [{ id: 'restart-message', text: 'Continue after restart' }],
+    error: expect.stringContaining('Runtime is restarting'),
+  })
+  expect(run).not.toHaveBeenCalled()
+  s.tasks.cancelRestart(lease.id)
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(
+    s.store.task(task.id).messages.filter((message) => message.id === 'restart-message'),
+  ).toHaveLength(1)
+  expect(s.store.taskSummary(task.id).queue ?? []).toEqual([])
+})
 it('refreshes harness sessions when optional MCP features change and favors replies over artifacts', async () => {
   const s = await setup()
   const runs: AgentRun[] = []
@@ -656,6 +728,130 @@ it('persists separate checkpoint diffs for completed and failed turns', async ()
       ],
     },
   })
+})
+it.each(['none', 'early', 'snapshot', 'persisted', 'manual'] as const)(
+  'keeps quota failure and Stop state consistent (%s)',
+  async (timing) => {
+    const s = await setup()
+    s.defaults.save(
+      {
+        ...s.defaults.get(),
+        scopedSettings: {
+          shared: [],
+          environment: { taskBehavior: { quotaResume: true, quotaSnooze: true } },
+        },
+      },
+      false,
+    )
+    const task = s.tasks.create({
+      title: 'Quota Stop race',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    const manualSnooze = '2099-01-01T00:00:00.000Z'
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      if (run.mock.calls.length > 1) return
+      input.onEvent?.('account/rateLimits/updated', {
+        rateLimits: {
+          primary: {
+            usedPercent: 100,
+            windowDurationMins: 300,
+            resetsAt: Math.floor(Date.now() / 1000) + 3600,
+          },
+        },
+      })
+      if (timing === 'early') s.tasks.cancel(task.id)
+      throw new Error('Usage limit reached')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const snapshot = s.git.snapshot.bind(s.git)
+    vi.spyOn(s.git, 'snapshot').mockImplementation(async (cwd, ref, signal) => {
+      if (timing === 'snapshot' && ref.endsWith('/after')) s.tasks.cancel(task.id)
+      return snapshot(cwd, ref, signal)
+    })
+    const update = s.store.updateTaskHistory.bind(s.store)
+    let stopped = false
+    vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((id, change, receipt, action) => {
+      const result = update(id, change, receipt, action)
+      if (
+        !stopped &&
+        (timing === 'persisted' || timing === 'manual') &&
+        s.store.task(task.id).quotaContinuation
+      ) {
+        stopped = true
+        if (timing === 'manual')
+          s.store.updateTask(task.id, (current) => ({
+            ...current,
+            snoozedUntil: manualSnooze,
+          }))
+        s.tasks.cancel(task.id)
+      }
+      return result
+    })
+    await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Usage limit reached')
+    const after = s.store.task(task.id)
+    expect(after.status).toBe(timing === 'none' ? 'failed' : 'cancelled')
+    expect(after.turns?.at(-1)?.status).toBe(after.status)
+    const resetAt = expect.any(String)
+    expect(after.quotaContinuation).toEqual(
+      timing === 'none'
+        ? { resume: true, turnId: after.turns?.at(-1)?.id, at: resetAt }
+        : undefined,
+    )
+    expect(after.snoozedUntil ?? null).toBe(
+      timing === 'none' ? after.quotaContinuation?.at : timing === 'manual' ? manualSnooze : null,
+    )
+    if (timing === 'none') {
+      const expired = new Date(Date.now() - 1000).toISOString()
+      s.store.updateTask(task.id, (current) => ({
+        ...current,
+        quotaContinuation: current.quotaContinuation && {
+          ...current.quotaContinuation,
+          at: expired,
+        },
+        snoozedUntil: expired,
+      }))
+    }
+    await s.tasks.runScheduled()
+    await waitForTask(() => expect(run).toHaveBeenCalledTimes(timing === 'none' ? 2 : 1))
+  },
+)
+it('keeps a streaming store failure failed when Stop follows the internal abort', async () => {
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Store failure',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const update = s.store.updateTaskHistory.bind(s.store)
+  let failed = false
+  vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((id, change, receipt, action) => {
+    const next = change(s.store.task(id))
+    if (!failed && next.messages.some((message) => message.text === 'first buffered')) {
+      failed = true
+      throw new Error('Streaming SQLite failure')
+    }
+    return update(id, change, receipt, action)
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) => {
+      input.onText('first')
+      input.onText(' buffered')
+      await waitForTask(() => expect(input.signal.aborted).toBe(true))
+      s.tasks.cancel(task.id)
+      input.signal.throwIfAborted()
+    },
+  })
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Streaming SQLite failure')
+  expect(s.store.task(task.id)).toMatchObject({
+    status: 'failed',
+    turns: [{ status: 'failed' }],
+    error: expect.stringContaining('Streaming SQLite failure'),
+  })
+  expect(s.store.task(task.id).quotaContinuation).toBeUndefined()
 })
 it('does not start provider work without a baseline and reports after-snapshot failures separately', async () => {
   const s = await setup()

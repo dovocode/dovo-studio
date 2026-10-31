@@ -16,7 +16,12 @@ import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent } from '@dovo/protocol'
 import { TaskReviews } from './scm/reviews/task-reviews.js'
 import { ReviewMarks } from './scm/reviews/progress.js'
-import { FileReviews, pullReviewScope, pullReviewFiles } from './scm/reviews/reviews.js'
+import {
+  FileReviews,
+  pullReviewScope,
+  pullReviewFiles,
+  pullReviewRevision,
+} from './scm/reviews/reviews.js'
 import { DeviceHosts, splitDeviceId } from './previews/device-hosts.js'
 import { previewDevices } from './previews/devices.js'
 import { DeviceHostUploads } from './previews/device-host-install.js'
@@ -64,6 +69,8 @@ import { Jobs } from './jobs/jobs.js'
 import { SocketTickets } from './http/support/socket-tickets.js'
 import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
+import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
+import { errorMessage } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
 export function createServices(db: Database.Database, ownerToken: string): Services {
@@ -185,6 +192,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   // Task and message activity is recorded as the store changes. Replaying the stored
   // workspace here would resurrect pruned rows and duplicate task events on every start.
   const attachments = new Attachments(db, store, activity)
+  questions.setAttachments(attachments)
   const reviewMarks = new ReviewMarks(db)
   const pullCache = new PullCache(
     db,
@@ -193,7 +201,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     (cwd, refresh) => pulls.identity(cwd, refresh),
     (detail) => {
       if (!detail.warnings.some((warning) => warning.startsWith('Files:')))
-        reviewMarks.reconcile(pullReviewScope(detail), pullReviewFiles(detail))
+        reviewMarks.reconcile(
+          pullReviewScope(detail),
+          pullReviewFiles(detail),
+          pullReviewRevision(detail),
+        )
     },
   )
   const scratch = new ScratchWorkspaces(
@@ -441,6 +453,21 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     })
   })
 
+  const browserTransfers = new BrowserTransferStorage(
+    db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-transfers'),
+  )
+  // Reclaims staging left by runs that exited abruptly. Failures only retain files, but are
+  // recorded so remaining disk use is visible.
+  void browserTransfers.recover().catch((error: unknown) => {
+    console.error('Could not remove stale browser transfers', error)
+    try {
+      activity.add('integration', 'browser-transfers', 'Could not remove stale browser transfers', {
+        error: errorMessage(error),
+      })
+    } catch {
+      // The database may already be closed by a short-lived runtime; the log above remains.
+    }
+  })
   const services: Services = {
     projectTransfers: new ProjectTransfers(() => services, db),
     threadWatch,
@@ -526,6 +553,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     browsers: new RemoteBrowsers(
       db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-profiles'),
       () => preferences.get().browserProfiles,
+      browserTransfers,
     ),
     browserTickets: new SocketTickets(),
     checkouts,

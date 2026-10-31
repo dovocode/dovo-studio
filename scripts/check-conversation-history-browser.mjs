@@ -399,7 +399,7 @@ async function checkMobileRestoreRace(page) {
   await page.waitForFunction(
     () =>
       window.historyState.task.id === 'restore-failure' &&
-      window.historyState.error.includes('Could not restore'),
+      window.historyState.cacheError.includes('Could not restore'),
   )
   await page.evaluate(() => window.background('background'))
   if (await page.evaluate(() => window.failedRestoreWrites))

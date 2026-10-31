@@ -1,6 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
-import { useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef } from 'react'
+import { ConversationVisibilityContext } from '../conversation-visibility'
 import { File, FileImage, X, Pencil } from 'lucide-react'
 import {
   attachmentReadSchema,
@@ -28,6 +29,10 @@ export function MessageAttachments({
   disabled?: boolean
 }) {
   const { request, connected } = useWorkspace()
+  const visible = useContext(ConversationVisibilityContext)
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const generation = useRef(0)
   const [preview, setPreview] = useApplicationState<{
       attachment: Attachment
       data: string
@@ -35,25 +40,59 @@ export function MessageAttachments({
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const open = async (id: string) => {
+    const current = generation.current
     setBusy(true)
     setError('')
     try {
-      setPreview(
-        await request(
-          '/api/attachments/read',
-          {
-            taskId,
-            id,
-          },
-          attachmentReadSchema,
-        ),
+      const result = await request(
+        '/api/attachments/read',
+        {
+          taskId,
+          id,
+        },
+        attachmentReadSchema,
       )
+      if (generation.current === current && !document.hidden && visibleRef.current)
+        setPreview(result)
     } catch (error) {
       setError(String(error))
     } finally {
       setBusy(false)
     }
   }
+  useEffect(() => {
+    if (!visible) {
+      generation.current++
+      setPreview((current) =>
+        current && /^(audio|video)\//.test(current.attachment.mime) ? null : current,
+      )
+    }
+  }, [visible])
+  useEffect(() => {
+    setPreview(null)
+    return () => {
+      generation.current++
+    }
+  }, [taskId])
+  useEffect(() => {
+    if (!busy && !preview) return
+    const closeMedia = () => {
+      generation.current++
+      setPreview((current) =>
+        current && /^(audio|video)\//.test(current.attachment.mime) ? null : current,
+      )
+    }
+    const onVisibility = () => {
+      if (document.hidden) closeMedia()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', closeMedia)
+    onVisibility()
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', closeMedia)
+    }
+  }, [busy, preview])
   if (!files.length) return null
   return (
     <div
@@ -147,6 +186,8 @@ export function MessageAttachments({
               alt={preview.attachment.name}
               src={`data:${preview.attachment.mime};base64,${preview.data}`}
             />
+          ) : preview && /^(audio|video)\//.test(preview.attachment.mime) ? (
+            visible && <AttachmentMedia key={preview.attachment.id} {...preview} />
           ) : (
             preview && (
               <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs">
@@ -181,6 +222,58 @@ export function MessageAttachments({
           </Button>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+function AttachmentMedia({ attachment, data }: { attachment: Attachment; data: string }) {
+  const ref = useRef<HTMLMediaElement>(null)
+  const [status, setStatus] = useApplicationState<'loading' | 'ready' | 'error'>('loading')
+  useEffect(() => {
+    const media = ref.current
+    const stop = () => media?.pause()
+    const onVisibility = () => {
+      if (document.hidden) stop()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', stop)
+    return () => {
+      stop()
+      media?.removeAttribute('src')
+      media?.load()
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', stop)
+    }
+  }, [])
+  const props = {
+    controls: true,
+    preload: 'metadata' as const,
+    src: `data:${attachment.mime};base64,${data}`,
+    'aria-label': `Play ${attachment.name}`,
+    onLoadedMetadata: () => setStatus('ready'),
+    onError: () => setStatus('error'),
+    className: 'max-h-[60dvh] w-full',
+  }
+  return (
+    <div>
+      {attachment.mime.startsWith('video/') ? (
+        <video
+          ref={(element) => {
+            ref.current = element
+          }}
+          {...props}
+        />
+      ) : (
+        <audio
+          ref={(element) => {
+            ref.current = element
+          }}
+          {...props}
+        />
+      )}
+      {status === 'loading' && <p role="status">Loading media…</p>}
+      {status === 'error' && (
+        <p role="alert">Unable to play this file. Download it to open elsewhere.</p>
+      )}
     </div>
   )
 }

@@ -460,3 +460,56 @@ it('recovers a scratch turn interrupted after the provider completed without req
   expect(reopened.services.store.task('task').runPhase).toBeUndefined()
   expect(git).not.toHaveBeenCalled()
 })
+
+it('keeps a linked project available while a thread has pending undo recovery', async () => {
+  const f = await setup()
+  const repositoryPath = join(f.root, 'recovery-project')
+  await mkdir(repositoryPath)
+  const s = f.runtime.services
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'recoverable', name: 'Recovery project', path: repositoryPath, branch: 'main' },
+    ],
+  }))
+  await f.create(f.draft('recovery-thread'))
+  s.store.updateTaskHistory('recovery-thread', (task) => ({
+    ...task,
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'reply',
+        agentId: '',
+        provider: 'codex',
+        model: '',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        checkpoint: {
+          before: 'before',
+          files: [],
+          omitted: [],
+          restorePending: true,
+          undone: { at: 'now', backup: 'backup' },
+          linked: [
+            {
+              checkoutId: 'old-link',
+              repositoryId: 'recoverable',
+              directory: repositoryPath,
+              before: 'before',
+              files: [],
+              omitted: [],
+              undone: { at: 'now', backup: 'backup' },
+            },
+          ],
+        },
+      },
+    ],
+  }))
+  const result = await f.request('/api/scm/repositories/delete', { repositoryId: 'recoverable' })
+  expect(result.status).toBe(409)
+  expect(await result.text()).toContain('Finish the pending undo or redo')
+  expect(s.store.get().repositories.some((repository) => repository.id === 'recoverable')).toBe(
+    true,
+  )
+})

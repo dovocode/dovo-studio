@@ -97,6 +97,7 @@ import { randomUUID } from 'expo-crypto'
 import { ArtifactBrowser } from '../../ui/content/artifacts'
 type StartupControls = {
   temporary: boolean
+  onStartInBackground: NonNullable<ComponentProps<typeof Composer>['onStartInBackground']>
   onNewThread: () => void
   onSelectRemote: NonNullable<ComponentProps<typeof Composer>['onSelectRemote']>
 }
@@ -600,7 +601,7 @@ function TaskDetailContent({
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
   const [projectInfo, setProjectInfo] = useState(false)
-  // Navigation keeps screens mounted; project information belongs only to this view.
+  // Navigation keeps screens mounted; thread info belongs only to this view.
   useEffect(() => {
     setProjectInfo(false)
   }, [focused, activeId, task.id, pane, native?.parentKey])
@@ -727,7 +728,7 @@ function TaskDetailContent({
                             : tab,
                   group: tab === 'agents' || tab === 'devices' ? 'Tools' : 'Navigate',
                   selected: pane === tab,
-                  // Keep changes and project information beside the menu; car mode uses the menu.
+                  // Keep changes and thread info beside the menu; car mode uses the menu.
                   overflow: car || tab !== 'diff',
                   onPress: () => {
                     Keyboard.dismiss()
@@ -740,7 +741,7 @@ function TaskDetailContent({
                 .concat(
                   [
                     {
-                      label: 'Project information',
+                      label: 'Thread info',
                       group: 'Project',
                       icon: 'info',
                       overflow: car || !hasProject,
@@ -947,10 +948,10 @@ function TaskDetailContent({
         }
       />
       {!native && !expandedPreview && parentNavigation}
-      {projectInfo && !native && !car && (
+      {projectInfo && !native && (
         <TaskProjectSheet
           key={`${activeId}:${task.id}`}
-          inline
+          inline={!car}
           task={task}
           scripts={projectActions}
           onBrowser={(url) => {
@@ -1011,6 +1012,7 @@ function TaskDetailContent({
             focused &&
             !native &&
             pane === 'chat' &&
+            !projectInfo &&
             !linkingProjects &&
             !renaming &&
             !asking &&
@@ -1046,6 +1048,7 @@ function TaskDetailContent({
             }}
           >
             <Composer
+              onStartInBackground={startup?.onStartInBackground}
               queuedMessages={<ComposerActivity task={task} />}
               renderAbove={(setup, startModes) => (
                 <Conversation setup={setup} startModes={startModes}>
@@ -1261,7 +1264,26 @@ function TaskDetailContent({
             />
           )}
           {pane === 'terminal' && (
-            <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />
+            <TerminalPane
+              task={task}
+              selected={terminalId}
+              onSelect={setTerminalId}
+              visible={
+                focused &&
+                !native &&
+                !projectInfo &&
+                !linkingProjects &&
+                !renaming &&
+                !asking &&
+                !transferring &&
+                !sharingTaskId &&
+                !artifactsOpen &&
+                !linkedPulls &&
+                !threadBehavior &&
+                !editingInstructions &&
+                !editingApprovalRules
+              }
+            />
           )}
         </ConversationProvider>
       </View>

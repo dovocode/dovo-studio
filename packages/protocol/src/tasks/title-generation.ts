@@ -1,4 +1,5 @@
-import { mutableStruct, strictStruct } from '../shared/schema.js'
+import { mutableStruct, strictStruct, mutableArray, refine } from '../shared/schema.js'
+import { attachmentSchema, MAX_ATTACHMENTS } from '../shared/attachments.js'
 import { maxValue, minValue } from '../shared/schema.js'
 import { Schema, Effect, Struct } from 'effect'
 import { agentSchema, defaultTaskHarness, type Agent, type TaskHarness } from '../workspace.js'
@@ -27,11 +28,16 @@ export const titleGenerationSettingsSchema = mutableStruct({
     Schema.withDecodingDefaultType(Effect.sync(() => '')),
   ),
 })
-export const generateTitleSchema = mutableStruct({
-  taskId: Schema.optional(minValue(maxValue(Schema.String, 200), 1)),
-  expectedTitle: Schema.optional(maxValue(Schema.String, 1000)),
-  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120000),
-})
+export const generateTitleSchema = refine(
+  mutableStruct({
+    taskId: Schema.optional(minValue(maxValue(Schema.String, 200), 1)),
+    expectedTitle: Schema.optional(maxValue(Schema.String, 1000)),
+    text: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 120000),
+    attachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
+  }),
+  (input) => !!input.text || !!input.attachments?.length,
+  'Provide text or attachments',
+)
 export const generatedTitleSchema = mutableStruct({
   title: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120),
 })

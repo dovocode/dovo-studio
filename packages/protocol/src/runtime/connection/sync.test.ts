@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
 import { defaultTaskHarness, resolveTaskAgent } from '../../workspace.js'
@@ -41,6 +41,53 @@ const snapshot = () =>
     devices: [],
     pendingDevices: [],
   })
+it('avoids serializing reused array items and still sends replacement file contents', () => {
+  const previous = snapshot()
+  const file = {
+    path: 'file.txt',
+    before: 'a'.repeat(8192),
+    after: 'b'.repeat(8192),
+    viewed: false,
+  }
+  previous.workspace.tasks[0]!.files = [file]
+  const serialize = vi.fn<() => typeof file>(() => ({ ...file }))
+  Object.defineProperty(file, 'toJSON', { value: serialize })
+  const task = previous.workspace.tasks[0]!
+  const next = {
+    ...previous,
+    revision: 2,
+    workspace: {
+      ...previous.workspace,
+      tasks: [
+        {
+          ...task,
+          files: [...task.files],
+          messages: task.messages.map((message) => ({ ...message, text: message.text + 'stream' })),
+        },
+        previous.workspace.tasks[1]!,
+      ],
+    },
+  }
+  const delta = snapshotDelta(previous, next, true, true)
+  expect(serialize).not.toHaveBeenCalled()
+  expect(delta.workspace.tasks?.changes[0]?.fieldDelta).toBeUndefined()
+  expect(applySnapshotDelta(previous, delta)).toEqual(next)
+  const changed = {
+    ...next,
+    workspace: {
+      ...next.workspace,
+      tasks: [
+        { ...next.workspace.tasks[0]!, files: [{ ...file, after: 'changed' }] },
+        next.workspace.tasks[1]!,
+      ],
+    },
+  }
+  const changedDelta = snapshotDelta(next, changed, true, true)
+  expect(changedDelta.workspace.tasks?.changes[0]?.fieldDelta?.values.files).toEqual(
+    changed.workspace.tasks[0]!.files,
+  )
+  expect(applySnapshotDelta(next, changedDelta)).toEqual(changed)
+})
 it.each(['standalone', 'custom agent'] as const)(
   'preserves a manually selected model through send and streaming deltas for a %s',
   (selection) => {

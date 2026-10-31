@@ -42,7 +42,10 @@ type Conversation = {
   childResultIds: ReadonlySet<string>
   messageSources: ReadonlyMap<string, MessageSource>
   actions: ReturnType<typeof useConversationActions>
-  send: (mode?: 'queue' | 'steer') => void
+  send: (
+    mode?: 'queue' | 'steer' | 'stage',
+    startInBackground?: Parameters<ReturnType<typeof useConversationActions>['submit']>[2],
+  ) => void
   stop: () => void
   openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   openTerminal: (terminalId: string) => void
@@ -128,6 +131,7 @@ export function ConversationProvider({
           old.groupTurn?.id === item.groupTurn?.id &&
           old.groupTurn?.startedAt === item.groupTurn?.startedAt &&
           old.groupTurn?.finishedAt === item.groupTurn?.finishedAt &&
+          old.groupTurn?.providerRetry === item.groupTurn?.providerRetry &&
           old.groupTurn?.status === item.groupTurn?.status
         )
           next.set(id, old)
@@ -258,7 +262,7 @@ export function ConversationProvider({
         .map((part) => part.text)
         .join('\n')
       await actions.run(() =>
-        actions.submit(message.runConfig?.custom?.mode === 'steer' ? 'steer' : 'queue', text),
+        actions.submit(message.runConfig?.custom?.mode === 'steer' ? 'steer' : undefined, text),
       )
     },
     onCancel: async () => {
@@ -308,12 +312,12 @@ export function ConversationProvider({
     collapsedTurns,
     toggleTurn,
     followRequest,
-    send: (mode = 'queue') => {
+    send: (mode, startInBackground) => {
       if (actions.canSend) {
         // Only a local Send/Queue/Steer asks to leave a manually scrolled position.
         // Remote messages and queued turns arriving later must not move the reader.
         setFollowRequest((revision) => revision + 1)
-        void actions.run(() => actions.submit(mode))
+        void actions.run(() => actions.submit(mode, undefined, startInBackground))
       }
     },
     stop: () => runtime.thread.cancelRun(),

@@ -91,8 +91,9 @@ export async function createPullBranchWorktree(
   directory: string,
   key: string,
   restoring: boolean,
+  signal?: AbortSignal,
 ) {
-  if (restoring) await git.command(root, ['worktree', 'prune'])
+  signal?.throwIfAborted()
   const { branch, url, ref, local } = await inspectPullBranch(
     git,
     root,
@@ -101,10 +102,10 @@ export async function createPullBranchWorktree(
     restoring,
   )
   if (restoring && local) {
-    if (local[2] !== directory) await git.addWorktree(root, directory, [directory, branch])
+    if (local[2] !== directory) await git.addWorktree(root, directory, [directory, branch], signal)
     return branch
   }
-  const head = await fetchPullHead(git, root, source, key)
+  const head = await fetchPullHead(git, root, source, key, signal)
   const remotes = (await git.command(root, ['remote'])).trim().split('\n').filter(Boolean)
   const remote = local?.[3] || `dovo-pr-${key}`
   if (remote === '.')
@@ -114,18 +115,28 @@ export async function createPullBranchWorktree(
   } else {
     if (local?.[3])
       throw new HttpError(409, 'The PR branch upstream is unavailable. Choose a separate branch.')
-    await git.sharedConfigCommand(root, ['remote', 'add', remote, url])
+    await git.withSharedConfig(
+      root,
+      () => git.checkoutCommand(root, ['remote', 'add', remote, url], signal),
+      signal,
+    )
   }
   if (local?.[2] !== directory)
     await git.addWorktree(
       root,
       directory,
       local ? [directory, branch] : ['--no-track', '-b', branch, directory, head],
+      signal,
     )
+  signal?.throwIfAborted()
   await git.command(root, ['update-ref', `refs/remotes/${remote}/${branch}`, head])
-  await git.withSharedConfig(root, async () => {
-    await git.command(root, ['config', `branch.${branch}.remote`, remote])
-    await git.command(root, ['config', `branch.${branch}.merge`, ref])
-  })
+  await git.withSharedConfig(
+    root,
+    async () => {
+      await git.checkoutCommand(root, ['config', `branch.${branch}.remote`, remote], signal)
+      await git.checkoutCommand(root, ['config', `branch.${branch}.merge`, ref], signal)
+    },
+    signal,
+  )
   return branch
 }

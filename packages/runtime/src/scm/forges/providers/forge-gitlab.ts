@@ -266,6 +266,8 @@ export class GitLabForge implements ForgeAdapter {
       } catch (error) {
         warnings.push(`Raw diff unavailable or incomplete: ${errorMessage(error)}`)
       }
+    }
+    if (diffs.status === 'fulfilled') {
       const current = await this.pull(number)
       if (current.sha !== pull.sha || current.diff_refs?.base_sha !== pull.diff_refs.base_sha)
         throw new HttpError(

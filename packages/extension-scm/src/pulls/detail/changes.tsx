@@ -41,9 +41,13 @@ export function PullChanges({
   onPosted: () => void
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
+  const [guidePath, setGuidePath] = useState('')
   const visibleFiles = useMemo(
-    () => detail.files.filter((file) => !hideWhitespaceChanges || !whitespaceOnlyPatch(file)),
-    [detail.files, hideWhitespaceChanges],
+    () =>
+      detail.files.filter(
+        (file) => file.path === guidePath || !hideWhitespaceChanges || !whitespaceOnlyPatch(file),
+      ),
+    [detail.files, hideWhitespaceChanges, guidePath],
   )
   const { headSha, baseSha } = detail.pull
   const fingerprints = useMemo(
@@ -117,6 +121,10 @@ export function PullChanges({
     setSelected(path)
     cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }
+  useEffect(() => {
+    if (guidePath)
+      cards.current.get(guidePath)?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }, [guidePath, files])
   const anchoredFragment = useRef('')
   useEffect(() => {
     if (!initialFragment) {
@@ -181,7 +189,15 @@ export function PullChanges({
           />
         </div>
       </ChangeSummary>
-      <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
+      <OrganizeReview
+        onOpenFile={(path) => {
+          setGuidePath(path)
+          setKind(undefined)
+          selectFile(path)
+        }}
+        review={review}
+        onOrganized={() => setRelated(true)}
+      />
       <div
         aria-label="Pinned file review controls"
         className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"

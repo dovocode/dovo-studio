@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3'
+import { decode, mutableStruct } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { mkdirSync, chmodSync } from 'node:fs'
 import { dirname } from 'node:path'
 export function openDatabase(path: string): Database.Database {
@@ -12,6 +14,12 @@ export function openDatabase(path: string): Database.Database {
     CREATE TABLE IF NOT EXISTS queue_restore_receipts (task_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY (task_id, id));
     CREATE TABLE IF NOT EXISTS question_responses (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS deliveries (key TEXT PRIMARY KEY, created_at TEXT NOT NULL);`)
+  const questionColumns = db
+    .prepare('PRAGMA table_info(question_responses)')
+    .all()
+    .map((row) => decode(mutableStruct({ name: Schema.String }), row))
+  if (!questionColumns.some((column) => column.name === 'attachments'))
+    db.exec('ALTER TABLE question_responses ADD COLUMN attachments TEXT')
   if (path !== ':memory:') chmodSync(path, 0o600)
   return db
 }

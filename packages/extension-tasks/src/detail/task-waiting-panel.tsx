@@ -14,9 +14,11 @@ import {
 export function TaskWaitingPanel({
   taskId,
   panel = false,
+  active = true,
   onPullLink,
 }: {
   taskId: string
+  active?: boolean
   panel?: boolean
   onPullLink?: (url: string) => boolean
 }) {
@@ -37,6 +39,7 @@ export function TaskWaitingPanel({
     connected,
     read,
     JSON.stringify([activeRuntimeId, connection]),
+    active,
   )
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
   const related = panel ? (data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []) : []

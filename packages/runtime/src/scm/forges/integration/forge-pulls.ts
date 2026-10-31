@@ -600,6 +600,7 @@ export class ForgePullRequests {
                 host,
                 token,
                 onUnauthorized: credential.onUnauthorized,
+                access: { host, repository, source: credential.source },
                 ...(connection.cliEnv ? { env: connection.cliEnv } : {}),
               }
             : undefined,
@@ -682,6 +683,7 @@ export class ForgePullRequests {
       host: scope.host,
       repository: scope.repository,
       viewerLogin: scope.viewerLogin,
+      access: credential.access,
       env: credential.env,
       credential: async () => {
         scope.validate()

@@ -9,8 +9,8 @@ const subscribe = (notify: () => void) => {
 // Native prompts temporarily mark the app inactive; preserve the preview through those.
 const foreground = () => AppState.currentState === 'active' || AppState.currentState === 'inactive'
 
-export function usePreviewActive() {
+export function usePreviewActive(keepWhilePicking = false) {
   const { focused } = useNavigation()
   const appForeground = useSyncExternalStore(subscribe, foreground, foreground)
-  return focused && appForeground
+  return focused && (appForeground || keepWhilePicking)
 }

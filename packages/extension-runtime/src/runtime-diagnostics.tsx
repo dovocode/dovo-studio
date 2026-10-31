@@ -3,6 +3,7 @@ import {
   runtimeBackupResponseSchema,
   runtimeDiagnosticsSchema,
   type RuntimeDiagnostics,
+  type RuntimeMemoryDiagnostics,
 } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
@@ -100,6 +101,7 @@ export function RuntimeDiagnosticsPanel() {
             Last task scheduler tick: {status.schedulers.tasks.lastSuccess ?? 'None'} · Automation
             tick: {status.schedulers.jobs.lastSuccess ?? 'None'}
           </p>
+          {status.memory && <RuntimeMemory memory={status.memory} />}
           {status.internet && (
             <details className="space-y-2">
               <summary className="cursor-pointer font-medium">
@@ -189,5 +191,75 @@ export function RuntimeDiagnosticsPanel() {
         </>
       )}
     </article>
+  )
+}
+
+const megabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`
+function RuntimeMemory({ memory }: { memory: RuntimeMemoryDiagnostics }) {
+  return (
+    <details className="space-y-2">
+      <summary className="cursor-pointer font-medium">Runtime memory</summary>
+      <p>
+        Runtime: {megabytes(memory.rssBytes)} resident · JavaScript heap{' '}
+        {megabytes(memory.heapUsedBytes)} of {megabytes(memory.heapLimitBytes)}
+      </p>
+      {memory.externalBytes !== undefined && (
+        <p>
+          External memory: {megabytes(memory.externalBytes)}
+          {memory.arrayBufferBytes !== undefined &&
+            `, including ${megabytes(memory.arrayBufferBytes)} of buffers`}
+        </p>
+      )}
+      {memory.gc && (
+        <p>
+          Garbage collection: {memory.gc.collections} collections ·{' '}
+          {Math.round(memory.gc.durationMs)} ms since monitoring started
+        </p>
+      )}
+      {memory.eventLoopUtilization !== undefined && (
+        <p>
+          Event loop active: {Math.round(memory.eventLoopUtilization * 100)}% since monitoring
+          started
+        </p>
+      )}
+      <p>
+        {memory.children
+          ? `Agents, terminals and tools started by the runtime: ${memory.children.processes} processes · ${megabytes(memory.children.rssBytes)} resident${memory.children.truncated ? ' (partial)' : ''}. Shared memory is counted once per process.`
+          : 'Memory of processes started by the runtime is not available on this computer.'}
+      </p>
+      {memory.spikes.map((spike) => (
+        <div key={spike.at} className="space-y-1 rounded border p-2">
+          <p className="text-status-warning">
+            {new Date(spike.at).toLocaleString()} · Heap grew {megabytes(spike.growthBytes)} to{' '}
+            {megabytes(spike.heapUsedBytes)}
+            {spike.externalGrowthBytes
+              ? ` · external grew ${megabytes(spike.externalGrowthBytes)}`
+              : ''}{' '}
+            · {spike.concurrentOperations} operations running
+          </p>
+          <p>
+            Suspects:{' '}
+            {spike.suspects
+              .map(
+                (suspect) =>
+                  `${suspect.name} +${megabytes(suspect.heapGrowthBytes)}${suspect.running ? ' (running)' : ''}`,
+              )
+              .join(', ') || 'none recorded'}
+          </p>
+        </div>
+      ))}
+      {memory.recent.length > 0 && <h3 className="font-medium">Recent expensive operations</h3>}
+      {memory.recent.map((operation, index) => (
+        <p key={`${operation.endedAt}-${index}`}>
+          {new Date(operation.endedAt).toLocaleTimeString()} · {operation.name} ·{' '}
+          {operation.durationMs} ms · heap {operation.heapGrowthBytes >= 0 ? '+' : ''}
+          {megabytes(operation.heapGrowthBytes)}
+        </p>
+      ))}
+      <p className="text-muted-foreground">
+        Heap growth includes concurrent work and garbage collection, so suspects are leads, not
+        proof. Keeps the latest 32 operations and 5 spikes in memory.
+      </p>
+    </details>
   )
 }

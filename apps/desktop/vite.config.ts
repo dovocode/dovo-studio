@@ -14,18 +14,6 @@ export default defineConfig({
     clearMocks: false,
   },
   base: './',
-  run: {
-    tasks: {
-      bundle: {
-        command: 'node ../../scripts/build-browser-viewer.mjs && vp build',
-        cache: {
-          // Generated directory entries must not become inputs on the next clean runner.
-          input: [{ auto: true }, '!.', '!dist', '!dist/**', '!dist-electron', '!dist-electron/**'],
-          output: [{ auto: true }, 'dist/**', 'dist-electron/**'],
-        },
-      },
-    },
-  },
   plugins: [
     tailwindcss(),
     react(),

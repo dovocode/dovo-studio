@@ -10,7 +10,7 @@ import terminalHtml from '../../assets/terminal.json'
 import { useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useTheme } from '../ui/theme'
-export function TerminalSession({ id }: { id: string }) {
+export function TerminalSession({ id, visible = true }: { id: string; visible?: boolean }) {
   const { styles } = useTheme()
   const { terminalFontFamily, terminalFontSize } = useMobilePreferences()
 
@@ -43,7 +43,7 @@ export function TerminalSession({ id }: { id: string }) {
     fail: (error: Error) => void
   } | null>(null)
   useEffect(() => {
-    if (!ready || !connection || backgrounded) return
+    if (!ready || !connection || backgrounded || !visible) return
     const reconnect = startReconnecting(
       async (signal, connected) => {
         setStatus('Connecting terminal…')
@@ -90,7 +90,7 @@ export function TerminalSession({ id }: { id: string }) {
     return () => {
       void reconnect.stop()
     }
-  }, [ready, connection, call, id, backgrounded])
+  }, [ready, connection, call, id, backgrounded, visible])
   return (
     <View style={styles.screen}>
       <WebView

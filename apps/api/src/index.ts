@@ -10,6 +10,7 @@ import { RuntimeHost, runtimeLayer, initializeAgentDefaults, recordLastCrash } f
 import { shutdownSignal } from './shutdown-signal.js'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
+import { assertLaunchAllowed } from './server-update-recovery.js'
 import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
 
 if (!process.env.DOVO_RELEASE_VERSION) {
@@ -100,6 +101,10 @@ const program = Effect.scoped(
           process.removeListener('exit', release)
           release()
         }),
+    )
+    // Launches outside server commands must respect an interrupted update too.
+    yield* attempt('start during an interrupted server update', () =>
+      assertLaunchAllowed(directory, process.argv[1]),
     )
     const ownerToken = yield* attempt('load owner credential', () =>
       runtimeOwnerToken(directory, process.env.DOVO_OWNER_TOKEN),

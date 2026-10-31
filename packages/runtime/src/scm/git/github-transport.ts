@@ -232,6 +232,13 @@ export class GithubTransport {
           secondary: graphql.secondary,
           resetAt: graphql.secondary ? undefined : info.quota?.resetAt,
         })
+      if (response.ok && graphql?.accessStatus) {
+        if (graphql.accessStatus === 401) options.onUnauthorized?.()
+        throw new GithubApiError(
+          graphql.accessStatus,
+          `GitHub GraphQL access failure (HTTP ${graphql.accessStatus})`,
+        )
+      }
       const linkHeader: string | null =
         response.status === 304 && cached
           ? (response.headers.get('link') ?? cached.link)
@@ -363,7 +370,13 @@ export class GithubCredentials {
   /** Bind rejection to the exact source and cache generation used by this request. */
   async capture(host: string, cwd: string, env: NodeJS.ProcessEnv) {
     const source = this.resolve(host, cwd, env)
-    return { token: await source.value, onUnauthorized: source.onUnauthorized }
+    return {
+      token: await source.value,
+      onUnauthorized: source.onUnauthorized,
+      source: GithubCredentials.environmentToken(host, env)
+        ? ('environment' as const)
+        : ('gh' as const),
+    }
   }
   private resolve(host: string, cwd: string, env: NodeJS.ProcessEnv) {
     const fromEnvironment = GithubCredentials.environmentToken(host, env)

@@ -16,6 +16,9 @@ const bundle = await bundleBrowser(
     window.writes=[]; window.reads=[]; window.files={'a.txt':'original','b.txt':'other'};window.otherFiles={'a.txt':'computer two','b.txt':'second computer b'};
     const request=async(path,input)=>{
       const files=window.runtime.connection.address==='http://other.test'?window.otherFiles:window.files;
+      if(path.endsWith('/search-content')) {if(input.query==='old request') return new Promise(resolve=>window.resolveOldSearch=()=>resolve({matches:[{path:'old.ts',line:1,excerpt:'old request',matchStart:0,matchEnd:11}],truncated:false,scannedFiles:1,skippedFiles:0})); if(input.query==='limited')return {matches:[],truncated:true,scannedFiles:2000,skippedFiles:1};return {matches:Object.entries(files).flatMap(([path,contents])=>contents.split(String.fromCharCode(10)).flatMap((excerpt,index)=>excerpt.includes(input.query)?[{path,line:index+1,excerpt,matchStart:excerpt.indexOf(input.query),matchEnd:excerpt.indexOf(input.query)+input.query.length}]:[])),truncated:false,scannedFiles:Object.keys(files).length,skippedFiles:0};}
+      if(path.endsWith('/directory'))return {entries:Object.keys(files).map(path=>({path,kind:'file'})),truncated:false};
+      if(path.endsWith('/search-paths'))return {files:Object.keys(files).filter(path=>path.includes(input.query)),truncated:false};
       if(path.endsWith('/list')) return {files:Object.keys(files)};
       if(path.endsWith('/read')) {window.reads.push(input.path);return {path:input.path,contents:files[input.path]};}
       if(path.endsWith('/write')) { window.writes.push(input); if(window.fail) throw Error('save failed'); if(window.delay) await new Promise(resolve=>window.resolveWrite=resolve); if(files[input.path]!==input.expectedContents) throw Error('conflict'); files[input.path]=input.contents; return {path:input.path,contents:input.contents}; }
@@ -44,11 +47,11 @@ const bundle = await bundleBrowser(
     },
     {
       path: '@dovo/studio-core',
-      contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.runtime;export const useStudioHost=()=>({});`,
+      contents: `import {Effect} from 'effect';export {responses} from '@dovo/protocol';const requestEffect=(...args)=>Effect.tryPromise({try:signal=>{if(args[0].endsWith('/search-content'))(window.searchSignals??=[]).push({query:args[1].query,signal});return window.runtime.request(...args)},catch:error=>error});export const useWorkspace=()=>({...window.runtime,requestEffect});export const useStudioHost=()=>({});`,
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
+      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const FileChangeCounts=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -249,8 +252,61 @@ try {
   await page.evaluate(() => window.resolveWrite())
   await page.waitForFunction(() => window.otherFiles['b.txt'].includes('delayed-b'))
   assert.equal(await editor.textContent(), 'computer two')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => {
+    window.otherFiles['deep.ts'] = Array.from({ length: 400 }, (_, index) =>
+      index === 349
+        ? 'const NEEDLE[a+b] = 1'
+        : index === 19
+          ? 'const FIRST_NEEDLE[a+b] = 1'
+          : 'line ' + (index + 1),
+    ).join('\n')
+  })
+  await page.getByRole('button', { name: 'Code', exact: true }).click()
+  const search = page.getByRole('searchbox', { name: 'Search project code', exact: true })
+  await search.fill('NEEDLE[a+b]')
+  await page.getByRole('button').filter({ hasText: 'deep.ts:350' }).click()
+  const selectedLine = page.locator('[data-line][data-selected-line]').first()
+  await selectedLine.waitFor()
+  assert.match(await selectedLine.textContent(), /NEEDLE\[a\+b\]/)
+  const bounds = await selectedLine.boundingBox()
+  assert.ok(
+    bounds && bounds.y >= 0 && bounds.y < page.viewportSize().height,
+    'The exact matching line is revealed in the source viewer',
+  )
+  for (const line of [20, 350, 350]) {
+    await page
+      .getByRole('button')
+      .filter({ hasText: 'deep.ts:' + line })
+      .click()
+    const match = page.locator('[data-line="' + line + '"][data-selected-line]').first()
+    await match.waitFor()
+    await match.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    const bounds = await match.boundingBox()
+    assert.ok(
+      bounds && bounds.y >= 0 && bounds.y < page.viewportSize().height,
+      'Every result selection reveals its line, including another match in the same file',
+    )
+  }
+  await search.fill('old request')
+  await page.waitForFunction(() => !!window.resolveOldSearch)
+  await search.fill('NEEDLE[a+b]')
+  await page.waitForFunction(
+    () => window.searchSignals.find((item) => item.query === 'old request')?.signal.aborted,
+  )
+  await page.getByRole('button').filter({ hasText: 'deep.ts:350' }).waitFor()
+  await page.evaluate(() => window.resolveOldSearch())
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(await page.getByRole('button').filter({ hasText: 'old.ts:1' }).count(), 0)
+  await search.fill('limited')
+  await page.getByText(/Some files are omitted/).waitFor()
+  await page.getByText(/1 item skipped/).waitFor()
   assert.deepEqual(errors, [])
-  console.log('Real Pierre edit navigation and save retention passed')
+  console.log(
+    'Real Pierre edit retention, literal project search, exact-line reveal, stale-query protection and truncation passed',
+  )
 } finally {
   await browser.close()
 }

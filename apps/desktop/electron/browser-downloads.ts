@@ -93,6 +93,20 @@ export function downloadFilename(root: string, name: string) {
   }
   return path
 }
+// Every profile writes to the same Downloads folder. Keep reservations until the
+// native item finishes, even when its profile tracker has been disposed.
+const pendingDownloadPaths = new Map<Electron.DownloadItem, string>()
+const destinationKey = (path: string) => {
+  let ancestor = resolve(path)
+  const missing: string[] = []
+  while (!existsSync(ancestor)) {
+    missing.unshift(basename(ancestor))
+    ancestor = dirname(ancestor)
+  }
+  const canonical = join(realpathSync(ancestor), ...missing)
+  // Conservative folding also protects the usual case-insensitive macOS volumes.
+  return process.platform === 'linux' ? canonical : canonical.toLowerCase()
+}
 export function createBrowserDownloads(
   session: Electron.Session,
   profileId: string,
@@ -179,6 +193,7 @@ export function createBrowserDownloads(
     const request = requests.get(contents)
     const options = request?.options
     const root = app.getPath('downloads')
+    item.once('done', () => pendingDownloadPaths.delete(item))
     try {
       // Native save UI remains the default for ordinary website downloads.
       if (options) {
@@ -190,16 +205,17 @@ export function createBrowserDownloads(
           for (
             let n = 1;
             existsSync(destination) ||
-            [...records.values()].some(
-              (record) => record.state === 'in_progress' && record.filename === destination,
-            );
+            [...pendingDownloadPaths.values()].includes(destinationKey(destination));
             n++
           )
             destination = `${stem} (${n})${extension}`
         }
         if (options.saveAs || conflict === 'prompt')
           item.setSaveDialogOptions({ defaultPath: destination })
-        else item.setSavePath(destination)
+        else {
+          pendingDownloadPaths.set(item, destinationKey(destination))
+          item.setSavePath(destination)
+        }
       }
       const id = nextId++
       const record: BrowserDownload = {
@@ -227,6 +243,8 @@ export function createBrowserDownloads(
       save()
       emit('downloads.onCreated', record)
       item.on('updated', () => {
+        const path = item.getSavePath()
+        if (path) pendingDownloadPaths.set(item, destinationKey(path))
         const current = records.get(id)
         if (!current) return
         change(id, {
@@ -268,12 +286,19 @@ export function createBrowserDownloads(
         request.close()
       }
     } catch (error) {
-      item.cancel()
+      let failure = error instanceof Error ? error : new Error('Download could not start.')
+      try {
+        item.cancel()
+      } catch (cause) {
+        failure = new AggregateError([failure, cause], 'Download setup and cancellation failed.')
+      }
+      // Once native ownership exists, only done may release the destination.
+      if (!item.getSavePath()) pendingDownloadPaths.delete(item)
       if (request) {
         requests.delete(contents)
-        request.reject(error instanceof Error ? error : new Error('Download could not start.'))
+        request.reject(failure)
         request.close()
-      } else console.error('Could not start browser download.', error)
+      } else console.error('Could not start browser download.', failure)
     }
   }
   session.on('will-download', willDownload)

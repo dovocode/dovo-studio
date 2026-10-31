@@ -17,6 +17,10 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
+import {
+  claudeEffectiveEnvironment,
+  claudeSubscriptionEnvironment,
+} from '../../configuration/claude-settings.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
@@ -90,7 +94,9 @@ function claudeStream(
         ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
         : {}),
       env: processEnvironment({
-        ...run.agent.env,
+        ...(run.tools === 'none'
+          ? claudeEffectiveEnvironment(run.agent.env, run.cwd, run.agent.args)
+          : run.agent.env),
         ...(run.tools === 'none' || run.agent.cloudIntegrations !== undefined
           ? {
               ENABLE_CLAUDEAI_MCP_SERVERS: String(
@@ -100,7 +106,13 @@ function claudeStream(
           : {}),
       }),
       extraArgs: {
-        ...claudeLaunchFlags(run.agent.args),
+        ...Object.fromEntries(
+          Object.entries(claudeLaunchFlags(run.agent.args)).filter(
+            ([key]) =>
+              run.tools !== 'none' ||
+              !['settings', 'setting-sources', 'managed-settings'].includes(key),
+          ),
+        ),
         ...(mcpConfigPath ? { 'mcp-config': mcpConfigPath } : {}),
       },
       abortController: controller,
@@ -636,14 +648,13 @@ export function createClaudeAdapter(): AgentAdapter {
       // publish a late response into a completed, cancelled or subsequent turn.
       void accountInfo
         .then((account) => {
-          const env = processEnvironment(run.agent.env)
+          const env = claudeEffectiveEnvironment(run.agent.env, run.cwd, run.agent.args)
           if (
             session.turn?.run === run &&
             !run.signal.aborted &&
             !session.closed &&
             account &&
-            !env.ANTHROPIC_AUTH_TOKEN &&
-            !env.ANTHROPIC_API_KEY
+            claudeSubscriptionEnvironment(env)
           )
             run.onEvent?.('account/info', account)
         })

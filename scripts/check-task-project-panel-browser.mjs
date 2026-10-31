@@ -77,7 +77,7 @@ const built = await build({
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
     import {TaskWaitingPanel} from '../extension-tasks/src/detail/task-waiting-panel';
-    window.preferences={confirmDelete:true,confirmUnpin:false};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
+    window.preferences={confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
     const repo={id:'repo',name:'Project',path:'/project',branch:'main'};
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
@@ -87,7 +87,7 @@ const built = await build({
       window.setLineage=enabled=>{window.lineage=enabled?[{...task,id:'child-review',title:'Review browser',spawnParent:{runtimeId:'runtime',threadId:task.id},subagents:[{id:'native-review',name:'Native reviewer',provider:'codex',status:'working'}]},{...task,id:'grandchild',title:'Check page menus',spawnParent:{runtimeId:'runtime',threadId:'child-review'}}]:[];setTask(task=>({...task}))};
       window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'waiting':'done'}))};
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
-      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
+      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
       const request=async(path,input)=>{
         window.calls.push({path,input});
         if(path==='/api/scm/open-location')return {path:'/remote/worktree',runtimeId:'remote',sshAddress:'ssh://dominic@runtime',kind:'folder'};
@@ -250,8 +250,45 @@ try {
       .click()
     await page.waitForFunction(() => window.surface === 'chat')
     const chatWidth = (await page.locator('[data-thread-content]').boundingBox()).width
-    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Project information', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
+    const info = page.getByRole('dialog', { name: 'Thread info', exact: true })
+    await info.getByText('Not reported', { exact: true }).waitFor()
+    await page.evaluate(() =>
+      window.setContextUsage({ used: 170000, limit: 200000, updatedAt: new Date().toISOString() }),
+    )
+    await info.getByText('85% used', { exact: true }).waitFor()
+    assert.equal(
+      await info.getByRole('meter', { name: 'Agent context used' }).getAttribute('aria-valuenow'),
+      '85',
+    )
+    await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    const contextChoice = page.getByRole('menuitemcheckbox', { name: 'Context usage', exact: true })
+    await contextChoice.click()
+    assert.equal(await contextChoice.getAttribute('aria-checked'), 'false')
+    await page.keyboard.press('Escape')
+    await info
+      .getByRole('region', { name: 'Context usage', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Hide thread info', exact: true }).click()
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
+    assert.equal(await info.getByRole('region', { name: 'Context usage', exact: true }).count(), 0)
+    await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Reset to default', exact: true }).click()
+    await info.getByText('85% used', { exact: true }).waitFor()
+
+    await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    const sectionChoices = page.getByRole('menuitemcheckbox')
+    for (let index = 0; index < (await sectionChoices.count()); index++)
+      await sectionChoices.nth(index).click()
+    await page.keyboard.press('Escape')
+    assert.equal(
+      await info.getByRole('button', { name: 'Customize thread info', exact: true }).isVisible(),
+      true,
+    )
+    assert.equal(await info.getByRole('region', { name: 'Context usage', exact: true }).count(), 0)
+    await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Reset to default', exact: true }).click()
     await page.evaluate(() => window.setLineage(true))
     const lineage = page.getByRole('region', { name: 'Agent lineage', exact: true })
     await lineage.getByText('Check page menus', { exact: true }).waitFor()
@@ -260,7 +297,7 @@ try {
     assert.equal(await page.evaluate(() => window.openedThread.threadId), 'child-review')
     await page.evaluate(() => window.setLineage(false))
     const popover = await page
-      .getByRole('dialog', { name: 'Project information', exact: true })
+      .getByRole('dialog', { name: 'Thread info', exact: true })
       .boundingBox()
     assert.ok(popover && popover.width <= 304 && popover.width > 0)
     const frame = await page.locator('[data-project-panel-frame]').boundingBox()
@@ -273,9 +310,7 @@ try {
         await page.evaluate((width) => window.setToolsWidth(width), width)
         await page.waitForFunction((width) => {
           const chat = document.querySelector('[data-project-panel-frame]').getBoundingClientRect()
-          const panel = document
-            .querySelector('[aria-label="Project information"]')
-            .getBoundingClientRect()
+          const panel = document.querySelector('[aria-label="Thread info"]').getBoundingClientRect()
           const workspace = document
             .querySelector('[data-thread-workspace]')
             .getBoundingClientRect()
@@ -293,21 +328,21 @@ try {
       await page.getByRole('button', { name: 'Close project panel', exact: true }).count(),
       0,
     )
-    await page.getByRole('button', { name: 'Hide project panel', exact: true }).click()
+    await page.getByRole('button', { name: 'Hide thread info', exact: true }).click()
     await page
-      .getByRole('region', { name: 'Thread project', exact: true })
+      .getByRole('region', { name: 'Thread info', exact: true })
       .waitFor({ state: 'hidden' })
-    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.keyboard.press('Escape')
-    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
     await page.locator('[data-thread-content]').click({ position: { x: 10, y: 100 } })
-    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
     await page.evaluate(() => window.switchThread())
     await page.getByText('Another thread', { exact: true }).first().waitFor()
-    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
     await page.evaluate(() => window.switchThread())
 
-    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
     await page.getByRole('heading', { name: 'Project', exact: true }).waitFor()
     assert.equal(await page.locator('.studio-project-path').getAttribute('title'), '/project')
     await page.getByText('Uncommitted changes · Synced', { exact: true }).waitFor()
@@ -354,7 +389,7 @@ try {
     await page
       .getByRole('dialog', { name: 'Git & project actions', exact: true })
       .waitFor({ state: 'hidden' })
-    await page.getByRole('dialog', { name: 'Project information', exact: true }).waitFor()
+    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
     assert.equal(
       await page
         .locator('.studio-project-card')
@@ -450,7 +485,7 @@ try {
     const stopDialog = page.getByRole('dialog', { name: 'Stop watching?', exact: true })
     await stopDialog.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => window.calls.some((call) => call.input.unlink))
-    await page.getByRole('button', { name: 'Hide project panel', exact: true }).click()
+    await page.getByRole('button', { name: 'Hide thread info', exact: true }).click()
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
     const menuItems = await page.getByRole('menu').first().getByRole('menuitem').allTextContents()
     assert.ok(
@@ -498,11 +533,11 @@ try {
       .getByRole('menuitem', { name: 'New thread on fix/reconnection', exact: true })
       .click()
     await page.waitForFunction(() => window.navigation?.entityId === 'new-thread')
-    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.getByRole('button', { name: /^Changes/ }).click()
     assert.equal(await page.evaluate(() => window.surface), 'changes')
     await page
-      .getByRole('region', { name: 'Thread project', exact: true })
+      .getByRole('region', { name: 'Thread info', exact: true })
       .waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: 'Linked PRs', exact: true }).click()
     const pulls = page.getByRole('region', { name: 'Thread pull requests', exact: true })
@@ -625,7 +660,7 @@ try {
     assert.equal(await breadcrumb.locator('.studio-titlebar-parent').count(), 0)
     await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1200, height: 900 })
     await page.evaluate(() => window.generalProject())
-    const generalProject = page.getByRole('region', { name: 'Thread project', exact: true })
+    const generalProject = page.getByRole('region', { name: 'Thread info', exact: true })
     await generalProject.getByRole('heading', { name: 'No Project', exact: true }).waitFor()
     assert.equal(await generalProject.locator('.studio-project-path').count(), 0)
     await generalProject.getByRole('button', { name: 'Link projects', exact: true }).click()

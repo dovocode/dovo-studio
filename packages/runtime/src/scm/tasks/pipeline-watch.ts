@@ -11,7 +11,7 @@ import {
   maxValue,
   minValue,
   mutableArray,
-  mutableStruct,
+  strictStruct,
   pipelineSignal,
   resolveTaskAgent,
   type ForgePipelineDetail,
@@ -26,7 +26,7 @@ import {
   watchAccountRepositoryId,
 } from './watch-repository.js'
 
-export const pipelineWatchRequestSchema = mutableStruct({
+export const pipelineWatchRequestSchema = strictStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
   parentRunId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   action: Schema.Literals(['watch', 'status', 'stop']),

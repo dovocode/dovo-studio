@@ -17,7 +17,7 @@ const mocks = {
     export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
-    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};
+    const preferences={threadInfoSections:{},sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};
     window.setFollowUp=value=>{preferences.followUp=value};
     window.setContextVisible=value=>{preferences.showContextUsage=value};
     window.setMinimalComposer=value=>{preferences.minimalComposer=value};
@@ -71,7 +71,7 @@ const built = await build({
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
       function Thread({task,workspaceControls,temporary,onSelectRemote}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Task information" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover/><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover/><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
@@ -164,10 +164,10 @@ try {
         overflow: document.documentElement.scrollWidth > innerWidth,
       }
     })
-  const infoButton = page.getByRole('button', { name: 'Task information', exact: true })
+  const infoButton = page.getByRole('button', { name: 'Thread info', exact: true })
   const openInfo = async () => {
     if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
-    await page.getByRole('region', { name: 'Task settings', exact: true }).waitFor()
+    await page.getByRole('region', { name: 'Environment and access', exact: true }).waitFor()
   }
   const closeInfo = async () => {
     if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')
@@ -470,7 +470,7 @@ try {
       await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
       const after = await geometry()
       assert.equal(
-        await page.getByRole('region', { name: 'Task settings', exact: true }).count(),
+        await page.getByRole('region', { name: 'Environment and access', exact: true }).count(),
         0,
       )
       for (const key of ['heroX', 'heroY', 'composerY', 'composerHeight'])
@@ -600,6 +600,8 @@ try {
   await input.press('Enter')
   await page.waitForFunction(() => window.asides.at(-1) === null)
   assert.equal(await input.inputValue(), '')
+  // The command restores focus/caret in the next frame; finish it before entering a new draft.
+  await input.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
   await input.fill('Explain this code\n/sidechat')
   await page.getByRole('option', { name: '/sidechat', exact: false }).waitFor()
   await input.press('Enter')

@@ -60,3 +60,42 @@ it('names read-only task checkboxes from their own Markdown item, excluding nest
   expect(checkboxes[2]).toContain('aria-label="Verify settings"')
   for (const checkbox of checkboxes) expect(checkbox).toContain('disabled=""')
 })
+
+it('resolves each link context separately through Streamdown’s shared processor cache', () => {
+  const render = (rehypePlugins: ReturnType<typeof markdownPluginsForLinks>) =>
+    renderToStaticMarkup(
+      createElement(Streamdown, {
+        mode: 'static',
+        linkSafety: { enabled: false },
+        rehypePlugins,
+        children: '[Setup](docs/setup.md) · [Shot](/tmp/shot.png) · [Unsafe](javascript:alert(1))',
+      }),
+    )
+  const contexts = [
+    ['https://github.com/a/one/pull/1', 'https://github.com/a/one/blob/main/'],
+    ['https://github.com/b/two/pull/2', 'https://github.com/b/two/blob/dev/'],
+    [undefined, undefined],
+    ['https://github.com/a/one/pull/1', 'https://github.com/a/one/blob/main/'],
+  ] as const
+  for (let round = 0; round < 2; round++) {
+    const [one, two, none, oneAgain] = contexts.map(([base, files]) =>
+      render(markdownPluginsForLinks(base, files)),
+    )
+    expect(one).toContain('href="https://github.com/a/one/blob/main/docs/setup.md"')
+    expect(two).toContain('href="https://github.com/b/two/blob/dev/docs/setup.md"')
+    expect(two).not.toContain('github.com/a/one')
+    expect(none).not.toContain('github.com')
+    expect(oneAgain).toBe(one)
+    const local = render(markdownPluginsForLinks(undefined, undefined, true))
+    expect(local).toContain('https://dovo-local-file.invalid/?path=docs%2Fsetup.md')
+    expect(local).toContain('https://dovo-local-file.invalid/?path=%2Ftmp%2Fshot.png')
+    expect(local).not.toContain('github.com')
+    const based = render(
+      markdownPluginsForLinks('https://github.com/b/two/pull/2', undefined, true),
+    )
+    expect(based).toContain('href="https://github.com/b/two/pull/docs/setup.md"')
+    expect(based).not.toContain('dovo-local-file.invalid')
+    for (const html of [one, two, none, oneAgain, local, based])
+      expect(html).not.toContain('javascript:')
+  }
+})

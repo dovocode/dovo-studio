@@ -35,13 +35,14 @@ export function ComposerSurface({
   useLayoutEffect(() => {
     const form = surface.current
     if (!form?.closest('.task-composer') || collapsed) return
+    const elements = () => [
+      form,
+      ...form.querySelectorAll<HTMLElement>(
+        ':scope > textarea, [data-composer-leading], [data-composer-controls], [data-composer-actions], [data-composer-footer] button',
+      ),
+    ]
     const measure = () =>
-      [
-        form,
-        ...form.querySelectorAll<HTMLElement>(
-          ':scope > textarea, [data-composer-leading], [data-composer-controls], [data-composer-actions], [data-composer-footer] button',
-        ),
-      ].map((element) => ({
+      elements().map((element) => ({
         element,
         bounds: element.getBoundingClientRect(),
         padding: element.tagName === 'TEXTAREA' ? getComputedStyle(element).padding : undefined,
@@ -127,16 +128,59 @@ export function ComposerSurface({
       previous = measure()
     }
     animateLayout.current = updateLayout
-    const observer = new ResizeObserver(updateLayout)
-    observer.observe(form)
+    let frame: number | undefined
+    const scheduleMeasurement = () => {
+      frame ??= requestAnimationFrame(() => {
+        frame = undefined
+        updateLayout()
+      })
+    }
+    // A model label or toolbar can resize without changing the form's dimensions. Keep the
+    // animation baseline current for those changes, without reading layout on unrelated renders.
+    const observer = new ResizeObserver(scheduleMeasurement)
+    const observed = new Set<HTMLElement>()
+    const observeElements = () => {
+      const current = new Set(elements())
+      for (const element of observed) {
+        if (current.has(element)) continue
+        observer.unobserve(element)
+        observed.delete(element)
+      }
+      for (const element of current) {
+        if (observed.has(element)) continue
+        observed.add(element)
+        observer.observe(element)
+      }
+    }
+    observeElements()
+    const mutations = new MutationObserver((records) => {
+      const structureChanged = records.some(
+        (record) =>
+          record.type === 'childList' &&
+          [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element),
+      )
+      if (structureChanged) observeElements()
+      // React can rewrite an unchanged textarea defaultValue on every render. Text-only
+      // mutations need no measurement: ResizeObserver catches any resulting size change.
+      if (structureChanged || records.some((record) => record.type === 'attributes'))
+        scheduleMeasurement()
+    })
+    mutations.observe(form, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden'],
+    })
     return () => {
+      mutations.disconnect()
       observer.disconnect()
+      if (frame !== undefined) cancelAnimationFrame(frame)
       form.removeAttribute('data-layout-animating')
       animations.forEach((animation) => animation.cancel())
       animateLayout.current = undefined
     }
   }, [collapsed])
-  useLayoutEffect(() => animateLayout.current?.())
+  useLayoutEffect(() => animateLayout.current?.(), [compact, collapsed])
   return (
     <PromptInput
       ref={surface}

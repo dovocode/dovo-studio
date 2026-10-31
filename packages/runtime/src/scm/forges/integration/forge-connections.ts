@@ -4,18 +4,24 @@ import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
 import {
+  agentSecretReferenceSchema,
   forgeConnectionSchema,
   forgeConnectionInputSchema,
+  secretReferenceProviders,
   type ForgeConnection,
 } from '@dovo/protocol'
 import { HttpError } from '../../../errors.js'
 import { ForgeHttp } from './forge-http.js'
 import type { ForgeCliAccounts } from './forge-cli-accounts.js'
 import { withinForgeServer } from './forge-url.js'
+import type { GithubCredentialSource } from '../../git/github-access.js'
+import { SecretReferences } from '../../../agents/configuration/secret-references.js'
+import { OwnedProcessShutdownError } from '../../../agents/execution/stop-owned-child.js'
 const storedSchema = mutableStruct({
   ...forgeConnectionSchema.fields,
   ...{
     token: Schema.optional(Schema.String),
+    secret: Schema.optional(agentSecretReferenceSchema),
     environmentFingerprint: Schema.optional(Schema.String),
     cliFingerprint: Schema.optional(Schema.String),
   },
@@ -39,6 +45,8 @@ const CLI_CREDENTIAL_TTL = 300_000
 export class ForgeConnections {
   private reported = new Set<string>()
   private cliCredentials = new Map<string, { value: Promise<string>; expires: number }>()
+  // Bumped whenever a connection's vault value must be read again, including during a lookup.
+  private secretGenerations = new Map<string, number>()
   private cachedCli(key: string, load: () => Promise<string>) {
     const now = Date.now()
     for (const [entry, cached] of this.cliCredentials)
@@ -57,12 +65,16 @@ export class ForgeConnections {
   forgetCredentials(id: string) {
     for (const key of this.cliCredentials.keys())
       if (key.startsWith(`${id}\0`)) this.cliCredentials.delete(key)
+    // Vault values have no fingerprint to compare; reading again is the only way to see rotation.
+    this.secretGenerations.set(id, (this.secretGenerations.get(id) ?? 0) + 1)
+    this.secrets.refresh()
   }
   constructor(
     private db: Database.Database,
     private onRevision?: (id: string, revision: string) => void,
     private cli?: ForgeCliAccounts,
     private transaction: <T>(fn: () => T) => T = (fn) => db.transaction(fn)(),
+    private secrets = new SecretReferences(),
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS forge_connections (id TEXT PRIMARY KEY, value TEXT NOT NULL)',
@@ -168,10 +180,18 @@ export class ForgeConnections {
         : undefined
     if (input.credential === 'token' && !token)
       throw new HttpError(400, 'Enter an API token for this connection')
+    const secret =
+      input.credential === 'reference'
+        ? (input.secret ?? (reusable ? old?.secret : undefined))
+        : undefined
+    if (input.credential === 'reference' && !secret)
+      throw new HttpError(400, 'Enter a secret manager reference for this connection')
     const record = decode(storedSchema, {
       ...input,
       baseUrl,
       token,
+      secret,
+      secretProvider: secret?.provider,
       environmentFingerprint:
         input.credential === 'environment' ? environmentFingerprint(input.tokenEnv) : undefined,
       id: input.id ?? randomUUID(),
@@ -180,6 +200,7 @@ export class ForgeConnections {
     this.db
       .prepare('INSERT OR REPLACE INTO forge_connections(id,value) VALUES(?,?)')
       .run(record.id, JSON.stringify(record))
+    if (old) this.forgetCredentials(old.id)
     return decode(forgeConnectionSchema, record)
   }
   remove(id: string, revision?: string) {
@@ -190,6 +211,45 @@ export class ForgeConnections {
         'This source control connection changed on another device. Reload before removing it.',
       )
     this.db.prepare('DELETE FROM forge_connections WHERE id=?').run(id)
+    this.forgetCredentials(id)
+    this.secretGenerations.delete(id)
+  }
+  /** Stops vault CLIs still reading a connection credential when the runtime shuts down. */
+  dispose() {
+    return this.secrets.close()
+  }
+  /**
+   * Resolves the host-private reference for this exact connection revision. The value is
+   * returned only to the request using it; it is never stored, logged or included in errors.
+   */
+  private async referenceSecret(connection: ForgeConnection, signal?: AbortSignal) {
+    const changed = () =>
+      new HttpError(409, 'This source control account changed. Refresh before continuing.')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const row = this.rows().find((item) => item.id === connection.id)
+      if (!row?.secret || row.revision !== connection.revision) throw changed()
+      const reference = row.secret
+      const generation = this.secretGenerations.get(row.id) ?? 0
+      let value: string
+      try {
+        value = await this.secrets.value(reference, signal)
+      } catch (cause) {
+        if (signal?.aborted || cause instanceof OwnedProcessShutdownError) throw cause
+        const label =
+          secretReferenceProviders.find((item) => item.id === reference.provider)?.name ??
+          'secret manager'
+        throw new HttpError(
+          400,
+          `Could not read this connection’s ${label} reference. Check the provider login on the runtime host, then refresh.`,
+        )
+      }
+      // A refresh or rejection during the lookup must not hide the rotated value behind this read.
+      if ((this.secretGenerations.get(row.id) ?? 0) !== generation) continue
+      if (this.rows().find((item) => item.id === connection.id)?.revision !== connection.revision)
+        throw changed()
+      return value
+    }
+    throw new HttpError(409, 'This connection’s secret reference keeps changing. Try again.')
   }
   secret(id: string) {
     const row = this.rows().find((item) => item.id === id)
@@ -249,7 +309,14 @@ export class ForgeConnections {
     return (await this.githubCredential(id, cwd)).token
   }
   /** A rejection belongs to this selected source and lookup generation, not a later login. */
-  async githubCredential(id: string, cwd?: string) {
+  async githubCredential(
+    id: string,
+    cwd?: string,
+  ): Promise<{
+    token: string | undefined
+    onUnauthorized: () => void
+    source?: GithubCredentialSource
+  }> {
     const connection = this.get(id)
     if (
       connection.provider !== 'github' ||
@@ -257,7 +324,11 @@ export class ForgeConnections {
     )
       return { token: undefined, onUnauthorized: () => {} }
     if (connection.credential === 'token' || connection.credential === 'environment')
-      return { token: this.secret(id), onUnauthorized: () => {} }
+      return {
+        token: this.secret(id),
+        onUnauthorized: () => {},
+        source: connection.credential === 'token' ? 'settings' : 'environment',
+      }
     const cli = this.cli
     if (!cli) throw new HttpError(400, 'CLI accounts are not configured')
     const key = [
@@ -270,12 +341,18 @@ export class ForgeConnections {
     const value = this.cachedCli(key, async () => (await cli.githubToken(connection, cwd)) ?? '')
     return {
       token: (await value) || undefined,
+      source: connection.credential === 'gh-wrapper' ? 'gh-wrapper' : 'gh',
       onUnauthorized: () => {
         if (this.cliCredentials.get(key)?.value === value) this.cliCredentials.delete(key)
       },
     }
   }
-  authorization(id: string, git = false, cwd?: string) {
+  authorization(
+    id: string,
+    git = false,
+    cwd?: string,
+    signal?: AbortSignal,
+  ): string | Promise<string> {
     const connection = this.get(id)
     if (connection.credential === 'cli') {
       const cli = this.cli
@@ -286,9 +363,12 @@ export class ForgeConnections {
         () => cli.authorization(connection, git, cwd),
       )
     }
+    if (connection.credential === 'reference')
+      return this.referenceSecret(connection, signal).then((token) =>
+        bitbucketAuthorization(connection, git, token),
+      )
     const token = this.secret(id)
-    if (connection.provider === 'bitbucket')
-      return `Basic ${Buffer.from(`${git ? 'x-bitbucket-api-token-auth' : connection.username}:${token}`).toString('base64')}`
+    if (connection.provider === 'bitbucket') return bitbucketAuthorization(connection, git, token)
     if (connection.provider === 'azure-devops')
       return `Basic ${Buffer.from(`:${token}`).toString('base64')}`
     if (connection.provider === 'gitlab' && !git) return `Bearer ${token}`
@@ -296,7 +376,7 @@ export class ForgeConnections {
       return `Basic ${Buffer.from(`${connection.username || 'oauth2'}:${token}`).toString('base64')}`
     return `token ${token}`
   }
-  gitAuthorization(id: string, remote: string, cwd?: string) {
+  gitAuthorization(id: string, remote: string, cwd?: string, signal?: AbortSignal) {
     const connection = this.get(id),
       url = new URL(remote)
     const base = new URL(
@@ -311,8 +391,11 @@ export class ForgeConnections {
       return this.githubToken(id, cwd).then((token) =>
         token ? `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` : '',
       )
-    return this.authorization(id, true, cwd)
+    return this.authorization(id, true, cwd, signal)
   }
+}
+function bitbucketAuthorization(connection: ForgeConnection, git: boolean, token: string) {
+  return `Basic ${Buffer.from(`${git ? 'x-bitbucket-api-token-auth' : connection.username}:${token}`).toString('base64')}`
 }
 export function connectionHttp(
   connections: ForgeConnections,

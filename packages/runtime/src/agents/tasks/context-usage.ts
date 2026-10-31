@@ -39,7 +39,9 @@ export function contextUsage(
   }
   if (provider === 'claude') {
     if (event.type === 'assistant' && event.parent_tool_use_id == null) {
-      const usage = record(record(event.message).usage)
+      const message = record(event.message)
+      if (message.model === '<synthetic>') return undefined
+      const usage = record(message.usage)
       const used = sum(
         usage.input_tokens,
         usage.cache_read_input_tokens,
@@ -192,6 +194,7 @@ export function turnTokenCounter(
       if (provider === 'claude' && event.type === 'assistant') {
         const message = record(event.message),
           usage = record(message.usage)
+        if (message.model === '<synthetic>') return
         if (
           typeof message.id === 'string' &&
           typeof message.model === 'string' &&

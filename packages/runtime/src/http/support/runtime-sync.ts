@@ -15,6 +15,7 @@ import type { Schema } from 'effect'
 import type { Services } from '../../services.js'
 import type { Activity } from '../../storage/activity.js'
 import { runtimeSnapshot } from './runtime-snapshot.js'
+import { memoryAttribution } from '../../diagnostics/memory-attribution.js'
 import { snapshotTag } from './body.js'
 
 type ActivityEvent = Schema.Schema.Type<typeof activitySchema>['events'][number]
@@ -436,18 +437,20 @@ class RuntimeSync {
       projection = {
         signature,
         checked: Date.now(),
-        pending: Effect.runPromise(
-          runtimeSnapshot(
-            s,
-            { id: 'owner', owner: true },
-            false,
-            view.taskIds,
-            view.pagedHistory,
-            view.settledLimit,
+        pending: memoryAttribution(s).measure('sync snapshot', () =>
+          Effect.runPromise(
+            runtimeSnapshot(
+              s,
+              { id: 'owner', owner: true },
+              false,
+              view.taskIds,
+              view.pagedHistory,
+              view.settledLimit,
+            ),
+            {
+              signal: this.controller.signal,
+            },
           ),
-          {
-            signal: this.controller.signal,
-          },
         ),
       }
       this.projections.set(key, projection)
@@ -478,14 +481,16 @@ class RuntimeSync {
     view.snapshot = next
     view.tag = tag
     if (!previous) return
-    const wire = JSON.stringify({
-      type: 'delta',
-      epoch: view.epoch,
-      sequence: view.sequence,
-      base,
-      tag,
-      delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
-    } satisfies SyncFrame)
+    const wire = memoryAttribution(s).measure('sync delta', () =>
+      JSON.stringify({
+        type: 'delta',
+        epoch: view.epoch,
+        sequence: view.sequence,
+        base,
+        tag,
+        delta: snapshotDelta(previous, next, view.compact, view.fieldUpdates),
+      } satisfies SyncFrame),
+    )
     view.history.push({ sequence: view.sequence, wire })
     view.bytes += wire.length * 2
     while (view.history.length > 256 || view.bytes > 4 * 1024 * 1024)

@@ -1,5 +1,5 @@
 import { browserProfileIdSchema } from './browser-profiles.js'
-import { mutableArray, mutableStruct } from '../../shared/schema.js'
+import { mutableArray, mutableStruct, uuidSchema } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
 import { previewDeviceSchema } from './previews.js'
@@ -104,6 +104,60 @@ export const remoteBrowserInputSchema = Schema.Union([
   }),
 ])
 export type RemoteBrowserInput = Schema.Schema.Type<typeof remoteBrowserInputSchema>
+export const BROWSER_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+export const BROWSER_UPLOAD_CHUNK_BYTES = 64 * 1024
+export const BROWSER_UPLOAD_MAX_FILES = 5
+const uploadIdentity = { requestId: uuidSchema, chooserId: uuidSchema }
+const uploadSize = maxValue(
+  minValue(Schema.Number.pipe(Schema.check(Schema.isInt())), 0),
+  BROWSER_UPLOAD_MAX_BYTES,
+)
+/** Separate from ordinary page input so file bytes never enter the navigation queue. */
+export const remoteBrowserUploadSchema = Schema.Union([
+  mutableStruct({
+    type: Schema.Literal('fileUploadStart'),
+    ...uploadIdentity,
+    name: maxValue(minValue(Schema.String, 1), 255),
+    mimeType: maxValue(Schema.String, 255),
+    size: uploadSize,
+  }),
+  mutableStruct({
+    type: Schema.Literal('fileUploadChunk'),
+    ...uploadIdentity,
+    fileId: uuidSchema,
+    offset: uploadSize,
+    data: maxValue(minValue(Schema.String, 4), Math.ceil(BROWSER_UPLOAD_CHUNK_BYTES / 3) * 4),
+  }),
+  mutableStruct({
+    type: Schema.Literals(['fileUploadCommit', 'fileUploadCancel']),
+    ...uploadIdentity,
+  }),
+])
+export type RemoteBrowserUpload = typeof remoteBrowserUploadSchema.Type
+export const BROWSER_DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024
+const downloadSize = maxValue(
+  minValue(Schema.Number.pipe(Schema.check(Schema.isInt())), 0),
+  BROWSER_DOWNLOAD_MAX_BYTES,
+)
+export const remoteBrowserDownloadSchema = mutableStruct({
+  type: Schema.Literal('download'),
+  id: uuidSchema,
+  name: maxValue(minValue(Schema.String, 1), 255),
+  size: downloadSize,
+  status: Schema.Literals(['downloading', 'ready']),
+})
+export type RemoteBrowserDownload = typeof remoteBrowserDownloadSchema.Type
+export const remoteBrowserDownloadCommandSchema = Schema.Union([
+  mutableStruct({ type: Schema.Literal('downloadRequest'), id: uuidSchema, requestId: uuidSchema }),
+  mutableStruct({ type: Schema.Literal('downloadCancel'), id: uuidSchema }),
+])
+export const remoteBrowserFileChooserSchema = mutableStruct({
+  type: Schema.Literal('fileChooser'),
+  id: uuidSchema,
+  multiple: Schema.Boolean,
+  accept: maxValue(Schema.String, 1024),
+})
+export type RemoteBrowserFileChooser = typeof remoteBrowserFileChooserSchema.Type
 export const remoteBrowserFrameAckSchema = mutableStruct({
   type: Schema.Literal('frameAck'),
   // Time spent waiting for/using the decoder, excluded from the transport RTT.
@@ -174,6 +228,29 @@ export const remoteBrowserInteractionSchema = mutableStruct({
   editable: Schema.Boolean,
 })
 export const remoteBrowserMessageSchema = Schema.Union([
+  remoteBrowserDownloadSchema,
+  mutableStruct({ type: Schema.Literal('downloadRemoved'), id: uuidSchema }),
+  mutableStruct({
+    type: Schema.Literal('downloadReady'),
+    id: uuidSchema,
+    requestId: uuidSchema,
+    name: maxValue(minValue(Schema.String, 1), 255),
+    size: downloadSize,
+    url: maxValue(Schema.String, 1024),
+  }),
+  mutableStruct({
+    type: Schema.Literal('downloadError'),
+    id: uuidSchema,
+    requestId: uuidSchema,
+    message: maxValue(Schema.String, 2000),
+  }),
+  remoteBrowserFileChooserSchema,
+  mutableStruct({ type: Schema.Literal('fileChooserClosed'), id: uuidSchema }),
+  mutableStruct({
+    type: Schema.Literal('fileUploadAck'),
+    requestId: uuidSchema,
+    error: Schema.optional(maxValue(Schema.String, 2000)),
+  }),
   remoteBrowserInteractionSchema,
   mutableStruct({
     type: Schema.Literal('streamStats'),

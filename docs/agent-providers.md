@@ -76,3 +76,62 @@ Sources: [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript),
 [Copilot SDK](https://github.com/github/copilot-sdk),
 [Grok headless and ACP integration](https://docs.x.ai/build/cli/headless-scripting),
 [Muse SDK documentation](https://meta-models.github.io/muse-code-sdk/next/).
+
+## Import a terminal Codex session
+
+Choose **Import Codex terminal session** when starting a thread in a selected project on desktop/web
+or mobile. Choose the Codex configuration whose home contains the session, preview its conversation,
+then import it. Discovery runs on the selected runtime computer and honors the configuration
+directory and `CODEX_HOME`. Close the original terminal session first.
+
+Import saves an idle thread with the original checkout, native session identity, model and reasoning
+when recorded. It does not run Codex. Historical requests are marked consumed, including an
+unfinished final request; send a new message to continue. Repeating the import opens the same
+thread, including after a runtime restart. Existing Dovo-owned sessions link to their current
+thread. Leaving the import screen prevents a late navigation; a completed import remains available
+in the task list. Sessions started in a project subfolder retain that working directory and share
+checkout admission with the parent checkout.
+
+Discovery is bounded to 400 transcripts and 6,000 directory entries. Preview/import accepts up to 16
+MiB and 10,000 messages per transcript; the preview shows the latest 100 messages. Missing
+checkouts, changed previews and active sessions block import. Continuation checks the original path
+and native ownership again. Native ownership checks support Linux and macOS; other platforms can
+preview but cannot import when ownership cannot be established. Checks describe ownership at that
+moment; they do not reserve a session against an external terminal opening it later. Imported
+history is a snapshot, not continuous synchronization with terminal activity.
+
+## Secret environment references
+
+Agent editors on desktop/web and mobile support **Secret environment references** with a current
+runtime. Save the environment variable name and a reference; Dovo resolves the value on the runtime
+computer before provider execution, probing, model discovery or native-thread reads. References also
+apply to account usage/reset checks. Local transcript scans resolve only directory variables. A
+reference overrides a literal environment entry with the same name. Missing references fail the
+operation instead of silently using the host's default credentials.
+
+| Provider         | Reference and runtime setup                                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1Password        | `op://vault/item/field`; install and authenticate `op`. An optional account selects a specific account.                                                                      |
+| Bitwarden        | Item ID and password, username or TOTP field; install `bw` and unlock its runtime session. TOTP is fetched again for each successive resolution.                             |
+| Infisical        | Secret key, project ID, environment and folder path; install/authenticate `infisical`. An optional domain supports a self-hosted instance; omitting it uses the CLI default. |
+| Host environment | Name of an environment variable inherited by the runtime process.                                                                                                            |
+
+Authenticate the CLIs as the user running Dovo. A desktop login shell and a background service may
+have different PATHs, session variables and provider credentials; configure those on the runtime
+host. CLI lookup uses the runtime's own environment, independent of the agent's configured PATH.
+Dovo does not install or log into these tools for you.
+
+Values and failures are cached in memory until **Refresh secret references** or runtime restart.
+After rotating credentials, refresh references before starting new work. This also invalidates model
+catalogs and provider session identities for configurations using references. Already running work
+keeps the credentials it started with. Refreshing a host-environment reference rereads the running
+process environment; changing a service environment file requires restarting the service.
+
+Workspace documents, presets and client responses retain references, never resolved values. Provider
+lookup errors omit CLI output. Resolution runs at most two external commands concurrently, with
+bounded output and a 45-second deadline; cancelling the last reader drains its command. Agent
+processes necessarily receive the resolved environment, and provider tools can use it. Dovo owner
+credentials and Electron's runtime switch cannot be used as reference sources or targets.
+
+Automated tests use synthetic values and injected commands. Live provider authentication and real
+secret reads have not been verified as part of this implementation.

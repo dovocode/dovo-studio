@@ -21,7 +21,7 @@ export function TemporaryTaskRuntime({
   children,
 }: {
   task: Task
-  onCommit: (task: Task) => void
+  onCommit: (task: Task) => void | false
   children: (task: Task, temporary: boolean) => ReactNode
 }) {
   const runtime = useRuntime()
@@ -94,8 +94,7 @@ export function TemporaryTaskRuntime({
             !notified.current &&
             mounted.current
           ) {
-            notified.current = true
-            committedCallback.current(current.current)
+            notified.current = committedCallback.current(current.current) !== false
           }
           return result
         },

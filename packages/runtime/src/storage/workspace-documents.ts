@@ -7,6 +7,7 @@ import {
   mutableStruct,
   taskHistorySummaryVersion,
   taskMetadata,
+  taskSchema,
 } from '@dovo/protocol'
 import type { TaskSummary, WorkspaceSummary } from '@dovo/protocol'
 const valueSchema = Schema.UndefinedOr(mutableStruct({ value: Schema.String }))
@@ -57,12 +58,114 @@ const corrupt = () =>
 export class WorkspaceDocuments {
   private readonly serializedTasks = new WeakMap<TaskSummary, string>()
   private readonly serializedHistories = new WeakMap<TaskSummary['history'], string>()
+  private unreadableTaskIds: string[] = []
+  private readonly recoveredTasks = new Map<
+    string,
+    { value: string; messages: number; turns: number }
+  >()
+  private checkedLegacyRecovery = false
+  committed() {
+    this.recoveredTasks.clear()
+    this.checkedLegacyRecovery = false
+  }
   constructor(private readonly db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS workspace_tasks (
       task_id TEXT PRIMARY KEY, value TEXT NOT NULL,
       messages INTEGER NOT NULL, turns INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS workspace_task_histories (
       task_id TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+  }
+  preserveUnreadableTasks(stored: StoredWorkspace | undefined, tasks: readonly { id: string }[]) {
+    if (!stored) return
+    const loaded = new Set(tasks.map((task) => task.id))
+    if (stored.version === 3)
+      this.unreadableTaskIds = [...stored.taskRows.keys()].filter((id) => !loaded.has(id))
+    const recover = (workspace: unknown, counts: HistoryCounts, legacy: boolean) => {
+      const parsed = decodeResult(mutableStruct({ tasks: mutableArray(Schema.Unknown) }), workspace)
+      if (!parsed.success) throw corrupt()
+      const seen = new Map<string, boolean>()
+      for (const task of parsed.data.tasks) {
+        const identity = decodeResult(mutableStruct({ id: Schema.String }), task)
+        if (!identity.success || !identity.data.id) {
+          if (!legacy) throw corrupt()
+          throw new Error(
+            'A legacy workspace backup has an ambiguous task identity. Restore it from a runtime backup.',
+          )
+        }
+        const id = identity.data.id
+        const valid = decodeResult(taskSchema, task).success
+        if (seen.has(id) && (!valid || !seen.get(id))) throw corrupt()
+        seen.set(id, valid)
+        if (valid) continue
+        if (legacy && loaded.has(id)) {
+          console.error(
+            `Legacy backup contains an unreadable task ${id} whose ID is already in use. Check the backup and history for possible overwritten data.`,
+          )
+          continue
+        }
+        if (legacy && stored.taskRows.has(id)) continue
+        if (!legacy && loaded.has(id)) throw corrupt()
+        if (
+          legacy &&
+          this.db
+            .prepare('SELECT 1 FROM documents WHERE id = ?')
+            .get(`workspace-deleted:tasks:${id}`) &&
+          !this.db.prepare('SELECT 1 FROM conversation_items WHERE task_id = ? LIMIT 1').get(id)
+        )
+          continue
+        if (!Object.hasOwn(counts, id)) throw corrupt()
+        const row = { value: JSON.stringify(task), ...counts[id] }
+        const existing = decode(
+          Schema.UndefinedOr(
+            mutableStruct({ value: Schema.String, messages: countSchema, turns: countSchema }),
+          ),
+          this.db
+            .prepare('SELECT value, messages, turns FROM workspace_tasks WHERE task_id = ?')
+            .get(id),
+        )
+        if (
+          existing &&
+          (existing.value !== row.value ||
+            existing.messages !== row.messages ||
+            existing.turns !== row.turns)
+        )
+          throw new Error(
+            `Task ${id} has conflicting recovery records. Restore it from a runtime backup.`,
+          )
+        this.recoveredTasks.set(id, row)
+        this.unreadableTaskIds.push(id)
+      }
+    }
+    if (stored.version === 2) recover(stored.workspace, stored.historyCounts!, false)
+    if (
+      stored.version === 3 &&
+      !this.db.prepare("SELECT 1 FROM documents WHERE id = 'workspace-v2-recovery-checked'").get()
+    ) {
+      const backup = decode(
+        valueSchema,
+        this.db.prepare("SELECT value FROM documents WHERE id = 'workspace-before-tasks-v3'").get(),
+      )
+      if (backup) {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(backup.value)
+        } catch {
+          throw new Error(
+            'The legacy workspace backup is not valid JSON. Restore it from a runtime backup.',
+          )
+        }
+        const envelope = decodeResult(
+          mutableStruct({
+            storageVersion: Schema.Literal(2),
+            workspace: Schema.Unknown,
+            historyCounts: historyCountsSchema,
+          }),
+          parsed,
+        )
+        if (envelope.success) recover(envelope.data.workspace, envelope.data.historyCounts, true)
+      }
+      this.checkedLegacyRecovery = true
+    }
   }
   read(): StoredWorkspace | undefined {
     const row = decode(
@@ -161,11 +264,36 @@ export class WorkspaceDocuments {
   /** Writes the difference from the committed workspace, or every row when `full` is set. Callers
    * hold the enclosing transaction. Rows of tasks the runtime could not load are left in place. */
   write(next: WorkspaceSummary, previous: WorkspaceSummary, full: boolean) {
+    if (this.unreadableTaskIds.length) {
+      const ids = new Set(next.tasks.map((task) => task.id))
+      for (const id of this.unreadableTaskIds)
+        if (ids.has(id))
+          throw new Error(
+            `Task ${id} is unreadable and cannot be replaced. Restore it from a backup.`,
+          )
+    }
     const before = new Map(previous.tasks.map((task) => [task.id, task]))
     if (full) {
-      this.db.prepare('DELETE FROM workspace_tasks').run()
-      this.db.prepare('DELETE FROM workspace_task_histories').run()
+      const preserved = JSON.stringify(this.unreadableTaskIds)
+      this.db
+        .prepare(
+          'DELETE FROM workspace_tasks WHERE task_id NOT IN (SELECT value FROM json_each(?))',
+        )
+        .run(preserved)
+      this.db
+        .prepare(
+          'DELETE FROM workspace_task_histories WHERE task_id NOT IN (SELECT value FROM json_each(?))',
+        )
+        .run(preserved)
     }
+    for (const [id, row] of this.recoveredTasks)
+      this.db
+        .prepare('INSERT INTO workspace_tasks VALUES (?, ?, ?, ?) ON CONFLICT(task_id) DO NOTHING')
+        .run(id, row.value, row.messages, row.turns)
+    if (this.checkedLegacyRecovery)
+      this.db
+        .prepare("INSERT OR IGNORE INTO documents VALUES ('workspace-v2-recovery-checked', 'done')")
+        .run()
     const upsert = this.db.prepare(`INSERT INTO workspace_tasks VALUES (?, ?, ?, ?)
       ON CONFLICT(task_id) DO UPDATE SET value = excluded.value, messages = excluded.messages,
       turns = excluded.turns`)
@@ -189,6 +317,7 @@ export class WorkspaceDocuments {
         }
     const shellChanged =
       full ||
+      this.recoveredTasks.size > 0 ||
       next.tasks.length !== previous.tasks.length ||
       next.tasks.some((task, index) => task.id !== previous.tasks[index]?.id) ||
       new Set([...Object.keys(next), ...Object.keys(previous)]).size !== Object.keys(next).length ||
@@ -205,7 +334,7 @@ export class WorkspaceDocuments {
       )
       .run(
         'workspace',
-        `{"storageVersion":3,"historyCounts":{},"taskIds":${JSON.stringify(next.tasks.map((task) => task.id))},"workspace":${shell}}`,
+        `{"storageVersion":3,"historyCounts":{},"taskIds":${JSON.stringify([...next.tasks.map((task) => task.id), ...this.unreadableTaskIds])},"workspace":${shell}}`,
       )
   }
   /** Task rows keep the shape of a task with empty history, as earlier version 3 rows did. */

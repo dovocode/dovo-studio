@@ -1,10 +1,11 @@
 /// <reference types="node" />
-import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ForgeConnections } from './forge-connections'
 import { ForgeCliAccounts } from './forge-cli-accounts'
+import { SecretReferences } from '../../../agents/configuration/secret-references'
 import { commandsSchema, decode } from '@dovo/protocol'
 import { openDatabase } from '../../../storage/database'
 import { WorkspaceStore } from '../../../storage/workspace'
@@ -415,4 +416,147 @@ it('rejects only the selected credential generation dispatched before a newer lo
   fresh.onUnauthorized()
   expect(await connections.githubToken(saved.id, '/repo')).toBe('next-token')
   expect(lookup).toHaveBeenCalledTimes(3)
+})
+
+describe('Bitbucket secret manager references', () => {
+  const reference = { provider: 'onepassword', reference: 'op://Work/Bitbucket/token' } as const
+  const bitbucket = {
+    name: 'Bitbucket',
+    provider: 'bitbucket',
+    baseUrl: 'https://api.bitbucket.org/2.0',
+    credential: 'reference',
+    username: 'me@example.com',
+    secret: reference,
+  }
+  const basic = (user: string, token: string) =>
+    `Basic ${Buffer.from(`${user}:${token}`).toString('base64')}`
+  const vault = (read: (args: string[], signal: AbortSignal) => Promise<string>) => {
+    const command = vi.fn<
+      (command: string, args: string[], signal: AbortSignal) => Promise<string>
+    >((_command, args, signal) => read(args, signal))
+    return { command, secrets: new SecretReferences(() => ({}), command) }
+  }
+
+  it('keeps the reference host-private and resolves it for API and Git requests only', async () => {
+    const { command, secrets } = vault(async () => 'vault-token')
+    const connections = new ForgeConnections(db, undefined, undefined, undefined, secrets)
+    const saved = connections.save(bitbucket)
+    expect(saved).toMatchObject({ credential: 'reference', secretProvider: 'onepassword' })
+    const published = JSON.stringify(connections.list())
+    expect(published).not.toContain('op://')
+    expect(published).not.toContain('vault-token')
+    expect(await connections.authorization(saved.id)).toBe(basic('me@example.com', 'vault-token'))
+    expect(
+      await connections.gitAuthorization(saved.id, 'https://bitbucket.org/team/repo.git'),
+    ).toBe(basic('x-bitbucket-api-token-auth', 'vault-token'))
+    expect(command).toHaveBeenCalledTimes(1)
+    expect(command.mock.calls[0]?.[0]).toBe('op')
+    const stored = JSON.stringify(db.prepare('SELECT value FROM forge_connections').all())
+    expect(stored).toContain('op://Work/Bitbucket/token')
+    expect(stored).not.toContain('vault-token')
+    // An edit keeps the saved reference for the same account and never accepts it elsewhere.
+    expect(connections.save({ ...saved, name: 'Renamed' }).secretProvider).toBe('onepassword')
+    expect(() =>
+      connections.save({ ...connections.get(saved.id), username: 'other@example.com' }),
+    ).toThrow('Enter a secret manager reference')
+    expect(() =>
+      connections.save({ ...bitbucket, provider: 'gitea', baseUrl: 'https://git.example.com' }),
+    ).toThrow('Secret manager references are available for Bitbucket connections')
+    await connections.dispose()
+  })
+
+  it('reads a rotated value after refresh and does not return a value read before it', async () => {
+    let value = 'old-token'
+    const reads: { resolve: (value: string) => void }[] = []
+    const { command, secrets } = vault(
+      () =>
+        new Promise<string>((resolve) => {
+          const current = value
+          reads.push({ resolve: () => resolve(current) })
+        }),
+    )
+    const connections = new ForgeConnections(db, undefined, undefined, undefined, secrets)
+    const saved = connections.save(bitbucket)
+    const first = connections.authorization(saved.id)
+    await vi.waitFor(() => expect(reads).toHaveLength(1))
+    value = 'rotated-token'
+    connections.forgetCredentials(saved.id)
+    reads[0]?.resolve('')
+    await vi.waitFor(() => expect(reads).toHaveLength(2))
+    reads[1]?.resolve('')
+    expect(await first).toBe(basic('me@example.com', 'rotated-token'))
+    // Cached until a rejection or explicit refresh, then the vault is read again.
+    expect(await connections.authorization(saved.id)).toBe(basic('me@example.com', 'rotated-token'))
+    expect(command).toHaveBeenCalledTimes(2)
+    value = 'third-token'
+    connections.forgetCredentials(saved.id)
+    const third = connections.authorization(saved.id)
+    await vi.waitFor(() => expect(reads).toHaveLength(3))
+    reads[2]?.resolve('')
+    expect(await third).toBe(basic('me@example.com', 'third-token'))
+    await connections.dispose()
+  })
+
+  it('rejects a lookup whose connection changed and keeps provider output out of errors', async () => {
+    let release: (value: string) => void = () => {}
+    const { command, secrets } = vault(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve
+        }),
+    )
+    const connections = new ForgeConnections(db, undefined, undefined, undefined, secrets)
+    const saved = connections.save(bitbucket)
+    const pending = connections.authorization(saved.id)
+    await vi.waitFor(() => expect(command).toHaveBeenCalledTimes(1))
+    connections.save({
+      ...saved,
+      secret: { provider: 'bitwarden', reference: 'item-id' },
+    })
+    release('stale-token')
+    await expect(pending).rejects.toThrow('This source control account changed')
+
+    const failing = vault(async () => {
+      throw new Error('op: leaked-token for op://Work/Bitbucket/token')
+    })
+    const broken = new ForgeConnections(db, undefined, undefined, undefined, failing.secrets)
+    const current = broken.get(saved.id)
+    const error = await Promise.resolve(broken.authorization(current.id)).catch(
+      (cause: unknown) => cause,
+    )
+    expect(error).toBeInstanceOf(Error)
+    const message = error instanceof Error ? error.message : ''
+    expect(message).toContain('Could not read this connection’s Bitwarden reference')
+    expect(message).not.toContain('leaked-token')
+    expect(message).not.toContain('item-id')
+    // A failed lookup never falls back to another credential source.
+    await expect(
+      Promise.resolve(broken.gitAuthorization(current.id, 'https://bitbucket.org/team/repo.git')),
+    ).rejects.toThrow('Could not read')
+    await broken.dispose()
+    await connections.dispose()
+  })
+
+  it('cancels a vault lookup with its caller', async () => {
+    let aborted = false
+    const { secrets } = vault(
+      (_args, signal) =>
+        new Promise<string>((_, reject) => {
+          signal.addEventListener('abort', () => {
+            aborted = true
+            reject(signal.reason)
+          })
+        }),
+    )
+    const connections = new ForgeConnections(db, undefined, undefined, undefined, secrets)
+    const saved = connections.save(bitbucket)
+    const controller = new AbortController()
+    const pending = Promise.resolve(
+      connections.authorization(saved.id, false, undefined, controller.signal),
+    )
+    controller.abort(new Error('cancelled by caller'))
+    await expect(pending).rejects.toThrow('cancelled by caller')
+    await vi.waitFor(() => expect(aborted).toBe(true))
+    await connections.dispose()
+  })
 })

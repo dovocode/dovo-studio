@@ -14,6 +14,10 @@ import {
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
   selectedBrowserText,
+  readBrowserElementSnapshot,
+  inspectBrowserElement,
+  browserElementSnapshotSchema,
+  browserElementSchema,
   browserDefaultKeepAwake,
   isPrivateBrowserProfile,
   type BrowserWorkspaceTab,
@@ -233,6 +237,7 @@ export function registerBrowser(
   const pendingReturns = new Map<number, { target: BrowserWindow; keys: Set<string> }>()
   const returnOperations = new Map<number, Promise<void>>()
   const views = new Map<string, Entry>()
+  const entriesByContents = new WeakMap<Electron.WebContents, Entry>()
   const zoom = createBrowserZoom()
   const downloadSessions = new Set<Electron.Session>()
   const downloadsFor = (browserSession: Electron.Session, profileId: string) => {
@@ -272,7 +277,7 @@ export function registerBrowser(
   const pageVisible = (entry: Entry) =>
     entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
   const visibility = createBrowserVisibility((contents) => {
-    const entry = [...views.values()].find((entry) => entry.contents === contents)
+    const entry = entriesByContents.get(contents)
     return entry ? pageVisible(entry) : undefined
   })
   const reportVisibility = (entry: Entry) => visibility.report(entry.contents)
@@ -562,6 +567,7 @@ export function registerBrowser(
     exitFullscreen(entry, true)
     focusStudio(entry)
     views.delete(key)
+    entriesByContents.delete(entry.contents)
     awakeRequests.delete(key)
     if (activeViews.get(entry.windowId)?.key === key) activeViews.delete(entry.windowId)
     cdp?.remove(key)
@@ -622,6 +628,7 @@ export function registerBrowser(
       current.stopFrames?.()
       exitFullscreen(current, true)
       views.delete(key)
+      entriesByContents.delete(current.contents)
       awakeRequests.delete(key)
       cdp?.remove(key)
       if (current.workspace) {
@@ -1354,6 +1361,7 @@ export function registerBrowser(
     )
     window.contentView.addChildView(view)
     views.set(viewKey, created)
+    entriesByContents.set(created.contents, created)
     if (workspace) extensions.addTab(profileId, view.webContents, window)
     registerWindow(window)
     return created
@@ -2178,6 +2186,48 @@ export function registerBrowser(
         sitePermissions: permissions.site(origin),
       }
     }
+    if (command.action === 'element-snapshot' || command.action === 'element-inspect') {
+      const contents = entry.view.webContents
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const operation = async () => {
+        if (command.action === 'element-inspect') {
+          const point = { snapshot: command.snapshot, x: command.x, y: command.y }
+          const value: unknown = await contents.executeJavaScript(
+            `(${inspectBrowserElement.toString()})(${JSON.stringify(point)})`,
+          )
+          if (value == null) throw new Error('No element at that point. Pick another spot.')
+          const element = decode(browserElementSchema, value)
+          return { url: contents.getURL(), element }
+        }
+        const snapshot = decode(
+          browserElementSnapshotSchema,
+          await contents.executeJavaScript(`(${readBrowserElementSnapshot.toString()})()`),
+        )
+        if (snapshot.width * snapshot.height > 16000000)
+          throw new Error('The browser viewport is too large to capture. Resize it and try again.')
+        const image = await contents.capturePage(undefined, { stayHidden: true })
+        if (image.isEmpty()) throw new Error('The browser has no image to capture yet.')
+        const current = decode(
+          browserElementSnapshotSchema,
+          await contents.executeJavaScript(`(${readBrowserElementSnapshot.toString()})()`),
+        )
+        if (JSON.stringify(current) !== JSON.stringify(snapshot))
+          throw new Error('The page moved or changed. Capture it again.')
+        const data = image.toDataURL()
+        if (data.length > 24000000)
+          throw new Error('The captured image is too large. Resize the browser and try again.')
+        return { url: contents.getURL(), elementCapture: { snapshot, image: data } }
+      }
+      return Promise.race([
+        operation(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Reading the browser element timed out.')),
+            10000,
+          )
+        }),
+      ]).finally(() => clearTimeout(timer))
+    }
     if (command.action === 'selection') {
       // A busy or hung page must not hold the request open; one attempt, then a clear error.
       const reading: Promise<unknown> = entry.view.webContents.executeJavaScript(
@@ -2298,6 +2348,7 @@ export function registerBrowser(
       clearInterval(reap)
       media.reset()
       for (const [key, entry] of views) {
+        entriesByContents.delete(entry.contents)
         cdp?.remove(key)
         closePopups(entry)
         if (!entry.contents.isDestroyed()) entry.contents.close()

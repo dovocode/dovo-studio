@@ -67,6 +67,7 @@ class RetainedOutput {
   }
 }
 type Session = {
+  directory: string
   info: TerminalInfo
   process: pty.IPty
   readonly buffer: string
@@ -168,6 +169,7 @@ export class Terminals {
       })
     const output = new RetainedOutput()
     const session: Session = {
+      directory: cwd,
       info: {
         id,
         taskId,

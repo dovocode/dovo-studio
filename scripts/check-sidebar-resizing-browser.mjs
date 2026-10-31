@@ -48,7 +48,7 @@ window.mount=()=>root.render(<ApplicationStateProvider><TooltipProvider><Fixture
           namespace: 'fixture',
         }))
         build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
-          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async()=>({files:['src/first.ts','src/second.ts']});export const useWorkspace=()=>({connected:true,request});`,
+          contents: `import {Effect} from 'effect';export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async(path,input)=>path.endsWith('/directory')?{entries:input.directory?[{path:'src/first.ts',kind:'file'},{path:'src/second.ts',kind:'file'}]:[{path:'src',kind:'directory'}],truncated:false}:{files:['src/first.ts','src/second.ts'].filter(path=>path.includes(input.query??'')),truncated:false};const requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});export const useWorkspace=()=>({connected:true,request,requestEffect});`,
           loader: 'ts',
           resolveDir: fileURLToPath(new URL('../packages/studio-core/', import.meta.url)),
         }))
@@ -199,20 +199,23 @@ try {
       expected,
     )
   }
-  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  await projectPane.getByRole('button', { name: 'src', exact: true }).waitFor()
   if (
     (await projectPane.getByRole('button', { name: 'src', exact: true }).innerText()).trim() !==
     'src'
   )
     throw new Error('Project directory still displays a file count')
+  await projectPane.getByRole('button', { name: 'src', exact: true }).click()
+  await projectPane.getByRole('button', { name: 'first.ts', exact: true }).waitFor()
   await projectWidth(256)
   await drag('Resize project file tree', -80)
   await projectWidth(336)
   await page.waitForFunction(() => window.saved().projectFilesSidebarWidth === 336)
   await page.getByRole('searchbox', { name: 'Search project files' }).fill('second')
   await projectPane
-    .getByRole('button', { name: 'src/first.ts', exact: true })
+    .getByRole('button', { name: 'first.ts', exact: true })
     .waitFor({ state: 'hidden' })
+  await projectPane.getByRole('button', { name: 'src/second.ts', exact: true }).waitFor()
   await page.evaluate(() => window.toggleProject())
   await projectPane.waitFor({ state: 'hidden' })
   await page.evaluate(() => window.toggleProject())

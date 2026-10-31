@@ -259,3 +259,78 @@ it.each(['changed', 'unchanged', 'anonymous'] as const)(
     }
   },
 )
+
+it('resolves account references, invalidates cached readings on refresh, and rejects stale probes', async () => {
+  const token = randomBytes(32).toString('base64url'),
+    f = await fixture()
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  let release = () => {}
+  try {
+    vi.stubEnv('DOVO_TEST_ACCOUNT_HOME', '/account-one')
+    runtime.services.store.update(() => ({
+      ...f.workspace,
+      agents: f.workspace.agents.map((agent) => ({
+        ...agent,
+        envSecrets: {
+          CODEX_HOME: { provider: 'environment' as const, reference: 'DOVO_TEST_ACCOUNT_HOME' },
+        },
+      })),
+    }))
+    const call = () =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/usage/limits/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'local' }),
+      })
+    vi.mocked(readUsageLimits).mockResolvedValue({ account: undefined, limits: [] })
+    await call()
+    expect(readUsageLimits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ env: { CODEX_HOME: '/account-one' }, envSecrets: undefined }),
+    )
+    vi.stubEnv('DOVO_TEST_ACCOUNT_HOME', '/account-two')
+    runtime.services.agents.secretReferences.refresh()
+    await call()
+    expect(readUsageLimits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ env: { CODEX_HOME: '/account-two' } }),
+    )
+    let entered = () => {}
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    runtime.services.agents.secretReferences.refresh()
+    vi.mocked(readUsageLimits).mockImplementationOnce(async () => {
+      entered()
+      await gate
+      return {
+        account: { id: 'stale', label: 'Old account' },
+        limits: [
+          {
+            provider: 'codex',
+            window: 'Session',
+            usedPercent: 80,
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      }
+    })
+    const pending = call()
+    await started
+    runtime.services.agents.secretReferences.refresh()
+    release()
+    expect(await (await pending).json()).toMatchObject({
+      accounts: [
+        { status: 'failed', reason: 'Secret references changed. Refresh account limits again.' },
+      ],
+    })
+    expect(runtime.services.store.get().planLimits ?? []).toEqual([])
+    expect(JSON.stringify(runtime.services.store.get())).not.toContain('/account-two')
+  } finally {
+    release()
+    vi.unstubAllEnvs()
+    await runtime.close()
+    await f.cleanup()
+  }
+})

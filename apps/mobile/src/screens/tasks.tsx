@@ -21,6 +21,7 @@ import { useForegroundInterval } from '../runtime/state/app-active'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import {
   updateMobilePreferences,
+  setMobileThreadSectionCollapsed,
   useCarMode,
   useMobilePreferences,
 } from '../runtime/preferences/app-preferences'
@@ -501,17 +502,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         expanded: !collapsed.has(sectionKey(item.key)),
       }}
       onPress={() => {
-        const next = new Set(collapsed)
         const key = sectionKey(item.key)
-        if (next.has(key)) next.delete(key)
-        else {
-          next.add(key)
-          if (key === 'settled') {
-            setShowAllSettled(false)
-            setSettledLimit(settledSummaryPageSize)
-          }
+        const closing = !collapsed.has(key)
+        setMobileThreadSectionCollapsed(key, closing)
+        if (closing && key === 'settled') {
+          setShowAllSettled(false)
+          setSettledLimit(settledSummaryPageSize)
         }
-        updateMobilePreferences({ collapsedThreadSections: [...next] })
       }}
       style={{
         flexDirection: 'row',

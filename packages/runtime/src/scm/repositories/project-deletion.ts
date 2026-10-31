@@ -39,6 +39,23 @@ export function deleteProjectEffect(s: Services, value: unknown) {
       if (repositoryId === SCRATCH_PROJECT_ID || repository.kind === 'scratch')
         throw new HttpError(409, 'General cannot be deleted')
 
+      for (const task of workspace.tasks) {
+        if (task.repositoryId === repositoryId) continue
+        if (
+          s.store
+            .task(task.id)
+            .turns?.some(
+              (turn) =>
+                turn.checkpoint?.restorePending &&
+                turn.checkpoint.linked?.some((link) => link.repositoryId === repositoryId),
+            )
+        )
+          throw new HttpError(
+            409,
+            'Finish the pending undo or redo in a linked thread before deleting this project.',
+          )
+      }
+
       const projectTasks = workspace.tasks.filter((task) => task.repositoryId === repositoryId)
       const projectTaskIds = new Set(projectTasks.map((task) => task.id))
       const deletedTaskIds = new Set<string>()

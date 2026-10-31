@@ -195,7 +195,7 @@ it('bounds identity retention, expires unused paths and coalesces pending reads'
     expect(command).not.toHaveBeenCalled()
     await git.repositoryIdentity('first')
     expect(command).toHaveBeenCalledTimes(2)
-    clock.mockReturnValue(62000)
+    clock.mockReturnValue(302000)
     command.mockClear()
     await git.repositoryIdentity('repository-255')
     expect(command).toHaveBeenCalledTimes(2)
@@ -207,7 +207,7 @@ it('bounds identity retention, expires unused paths and coalesces pending reads'
         }),
     )
     const pending = git.repositoryIdentity('pending')
-    clock.mockReturnValue(130000)
+    clock.mockReturnValue(610000)
     expect(git.repositoryIdentity('pending')).toBe(pending)
     resolve('origin\n')
     expect(await pending).toBe('github.com/owner/repository')
@@ -216,6 +216,128 @@ it('bounds identity retention, expires unused paths and coalesces pending reads'
     clock.mockRestore()
   }
 })
+it('reuses identity across minute polls while bounding external retarget staleness', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  const { exec } = await import('../../process')
+  try {
+    await git.command(f.directory, ['remote', 'add', 'origin', 'https://github.com/owner/first'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/first')
+    const command = vi.spyOn(git, 'command')
+    try {
+      clock.mockReturnValue(61_001)
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/first')
+      expect(command).not.toHaveBeenCalled()
+      await exec('git', ['remote', 'set-url', 'origin', 'https://github.com/owner/external'], {
+        cwd: f.directory,
+      })
+      clock.mockReturnValue(301_001)
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/external')
+      expect(command).toHaveBeenCalledTimes(2)
+      await git.command(f.directory, [
+        'remote',
+        'set-url',
+        'origin',
+        'https://github.com/owner/local',
+      ])
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/local')
+      await exec('git', ['remote', 'set-url', 'origin', 'https://github.com/owner/explicit'], {
+        cwd: f.directory,
+      })
+      expect(await git.repositoryIdentity(f.directory, true)).toBe('github.com/owner/explicit')
+    } finally {
+      command.mockRestore()
+    }
+  } finally {
+    clock.mockRestore()
+    await f.cleanup()
+  }
+})
+
+it('invalidates identities across shared config writes affecting linked worktrees', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  try {
+    await git.command(f.directory, ['remote', 'add', 'origin', 'https://git-alias/owner/repo'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('git-alias/owner/repo')
+    await git.sharedConfigCommand(f.directory, [
+      'config',
+      'url.https://github.com/.insteadOf',
+      'https://git-alias/',
+    ])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/repo')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it('refreshes conditional remote identities after a branch switch', async () => {
+  const f = await fixture()
+  const git = new GitService()
+  try {
+    await git.command(f.directory, ['remote', 'add', 'origin', 'https://git-alias/owner/base'])
+    const include = join(f.directory, 'branch.gitconfig')
+    await writeFile(
+      include,
+      '[url "https://github.com/owner/conditional"]\n  insteadOf = https://git-alias/owner/base\n',
+    )
+    await git.command(f.directory, ['config', 'includeIf.onbranch:conditional.path', include])
+    expect(await git.repositoryIdentity(f.directory)).toBe('git-alias/owner/base')
+    await git.checkoutCommand(f.directory, ['checkout', '-b', 'conditional'])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/conditional')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it.each(['app', 'external'] as const)(
+  'does not let a pre-write identity read replace the refreshed identity after an %s write',
+  async (writer) => {
+    const f = await fixture()
+    const git = new GitService()
+    const run = git['run']
+    let release!: () => void
+    let captured!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ready = new Promise<void>((resolve) => {
+      captured = resolve
+    })
+    let hold = true
+    try {
+      await git.command(f.directory, ['remote', 'add', 'origin', 'https://github.com/owner/before'])
+      git['run'] = async (...args) => {
+        const result = await run.apply(git, args)
+        if (args[2][0] === 'remote' && args[2][1] === 'get-url' && hold) {
+          hold = false
+          captured()
+          await held
+        }
+        return result
+      }
+      const before = git.repositoryIdentity(f.directory)
+      await ready
+      const args = ['remote', 'set-url', 'origin', 'https://github.com/owner/after']
+      if (writer === 'app') await git.command(f.directory, args)
+      else {
+        const { exec } = await import('../../process')
+        await exec('git', args, { cwd: f.directory })
+      }
+      expect(await git.repositoryIdentity(f.directory, writer === 'external')).toBe(
+        'github.com/owner/after',
+      )
+      release()
+      expect(await before).toBe('github.com/owner/before')
+      expect(await git.repositoryIdentity(f.directory)).toBe('github.com/owner/after')
+    } finally {
+      release()
+      git['run'] = run
+      await f.cleanup()
+    }
+  },
+)
 it('retains unavailable identities briefly while allowing explicit recovery immediately', async () => {
   const git = new GitService()
   const command = vi.spyOn(git, 'command').mockRejectedValue(new Error('Checkout unavailable'))

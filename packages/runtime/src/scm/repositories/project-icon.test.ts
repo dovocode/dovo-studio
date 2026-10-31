@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeIco } from 'icojs'
@@ -85,5 +85,67 @@ it('bounds retained project icons and refreshes expired thumbnails', async () =>
   } finally {
     clock.mockRestore()
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('reuses an unchanged thumbnail after expiry but notices changed and higher priority assets', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-project-icon-source-'))
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  const image = (background: string) =>
+    sharp({ create: { width: 32, height: 32, channels: 4, background } })
+      .png()
+      .toBuffer()
+  const orange = await image('#ff8800')
+  const blue = await image('#1188cc')
+  const green = await image('#00cc00')
+  const encode = vi.spyOn(sharp.prototype, 'toBuffer')
+  try {
+    await writeFile(join(root, 'logo.png'), orange)
+    const first = await discoverProjectIcon(root)
+    expect(encode).toHaveBeenCalledTimes(1)
+    clock.mockReturnValue(31_001)
+    expect(await discoverProjectIcon(root)).toBe(first)
+    expect(encode).toHaveBeenCalledTimes(1)
+    await writeFile(join(root, 'logo.png'), blue)
+    clock.mockReturnValue(61_002)
+    const changed = await discoverProjectIcon(root)
+    expect(changed).not.toBe(first)
+    expect(encode).toHaveBeenCalledTimes(2)
+    await mkdir(join(root, 'app'))
+    await writeFile(join(root, 'app', 'icon.png'), green)
+    clock.mockReturnValue(91_003)
+    expect(await discoverProjectIcon(root)).not.toBe(changed)
+    expect(encode).toHaveBeenCalledTimes(3)
+    await rm(join(root, 'app', 'icon.png'))
+    clock.mockReturnValue(121_004)
+    expect(await discoverProjectIcon(root)).toBe(changed)
+  } finally {
+    encode.mockRestore()
+    clock.mockRestore()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('rechecks containment when a cached icon is replaced by an outside symlink', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-project-icon-contained-'))
+  const outside = await mkdtemp(join(tmpdir(), 'dovo-project-icon-outside-'))
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  try {
+    const image = await sharp({
+      create: { width: 32, height: 32, channels: 4, background: '#ff8800' },
+    })
+      .png()
+      .toBuffer()
+    await writeFile(join(root, 'logo.png'), image)
+    await writeFile(join(outside, 'logo.png'), image)
+    expect(await discoverProjectIcon(root)).toMatch(/^data:image\/png;base64,/)
+    await rm(join(root, 'logo.png'))
+    await symlink(join(outside, 'logo.png'), join(root, 'logo.png'))
+    clock.mockReturnValue(31_001)
+    expect(await discoverProjectIcon(root)).toBeUndefined()
+  } finally {
+    clock.mockRestore()
+    await rm(root, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
   }
 })

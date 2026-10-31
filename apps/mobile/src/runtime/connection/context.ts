@@ -12,6 +12,8 @@ import type {
   RuntimeSnapshot,
   Task,
   WorkspacePatchResult,
+  MutationOutbox,
+  Attachment,
 } from '@dovo/protocol'
 import type { TaskPreview } from '../state/optimistic-tasks'
 
@@ -119,6 +121,17 @@ export type Runtime = {
   }
   retryMutations: (profile: RuntimeProfile, confirmRenewalReplay?: boolean) => Promise<void>
   discardMutations: (profile: RuntimeProfile) => Promise<void>
+  attachmentUploads: (profile: RuntimeProfile) => MutationOutbox
+  attachmentPendingEffect: (profile: RuntimeProfile, id: string) => Effect.Effect<boolean, Error>
+  requestAttachmentEffect: (
+    profile: RuntimeProfile,
+    input: unknown,
+    replacement: boolean,
+  ) => Effect.Effect<{ attachment: Attachment; revision: number }, Error>
+  finishAttachmentEffect: (profile: RuntimeProfile, id: string) => Effect.Effect<void, Error>
+  reviewAttachments: (profile: RuntimeProfile) => void
+  recoverAttachment: (profile: RuntimeProfile, id: string) => Promise<void>
+  discardAttachment: (profile: RuntimeProfile, id: string) => Promise<void>
   read: Call
   readRuntime: RuntimeRead
   cacheForRuntime: (profile: RuntimeProfile) => RuntimeReadCache

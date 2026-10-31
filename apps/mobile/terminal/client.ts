@@ -166,8 +166,14 @@ const buttons = keys.map(([label, data]) => {
 })
 terminal.textarea?.setAttribute('aria-label', 'Terminal input')
 let currentAttempt: number | undefined
+let savedViewport: { line: number; follow: boolean } | undefined
+let awaitingReplay = false
 window.disconnectTerminal = (attempt) => {
   if (attempt !== currentAttempt || !socket) return
+  if (!awaitingReplay) {
+    const buffer = terminal.buffer.active
+    savedViewport = { line: buffer.viewportY, follow: buffer.viewportY === buffer.baseY }
+  }
   heartbeat?.stop()
   heartbeat = undefined
   clearModifiers()
@@ -182,7 +188,9 @@ window.connectTerminal = (url, attempt) => {
   socket = new WebSocket(url)
   socket.binaryType = 'arraybuffer'
   const current = socket
+  let replayReceived = false
   socket.onopen = () => {
+    awaitingReplay = true
     terminal.reset()
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'connected', attempt }))
     for (const button of buttons) button.disabled = false
@@ -198,8 +206,18 @@ window.connectTerminal = (url, attempt) => {
     )
   }
   socket.onmessage = (event) => {
-    if (typeof event.data === 'string') terminal.write(event.data)
-    else heartbeat?.receive(event.data)
+    if (typeof event.data === 'string') {
+      const replay = !replayReceived
+      replayReceived = true
+      terminal.write(event.data, () => {
+        if (!replay || currentAttempt !== attempt || socket !== current) return
+        awaitingReplay = false
+        if (savedViewport?.follow) terminal.scrollToBottom()
+        else if (savedViewport)
+          terminal.scrollToLine(Math.min(savedViewport.line, terminal.buffer.active.baseY))
+        savedViewport = undefined
+      })
+    } else heartbeat?.receive(event.data)
   }
   socket.onclose = (event) => {
     heartbeat?.stop()

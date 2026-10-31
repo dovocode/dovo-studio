@@ -1,4 +1,11 @@
-import { runtimeComputerName, parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  parseAgentEnvironment,
+  formatAgentEnvironment,
+  defaultSecretReference,
+  secretReferenceProviders,
+  type AgentSecretReference,
+} from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -6,6 +13,7 @@ import { decode } from '@dovo/protocol'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { CliProfilePicker } from './cli-profile-picker'
 import { GithubConnectionStatus } from './github-connection-status'
+import { SecretReferenceFields } from './secret-reference-fields'
 import { useEffect, useRef } from 'react'
 import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import { ScrollView, View } from 'react-native'
@@ -347,10 +355,19 @@ function ConnectionForm({
   const [cliProfile, setCliProfile] = useApplicationState(initial?.cliProfile ?? '')
   const [cliTool, setCliTool] = useApplicationState<'fj' | 'tea'>(initial?.cliTool ?? 'tea')
   const [credential, setCredential] = useApplicationState(initial?.credential ?? 'gh'),
+    // Saved references are host-private; a replacement is only sent when the user enters one.
+    [secret, setSecret] = useApplicationState<AgentSecretReference | undefined>(undefined),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false),
     [confirmRemove, setConfirmRemove] = useApplicationState(false)
   const pending = useRef(false)
+  const retainedSecretName =
+    initial?.credential === 'reference' &&
+    initial.provider === provider &&
+    initial.baseUrl === baseUrl.trim().replace(/\/+$/, '') &&
+    initial.username === (username.trim() || undefined)
+      ? secretReferenceProviders.find((item) => item.id === initial.secretProvider)?.name
+      : undefined
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
@@ -384,9 +401,11 @@ function ConnectionForm({
                   tokenEnv: tokenEnv.trim(),
                 }
               : {}),
+            ...(credential === 'reference' && secret ? { secret } : {}),
           })
           yield* callEffect('/api/scm/connections/save', input, forgeConnectionSchema)
           setToken('')
+          setSecret(undefined)
           onDone()
         }).pipe(
           Effect.catch((cause) =>
@@ -417,6 +436,7 @@ function ConnectionForm({
           setName(forgeLabels[next])
           setToken('')
           setCliProfile('')
+          setSecret(undefined)
           setCredential(next === 'github' ? 'gh' : ['gitlab'].includes(next) ? 'token' : 'cli')
         }}
         disabled={busy}
@@ -487,10 +507,19 @@ function ConnectionForm({
               label="Credential"
               value={credential}
               onChange={(value) => {
-                setCredential(
-                  value === 'environment' ? 'environment' : value === 'cli' ? 'cli' : 'token',
-                )
+                const next =
+                  value === 'environment' || value === 'cli'
+                    ? value
+                    : value === 'reference' && provider === 'bitbucket'
+                      ? value
+                      : 'token'
+                setCredential(next)
                 setToken('')
+                setSecret(
+                  next === 'reference' && !retainedSecretName
+                    ? defaultSecretReference('onepassword')
+                    : undefined,
+                )
               }}
               disabled={busy}
               items={[
@@ -505,6 +534,9 @@ function ConnectionForm({
                   id: 'environment',
                   name: 'Runtime environment variable',
                 },
+                ...(provider === 'bitbucket'
+                  ? [{ id: 'reference', name: 'Secret manager reference' }]
+                  : []),
               ]}
             />
           )}
@@ -539,6 +571,34 @@ function ConnectionForm({
                 on this runtime. Sign in there first. Git uses its own credential helper for fj/tea.
               </Text>
             </>
+          ) : credential === 'reference' ? (
+            secret ? (
+              <>
+                <SecretReferenceFields value={secret} onChange={setSecret} disabled={busy} />
+                {retainedSecretName && (
+                  <Action
+                    secondary
+                    label={`Keep saved ${retainedSecretName} reference`}
+                    disabled={busy}
+                    onPress={() => setSecret(undefined)}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={styles.muted}>
+                  {retainedSecretName
+                    ? `${retainedSecretName} reference saved on this runtime. It is not shown on other devices.`
+                    : 'Enter the secret manager reference for this account.'}
+                </Text>
+                <Action
+                  secondary
+                  label={retainedSecretName ? 'Replace reference' : 'Add reference'}
+                  disabled={busy}
+                  onPress={() => setSecret(defaultSecretReference('onepassword'))}
+                />
+              </>
+            )
           ) : credential === 'environment' ? (
             <Field
               label="Token environment variable"
@@ -565,7 +625,9 @@ function ConnectionForm({
                 : provider === 'azure-devops'
                   ? 'Use an Azure DevOps PAT with Code, Work Items and Build permissions for the features you use.'
                   : 'Use a personal access token with access to the repositories, issues and pipeline actions you use. Repository-limited tokens can be linked by entering the repository directly.'}{' '}
-              Tokens are stored in the runtime’s private database, outside workspace sync.
+              {credential === 'reference'
+                ? 'The runtime reads the token with its own secret manager login and never returns the token or reference to clients. A rejected token or an explicit refresh reads the reference again.'
+                : 'Tokens are stored in the runtime’s private database, outside workspace sync.'}
             </Text>
           )}
         </>

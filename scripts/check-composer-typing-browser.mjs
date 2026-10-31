@@ -5,7 +5,7 @@ const built = await build({
   stdin: {
     contents: `
 import { createRoot } from 'react-dom/client';
-import { useRef, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
 const frame = window.requestAnimationFrame.bind(window);
@@ -19,8 +19,10 @@ function Composer() {
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   window.parentRenders++;
   const input = useRef(null);
-  return <form onSubmit={event=>{event.preventDefault();window.defaults++}}><ComposerEditor onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
-    <button type="submit" disabled={!hasText}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
+  const [submitBusy,setSubmitBusy]=useState(false);window.setSubmitBusy=setSubmitBusy;
+  const [composingNextDraft,setComposingNextDraft]=useState(false);window.setComposingNextDraft=setComposingNextDraft;
+  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
+    <button type="submit" disabled={!hasText||submitBusy}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
 window.controller = controller;
@@ -114,6 +116,61 @@ try {
   await input.press('ArrowUp')
   if ((await input.inputValue()) !== 'Edited recalled message')
     throw new Error('History replaced an edited message')
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    await input.fill('')
+    await input.evaluate(
+      (element, shape) =>
+        element.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'ArrowUp',
+            bubbles: true,
+            cancelable: true,
+            ...shape,
+          }),
+        ),
+      shape,
+    )
+    if ((await input.inputValue()) !== '')
+      throw new Error('IME candidate navigation recalled history')
+    await input.fill('Candidate')
+    for (const altKey of [false, true])
+      await input.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'Enter',
+              bubbles: true,
+              cancelable: true,
+              ...options,
+            }),
+          ),
+        { ...shape, altKey },
+      )
+    if ((await page.evaluate(() => window.defaults + window.alternatives)) !== 0)
+      throw new Error('IME candidate confirmation submitted')
+    await input.fill('/')
+    const menu = page.getByRole('listbox', { name: 'Commands and skills' })
+    await menu.waitFor()
+    const selected = await input.getAttribute('aria-activedescendant')
+    for (const key of ['ArrowDown', 'Enter', 'Tab', 'Escape'])
+      await input.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }),
+          ),
+        { ...shape, key },
+      )
+    if (
+      (await input.inputValue()) !== '/' ||
+      (await input.getAttribute('aria-activedescendant')) !== selected ||
+      !(await menu.isVisible())
+    )
+      throw new Error('IME candidate keys changed mentions')
+  }
+  await input.press('Enter')
+  await page.waitForFunction(() => window.commands === 1)
+  if ((await page.evaluate(() => window.defaults)) !== 0)
+    throw new Error('Mention selection submitted the form')
   await input.fill('Keyboard guidance')
   await input.press('Enter')
   await input.press('Alt+Enter')
@@ -125,6 +182,26 @@ try {
   await input.press('Shift+Enter')
   if (!(await input.inputValue()).includes('\n'))
     throw new Error('Shift+Enter did not insert a line')
+  await page.evaluate(() => {
+    window.controller.update('')
+    window.setSubmitBusy(true)
+    window.setComposingNextDraft(true)
+  })
+  await page.waitForFunction(() => {
+    const input = document.querySelector('textarea')
+    return input && !input.readOnly && input.value === ''
+  })
+  await input.fill('Second queued prompt')
+  if ((await page.evaluate(() => window.controller.text)) !== 'Second queued prompt')
+    throw new Error('The real editor did not allow the next draft during a queued send')
+  await input.press('Enter')
+  if ((await page.evaluate(() => window.defaults)) !== 1)
+    throw new Error('Typing the next draft bypassed the pending-send lock')
+  await page.evaluate(() => window.setComposingNextDraft(false))
+  await page.waitForFunction(() => document.querySelector('textarea').readOnly)
+  await page.evaluate(() => window.setSubmitBusy(false))
+  if ((await input.inputValue()) !== 'Second queued prompt')
+    throw new Error('Completing the send replaced the newer draft')
   console.log(
     'Enter submits the default and Alt+Enter submits the alternative without a duplicate submission.',
   )

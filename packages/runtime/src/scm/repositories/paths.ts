@@ -14,14 +14,19 @@ export async function repositoryPath(path: string) {
     throw new HttpError(400, 'Repository path is not a directory')
   return full
 }
-export async function safeFile(root: string, path: string) {
+export async function safeFile(
+  root: string,
+  path: string,
+  options: { followFinalSymlink?: boolean } = {},
+) {
   if (!path || isAbsolute(path) || path.includes('\0') || path.split(/[\\/]/).includes('.git'))
     throw new HttpError(400, 'Invalid file path')
   const full = resolve(root, path),
     rel = relative(root, full)
   if (rel.startsWith('..') || isAbsolute(rel))
     throw new HttpError(400, 'File is outside the repository')
-  let ancestor = full
+  // Unlink validates the parent: the final entry itself may be an external or dangling symlink.
+  let ancestor = options.followFinalSymlink === false ? dirname(full) : full
   while (true) {
     try {
       await lstat(ancestor)

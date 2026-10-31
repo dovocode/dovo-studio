@@ -6,7 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node ../../scripts/build-browser-viewer.mjs && vp dev",
-    "build": "vp run bundle",
+    "build": "node ../../scripts/build-browser-viewer.mjs && vp build",
     "preview": "vp preview",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

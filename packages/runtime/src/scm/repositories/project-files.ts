@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { rankPaths } from '@dovo/protocol'
 import type { GitService } from '../git/git.js'
+import { ProjectBrowser } from './project-browser.js'
 
 const TTL = 30_000
 const MAX_FILES = 200_000
@@ -85,5 +86,19 @@ export class ProjectFiles {
   }
   async all(cwd: string, plain = false, fresh = false) {
     return this.list(cwd, plain, fresh)
+  }
+  directory(cwd: string, directory = '', cursor?: string, plain = false, signal?: AbortSignal) {
+    return new ProjectBrowser(this.git).directory(cwd, directory, cursor, plain, signal)
+  }
+  contentSearch(cwd: string, query: string, plain = false, signal?: AbortSignal) {
+    return new ProjectBrowser(this.git).search(cwd, query, plain, signal)
+  }
+  async pathSearch(cwd: string, query: string, plain = false) {
+    const listing = await this.list(cwd, plain)
+    const files = rankPaths(listing.files, query, 201)
+    return {
+      files: files.slice(0, 200),
+      truncated: listing.truncated !== false || files.length > 200,
+    }
   }
 }

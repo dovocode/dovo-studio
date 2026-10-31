@@ -146,6 +146,56 @@ it('commits the receipt and queued input together and clears receipts only when 
   }
 })
 
+it('queues question-answer attachments as message files without consuming the draft', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const file = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'answer.png',
+      mime: 'image/png',
+      size: 1,
+    }
+    const draftFile = { ...file, id: '22222222-2222-4222-8222-222222222222', name: 'draft.txt' }
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Answer',
+          repositoryId: '',
+          agentId: '',
+          status: 'running',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Unsent draft',
+          draftAttachments: [draftFile],
+          example: false,
+        },
+      ],
+    }))
+    const receipt = { id: 'question', fingerprint: 'answers', attachments: [file] }
+    const queue = new TaskQueue(store)
+    expect(queue.add('task', 'answer:question', 'Answer', [file], receipt)).toBe(true)
+    const restarted = new WorkspaceStore(db)
+    expect(restarted.taskSummary('task')).toMatchObject({
+      draft: 'Unsent draft',
+      draftAttachments: [draftFile],
+      queue: [{ id: 'answer:question', text: 'Answer', attachments: [file] }],
+    })
+    // Delivery retries the same answer with its files instead of reporting a conflict.
+    expect(new TaskQueue(restarted).add('task', 'answer:question', 'Answer', [file], receipt)).toBe(
+      false,
+    )
+    expect(() => new TaskQueue(restarted).add('task', 'answer:question', 'Answer')).toThrow(
+      'different text',
+    )
+  } finally {
+    db.close()
+  }
+})
+
 it('does not replay a completed provider turn if restart interrupts change capture', () => {
   const db = openDatabase(':memory:')
   try {
@@ -971,7 +1021,7 @@ it('persists pauses through editing and dragging and never skips a paused queue 
   }
 })
 
-it('duplicates adjacent queued input with attachments, settings and pause state without changing drafts', () => {
+it('duplicates adjacent queued input with attachments, settings, review mode and pause state without changing drafts', () => {
   const db = openDatabase(':memory:')
   try {
     const store = new WorkspaceStore(db)
@@ -1029,7 +1079,7 @@ it('duplicates adjacent queued input with attachments, settings and pause state 
       paused: true,
     })
     expect(saved.queue?.[1].createdAt).not.toBe('old')
-    expect(saved.queue?.[1].review).toBeUndefined()
+    expect(saved.queue?.[1].review).toBe(true)
     expect(saved.queue?.[1].subagentResultId).toBeUndefined()
     expect(saved).toMatchObject({
       draft: 'Unrelated draft',

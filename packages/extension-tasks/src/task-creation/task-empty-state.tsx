@@ -1,5 +1,6 @@
 import { Button } from '@dovo/studio-ui'
-import type { Task } from '@dovo/studio-core'
+import { useWorkspace, type Task } from '@dovo/studio-core'
+import { ImportCodexSession } from './import-codex-session'
 import { ComposerProject, type SelectRemoteProject } from '../chat/composer/composer-project'
 
 export function TaskEmptyState({
@@ -19,6 +20,8 @@ export function TaskEmptyState({
   onMoving?: (moving: boolean) => void
   onSelectRemote?: SelectRemoteProject
 }) {
+  const store = useWorkspace()
+  const repository = store.workspace.repositories.find((item) => item.id === task?.repositoryId)
   return (
     <div
       data-thread-start=""
@@ -48,6 +51,13 @@ export function TaskEmptyState({
         <Button variant="ghost" size="sm" onClick={onBrowse} className="text-muted-foreground">
           Browse threads
         </Button>
+      )}
+      {task && !task.autoProject && repository && repository.kind !== 'scratch' && (
+        <ImportCodexSession
+          key={`${store.activeRuntimeId}:${repository.id}`}
+          repositoryId={repository.id}
+          disabled={disabled}
+        />
       )}
     </div>
   )

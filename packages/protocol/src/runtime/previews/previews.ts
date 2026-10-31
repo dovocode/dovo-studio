@@ -4,6 +4,11 @@ import { Schema } from 'effect'
 import { threadWindowTargetSchema } from '../../thread-window.js'
 import { browserTabLifecycleFields } from './browser-tab-lifecycle.js'
 import { connectionSchema } from '../connection/runtime.js'
+import {
+  browserElementPointSchema,
+  type BrowserElement,
+  type BrowserElementCapture,
+} from './browser-element.js'
 export function previewUrl(input: string, runtimeAddress?: string): string {
   const text = input.trim()
   if (
@@ -187,6 +192,15 @@ export type BrowserWorkspaceState = {
   activeId: string
 }
 export const browserCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('element-snapshot'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('element-inspect'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    ...browserElementPointSchema.fields,
+  }),
   mutableStruct({
     action: Schema.Literals(['sync-tabs', 'detach-tabs']),
     key: maxValue(minValue(Schema.String, 1), 500),
@@ -564,6 +578,8 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       title?: string
       cdp?: string
       image?: string
+      elementCapture?: BrowserElementCapture
+      element?: BrowserElement
       selection?: string
       favicon?: string | null
       faviconUpdates?: { key: string; url: string; favicon: string | null }[]

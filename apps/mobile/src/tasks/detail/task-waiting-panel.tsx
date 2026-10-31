@@ -1,3 +1,4 @@
+import { usePreviewActive } from '../preview/use-preview-active'
 import { taskHref } from '../../shell/task-route'
 import { useLinkOrigin } from '../../ui/content/link-origin'
 import { useCallback, useState } from 'react'
@@ -22,6 +23,7 @@ export function TaskWaitingPanel({
   taskId: string
   onPull?: (url: string) => void
 }) {
+  const active = usePreviewActive()
   const origin = useLinkOrigin(taskId)
   const { call, connected, connection, activeId, snapshot, profiles, overviews } = useRuntime()
   const { styles, colors } = useTheme()
@@ -76,6 +78,7 @@ export function TaskWaitingPanel({
     connected,
     read,
     JSON.stringify([clientScopeKey(connection), taskId]),
+    active,
   )
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
   const related = data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []

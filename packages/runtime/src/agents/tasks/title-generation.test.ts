@@ -34,6 +34,36 @@ function setup(checkouts?: ConstructorParameters<typeof TitleGeneration>[3]) {
   const titles = new TitleGeneration(db, store, registry, checkouts)
   return { db, store, registry, titles }
 }
+it('generates a title from attachment metadata without inventing message text', async () => {
+  const s = setup()
+  let captured: AgentRun | undefined
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      captured = run
+      run.onText('Review screenshot')
+    },
+  })
+  try {
+    s.titles.save({ agentId: 'harness', model: 'title-model' })
+    const attachment = {
+      id: '8cf51548-a817-44fd-802f-1d22cb814101',
+      name: 'dashboard.png',
+      mime: 'image/png',
+      size: 123,
+    }
+    expect(await s.titles.generate({ text: '', attachments: [attachment] })).toEqual({
+      title: 'Review screenshot',
+    })
+    expect(captured?.prompt).toContain('dashboard.png')
+    expect(captured?.prompt).toContain('image/png')
+    await expect(s.titles.generate({ text: '  ' })).rejects.toThrow(/Provide text or attachments/)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
 it('persists independent title settings and generates using a temporary read-only session', async () => {
   const s = setup()
   let captured: AgentRun | undefined

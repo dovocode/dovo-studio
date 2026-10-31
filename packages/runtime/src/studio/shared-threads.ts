@@ -11,6 +11,7 @@ import {
   artifactPublicationInput,
   artifactFeedQuerySchema,
   type SharingWriterConfig,
+  type TaskSummary,
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { Devices } from '../auth/devices.js'
@@ -36,6 +37,12 @@ export class SharedThreads {
   private running = new Map<string, AbortController>()
   private pending = new Set<Promise<void>>()
   private closed = false
+  /** What each thread writer last hashed. The store replaces a summary's `history` facts on every
+   * history write, so an unchanged identity means unchanged messages: skip loading and hashing. */
+  private hashed = new Map<
+    string,
+    { config: string; fingerprint: string; title: string; history: TaskSummary['history'] }
+  >()
   constructor(
     private db: Database.Database,
     private store: WorkspaceStore,
@@ -61,6 +68,7 @@ export class SharedThreads {
     const task = this.store.taskSummary(taskId)
     if (task.archived || task.archivedAt)
       throw new HttpError(409, 'Restore this thread before enabling updates')
+    return task
   }
   async enable(input: SharingWriterConfig, device: string, feed?: typeof feedSchema.Type) {
     const config = decode(configSchema, { ...input, feed })
@@ -86,6 +94,7 @@ export class SharedThreads {
       throw new HttpError(409, 'Sharing keys changed. Refresh and resume again')
     this.authorize(config.taskId, device)
     this.running.get(config.id)?.abort()
+    this.hashed.delete(config.id)
     this.db
       .prepare(
         'INSERT INTO shared_thread_writers VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET task=excluded.task,device=excluded.device,config=excluded.config,fingerprint=excluded.fingerprint,error=excluded.error',
@@ -127,6 +136,7 @@ export class SharedThreads {
       .get(id, taskId)
     if (row) {
       this.running.get(id)?.abort()
+      this.hashed.delete(id)
       this.db
         .prepare('UPDATE shared_thread_writers SET config=NULL,error=? WHERE id=?')
         .run('Updates paused', id)
@@ -187,7 +197,15 @@ export class SharedThreads {
       const controller = new AbortController()
       this.running.set(row.id, controller)
       try {
-        this.authorize(row.task, row.device)
+        const task = this.authorize(row.task, row.device)
+        const seen = this.hashed.get(row.id)
+        if (
+          seen?.config === row.config &&
+          seen.fingerprint === row.fingerprint &&
+          seen.title === task.title &&
+          seen.history === task.history
+        )
+          return
         const config = decode(configSchema, JSON.parse(row.config))
         if (config.feed && !this.artifactsEnabled())
           throw new HttpError(403, 'Artifacts are disabled')
@@ -231,7 +249,11 @@ export class SharedThreads {
             }
           : this.preview(row.task)
         const fingerprint = config.feed ? String(Date.now()) : sharingHash(JSON.stringify(content))
-        if (fingerprint === row.fingerprint) return
+        const hashed = { config: row.config, title: task.title, history: task.history }
+        if (fingerprint === row.fingerprint) {
+          if (!config.feed) this.hashed.set(row.id, { ...hashed, fingerprint })
+          return
+        }
         const current =
           head ??
           decode(
@@ -248,7 +270,9 @@ export class SharedThreads {
         this.db
           .prepare('UPDATE shared_thread_writers SET fingerprint=?,error=? WHERE id=? AND config=?')
           .run(fingerprint, '', row.id, row.config)
+        if (!config.feed) this.hashed.set(row.id, { ...hashed, fingerprint })
       } catch (error) {
+        this.hashed.delete(row.id)
         if (!controller.signal.aborted) {
           const permanent =
             error instanceof HttpError && [400, 401, 403, 404, 413].includes(error.status)
@@ -277,8 +301,11 @@ export class SharedThreads {
   async stopTasks(ids: readonly string[]) {
     for (const id of ids) {
       const rows = this.db.prepare('SELECT id FROM shared_thread_writers WHERE task=?').all(id)
-      for (const row of rows)
-        this.running.get(decode(mutableStruct({ id: Schema.String }), row).id)?.abort()
+      for (const row of rows) {
+        const writer = decode(mutableStruct({ id: Schema.String }), row).id
+        this.running.get(writer)?.abort()
+        this.hashed.delete(writer)
+      }
       this.db.prepare('DELETE FROM shared_thread_writers WHERE task=?').run(id)
     }
     await Promise.allSettled([...this.pending])

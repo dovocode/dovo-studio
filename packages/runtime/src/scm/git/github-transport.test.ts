@@ -15,6 +15,33 @@ const reply = (body: unknown, init: { status?: number; headers?: Record<string, 
     headers: { 'content-type': 'application/json', ...init.headers },
   })
 
+it.each([
+  ['NOT_FOUND', 404],
+  ['FORBIDDEN', 403],
+  ['UNAUTHORIZED', 401],
+] as const)(
+  'classifies HTTP 200 GraphQL %s errors without exposing their messages',
+  async (type, status) => {
+    const transport = new GithubTransport(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: { repository: null },
+            errors: [{ type, message: 'upstream-secret' }],
+          }),
+          { status: 200 },
+        ),
+    )
+    const unauthorized = vi.fn<() => void>()
+    await expect(
+      transport.send(parseGithubApiArgs(['api', 'graphql']), 'private-token', {
+        onUnauthorized: unauthorized,
+      }),
+    ).rejects.toMatchObject({ status, message: expect.not.stringContaining('upstream-secret') })
+    expect(unauthorized).toHaveBeenCalledTimes(status === 401 ? 1 : 0)
+  },
+)
+
 it('translates gh api arguments: query fields on GET, JSON fields on writes, GraphQL variables', () => {
   const list = parseGithubApiArgs([
     'api',

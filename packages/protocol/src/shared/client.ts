@@ -56,6 +56,12 @@ const idempotentPaths = new Set(['/api/tasks/message', '/api/tasks/steer'])
 // These POST endpoints only read state. Keep the list explicit: adding an action,
 // task creation or provider write here could replay a side effect after a lost response.
 const postReadPaths = new Set([
+  '/api/tasks/commits/read',
+  '/api/tasks/commits/changes',
+  '/api/tasks/commits/file-preview',
+  '/api/tasks/files/directory',
+  '/api/tasks/files/search-content',
+  '/api/tasks/files/search-paths',
   '/api/scm/source/identity',
   '/api/agents/models/cached',
   '/api/scm/pulls',

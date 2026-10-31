@@ -1,7 +1,10 @@
+import {
+  claudeEffectiveEnvironment,
+  claudeSubscriptionEnvironment,
+} from '../configuration/claude-settings.js'
 import { homedir } from 'node:os'
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { reportedPlanLimits, type Agent } from '@dovo/protocol'
-import { processEnvironment } from '../../process.js'
 import { claudeCommand } from '../configuration/claude-command.js'
 import { claudeLaunchFlags } from '../configuration/launch-flags.js'
 import { codexAccount } from './reset-credits.js'
@@ -21,8 +24,8 @@ export async function readUsageLimits(agent: Agent) {
       return { account, limits }
     })
   if (agent.provider !== 'claude') return { account: undefined, limits: [] }
-  const env = processEnvironment(agent.env)
-  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return { account: undefined, limits: [] }
+  const env = claudeEffectiveEnvironment(agent.env, undefined, agent.args)
+  if (!claudeSubscriptionEnvironment(env)) return { account: undefined, limits: [] }
   const controller = new AbortController()
   const input: AsyncIterable<SDKUserMessage> = {
     [Symbol.asyncIterator]: () => ({
@@ -40,7 +43,11 @@ export async function readUsageLimits(agent: Agent) {
     options: {
       cwd: homedir(),
       env,
-      extraArgs: claudeLaunchFlags(agent.args),
+      extraArgs: Object.fromEntries(
+        Object.entries(claudeLaunchFlags(agent.args)).filter(
+          ([key]) => !['settings', 'setting-sources', 'managed-settings'].includes(key),
+        ),
+      ),
       abortController: controller,
       settingSources: [],
       pathToClaudeCodeExecutable: await claudeCommand(agent.endpoint, agent.env),

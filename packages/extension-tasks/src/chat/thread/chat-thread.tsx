@@ -1,4 +1,5 @@
 import {
+  providerRetryLabel,
   createRuntimeClient,
   threadPullLink,
   unassignedConversationTools,
@@ -21,6 +22,7 @@ import { TurnWork } from './turn-work'
 import { PullLinkActions } from './pull-link-actions'
 import { ThreadLinkMenu } from './thread-link-menu'
 import { conversationTurns, conversationTurnLabel } from './conversation-turns'
+import { compactionsByMessage } from './compactions-by-message'
 import { useThreadSearch } from './use-thread-search'
 import {
   Fragment,
@@ -151,6 +153,7 @@ export function ChatThread({
     return true
   }
   const [bookmarkJump, setBookmarkJump] = useState('')
+  const [restoreTurn, setRestoreTurn] = useState<string>()
   useEffect(() => {
     if (!bookmarkJump) return
     const frame = requestAnimationFrame(() =>
@@ -264,22 +267,18 @@ export function ChatThread({
     const unassigned = unassignedConversationTools(task, activity.tools, byMessage)
     return { ...retainActivityGroups({ byMessage, byTurn }), unassigned }
   }, [activity.tools, task.messages, turns, retainActivityGroups])
-  const compactionsByMessage = useMemo(() => {
-    const byTurn = new Map<string, NonNullable<Task['compactions']>>()
-    for (const event of task.compactions ?? []) {
-      const messageId =
-        event.messageId ?? task.turns?.find((turn) => turn.id === event.turnId)?.assistantId
-      if (!messageId) continue
-      const events = byTurn.get(messageId) ?? []
-      events.push(event)
-      byTurn.set(messageId, events)
-    }
-    return byTurn
-  }, [task.compactions, task.turns])
+  const messageCompactions = useMemo(
+    () => compactionsByMessage(task),
+    [task.compactions, task.turns],
+  )
   const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
   const retention = useRef({ groups, seeking: false, trim: history.trim })
   useEffect(() => {
-    retention.current = { groups, seeking: !!target && !targetVisible, trim: history.trim }
+    retention.current = {
+      groups,
+      seeking: (!!target && !targetVisible) || !!restoreTurn,
+      trim: history.trim,
+    }
   })
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -481,6 +480,11 @@ export function ChatThread({
           }}
         >
           <ConversationHistory
+            positionKey={linkScope}
+            navigationKey={target}
+            hasEarlier={history.hasMore && connected && !history.error}
+            loadingEarlier={history.busy}
+            onRestoreAnchor={setRestoreTurn}
             active={active}
             settled={liveTask.archived}
             onReady={onRecentReady}
@@ -560,6 +564,7 @@ export function ChatThread({
                   <section
                     key={group.id}
                     id={`turn-${task.id}-${group.id}`}
+                    data-conversation-anchor
                     aria-label={`User request · ${conversationTurnLabel(group.status)}`}
                     className="studio-chat-turn flex min-w-0 flex-col gap-3"
                     style={
@@ -574,6 +579,7 @@ export function ChatThread({
                     <DeferredTurn
                       id={group.id}
                       pinned={
+                        restoreTurn === `turn-${task.id}-${group.id}` ||
                         groupIndex >= groups.length - 2 ||
                         group.status === 'running' ||
                         group.messages.some(
@@ -593,6 +599,11 @@ export function ChatThread({
                           .at(-1)
                         const render = (open: boolean, header?: ReactNode) => (
                           <div className="flex flex-col gap-3">
+                            {group.turn && providerRetryLabel(group.turn) && (
+                              <p role="status" className="text-xs text-muted-foreground">
+                                {providerRetryLabel(group.turn)}
+                              </p>
+                            )}
                             {group.messages.map((message) => {
                               const turn = turns.get(message.id)
                               return (
@@ -616,7 +627,7 @@ export function ChatThread({
                                         : emptyTools
                                     }
                                     compactions={
-                                      compactionsByMessage.get(message.id) ?? emptyCompactions
+                                      messageCompactions.get(message.id) ?? emptyCompactions
                                     }
                                     highlighted={selectedMatch?.id === message.id}
                                     pending={

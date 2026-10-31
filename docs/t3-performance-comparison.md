@@ -1,7 +1,8 @@
 # T3 comparison: performance, interface and tool discovery
 
-Reviewed T3 Code through `7bafc40c17ab` on 2026-10-25; theme source links remain pinned to
-`d0b9e9d3c72b`. T3 measurements are not Dovo measurements.
+Latest adoption review: T3 Code `616c426f5f199865e34974777740dff678ffb7f5` on 2026-10-30. Earlier
+comparisons used `7bafc40c17ab`; theme source links remain pinned to `d0b9e9d3c72b`. T3 measurements
+are not Dovo measurements.
 
 ## Changes in Dovo
 
@@ -920,3 +921,768 @@ Literal project-content search and a directory-scoped replacement for the file-l
 separate features. T3's command-palette content search is useful, but a complete Dovo implementation
 needs explicit Git-ignore/plain-folder semantics, bounded work and the existing linked-checkout
 permissions. This round retains the current path search rather than claiming content search exists.
+
+## Quality follow-up: 2026-10-30
+
+Reviewed Dovo at `3f60ea83` with the requested two Claude Opus 5.5 and three Terra 6.1 read-only
+reviewers, followed by parent validation and implementation. Review scopes were runtime lifecycle,
+forge/tools, desktop rendering, mobile, and connectivity/storage. T3's latest revision at inspection
+was [`32ecd71726fe`](https://github.com/pingdotgg/t3code/commit/32ecd71726fe). Child GitHub access
+was restricted; the parent retrieved the upstream patches and supplied local copies for comparison.
+This was a bounded review across those areas, not an exhaustive audit of every module.
+
+Implemented changes:
+
+- **Keep undo and history consistent.** History persistence now shares the restoration rollback
+  boundary for primary and linked checkouts. A failed write attempts to restore the preceding
+  contents; a delayed duplicate undo cannot overwrite the successful operation's redo backup.
+  Checkpoint changes or removal are rejected before admission and again before committing history.
+  Recovery refs use distinct attempt IDs so a failed rollback's backup is not overwritten by a
+  retry. These recovery refs remain retained in Git. The later recovery follow-up below adds durable
+  intent and resumable recovery when rollback also fails; automatic ref pruning remains outside this
+  change.
+- **Admit SCM writes through checkout locks.** Explicit save, stage and commit defer their IO until
+  checkout admission succeeds. The later recovery follow-up separates shared edits from exclusive
+  checkout operations and also protects task-file and instruction saves. Editing during an active
+  agent run remains available.
+- **Unlink checkpoint symlinks safely.** Undo can remove a newly created external or dangling
+  symlink by validating its parent rather than following its final target. External parents and
+  `.git` paths remain forbidden. Redo restores the link without changing its target.
+- **Clean staged SQLite files.** Backup and restore operations remove verification-created WAL/SHM
+  sidecars after closing their handles. A later backup also removes abandoned owned partial files
+  and sidecars under its operation lock. Unrelated files and live database sidecars are untouched.
+- **Preserve newer mobile preferences.** Unknown top-level saved fields survive an older app's edits
+  and reloads without entering its typed preference state. Known fields still validate
+  independently; edits during hydration and serialized saves retain their existing semantics.
+- **Reject ambiguous watch/delegation input.** MCP and runtime request boundaries reject unknown
+  fields for pipeline watches, PR watches and child spawning. For example, `runId` cannot silently
+  become a stop-all request, and `permissions` cannot silently become inherited access. Correct
+  selector-free stop-all and inherited-access calls remain supported. Forged scope fields are
+  rejected at MCP; runtime task/run authorization still applies independently.
+- **Keep ordinary GitLab diffs coherent.** The final head/base check now runs for every successfully
+  loaded diff, including ordinary files that need no raw-patch recovery. A push or changed base
+  during loading yields a recoverable conflict instead of mixing file contents and commit hashes.
+- **Expose restart admission failures.** Input accepted while a restart lease blocks execution
+  remains queued with a paused state and an actionable error. Cancelling the restart and explicitly
+  resuming delivers it once, rather than leaving an apparently active queue without a worker.
+
+The undo, SCM, symlink and SQLite changes address G2, G3, G4 and D1 from the previous
+[stability audit](stability-audit-2026-10-29.md). Its other findings remain separate.
+
+Upstream comparison and follow-ups:
+
+- T3's [strict organize-tool input](https://github.com/pingdotgg/t3code/commit/a773dc38ac75)
+  supports the same boundary principle as the watch/delegation fix. Its
+  [unknown settings preservation](https://github.com/pingdotgg/t3code/commit/08a463e29976) concerns
+  project overrides; Dovo applies the analogous fix to phone preferences, a different schema.
+- T3's [shared GitLab reads](https://github.com/pingdotgg/t3code/commit/2c119bd975de) coalesce reads
+  and invalidate provider caches around writes. Dovo already has shared PR retrieval/cache owners.
+  The revision check implemented here is a Dovo-specific correctness finding, not a port of that
+  cache change. Adding a second provider cache without measurements would add invalidation work.
+- T3's [Markdown block isolation](https://github.com/pingdotgg/t3code/commit/d8c926c39515) and
+  [row subscriptions](https://github.com/pingdotgg/t3code/commit/3cbc98241d33) are useful comparison
+  points. Dovo's Streamdown 2.7.1 already splits and memoizes streamed Markdown blocks. Dovo's
+  `richMarkdown` preprocessing and timeline structure still deserve profiling with long responses
+  containing links/directives. No measured render-speed improvement is claimed in this round.
+- T3 [removed its worktree-add deadline](https://github.com/pingdotgg/t3code/commit/fa4e4677c0ec).
+  Dovo still routes creation through the generic 30-second Git timeout. A complete improvement
+  should carry shared cancellation through primary, linked and PR checkout preparation, drain hook
+  descendants, and identify operation-owned partial registrations before cleanup. Removing the
+  timeout alone would weaken bounded recovery. Pre-existing or externally replaced targets must
+  never be deleted as failed-attempt cleanup.
+- T3's [route pacing](https://github.com/pingdotgg/t3code/commit/65b0ab8c91c1) and
+  [idle work reductions](https://github.com/pingdotgg/t3code/commit/dd148481531a) do not establish
+  the same bottlenecks in Dovo. Its coalesced route probes, reconnect backoff and existing polling
+  owners need measurements before adding another timing/cache layer.
+- Runtime review also identified a source-level native-child shutdown failure path through
+  `drainChildren` that can prevent parent finalization. This was not fault-injected in this pass.
+  The next regression should reject provider stop and delay shutdown confirmation, then verify both
+  recoverable parent state and continued checkout exclusion. Simply ignoring shutdown failures or
+  releasing ownership when the native session is missing is not a safe fix. T3's new
+  [force-stop path](https://github.com/pingdotgg/t3code/commit/6b1245cceda1) is useful direction: it
+  distinguishes unresponsive providers, fences superseded runs, and checks shared-session users
+  before process teardown. Dovo needs those ownership and recovery guarantees before adding an
+  equivalent action.
+
+Verification: the full monorepo run passed **5,976 tests in 707 suites**, with 12 tests and four
+suites skipped. All **32 builds** and **28 typecheck tasks** passed. Workspace checks passed with
+zero errors and the ten existing warnings; explicit checks of all touched source/test files had zero
+warnings, lint errors or type errors. The actual Pierre editor navigation/save-retention browser
+check passed using Playwright-managed Chromium. The diff passed whitespace validation.
+
+HTTP LAN/VPN connections, optional HTTPS, pairing codes and device tokens remain supported. No
+dependency, account requirement, deployment or publication change is part of this pass. Native
+devices and live forge mutations were not exercised.
+
+## Deeper fault-injection follow-up: 2026-10-30
+
+A second round used two Opus and three Terra reviewers across native execution, SCM,
+persistence/security, browser/rendering and mobile mutations. The parent reproduced failures,
+implemented changes and challenged the resulting diff. The upstream comparison remains pinned to
+`32ecd71726fe`; the findings below concern Dovo's own implementation.
+
+Implemented and regression-covered:
+
+- **Recover native shutdown ownership.** Rejected or absent native Stop controls previously left the
+  parent owned even after an authoritative session-close event. Native drain failures now use the
+  typed error channel, retain checkout exclusion and pause the queue, with a confirmation callback
+  releasing ownership only after matching native records become terminal. The timeout includes the
+  Stop RPC itself. Checkout ownership survives loss of the control-session handle; unknown native
+  directories conservatively exclude checkout mutation. Sibling Stop attempts and native provider
+  shutdown still execute when credential-file cleanup or state persistence fails. Regressions
+  exercise rejection, missing controls, a hanging RPC, failed persistence and late closure. A
+  further executed integration probe showed that a new parent turn could bypass an old child's
+  unconfirmed shutdown through the same-family admission exemption. Admission now keeps that child
+  exclusive even within its family; a regression rejects parent restart before positive confirmation
+  and admits it afterward. Normal active family collaboration remains supported. This does not add a
+  force-kill command or prove native Windows process-tree behavior.
+- **Keep startup children owned until readiness.** Failure to publish a managed PID record now
+  drains the exact spawned child. Readiness must return a running, managed status for that same PID
+  before startup resolves. A transient second health-probe failure keeps startup observing.
+  Unconfirmed shutdown raises a distinct error, and source update refuses database rollback on that
+  direct error path. Real child tests cover record-write failure and readiness recovery. This is not
+  a transactionally durable updater rollback implementation.
+- **Retain identity-safe handoff recovery.** Handoff applies its stash by immutable commit ID and
+  retains the recovery entry. The later recovery follow-up also pins a durable private Git ref. It
+  no longer resolves a numeric stash index and deletes it while another Git process can insert
+  entries. The success note explicitly says changes are already applied and identifies the retained
+  recovery copy. A disposable Git regression inserts an external stash during handoff. Recovery
+  stashes require deliberate later cleanup.
+- **Protect stored diagnostics and child environments.** Shared credential-text redaction handles
+  Bearer/Basic credentials, credential assignments, API-key headers, embedded quoted JSON and URL
+  userinfo. Activity migration v4 resanitizes historical rows. Runtime and mobile crashes sanitize
+  before persistence and on legacy reads. Runtime crash stack location text remains useful. Ambient
+  MCP stdio environment now uses the existing filtered environment; explicit configured mappings are
+  applied afterward and remain supported. A real SDK child test checks both cases. Redaction
+  recognizes supported credential formats, not arbitrary unlabelled secrets.
+- **Bound backup failure cleanup correctly.** Existing live databases must receive a successful
+  pre-restore snapshot; only ENOENT skips it. SQLite snapshots reserve a private, exclusive 0600
+  destination before writing and refuse existing destinations. Staged main/WAL/SHM cleanup waits for
+  all started deletes before releasing the operation lock and retains the primary failure when
+  cleanup also fails. Deferred-unlink and SQLITE_CANTOPEN fault tests exercise these paths.
+- **Commit PDF pages atomically.** Each requested page/zoom/size has a generation. Rendering uses a
+  detached canvas and commits pixels, dimensions and navigation controls together; stale work is
+  discarded and acquired pages are cleaned. Failed navigation restores the last committed page/zoom
+  so Next retries the intended page. VM tests control delayed lookup and render, failure and retry.
+  The real Chromium chat-files check passes PDF page navigation over HTTP, sandboxed HTML, video
+  playback and desktop/mobile file flows.
+- **Reserve downloads across profiles.** Pending native downloads reserve canonical destinations
+  across all profile trackers until native completion, including after profile disposal. In-root
+  symlink aliases resolve to the same reservation; Windows/macOS paths conservatively fold case.
+  Native explicit overwrite/dialog behavior remains available. Tests cover concurrent profiles,
+  disposal, setup failure and directory aliases; native Electron was not launched.
+- **Reduce timeline boundary lookup work.** A lower-bound binary search replaces repeated linear
+  scans of sorted message boundaries. Five hundred seeded full-output cases matched the previous
+  implementation. A local Node benchmark of 100 complete rebuilds measured 5.00→2.80 ms at 100
+  boundaries, 64.98→31.42 ms at 1,000 and 1,018.37→189.42 ms at 5,000. These are CPU measurements on
+  synthetic text/tool histories, not React render or device frame measurements. Rich Markdown prefix
+  parsing remains a separate measured cost; Streamdown already memoizes rendered blocks, so T3's
+  splitter was not copied into a second owner.
+
+Remaining high-value work established by the deeper review:
+
+- **Worktree creation:** the generic Git deadline, cancellation propagation, ownership of partial
+  registrations and adoption after failed creation need one complete lifecycle change across
+  primary, linked and PR preparation. Copy-failure cleanup must not delete an externally replaced
+  target. Extending/removing the timeout alone does not solve ownership.
+- **Updater recovery:** release selection and database restoration need durable recovery state.
+  Metadata-write failure can interrupt rollback; restoration of a previously absent database and
+  interruption around WAL/rename also need explicit treatment. Cleanup errors after successful
+  activation should not look like activation failure. A free database lock alone does not prove an
+  unconfirmed candidate can never start later. The direct shutdown guard above covers its current
+  caller; a future wrapping layer must preserve that typed boundary.
+- **Mobile uncertain uploads:** an upload can commit before its response is lost, while the mutation
+  journal remains empty. Reselecting creates another ID; same-ID storage replay does not establish
+  current draft membership. Replacement cancellation cannot safely be implemented by deleting the
+  new attachment. Recovery needs capability-gated receipts and ownership in the existing journal,
+  including result delivery to the correct draft/queued edit. Blind retries or merely allowlisting
+  the route would be incomplete. The proposed general stale-settings race was withdrawn after
+  tracing existing generation checks and mutation serialization.
+- Popup POST preservation, artifact materialization limits, independent malformed-row isolation,
+  expired search cursors and preference-write failure UX retain their audit status. No native device
+  or live forge mutation verification is claimed.
+
+Final verification: **5,999 tests passed in 710 suites**, with 12 tests and four suites skipped. All
+**32 build tasks** and **28 typecheck tasks** passed; runtime/API builds and typechecks were
+repeated after the final ownership change. Explicit formatting, lint and type checks passed for all
+**47 touched source/test files** without warnings. Workspace checks passed with zero errors and the
+same ten existing warnings. The real chat-files Chromium check passed, and the final diff passed
+whitespace validation. An earlier full run overlapped ongoing edits and exercised older module
+versions against newer tests; the final full run above used stable code.
+
+## Task-list collapse persistence (2026-10-30)
+
+Task-list groups and project sections retain device-local collapse preferences on desktop and
+mobile. Mobile defers storage writes until saved preferences hydrate and merges early toggles per
+section, preventing an initial screen state from overwriting other saved collapsed sections.
+Targeted preference/list tests and browser reload checks passed. Native-device installation and
+app-process restart were not exercised.
+
+## Thread Info panel (2026-10-30)
+
+Compared T3 at
+[`6575ce32508b`](https://github.com/pingdotgg/t3code/tree/6575ce32508bd7908444241f3719aa33aaf77f90),
+particularly
+[section customization](https://github.com/pingdotgg/t3code/blob/6575ce32508bd7908444241f3719aa33aaf77f90/apps/web/src/components/chat/threadDetailsItems.ts),
+[panel grouping](https://github.com/pingdotgg/t3code/blob/6575ce32508bd7908444241f3719aa33aaf77f90/apps/web/src/components/chat/ThreadDetailsPanel.tsx)
+and
+[usage rows](https://github.com/pingdotgg/t3code/blob/6575ce32508bd7908444241f3719aa33aaf77f90/apps/web/src/components/chat/ThreadDetailsUsage.tsx).
+
+Dovo's former project-information panel is now **Thread info** on desktop and mobile. A shared
+section catalog drives device-local show/hide choices and reset. Existing project, checkout, script,
+Git, PR, server, watch, linked-project and lineage controls remain available. Mobile also exposes
+the existing agent/model editor. Car mode opens a sheet rather than an unavailable inline panel. The
+desktop environment/access portal stays mounted when hidden to preserve composer state.
+
+Context shows the runtime's reported percentage **used**, a meter and reported token counts. Unknown
+window sizes show tokens without inventing a percentage; missing reports are explicit. This reuses
+Dovo's existing provider context parsing. T3's account quota rows and automatic card density changes
+were not copied; this change does not infer account usage from a thread's context.
+
+Verification for this panel change: **55 targeted tests** passed, along with desktop/compact panel,
+mobile panel reload/customization, mobile navigation/car-mode, composer send and composer layout
+browser checks. Protocol, core, tasks and mobile typechecks passed, as did desktop and web builds.
+Mobile browser checks use native-control and storage adapters; no native-device installation or
+restart verification is claimed. These results do not replace the broader review's separate status.
+
+## Recovery challenge follow-up (2026-10-30)
+
+The delayed Opus reviews were source traces, not executed tests. Their strongest additional findings
+were reproduced or challenged against the actual implementation before integration.
+
+- A start refused before checkout admission no longer drains, disposes or cancels healthy family
+  work. Active family collaboration remains available, while a child with unconfirmed shutdown
+  blocks a new turn. Native Stop requests also retain that exclusion after the provider run has
+  settled. Tests exercise both held child runs and native ownership without a held run.
+- Shared explicit edits exclude branch switches and restores without blocking normal agent starts.
+  SCM apply/stage/commit, desktop/mobile task-file saves and project-instruction saves use this
+  admission. The three editors share per-file serialization and reread expected contents after
+  admission, so simultaneous stale saves produce one success and conflicts for the others.
+- Undo records its original redo targets and a durable pending marker before touching any files.
+  Failed rollback retains those targets across repeated undo and database reload. Finishing undo
+  clears the marker only after filesystem and history success; a running task cannot start on its
+  own unresolved undo. Retry uses this same path for primary and linked-only changes, without
+  inserting a synthetic request. Linked checkpoint identities have a separate ref namespace.
+- Pending recovery is selected before another undo on desktop/mobile, including paged older history.
+  Retrying/restoring a different turn is refused. Resumed undo refuses paths that match neither the
+  original backup nor the before snapshot, preserving intervening edits and reporting the fresh
+  recovery ref. Removing a linked project needed by pending recovery is refused. An externally
+  removed or inaccessible checkout still needs to be restored before recovery can finish; the
+  application does not silently skip its files.
+- Handoff pins each captured stash in a private `refs/dovo/handoff/<task>/<attempt>` ref before
+  applying it. Real Git tests cover both directions, failure recovery, competing stash pushes and
+  bare pop followed by reflog expiry/garbage collection. A failed apply after preparation keeps the
+  task pointed at its prepared worktree. Recovery errors name the private ref and call for
+  inspecting partial changes rather than blindly discarding them.
+
+The integrated run also reproduced a signaling replacement race in the existing paired TURN
+regression: changing mode opened a new host connection before the broker released the previous
+registration. Replacement now waits for the bounded close handshake and keeps readiness tied to the
+replacement. All 31 peer-connection tests pass, including relay policy changes, retained pairings,
+existing tunnels and LAN access. No identity or transport policy was weakened.
+
+Remaining handoff limits: Git offers positional stash deletion, so shared handoff entries remain. A
+bare pop in another checkout can still apply them there; the private ref preserves the recovery
+copy. Shared entries and private refs require deliberate cleanup. A pop before capture/pinning can
+still prevent identification, so that error directs the user to the stash list and reflog without
+claiming the entry must still exist.
+
+Worktree lifecycle remains open: the generic 30-second deadline does not drain checkout/hook
+children; a timeout can leave partial creation that retry adopts incompletely. Blanket worktree
+pruning can affect unrelated temporarily missing folders. Cancellation, Windows initializing locks,
+main-worktree reuse and failed handoff checkout transitions need one coordinated ownership design.
+Use feature-gated creation locks with an attempt-specific reason, drain the owned process group,
+carry cancellation through primary/linked/PR preparation, and clean only registrations still owned
+by that attempt. Do not remove the timeout in isolation or delete/prune unknown worktrees.
+
+Updater transactional recovery, uncertain mobile uploads and the other explicitly open audit items
+above remain separate work. HTTP LAN/VPN support, optional HTTPS and required pairing/device tokens
+are preserved. No commit, push, publication or native-device deployment was performed.
+
+Verification after the recovery challenge: **6,022 tests passed in 711 suites**, with 12 tests and
+four suites skipped. All **32 build tasks** and **28 workspace typechecks** passed; the runtime/API
+builds and runtime typecheck were repeated after the signaling correction. Workspace checks passed
+with zero errors and the ten existing warnings. The 100 MB file-transfer suite now uses the shared
+runtime integration-test budget; its size, authorization and response assertions are unchanged.
+Managed Chromium was installed through Playwright before the passing desktop composer-send and
+mobile draft-transition checks. Final formatting and whitespace checks passed. Native devices, live
+forge mutations, worktree lifecycle recovery and signed releases were not verified by these checks.
+
+## Deeper performance and stability implementation (2026-10-30)
+
+The subsequent implementation supersedes the worktree lifecycle and degraded-record limitations
+above where explicitly described in the
+[stability audit](stability-audit-2026-10-29.md#deeper-implementation-pass-2026-10-30). Primary,
+linked and PR checkout creation now use attempt-owned Git creation locks, cancellable owned process
+trees and identity-checked cleanup. Preparation no longer prunes unrelated missing registrations or
+adopts the main worktree as a task checkout. Unconfirmed preparation shutdowns retain admission in
+the live runtime. Later snapshot, submodule and setup preparation also holds an attempt-specific
+durable lock. A real POSIX SIGKILL probe verifies that a fresh runtime refuses the checkout while
+its orphaned setup remains alive. Hard-kill recovery requires confirming the setup commands stopped
+before explicitly unlocking; no automatic process adoption is claimed.
+
+Unreadable task metadata and authoritative histories survive migration and full workspace rewrites.
+Reserved task identities prevent accidental replacement, and recovery bookkeeping clears only after
+the outer transaction commits. History-cache accounting includes large diff excerpts and checkpoint
+disk contents. Mobile cache-read failure no longer prevents live conversation pagination.
+
+The [performance report](performance.md#deeper-performance-and-recovery-pass-2026-10-30) records
+before/after source comparisons for overlapping worktree includes, legacy compaction grouping and
+Markdown preprocessing. Equal-output assertions accompany the measurements. Mixed and incomplete
+Markdown workloads did not establish an improvement, and browser rendering fixtures do not establish
+native frame-time or complete-app speedups.
+
+## Seven adoption implementations (2026-10-30)
+
+A fresh investigation used T3 Code commit
+[`616c426f5f199865e34974777740dff678ffb7f5`](https://github.com/pingdotgg/t3code/tree/616c426f5f199865e34974777740dff678ffb7f5)
+(MIT). The following adaptations now exist in Dovo:
+
+| T3 capability                    | Dovo implementation and boundary                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Checkout content search          | Literal, case-sensitive code search with exact-line opening on desktop/web and mobile. Ignores Git-ignored untracked entries, skips binary/non-UTF-8/oversized files and reports truncation.                         |
+| Incremental file browsing        | Paged immediate-directory reads with folder navigation; opening Files no longer requires downloading the entire checkout path list. Composer path suggestions retain their existing cache.                           |
+| Reading-position continuity      | A bounded 100-thread navigation cache restores stable message/turn anchors and measured offsets. User scrolling, search, bookmarks and Latest take precedence. This cache survives navigation, not process restarts. |
+| Local commit review              | First-parent history, immutable previews and separate viewed marks on primary/linked checkouts. Root, merge and shallow-history handling; no checkout preparation or Git writes.                                     |
+| Heap attribution                 | Bounded recent expensive operations and rate-limited heap-growth suspect reports, runtime RSS/heap and Linux descendant RSS. Concurrent work and garbage collection prevent causal attribution.                      |
+| Linux memory-pressure protection | Explicit preview/status/enable/disable for one owned user-service drop-in. Optional MemoryLow, safe child-score handling and atomic replacement. No sudo, system-unit changes or SSH/VPN protection.                 |
+| External credentials             | Runtime-resolved 1Password, Bitwarden, Infisical and host-environment references, desktop/mobile editing and explicit refresh. Scope is saved; resolved values stay out of workspace documents and client responses. |
+
+The original T3 references include
+[project content search](https://github.com/pingdotgg/t3code/blob/616c426f5f199865e34974777740dff678ffb7f5/apps/web/src/components/search/ProjectContentSearchDialog.tsx),
+[heap attribution](https://github.com/pingdotgg/t3code/blob/616c426f5f199865e34974777740dff678ffb7f5/apps/server/src/observability/HeapAttribution.ts),
+[service protection](https://github.com/pingdotgg/t3code/blob/616c426f5f199865e34974777740dff678ffb7f5/apps/server/src/cloud/serviceProtection.ts)
+and
+[1Password](https://github.com/pingdotgg/t3code/blob/616c426f5f199865e34974777740dff678ffb7f5/packages/secret-provider-onepassword/src/server/driver.ts).
+These implementations follow Dovo's existing runtime, protocol and client boundaries rather than
+adding T3's server or provider architecture. No dependency was added for this work.
+
+Review challenges found and corrected shallow-history misclassification, usage/reset helpers that
+bypassed secret resolution, inherited OOM scores on cgroup v1 and partially written protection
+settings. A real subprocess probe also exposed early abort completion in Node’s generic command
+helper; secret CLIs now use owned process groups and wait for shutdown. Tests cover these failure
+boundaries. Provider CLI help/source was checked for Infisical; no real credential lookup or host
+service activation was performed. Browser fixtures do not verify native scrolling or native
+performance.
+
+Final validation for this pass: **6,186 tests passed in 727 suites**, with 12 tests/four suites
+skipped. All **28 workspace typechecks** and **32 build tasks** passed. Workspace checks passed with
+zero errors and ten existing warnings; whitespace checks passed. Managed Chromium checks covered the
+new secret editors/commit pickers, conversation history and reading positions, file browsing,
+content-search line navigation, previews/edit retention, scoped agent settings and code review. The
+real subprocess cancellation regression confirms both the launcher and its descendant exit. Native
+device behavior, live secret-provider authentication and real systemd activation were not verified.
+Device Hub discovered an iOS simulator, but no current-branch native build was installed or launched
+for this pass; the physical iPhone was unavailable. No commit, push or deployment was performed.
+
+## Five follow-up adaptations (2026-10-30)
+
+The next investigation pinned T3 Code at
+[`8d012a688e7cb12fb17a91be68a32734a0efa0b7`](https://github.com/pingdotgg/t3code/tree/8d012a688e7cb12fb17a91be68a32734a0efa0b7)
+(MIT). Dovo now adapts the following capabilities through its existing runtime and clients:
+
+- **Repository-correct Markdown links.** Streamdown caches processors by plugin name and serialized
+  options. Dovo previously supplied per-render closures, so rendering repository A before B could
+  retain A's link base. Module-level plugins now receive explicit context options. The real-renderer
+  regression alternates two repositories, no base, local files and unsafe links in one process.
+- **Actionable GitHub failures.** Typed access errors retain the original credential provenance,
+  host/repository and verified account when available. Repair guidance distinguishes saved tokens,
+  runtime environment tokens, CLI logins and wrappers. HTTP-200 GraphQL access errors follow the
+  same path. Rate-limit handling and captured binding checks remain intact; upstream bodies and
+  token values are excluded from the new guidance.
+- **Terminal Codex imports.** Desktop/web and mobile offer project-scoped discovery, transcript
+  preview and explicit import. The original checkout, native identity, home and recorded model are
+  preserved in authoritative storage. Duplicate/restart retries return the existing thread.
+  Historical requests are consumed, and continuation requires new input. Missing paths, changed
+  previews and uncertain or active native ownership block import. See
+  [provider documentation](agent-providers.md#import-a-terminal-codex-session) for limits.
+- **Completed Markdown reuse.** Bounded, immutable plain parts survive remounts; streaming prefixes
+  and oversized entries bypass retention. The
+  [measurement](performance.md#completed-markdown-reuse-2026-10-30) verifies equal output and a
+  reduction from 2,400 splits to 120 for its repeated-remount workload.
+- **Attachment playback.** Existing desktop and mobile previews offer on-demand audio/video controls
+  without adding a player dependency. Runtime-detected MIME types and the existing 5 MiB limit
+  apply. Close/navigation/background cleanup prevents retained playback; download/share remains
+  available for unsupported formats. Mobile uses Blob URLs after an isolated iOS WKWebView probe
+  stalled with data URLs and successfully played H.264 MP4 with a Blob URL. A ten-second loading or
+  buffering stall displays the share fallback; successful playback clears that message. Codec
+  support depends on the platform player.
+
+Native verification remains partial: WAV audio stalled in the isolated simulator probe, and a
+separate local-file MP3 test also failed to advance in native AVPlayer while simulator logs reported
+CoreAudio server/proxy errors. This suggests an audio environment problem, but does not verify audio
+on a healthy device. No current-branch React Native build was installed for this pass. Native audio,
+React Native navigation/background cleanup and Android playback still require device verification.
+
+Managed Chromium checks cover actual desktop WAV/WebM playback, mobile Blob-WAV playback through a
+WebView adapter, unsupported-file fallback, buffering timeout/recovery, close/background/navigation
+cleanup and late responses. The Codex picker checks cover desktop/mobile preview, activity blocking,
+explicit import, existing ownership and leaving before import completes. Runtime tests also cover
+restart/idempotency, consumed history, checkout overlap and real open-file ownership. Storage and
+admission tests isolate unrelated host process churn; the ownership boundary retains its real
+subprocess check and explicit unknown-ownership cases.
+
+All 28 workspace typechecks and 32 build tasks passed during the implementation. Affected runtime,
+shared picker and mobile typechecks, plus the runtime build, were repeated after their final code
+changes. Workspace checks finished with zero errors and eleven existing warnings; whitespace checks
+passed. One full-suite rerun encountered the existing API lifecycle fixture's free-port release/bind
+race (`EADDRINUSE`); all eight lifecycle tests subsequently passed in isolation. The final full run
+with four workers passed **6,237 tests in 735 suites**, with twelve tests and four suites skipped.
+No commit, push or deployment was performed.
+
+## Thread workflow and search adaptations (2026-10-30)
+
+This pass compares against T3 Code
+[`6fc9144a60c4a5f45089316ddd5f7371bafd3bf2`](https://github.com/pingdotgg/t3code/tree/6fc9144a60c4a5f45089316ddd5f7371bafd3bf2)
+(MIT). Its latest image-only fix prompted another review of existing, unadopted capabilities.
+
+- **Thread comparison bases:** newly created task worktrees remember their resolved starting
+  branch/ref/commit. Branch diffs, dirty previews, file previews and branch AI reviews use that base
+  while the task branch is checked out. Deleted base refs fall back to the recorded commit. Older
+  tasks retain explicit-base/default-branch fallbacks; linked checkouts use their configured base.
+  The desktop review header labels the comparison. A stacked-branch regression verifies that parent
+  feature files do not appear as the task's changes.
+- **Provider status:** explicitly synthetic Claude messages cannot overwrite context occupancy or
+  contaminate model accounting. Genuine zero usage and compaction resets remain valid. Claude's
+  SDK-owned retries update one durable turn notice on desktop and mobile, with attempt, retry delay,
+  recovery and terminal outcomes; Dovo does not add another retry loop. Late events after completion
+  or Stop cannot update the notice.
+- **History matching:** shared matching supports separated words and accent folding across runtime
+  history search and local desktop/mobile results. Double quotes retain literal phrases. Highlights
+  use original UTF-16 offsets, including compatibility expansions and combining marks. Typo matching
+  is not introduced.
+- **Streaming search indexing:** authoritative message history still commits every flush. Only its
+  derived search text is deferred during a run, with a live search overlay and reconciliation after
+  completion, failure, cancellation or restart. This changes index work rather than weakening crash
+  persistence. A synthetic run retained all 100 authoritative saves while reducing search-text
+  updates and FTS delete/insert pairs from 100 to 1. The overlay admits at most 256 rows and 1 MiB
+  of serialized source data; that bounds overlay input rather than total JavaScript heap usage.
+- **Attachment workflows:** automatic and manual title generation accept attachment-only first
+  messages and use bounded attachment metadata; utility models do not receive image pixels. Mobile
+  offers an explicit Paste Image action through the existing optimization/upload path. Clipboard
+  reads expose busy state, payloads are bounded before file writes, and draft ownership guards stay
+  active. There is no background clipboard polling.
+- **Browser element feedback:** thread browsers on desktop/web offer a captured-page element
+  selector. Inspection reads the DOM without activating the live element. URL, title, selector,
+  bounded text and the user's comment append to an editable draft as quoted, untrusted page context.
+  An optional crop uses the captured viewport's coordinates; text survives optional image failure.
+  Scrolling, resizing and document changes invalidate selection. Nested frames are represented by
+  their frame element; shared-browser thread routing and native mobile overlays are outside this
+  first slice.
+
+Focused checks cover real-Git stacked/deleted-base histories and AI review scope; retry recovery,
+failure, cancellation and late events; context preservation; attachment-only HTTP/schema behavior;
+search/index consistency; and managed-Chromium element selection, crop, cancel and upload failure.
+The real mobile picker hook is also exercised with clipboard/runtime barriers for pending busy
+state, empty/rejected reads, task/runtime/edit ownership changes and stale draft guards. Native
+iOS/Android clipboard behavior and Electron's native capture/inspection path still require
+device/desktop verification. The prior native media verification item remains pending. No app-wide
+memory, battery or latency improvement is inferred from the synthetic indexing checks.
+
+Verification passed: **6,275 tests**, all 28 workspace typechecks and all 32 build tasks. After the
+final boundary and fork refinements, another 69 targeted tests and the runtime build passed.
+Managed-Chromium checks also cover search/history, retry notice replacement on desktop/mobile,
+clipboard hook ownership, and browser element feedback. Workspace checks reported zero errors and
+eleven existing warnings; `git diff --check` passed. No commit, push or deployment was performed.
+
+## Transport, file and terminal workflows (2026-10-30)
+
+This pass pins T3 Code at
+[`ae521d1d796c4e21abb49e44d27c23332d1898b9`](https://github.com/pingdotgg/t3code/tree/ae521d1d796c4e21abb49e44d27c23332d1898b9)
+(MIT). The adaptations use Dovo's existing runtime, upload and permission boundaries:
+
+- **Codex transport retirement:** stdout/RPC closure settles the active turn even when the child
+  process stays alive. Broken idle transports cannot be reused. Buffered final messages and the
+  child's exit reason get a brief opportunity to arrive, while process shutdown confirmation still
+  protects checkout ownership.
+- **Metadata-only attachment reads:** ownership and metadata validation no longer select BLOBs or
+  encode file bodies. In an isolated five-file, 5 MiB-per-file benchmark, forty samples measured
+  median lookup time falling from 11.54 ms to 0.042 ms. This measures metadata lookup, not app-wide
+  memory or battery use.
+- **Bounded project-file reads:** desktop/web and mobile initially request at most 256 KiB, with
+  explicit byte size, completeness and line-window metadata. Files up to 1 MiB can be loaded in full
+  before editing. Incomplete responses, including those from older runtimes, remain read-only.
+  Linked-checkout access and expected-content conflict checks still apply. Failed preview reads
+  close file handles, and failed directory/search requests detach their cancellation listeners.
+- **Diff computation:** expensive saved-file comparisons leave the UI thread. Desktop/web uses
+  cancellable, bounded worker jobs; mobile opts into runtime-computed patches, avoiding redundant
+  server-side computation for desktop. Timeout, worker failure and oversized output retain a text
+  fallback. Complete saved text remains limited to 8 MiB per side.
+- **Attention notices:** separate events enter a bounded fifty-notice queue instead of overwriting
+  one another. Newly pending approval, question and delegated-request IDs can notify while another
+  request is still pending. Existing active-thread suppression and reconnect behavior remain.
+- **Terminal file locations:** compiler-style and quoted `file:line:column` locations open Files at
+  the corresponding line. Wrapped output and wide terminal characters retain accurate ranges. The
+  runtime validates the original terminal checkout, regular file, traversal and symlink bounds;
+  relative paths use the terminal's starting directory. URLs are not treated as file paths.
+- **One-message Plan mode:** a supported harness runs the selected message with an actual read-only
+  permission policy. The plan flag survives queue operations and restart, while the next normal
+  prompt restores the thread's saved policy. Automatic question-answer continuations retain Plan
+  access, including file-only answers. Unsupported harnesses and steering into a plan turn are
+  rejected. Runtime capability detection prevents older servers silently ignoring the flag.
+- **Files in question answers:** each non-secret custom text answer can receive files without
+  changing the ordinary message draft. Five files per response and existing upload limits apply.
+  Answer admission validates task ownership, cancellation and identical-retry fingerprints. Durable
+  receipts retain the accepted files; non-blocking answers also carry them as message attachments.
+- **Split-terminal controls:** splits inherit the selected pane's checkout and are inserted beside
+  it. Groups support both orientations, focused-pane tracking, cycling, four-pane limits and saved
+  layouts per runtime/thread. Terminal-scoped Cmd+D/Cmd+Shift+D and Cmd+N/Cmd+W split, create and
+  close panes on macOS. Elsewhere Ctrl+Shift+D/E and Ctrl+Shift+N/W preserve normal shell Ctrl+D/W/N
+  input. Closing a pane returns focus to a surviving pane. Shell processes themselves do not survive
+  a runtime shutdown.
+
+Managed Chromium checks exercise actual terminal emulation, split restoration and file links, and
+both question-form adapters with their real upload hooks. Native picker, installed Electron and
+healthy-device media/lifecycle verification remain separate outstanding checks. Browser adapters are
+not evidence of native platform behavior. HTTP LAN/VPN connections remain supported; optional HTTPS,
+pairing codes and device tokens are unchanged.
+
+Final verification: **6,335 tests passed**, with twelve existing skips across four suites. All 28
+workspace typechecks and all 32 build tasks passed. Runtime types and build were repeated after the
+final cleanup fix. Workspace checks reported zero errors and eleven existing warnings; targeted lint
+and `git diff --check` passed. Regression probes reproduced the failed-search listener leak before
+the fix and verified cleanup afterwards. Managed Chromium also verified real diff-worker parsing,
+responsive fallback and cancellation, Plan controls, attention notices and mobile diff adapters. No
+commit, push or deployment was performed.
+
+## Guided reviews, incoming shares and idle work (30 October 2026)
+
+This implementation compares against T3 Code
+[`f56a4775fd9e97b6f8afa47804b4cab27228601e`](https://github.com/pingdotgg/t3code/tree/f56a4775fd9e97b6f8afa47804b4cab27228601e)
+(MIT), adapting its workflow ideas to Dovo's existing runtime and mobile architecture.
+
+- Guided reviews extend the existing organizer on desktop/web and mobile. Ordered explanations,
+  review questions and exact excerpts link back to full file diffs. Only supplied patch lines can
+  become excerpts; invented paths, missing ranges and lines outside a hunk are rejected. Each guide
+  belongs to an exact source revision, including PR base/head identity. SQLite saves position and
+  reviewed steps across clients and restarts, with optimistic concurrency checks. Walkthrough
+  completion remains independent of file-viewed marks and formal review submission.
+- Guide progress responses omit immutable steps once the requesting client holds that guide. A
+  representative response fell from 22,139 to 527 bytes; the initial full response was 13,972 bytes
+  after removing duplicated groups. Unknown guide IDs receive a full response. The newest 500 PR
+  guides and 500 revision records are retained; task guides are removed only after durable deletion.
+- Native incoming shares copy files into durable owned storage before acknowledging the operating
+  system handoff. UUID receipts prevent crash replay from duplicating drafts, while separate shares
+  of identical content remain separate. Saved files share the 50 MiB draft budget. Errors remain
+  visible and discardable, and no upload starts until a runtime and project are chosen. Destination
+  identity and cancellation checks protect task creation and attachment uploads across navigation.
+  Acknowledgement receipts and corrupt-storage recovery archives favor preserving recoverable data
+  over automatic eviction. A damaged manifest is isolated using its native directory identity
+  instead of blocking healthy shares. Android accepts externally supplied content-provider URIs and
+  rejects direct file paths before opening them under the app's permissions.
+- Composer, mention, project-navigation and command-palette handlers honor both ordinary IME
+  composition and the Safari key-code fallback. Existing model/choice guards remain intact.
+- Terminal pane, tab, group and shortcut closes require an application confirmation tied to captured
+  runtime/thread/session targets. Scope changes invalidate it; cancellation and failures recover
+  focus. Hiding the terminal remains immediate.
+- GitHub-trigger idle ticks skip SQL and JSON parsing without delaying queued delivery retries or
+  changing minute network polling. Orphan upload receipts release bytes only after durable thread
+  deletion or device revocation, preserving live draft references and recoverable uploads.
+
+The native-subagent update profile and its limits are recorded in `docs/performance.md`. No change
+to authoritative write durability was retained from the performance prototype. HTTP LAN/VPN,
+optional HTTPS, pairing codes and device tokens remain supported under the existing policy.
+
+Verification: **6,425 tests passed**, with twelve existing skips, plus 73 targeted tests after the
+final sharing review. All 28 workspace typechecks and all 32 build tasks passed; targeted
+formatting, lint and whitespace checks passed. Managed Chromium exercised guided review navigation,
+reopening, cross-client progress, revision invalidation, file-viewed independence, IME handling and
+terminal confirmation scope.
+
+Final Swift bridge/share-extension builds and Android bridge/MainActivity Kotlin compilation passed
+on the authorized Macs. An installed iOS simulator harness exercised the production ingestion and
+storage helpers with a healthy image/text fixture beside malformed JSON. The copied 15,342-byte
+image was byte-identical, its native handoff was acknowledged, malformed bytes remained available
+for explicit discard, and relaunch preserved the two drafts and attachment identity without replay.
+This checks the native storage boundary, not the full production destination/upload UI. Real share
+sheet completion could not be verified after Device Hub controls returned “Simulator preview
+expired”; an installed Android intake check and a live real-PR guide check also remain outstanding.
+The existing installed-build clipboard/element inspection, native audio/lifecycle/playback and
+question-file-picker checks remain pending. No commit, push or deployment was performed.
+
+## Streaming parser, credentials and browser file selection (30 October 2026)
+
+Compared against T3 Code
+[`cb9629e6891ef0745772b69f09c9acd0c6a74f7e`](https://github.com/pingdotgg/t3code/tree/cb9629e6891ef0745772b69f09c9acd0c6a74f7e),
+52 commits after the previous comparison. The useful adaptations are:
+
+- **Mobile streaming Markdown:** skip the image AST pass when a literal `![` is absent. Empty text,
+  unfinished syntax, code fences, escaped markup, linked images and image references retain their
+  existing behavior. This follows T3's reduction of repeated stream parsing (#27823), using Dovo's
+  existing parser rather than adding a second parser or incremental cache.
+- **Bitbucket secret references:** desktop/web and mobile connection editors can select host
+  environment, 1Password, Bitwarden or Infisical references. Only the vault kind is public; the
+  reference and resolved token stay on the runtime. API and Git use the same selected credential,
+  with no ambient fallback on failure. Refresh or rejection invalidates vault reads, including
+  lookups already in flight; connection changes reject stale results. This adapts #27746 to the
+  existing resolver and forge support. A reference's resolved token is not persisted or returned.
+- **Streamed-browser file selection:** the shared viewer supports device-selected files for the
+  exact page or iframe picker. Transfer uses 64 KiB chunks, four per acknowledgement batch, up to
+  five files per selection. Each tab retains at most 50 MiB and fifty files, including prior
+  selections still needed by the page. Runtime admission permits at most eight queued upload
+  commands per tab. Paths are generated privately, file bytes never enter workspace snapshots, and
+  authorization is checked around asynchronous work. Navigation, replacement, cancellation,
+  disconnect, expiry and session close invalidate staging. Successfully selected files remain on
+  disk until their document is replaced or the session closes because Chromium reads them lazily.
+  This adapts #22062 without allowing clients to supply runtime paths.
+- **Claude connection settings:** isolated utilities copy only supported endpoint/auth/backend
+  settings while retaining empty setting sources and tool/MCP restrictions. Effective settings also
+  determine subscription labels, usage probing and reset eligibility, including endpoint-only
+  gateways. Coding continues to use its configured settings sources. This adapts #26937 without
+  passing complete settings objects into isolated utilities.
+- **Modal shortcut ownership:** shell navigation respects dialogs and alert dialogs. Cmd/Ctrl+/
+  cannot leave the terminal-close confirmation; it works again after dismissal. Palette toggling and
+  intentional modal actions remain available, following #27157.
+
+The browser upload picker binds device results to the chooser that opened them. Its native bridge
+acknowledges keep-alive state before launching file selection, preserves the socket while the
+Android picker backgrounds the app, pauses capture while hidden, and reconnects an offline view on
+foreground return. No new account requirement, HTTPS requirement or runtime connectivity policy is
+introduced. An old client must update to decode connections using the new credential kind.
+
+Managed Chromium exercises the real runtime, authenticated socket and shared viewer on desktop and
+touch layouts. Checks cover multi-file/empty/chunked transfers, delayed reads, local size rejection,
+iframe navigation, stale answers, conflicting viewers, revocation, malformed/out-of-order chunks,
+replacement native results, queued cancellation, bounded admission, disconnect during commit and
+session cleanup. The native bridge is simulated in these checks; installed Android/iOS picker
+behavior remains unverified. Device Hub discovered an available Android emulator, but this new code
+was not built or installed there. The available physical iPhone was disconnected. No real vault,
+Bitbucket or custom Claude endpoint was contacted. Enterprise managed settings from cloud/registry
+policy and backend login parity are outside these verified checks. An abrupt runtime/process crash
+can leave owned upload directories in the OS temporary directory; normal lifecycle cleanup is
+covered, and this change does not add cross-process crash recovery or sweep other instances' files.
+
+The existing pending native sharing, clipboard/inspection, audio/lifecycle/playback, question picker
+and real-PR guided-review checks remain outstanding. No commit, push or deployment is part of this
+implementation.
+
+Final verification: **6,454 tests passed**, with twelve existing skips across four suites. All 28
+workspace typechecks and all 32 build tasks passed. Workspace formatting/lint checks reported zero
+errors and eleven existing warnings; scoped lint and `git diff --check` passed. The final browser
+HTTP/startup checks passed all 27 tests. Managed Chromium also passed the upload integration,
+existing real-browser session lifecycle and shared-viewer layout suites; the editor and modal
+interaction suites passed in the delegated implementation checks. Earlier unrelated working-tree
+changes were preserved and the incremental diff was reviewed against the task-start snapshot.
+
+## Browser downloads, transfer recovery and quota consistency
+
+The next adoption round uses the same T3 revision, `cb9629e6891ef0745772b69f09c9acd0c6a74f7e`; no
+newer upstream release was required.
+
+- **Streamed-browser downloads:** web/desktop and mobile viewers show downloads with Save and
+  Cancel/Remove. Chromium writes opaque files into private runtime staging. Each tab admits two
+  concurrent transfers, ten retained files, 50 MiB per file and 100 MiB retained bytes. Chromium
+  progress cancels advertised or received oversize transfers; completed files are checked again.
+  Progress events are asynchronous, so these are acceptance/retention limits, not a hard disk quota
+  on Chromium's transient writes. Transfers time out after ten minutes and retained files expire
+  after fifteen minutes. Downloads are scoped to the originating page, including iframe downloads,
+  and survive viewer reconnects while the tab lives. Direct download navigation no longer becomes a
+  page-load error. The desktop iframe explicitly permits downloads while retaining its opaque
+  origin.
+- **File delivery:** Save obtains a thirty-second, single-use file grant through the authenticated
+  browser socket. The paired device token stays on the runtime; it is never included in a file URL.
+  Redemption rechecks the device, thread, tab and download, uses safe attachment headers and streams
+  bytes with backpressure. Expired/removed files, closed tabs and revoked devices cannot redeem old
+  links. In-flight responses recheck revocation and file ownership and have bounded idle/lifetime
+  limits. HTTP LAN/VPN runtime addresses remain supported.
+- **Native handoff:** mobile streams into a private cache file and opens the OS share sheet. Origin,
+  path, response status and byte count are checked. Removal, reconnect, navigation and unmount abort
+  stale transfers. Native exports reserve at most two active transfers, ten files and 100 MiB;
+  successful exports remain available to share recipients for up to a day and expire on later use. A
+  full cache reports an actionable error rather than silently deleting a recent shared file.
+- **Crash recovery:** uploads and downloads now use a runtime-owned transfer root beside the runtime
+  database. A per-run SQLite OS lock protects live runs, including multiple runtimes in one process.
+  Startup reclaims only recognized dead-run directories under this root; it does not sweep global
+  temporary prefixes or durable drafts. Recovery failures are logged and recorded in activity.
+  Abruptly killed worker tests verify recovery without touching another live worker's files. Old
+  upload directories from versions using the global OS-temp prefix are deliberately not swept,
+  because their ownership cannot be proven. This follows T3's owned download cleanup (#25436).
+- **Stop during quota finalization:** cancellation is checked after change capture and reconciled
+  again when the final task status is written. The matching turn is cancelled, and only its quota
+  continuation and matching automatic snooze are cleared. A separate manual snooze remains intact.
+  The scheduler already prevented the cancelled task from restarting; this fixes the false
+  “Scheduled to resume” banner and unexpected movement into Snoozed, inspired by #24634.
+- **Review classification:** `evals/`, `.eval.*` and `_generated/` follow T3's corrected conventions
+  (#26563). Generated files retain precedence, fixtures stay distinct, and Dovo's `.cy.*`
+  recognition remains supported. The shared classifier serves desktop/mobile PR and checkpoint
+  summaries.
+
+Managed Chromium checks exercise real runtime sockets and streamed HTTP downloads from clicked,
+initial/direct, iframe and empty responses, sandboxed desktop Save and a simulated native handoff.
+They cover cross-tab isolation in a shared Chromium context, single-use grants, removal, tab close,
+revocation, cancellation and advertised oversize rejection. Unit/integration regressions cover
+expiry, limits, corrupt/completed files, symlinks, safe headers and error classification. Existing
+browser-upload checks cover delayed page reads and lifecycle cleanup under the new staging owner.
+Native filesystem/share APIs are covered with boundary doubles; installed Android/iOS Save/share
+behavior still requires device verification. No native OS share-sheet success is claimed here. The
+six previously pending native/live-PR checks remain outstanding. No commit, push or deployment is
+part of this implementation.
+
+Final workspace verification passed **6,513 tests** with twelve existing skips across four suites,
+all 28 typecheck tasks and all 32 build tasks. Workspace checks reported zero errors and eleven
+existing warnings. Targeted download adversarial tests, the real browser download integration,
+viewer interaction checks and the existing streamed-browser upload integration also passed.
+
+## OpenCode retirement, PDF continuity and cheaper composer updates
+
+This implementation follows the next T3 comparison pinned to
+[`78f1ba8285898d50af82a49c98364197d330db6a`](https://github.com/pingdotgg/t3code/commit/78f1ba8285898d50af82a49c98364197d330db6a).
+It adapts provider retirement (#24777), scoped composer measurements (#27823), PDF reading-state
+retention (#25555), compressed usage history (#25453), and contained symlink browsing (#21920).
+
+- **OpenCode:** local server use is leased across turns and utility calls. Task release, replaced
+  configurations and the shared idle-provider budget retire unused servers. Per-thread process
+  markers remain distinct, and explicit external servers remain externally owned. Active or
+  unconfirmed native work must retain ownership until shutdown is confirmed.
+- **Composer:** unrelated renders no longer measure the form and every control. Resize and
+  structural changes update the animation baseline through coalesced observers, while focus/compact
+  transitions preserve interrupted animations and reduced-motion behavior. In the mounted Chromium
+  fixture, twenty unrelated parent commits produce zero geometry/style reads, down from 180
+  rectangle reads and twenty computed-style reads. This is a scoped regression measurement, not an
+  app-wide battery or frame-time claim.
+- **PDF previews:** a per-load bridge retains page, zoom and scroll independently of rotating file
+  grants. Hosts scope state to the runtime connection, thread and file, reject stale bridge
+  messages, and reset on identity changes. Restoration waits for committed rendering and clamps the
+  page when a replacement document is shorter. Existing explicit Refresh/retry and mobile process
+  recovery remain the triggers; no automatic file watching is introduced.
+- **Codex usage:** exact `.jsonl.zst` histories stream through the bounded line parser. Unchanged
+  archives reuse cached results; changed archives are fully rescanned rather than seeking to decoded
+  offsets. Plain/compressed overlap and Dovo-owned sessions remain deduplicated/excluded. Corrupt,
+  truncated and oversized records surface notices. This adds usage ingestion, not compressed
+  terminal session import, and does not imply previously stored usage was deleted by compression.
+- **Project files:** contained file and directory links are browsable, with canonical ancestor-cycle
+  checks, ignore rules, cursor invalidation and target revalidation. External, `.git`, dangling and
+  cyclic targets remain inaccessible. Content search continues to skip aliases to avoid duplicate
+  hits; composer-wide file suggestions retain their existing scope.
+
+HTTP LAN/VPN connections, optional HTTPS and required pairing/device credentials are preserved. The
+existing seven installed-device/live-PR verification items remain pending. Installed native PDF
+WebView recovery and Windows junction behavior require platform verification; simulated bridges do
+not establish those outcomes. No commit, push or deployment is part of this implementation.
+
+Validation passed all 28 workspace typecheck tasks and 32 build tasks. The full test run passed
+**6,545 tests**, with twelve existing skips across four suites. A subsequent first-paint failure
+probe reproduced locked PDF navigation; its fix passed the final 27-test PDF/OpenCode regression
+run, and the affected runtime was rebuilt. Managed Chromium passed the new composer measurements and
+combined PDF viewer/host suites, plus the existing composer layout, typing and chat-file checks.
+Final workspace checks reported zero errors and eleven existing warnings.
+
+A real OpenCode v2.1.4 CLI probe, using isolated data/configuration directories and no model calls,
+created a session, retired its server, and read that same session from a fresh server. Actual prompt
+resumption, the complete archive flow, real v1 idle detection and Windows process cleanup remain
+unverified. The PDF bridge checks use production host components with a simulated native WebView;
+installed Android/iOS recovery and Windows junction behavior still need platform checks. No app-wide
+memory, battery or frame-time reduction is claimed. The ordinary 200-file directory fixture retains
+its prior 1–2 ms warm listing time after removing redundant per-file filesystem walks.
+
+Testing incident: at 23:24:59 UTC on 30 October 2026, a delegated probe used an overly broad
+`pkill -f "opencode serve --hostname 127.0.0.1 --port 0"` instead of stopping only its owned PID.
+Process/log evidence suggests this also stopped one existing Dovo-managed OpenCode server. A
+read-only query of the real runtime database found no recorded OpenCode turn overlapping that time
+and no current OpenCode task state; this does not rule out external or unrecorded activity. No
+service restart was performed. The existing manager should relaunch its local server on the next
+OpenCode use. Subsequent real-CLI probes used isolated directories and exact process ownership.
+
+Browser-suite discovery also exposed three pre-existing unregistered checks. The mobile terminal
+visibility/close checks now run in the terminal layout suite, and sharing/waiting lifecycle checks
+have their own command. All three pass, and discovery includes the new PDF and composer suites.

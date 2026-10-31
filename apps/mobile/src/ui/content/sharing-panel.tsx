@@ -1,3 +1,4 @@
+import { usePreviewActive } from '../../tasks/preview/use-preview-active'
 import { Schema } from 'effect'
 import { useState, type ReactNode } from 'react'
 import { AccessibilityInfo, Alert, Pressable, ScrollView, View } from 'react-native'
@@ -37,8 +38,16 @@ export function SharingPanel({
 }) {
   const account = useMobileAccount(),
     { styles, colors } = useTheme()
-  const sharing = useEncryptedSharing({ client: account.client, sourceId, kind, content, runtime })
-  const contacts = useSharingPeople(account.client)
+  const active = usePreviewActive()
+  const sharing = useEncryptedSharing({
+    client: account.client,
+    sourceId,
+    kind,
+    content,
+    runtime,
+    active,
+  })
+  const contacts = useSharingPeople(account.client, active)
   const [managePeople, setManagePeople] = useState(false)
   const organizationName = (id: string) =>
     contacts.directory?.organizations.find((org) => org.id === id)?.name ?? id

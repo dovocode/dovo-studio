@@ -9,20 +9,53 @@ type Compaction = NonNullable<Task['compactions']>[number]
 
 /** Explicit ownership survives steering. Timestamps recover older stored executions. */
 export function conversationMessageTurns(task: Conversation) {
-  const byId = new Map(task.turns?.map((turn) => [turn.id, turn]))
   const result = new Map<string, TaskTurn>()
+  if (!task.turns?.length) return result
+  const byId = new Map(task.turns.map((turn) => [turn.id, turn]))
   const positions = new Map(task.messages.map((message, index) => [message.id, index]))
+  // Range minima locate the rightmost invalid or older timestamp that stops a legacy scan.
+  const size = 2 ** Math.ceil(Math.log2(Math.max(1, task.messages.length)))
+  const minimum = new Float64Array(size * 2).fill(Infinity)
+  for (let index = 0; index < task.messages.length; index++) {
+    const time = Date.parse(task.messages[index]!.createdAt ?? '')
+    minimum[size + index] = Number.isFinite(time) ? time : -Infinity
+  }
+  for (let index = size - 1; index > 0; index--)
+    minimum[index] = Math.min(minimum[index * 2]!, minimum[index * 2 + 1]!)
+  // Skip positions already visited: earlier turns retain timestamp ownership, while explicit IDs override later.
+  const previous = Array.from({ length: task.messages.length + 1 }, (_, index) => index)
+  const findPrevious = (position: number) => {
+    let root = position
+    while (previous[root] !== root) root = previous[root]!
+    while (previous[position] !== root) {
+      const next = previous[position]!
+      previous[position] = root
+      position = next
+    }
+    return root
+  }
+  const boundary = (end: number, start: number) => {
+    const search = (node: number, left: number, right: number): number => {
+      if (left >= end || minimum[node]! >= start) return -1
+      if (right - left === 1) return left
+      const middle = (left + right) / 2
+      const later = search(node * 2 + 1, middle, right)
+      return later === -1 ? search(node * 2, left, middle) : later
+    }
+    return search(1, 0, size)
+  }
   for (const turn of task.turns ?? []) {
     const end = positions.get(turn.assistantId)
     if (end === undefined) continue
     result.set(turn.assistantId, turn)
     const start = Date.parse(turn.startedAt)
     if (!Number.isFinite(start)) continue
-    for (let index = end - 1; index >= 0; index--) {
+    const stop = boundary(end, start)
+    for (let position = findPrevious(end); position > stop + 1; position = findPrevious(position)) {
+      const index = position - 1
       const message = task.messages[index]!
-      const time = Date.parse(message.createdAt ?? '')
-      if (!Number.isFinite(time) || time < start) break
       if (!message.turnId && !result.has(message.id)) result.set(message.id, turn)
+      previous[position] = findPrevious(position - 1)
     }
   }
   for (const message of task.messages) {
@@ -41,7 +74,13 @@ export type ConversationTurn = {
 
 /** A request owns resumed executions and steering inputs until the next request. */
 export function conversationTurns(task: Conversation): ConversationTurn[] {
-  const owners = conversationMessageTurns(task)
+  return groupConversationTurns(task, conversationMessageTurns(task))
+}
+
+function groupConversationTurns(
+  task: Conversation,
+  owners: Map<string, TaskTurn>,
+): ConversationTurn[] {
   const runs = new Map<string, string>()
   let nextRun: string | undefined
   for (const message of [...task.messages].reverse()) {
@@ -104,7 +143,7 @@ export function conversationPresentation(task: Conversation) {
       groupTurn?: TaskTurn
     }
   >()
-  for (const group of conversationTurns(task)) {
+  for (const group of groupConversationTurns(task, owners)) {
     const assistants = group.messages.filter((message) => message.role === 'assistant')
     const final = assistants.at(-1)
     for (const message of group.messages)
@@ -184,7 +223,16 @@ export function threadTimeline(
       [0, ...textBreaks, text.length].map((offset) => Math.min(text.length, Math.max(0, offset))),
     ),
   ].sort((a, b) => a - b)
-  const boundary = (raw: number) => boundaries.find((offset) => offset >= raw) ?? text.length
+  const boundary = (raw: number) => {
+    let low = 0,
+      high = boundaries.length
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2)
+      if (boundaries[middle]! >= raw) high = middle
+      else low = middle + 1
+    }
+    return boundaries[low] ?? text.length
+  }
   const at = new Map<
     number,
     Array<{ kind: 'tool'; tool: Tool } | { kind: 'compaction'; event: Compaction }>

@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { copyFile, glob, lstat, mkdir, readFile, readdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, normalize } from 'node:path'
 import { HttpError } from '../../errors.js'
 import { safeFile } from '../repositories/paths.js'
 
@@ -9,7 +9,7 @@ function missing(error: unknown) {
 }
 
 /** Resolve includes before creating the checkout so invalid entries leave no partial worktree. */
-export async function includedWorktreeFiles(root: string): Promise<string[]> {
+export async function includedWorktreeFiles(root: string, signal?: AbortSignal): Promise<string[]> {
   let contents: string
   try {
     contents = await readFile(await safeFile(root, '.worktreeinclude'), 'utf8')
@@ -18,8 +18,14 @@ export async function includedWorktreeFiles(root: string): Promise<string[]> {
     throw error
   }
   const files = new Set<string>()
+  const visited = new Set<string>()
   async function visit(path: string) {
+    signal?.throwIfAborted()
+    path = normalize(path)
     if (path.split(/[\\/]/).includes('.git')) return
+    // Glob matches include directories and their descendants; inspect each entry only once.
+    if (visited.has(path)) return
+    visited.add(path)
     const entry = await lstat(join(root, path))
     // Do not follow directory links (including dependency links) or copy external references.
     if (entry.isSymbolicLink()) return
@@ -29,6 +35,7 @@ export async function includedWorktreeFiles(root: string): Promise<string[]> {
       for (const child of await readdir(source)) await visit(join(path, child))
   }
   for (const line of contents.split(/\r?\n/)) {
+    signal?.throwIfAborted()
     const pattern = line.trim()
     if (!pattern || pattern.startsWith('#')) continue
     if (
@@ -47,8 +54,14 @@ export async function includedWorktreeFiles(root: string): Promise<string[]> {
   return [...files]
 }
 
-export async function copyWorktreeFiles(root: string, directory: string, files: string[]) {
+export async function copyWorktreeFiles(
+  root: string,
+  directory: string,
+  files: string[],
+  signal?: AbortSignal,
+) {
   for (const path of files) {
+    signal?.throwIfAborted()
     const target = join(directory, path)
     // Preserve tracked files, other branch content and existing symlinks.
     try {

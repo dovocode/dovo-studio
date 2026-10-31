@@ -1,12 +1,15 @@
 import { setImmediate } from 'node:timers/promises'
 import { readOpenCodeUsage } from './usage-opencode.js'
 import { createReadStream } from 'node:fs'
+import { createZstdDecompress } from 'node:zlib'
+import { pipeline } from 'node:stream/promises'
 import { readdir, open, realpath, type FileHandle } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { type Agent, type UsageRecord } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
+const retainedSize = (value: unknown) => JSON.stringify(value).length * 2
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -312,6 +315,19 @@ function createTranscriptUsage(
       preview.accept(line)
       return { records: preview.records(), notices: preview.notices() }
     },
+    retainedBytes: (limit: number) => {
+      let bytes = 0
+      for (const row of rows.values()) {
+        bytes += retainedSize(row)
+        if (bytes > limit) return bytes
+      }
+      for (const copies of duplicates.values())
+        for (const row of copies) {
+          bytes += retainedSize(row)
+          if (bytes > limit) return bytes
+        }
+      return bytes
+    },
     records: (): UsageRecord[] => [...rows.values()],
     notices,
   }
@@ -325,12 +341,16 @@ export function transcriptUsage(
   for (const line of lines) parser.accept(line)
   return parser.records()
 }
-async function* files(directory: string): AsyncGenerator<string> {
+async function* files(directory: string, compressed: boolean): AsyncGenerator<string> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.isSymbolicLink()) continue
     const path = join(directory, entry.name)
-    if (entry.isDirectory()) yield* files(path)
-    else if (entry.isFile() && entry.name.endsWith('.jsonl')) yield path
+    if (entry.isDirectory()) yield* files(path, compressed)
+    else if (
+      entry.isFile() &&
+      (entry.name.endsWith('.jsonl') || (compressed && entry.name.endsWith('.jsonl.zst')))
+    )
+      yield path
   }
 }
 type TranscriptScan = {
@@ -344,6 +364,10 @@ type TranscriptScan = {
   suffix: Buffer
   parser: ReturnType<typeof createTranscriptUsage>
   trailing: Buffer[]
+  trailingBytes: number
+  droppingLine: boolean
+  oversized: boolean
+  retainedBytes: number
   incomplete: boolean
 }
 async function sample(file: FileHandle, position: number, length: number) {
@@ -362,7 +386,89 @@ function acceptText(scan: TranscriptScan, text: string) {
     scan.incomplete = true
   }
 }
-async function appendTranscript(file: FileHandle, scan: TranscriptScan, size: number) {
+function appendLine(scan: TranscriptScan, chunk: Buffer, limit: number) {
+  if (scan.droppingLine) return
+  if (scan.trailingBytes + chunk.length > limit) {
+    scan.trailing = []
+    scan.trailingBytes = 0
+    scan.droppingLine = true
+    scan.oversized = true
+    return
+  }
+  if (chunk.length) {
+    // Own just these bytes; a small tail must not retain the entire stream chunk.
+    scan.trailing.push(Buffer.from(chunk))
+    scan.trailingBytes += chunk.length
+  }
+}
+// Node's zstd stream currently accepts truncated frames. Check framing incrementally
+// so an unfinished archive cannot silently become a successful cached scan.
+async function* completeZstdFrames(input: AsyncIterable<unknown>) {
+  let stage: 'magic' | 'descriptor' | 'block' | 'skipSize' = 'magic'
+  let pending = Buffer.alloc(0),
+    skip = 0,
+    checksum = false,
+    frames = 0
+  for await (const chunk of input) {
+    if (!Buffer.isBuffer(chunk)) throw new Error('Unexpected archive encoding')
+    let at = 0
+    while (at < chunk.length) {
+      if (skip) {
+        const length = Math.min(skip, chunk.length - at)
+        skip -= length
+        at += length
+        continue
+      }
+      const needed = stage === 'descriptor' ? 1 : stage === 'block' ? 3 : 4
+      const length = Math.min(needed - pending.length, chunk.length - at)
+      pending = Buffer.concat([pending, chunk.subarray(at, at + length)])
+      at += length
+      if (pending.length < needed) continue
+      if (stage === 'magic') {
+        const magic = pending.readUInt32LE()
+        if (magic === 0xfd2fb528) stage = 'descriptor'
+        else if ((magic & 0xfffffff0) === 0x184d2a50) stage = 'skipSize'
+        else throw new Error('Invalid zstd frame')
+      } else if (stage === 'skipSize') {
+        skip = pending.readUInt32LE()
+        stage = 'magic'
+        frames++
+      } else if (stage === 'descriptor') {
+        const descriptor = pending[0]
+        const single = !!(descriptor & 32)
+        checksum = !!(descriptor & 4)
+        skip =
+          (single ? 0 : 1) +
+          [0, 1, 2, 4][descriptor & 3] +
+          [single ? 1 : 0, 2, 4, 8][descriptor >>> 6]
+        stage = 'block'
+      } else {
+        const header = pending.readUIntLE(0, 3)
+        const kind = (header >>> 1) & 3
+        if (kind === 3) throw new Error('Invalid zstd block')
+        const last = !!(header & 1)
+        skip = kind === 1 ? 1 : header >>> 3
+        if (last) {
+          skip += checksum ? 4 : 0
+          stage = 'magic'
+          frames++
+        }
+      }
+      pending = Buffer.alloc(0)
+    }
+    yield chunk
+  }
+  if (skip || pending.length || stage !== 'magic' || !frames)
+    throw new Error('Incomplete zstd frame')
+}
+async function appendTranscript(
+  file: FileHandle,
+  scan: TranscriptScan,
+  size: number,
+  lineBytes: number,
+  compressed: boolean,
+) {
+  if (compressed && !size) throw new Error('Incomplete zstd frame')
   if (size <= scan.size) return
   let scanned = 0
   let bytes = scan.size
@@ -373,25 +479,80 @@ async function appendTranscript(file: FileHandle, scan: TranscriptScan, size: nu
     start: scan.size,
     end: size - 1,
   })
-  for await (const chunk of stream) {
-    if (!Buffer.isBuffer(chunk)) throw new Error('Unexpected transcript stream encoding')
-    bytes += chunk.length
-    let start = 0
-    for (let i = 0; i < chunk.length; i++) {
-      if (chunk[i] !== 10 && chunk[i] !== 13) continue
-      scan.trailing.push(chunk.subarray(start, i))
-      acceptText(scan, Buffer.concat(scan.trailing).toString('utf8'))
-      scan.trailing = []
-      start = i + 1
-      if (++scanned % 256 === 0) await setImmediate()
+  const consume = async (input: AsyncIterable<unknown>) => {
+    for await (const chunk of input) {
+      if (!Buffer.isBuffer(chunk)) throw new Error('Unexpected transcript stream encoding')
+      bytes += chunk.length
+      let start = 0
+      for (let i = 0; i < chunk.length; i++) {
+        if (chunk[i] !== 10 && chunk[i] !== 13) continue
+        appendLine(scan, chunk.subarray(start, i), lineBytes)
+        if (!scan.droppingLine) acceptText(scan, Buffer.concat(scan.trailing).toString('utf8'))
+        scan.trailing = []
+        scan.trailingBytes = 0
+        scan.droppingLine = false
+        start = i + 1
+        if (++scanned % 256 === 0) await setImmediate()
+      }
+      if (start < chunk.length) appendLine(scan, chunk.subarray(start), lineBytes)
     }
-    if (start < chunk.length) scan.trailing.push(chunk.subarray(start))
   }
-  if (bytes !== size) throw new Error('Transcript changed during scan')
+  if (compressed) await pipeline(stream, completeZstdFrames, createZstdDecompress(), consume)
+  else await consume(stream)
+  if ((compressed ? stream.bytesRead : bytes) !== size)
+    throw new Error('Transcript changed during scan')
   scan.size = size
 }
 /** Cached per-file scans run only on the explicit usage path, never during chat streaming. */
+type TranscriptLimits = {
+  lineBytes: number
+  cacheBytes: number
+  files: number
+  resultBytes: number
+  idleMs: number
+}
 export class UsageTranscripts {
+  constructor(
+    private readonly limits: TranscriptLimits = {
+      lineBytes: 4 * 1024 * 1024,
+      cacheBytes: 32 * 1024 * 1024,
+      files: 128,
+      resultBytes: 8 * 1024 * 1024,
+      idleMs: 300_000,
+    },
+  ) {}
+  private expiry?: ReturnType<typeof setTimeout>
+  private lastRead = 0
+  private expire() {
+    this.cache.clear()
+    this.completed = undefined
+  }
+  private scheduleExpiry() {
+    if (!this.cache.size && !this.completed) return
+    this.expiry = setTimeout(() => {
+      this.expiry = undefined
+      this.expire()
+    }, this.limits.idleMs)
+    this.expiry.unref()
+  }
+  private retain(path: string, scan: TranscriptScan) {
+    const resident = this.cache.delete(path)
+    scan.retainedBytes =
+      scan.parser.retainedBytes(this.limits.cacheBytes) + scan.trailingBytes + 1024
+    if (scan.retainedBytes > this.limits.cacheBytes) return
+    let bytes = scan.retainedBytes
+    for (const entry of this.cache.values()) bytes += entry.retainedBytes
+    // A sequential full-directory walk must not evict every resident just before reusing it
+    // on the next refresh. Admit new files only into spare space; grown residents may evict.
+    if (!resident && (this.cache.size >= this.limits.files || bytes > this.limits.cacheBytes))
+      return
+    this.cache.set(path, scan)
+    for (const [key, entry] of this.cache) {
+      if (this.cache.size <= this.limits.files && bytes <= this.limits.cacheBytes) break
+      this.cache.delete(key)
+      bytes -= entry.retainedBytes
+    }
+  }
   private readonly cache = new Map<string, TranscriptScan>()
   private pending?: Promise<{ records: UsageRecord[]; notices: string[] }>
   private pendingKey?: string
@@ -438,8 +599,14 @@ export class UsageTranscripts {
       await this.pending
       return this.read(agents, knownSessions, force)
     }
-    if (!force && this.completed?.key === key && Date.now() - this.completed.at < 300000)
+    clearTimeout(this.expiry)
+    if (Date.now() - this.lastRead >= this.limits.idleMs) this.expire()
+    this.lastRead = Date.now()
+    if (!force && this.completed?.key === key && Date.now() - this.completed.at < 300000) {
+      this.scheduleExpiry()
       return this.completed.result
+    }
+    this.completed = undefined
     this.pendingKey = key
     this.pending = (async () => {
       const records = new Map<string, UsageRecord>(),
@@ -461,17 +628,22 @@ export class UsageTranscripts {
                 records.set(`opencode:${row.turn.id}`, row)
             continue
           }
-          for await (const path of files(canonical)) {
+          for await (const path of files(canonical, provider === 'codex')) {
             scannedFiles.add(path)
             try {
               const file = await open(path, 'r')
               let rows: UsageRecord[]
               try {
                 const info = await file.stat()
+                const compressed = path.endsWith('.jsonl.zst')
                 let scan = this.cache.get(path)
                 if (
                   scan &&
                   (scan.parser.requiresRescan(since) ||
+                    (compressed &&
+                      (info.size !== scan.size ||
+                        info.mtimeMs !== scan.mtime ||
+                        info.ctimeMs !== scan.ctime)) ||
                     scan.provider !== provider ||
                     scan.device !== info.dev ||
                     scan.inode !== info.ino ||
@@ -500,13 +672,21 @@ export class UsageTranscripts {
                   ctime: info.ctimeMs,
                   prefix: Buffer.alloc(0),
                   suffix: Buffer.alloc(0),
-                  parser: createTranscriptUsage(provider, path, since),
+                  parser: createTranscriptUsage(
+                    provider,
+                    compressed ? path.slice(0, -4) : path,
+                    since,
+                  ),
                   trailing: [],
+                  trailingBytes: 0,
+                  droppingLine: false,
+                  oversized: false,
+                  retainedBytes: 0,
                   incomplete: false,
                 }
                 scan.parser.advance(since)
                 const changed = scan.size !== info.size || !scan.prefix.length
-                await appendTranscript(file, scan, info.size)
+                await appendTranscript(file, scan, info.size, this.limits.lineBytes, compressed)
                 if (changed) {
                   scan.prefix = await sample(file, 0, Math.min(info.size, 256))
                   scan.suffix = await sample(
@@ -514,6 +694,15 @@ export class UsageTranscripts {
                     Math.max(0, info.size - 256),
                     Math.min(info.size, 256),
                   )
+                }
+                if (compressed) {
+                  const current = await file.stat()
+                  if (
+                    current.size !== info.size ||
+                    current.mtimeMs !== info.mtimeMs ||
+                    current.ctimeMs !== info.ctimeMs
+                  )
+                    throw new Error('Transcript changed during scan')
                 }
                 scan.mtime = info.mtimeMs
                 scan.ctime = info.ctimeMs
@@ -525,6 +714,7 @@ export class UsageTranscripts {
                   try {
                     value = JSON.parse(Buffer.concat(scan.trailing).toString('utf8'))
                   } catch {
+                    if (compressed) scan.incomplete = true
                     // A partial final line belongs to the next refresh.
                   }
                   if (value !== undefined) {
@@ -537,7 +727,11 @@ export class UsageTranscripts {
                 notices.push(...scan.parser.notices())
                 if (scan.incomplete)
                   notices.push(`${provider}: skipped an incomplete transcript row.`)
-                this.cache.set(path, scan)
+                if (scan.oversized)
+                  notices.push(
+                    `${provider}: skipped a transcript row exceeding ${this.limits.lineBytes} bytes; usage may be incomplete.`,
+                  )
+                this.retain(path, scan)
               } finally {
                 await file.close()
               }
@@ -560,11 +754,17 @@ export class UsageTranscripts {
     })()
     try {
       const result = await this.pending
-      this.completed = { at: Date.now(), key, result }
+      let resultBytes = retainedSize(result.notices)
+      for (const row of result.records) {
+        resultBytes += retainedSize(row)
+        if (resultBytes > this.limits.resultBytes) break
+      }
+      if (resultBytes <= this.limits.resultBytes) this.completed = { at: Date.now(), key, result }
       return result
     } finally {
       this.pending = undefined
       this.pendingKey = undefined
+      this.scheduleExpiry()
     }
   }
 }

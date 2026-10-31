@@ -40,14 +40,142 @@ const listener = (id) => (message) => {
   if (message.type === 'frame') frames.set(id, (frames.get(id) ?? 0) + 1)
   if (message.type === 'error') throw new Error(message.message)
 }
-const wait = async (condition) => {
+const wait = async (condition, message = 'Browser state did not arrive') => {
   for (let i = 0; i < 100; i++) {
     if (condition()) return
     await delay(50)
   }
-  throw new Error('Browser state did not arrive')
+  throw new Error(message)
 }
 try {
+  await browsers.open(
+    'capture-lifecycle',
+    'capture-lifecycle',
+    'default',
+    `http://127.0.0.1:${address.port}/capture-lifecycle`,
+  )
+  const captureSession = await browsers.sessions.get('capture-lifecycle')
+  await browsers.input('capture-lifecycle', { type: 'resize', width: 2048, height: 1440 })
+  const screencast = captureSession.page.screencast
+  const start = screencast.start
+  const stop = screencast.stop
+  const captures = []
+  const captureErrors = []
+  const detailSizes = new Set()
+  let stops = 0
+  let deliveredFrames = 0
+  // Observe the production calls and real Chromium frames; keep both real methods running.
+  screencast.start = async (options) => {
+    const capture = { fps: options.fps, quality: options.quality, size: options.size, frames: 0 }
+    await start.call(screencast, {
+      ...options,
+      onFrame: (frame) => {
+        capture.frames++
+        options.onFrame(frame)
+      },
+    })
+    captures.push(capture)
+  }
+  screencast.stop = async () => {
+    await stop.call(screencast)
+    stops++
+  }
+  const captureListener = (message) => {
+    if (message.type === 'frame') {
+      deliveredFrames++
+      if (message.detail) detailSizes.add(`${message.width}x${message.height}`)
+    }
+    if (message.type === 'error') captureErrors.push(message.message)
+  }
+  try {
+    dispose.push(await browsers.attach('capture-lifecycle', captureListener))
+    assert.equal(captures[0]?.fps, 30, 'Attaching starts responsive capture')
+    assert.equal(captures[0].quality, 70)
+    assert.deepEqual(captures[0].size, { width: 1920, height: 1440 })
+    await wait(() => captures[0].frames > 1, 'Attached capture must deliver real live frames')
+    await wait(() => captures.at(-1)?.fps === 15, 'Viewing without input must reduce capture FPS')
+    const idleCapture = captures.at(-1)
+    assert.deepEqual(idleCapture.size, { width: 1280, height: 1280 })
+    assert.ok(stops > 0, 'Changing capture FPS stops the previous real stream')
+    await wait(() => idleCapture.frames > 1, 'Idle capture must continue delivering live frames')
+    await captureSession.page.evaluate(() => (document.body.style.animationPlayState = 'paused'))
+    await wait(
+      () => detailSizes.has('2048x1440'),
+      'Settled motion retains device-resolution detail',
+    )
+    await captureSession.page.evaluate(() => (document.body.style.animationPlayState = 'running'))
+    const idleStarts = captures.length
+    await browsers.input('capture-lifecycle', { type: 'status' })
+    await captureSession.stream
+    assert.equal(captures.length, idleStarts, 'Status queries must not reactivate capture')
+    const rejectedInput = new Error('Capture authorization rejected')
+    await assert.rejects(
+      browsers.input('capture-lifecycle', { type: 'key', key: 'Tab' }, () => {
+        throw rejectedInput
+      }),
+      rejectedInput,
+    )
+    await captureSession.queue
+    await captureSession.stream
+    assert.equal(captures.length, idleStarts, 'Rejected input must not reactivate capture')
+    assert.deepEqual(captureErrors.splice(0), [rejectedInput.message])
+    let authorizations = 0
+    await browsers.input('capture-lifecycle', { type: 'key', key: 'Tab' }, () => {
+      authorizations++
+    })
+    assert.equal(authorizations, 1)
+    await wait(() => captures.at(-1)?.fps === 30, 'Authorized input restores responsive capture')
+    const activeCapture = captures.at(-1)
+    assert.deepEqual(activeCapture.size, { width: 1920, height: 1440 })
+    await wait(() => activeCapture.frames > 1, 'Reactivated capture must deliver live frames')
+    const activeStops = stops
+    await browsers.visibility('capture-lifecycle', captureListener, false)
+    assert.equal(stops, activeStops + 1, 'Hiding stops the real active screencast')
+    const hiddenStarts = captures.length
+    const hiddenFrames = deliveredFrames
+    // Let the original activity deadline pass before another input can replace its timer.
+    await delay(2300)
+    assert.equal(
+      captures.length,
+      hiddenStarts,
+      'The activity deadline must not restart hidden capture',
+    )
+    assert.equal(deliveredFrames, hiddenFrames, 'Hiding must stop frame delivery through idle')
+    await browsers.input('capture-lifecycle', { type: 'key', key: 'Escape' })
+    await browsers.input('capture-lifecycle', { type: 'resize', width: 900, height: 600 })
+    // Cross the real activity deadline: queued input/resize and the idle timer must stay stopped.
+    await delay(2300)
+    assert.equal(
+      captures.length,
+      hiddenStarts,
+      'Input, resize and idle must not restart hidden capture',
+    )
+    assert.equal(deliveredFrames, hiddenFrames, 'Hidden viewers receive no live or detail frames')
+    assert.deepEqual(captureSession.page.viewportSize(), { width: 900, height: 600 })
+    await browsers.visibility('capture-lifecycle', captureListener, true)
+    assert.equal(captures.at(-1)?.fps, 30, 'Showing the viewer starts responsive capture again')
+    assert.deepEqual(captures.at(-1).size, { width: 900, height: 600 })
+    const shownCapture = captures.at(-1)
+    await wait(() => shownCapture.frames > 1, 'Showing the viewer resumes real live frames')
+    const resizeStarts = captures.length
+    await browsers.input('capture-lifecycle', { type: 'resize', width: 800, height: 600 })
+    assert.ok(captures.length > resizeStarts, 'Visible resize restarts the real screencast')
+    assert.equal(captures.at(-1).fps, 30)
+    assert.deepEqual(captures.at(-1).size, { width: 800, height: 600 })
+    const resizedCapture = captures.at(-1)
+    await wait(() => resizedCapture.frames > 1, 'Resizing must retain live capture')
+    await wait(() => captures.at(-1)?.fps === 15, 'Resized capture must become idle again')
+    assert.deepEqual(captures.at(-1).size, { width: 800, height: 600 })
+    const resizedIdleCapture = captures.at(-1)
+    await wait(() => resizedIdleCapture.frames > 1, 'Resized idle capture must remain live')
+    await captureSession.page.evaluate(() => (document.body.style.animationPlayState = 'paused'))
+    await wait(() => detailSizes.has('800x600'), 'Settled resize must retain sharp detail capture')
+    assert.deepEqual(captureErrors, [], 'Capture lifecycle must not emit browser errors')
+  } finally {
+    await browsers.close('capture-lifecycle')
+    screencast.start = start
+    screencast.stop = stop
+  }
   for (const [id, owner] of [
     ['first', 'task'],
     ['second', 'task'],
@@ -237,7 +365,7 @@ try {
   assert.equal(parent.isClosed(), false)
   await browsers.close(privateResource)
   console.log(
-    'Real Chromium: unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
+    'Real Chromium: active/idle capture, authorized input, hidden capture, viewport caps, resize/detail frames, unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
   )
 } finally {
   for (const detach of dispose) detach()

@@ -1,4 +1,7 @@
-import { expect, it, vi } from 'vite-plus/test'
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@dovo/protocol'
 import { readUsageLimits } from './usage-limits.js'
 const mocks = vi.hoisted(() => ({
@@ -9,6 +12,19 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: mocks.query }))
 vi.mock('../configuration/claude-command.js', () => ({ claudeCommand: async () => '/bin/claude' }))
+let home: string
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), 'claude-usage-'))
+  vi.stubEnv('HOME', home)
+  vi.stubEnv('CLAUDE_CONFIG_DIR', join(home, '.claude'))
+  for (const key of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'])
+    vi.stubEnv(key, '')
+  mocks.query.mockClear()
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  rmSync(home, { recursive: true, force: true })
+})
 const agent: Agent = {
   id: 'claude',
   name: 'Claude',
@@ -37,11 +53,26 @@ it('uses the Claude control channel without sending a model prompt and closes it
     usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: usage,
     close,
   })
-  const result = await readUsageLimits(agent)
+  mkdirSync(join(home, '.claude'))
+  writeFileSync(join(home, '.claude', 'settings.json'), '{malformed-excluded-user-settings')
+  const result = await readUsageLimits({
+    ...agent,
+    args: [
+      '--setting-sources=user',
+      '--setting-sources=',
+      '--managed-settings={"env":{"ANTHROPIC_BASE_URL":"http://ignored-managed","ANTHROPIC_AUTH_TOKEN":"ignored-token"},"permissions":{"deny":["Read"]}}',
+    ],
+  })
   expect(result.limits).toMatchObject([{ window: 'Session', usedPercent: 25 }])
   expect(result.account?.label).toBe('test@example.com')
   expect(usage).toHaveBeenCalledWith({ skipBehaviors: true })
   expect(close).toHaveBeenCalledOnce()
+  const options = mocks.query.mock.calls[0][0].options
+  expect(options?.settingSources).toEqual([])
+  expect(options?.extraArgs).not.toHaveProperty('setting-sources')
+  expect(options?.extraArgs).not.toHaveProperty('managed-settings')
+  expect(options?.env?.ANTHROPIC_BASE_URL).toBe('')
+  expect(options?.env?.ANTHROPIC_AUTH_TOKEN).toBe('')
   const prompt = mocks.query.mock.calls[0][0].prompt
   expect(typeof prompt).not.toBe('string')
   if (typeof prompt === 'string') throw new Error('Quota probe submitted a string prompt')
@@ -53,5 +84,15 @@ it('keeps API-key configurations out of subscription account readings', async ()
     account: undefined,
     limits: [],
   })
+  expect(mocks.query).not.toHaveBeenCalled()
+})
+
+it('does not probe subscription usage for an endpoint-only settings gateway', async () => {
+  mkdirSync(join(home, '.claude'))
+  writeFileSync(
+    join(home, '.claude', 'settings.json'),
+    JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'http://vpn:8080' } }),
+  )
+  expect(await readUsageLimits(agent)).toEqual({ account: undefined, limits: [] })
   expect(mocks.query).not.toHaveBeenCalled()
 })

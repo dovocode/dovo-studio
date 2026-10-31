@@ -4,6 +4,8 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  // Session import has its own browser regression; this fixture exercises startup continuity.
+  './import-codex-session': 'export const ImportCodexSession=()=>null;',
   // Sharing is verified separately from draft, selection and route continuity.
   '@dovo/extension-scm/repository-dialog': 'export const RepositoryDialog=()=>null;',
   '../chat/thread-sharing':
@@ -20,7 +22,7 @@ const mocks = {
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
     export const WorkspaceScope=({children})=>children;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
+    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});
@@ -191,7 +193,7 @@ try {
   })
   page.on('pageerror', (error) => {
     errors.push(error.message)
-    console.error(error.message)
+    console.error(error.stack)
   })
   await page.setContent('<style>.hidden{display:none}</style><div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })

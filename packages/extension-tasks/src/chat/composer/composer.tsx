@@ -3,7 +3,7 @@ import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
 import { draftStashScope } from '@dovo/protocol'
 import { QueueEditContext } from './queue-edit'
-import { useTaskProjectSettings } from '../../detail/task-project-popover'
+import { useThreadInfoContext } from '../../detail/thread-info-context'
 import { useChatImageUploader } from './chat-image-edit-context'
 import { createComposerDraft } from './composer-draft'
 import { TurnModelControls } from './turn-model-controls'
@@ -11,12 +11,13 @@ import {
   sameTurnSettings,
   applyTurnSettings,
   queuedModelAgent,
+  planModeIssue,
   type TurnSettings,
   type Attachment,
 } from '@dovo/protocol'
 import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
-import { randomUUID, checkpointCanUndo, taskForkResultSchema, taskSchema } from '@dovo/protocol'
+import { randomUUID, checkpointUndoTurn, taskForkResultSchema, taskSchema } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -50,6 +51,7 @@ import {
   GitBranchPlus,
   ChevronDown,
   Info,
+  ListChecks,
 } from 'lucide-react'
 import { useWorkspace, useStudioHost, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
@@ -79,10 +81,12 @@ export function Composer({
   queuedMessages,
   temporary = false,
   startup = false,
+  onStartBackground,
 }: {
   task: Task
   temporary?: boolean
   startup?: boolean
+  onStartBackground?: (task: Task) => void
   workspaceControls?: WorkspaceControls
   workspaceMoving?: boolean
   onWorkspaceMoving?: (moving: boolean) => void
@@ -112,13 +116,29 @@ export function Composer({
   useEffect(() => {
     setDraftTurnSettings(task.draftTurnSettings ?? null)
   }, [task.draftTurnSettings, setDraftTurnSettings])
+  const [draftPlan, setDraftPlan] = useApplicationState(task.draftPlan === true)
+  useEffect(() => {
+    setDraftPlan(task.draftPlan === true)
+  }, [task.draftPlan, setDraftPlan])
   const [editing, setEditing] = useState<{
     message: Task['messages'][number]
     controller: ReturnType<typeof createComposerDraft>
     settings: TurnSettings | null
     files: Attachment[]
+    plan: boolean
   } | null>(null)
   const turnSettings = editing ? editing.settings : draftTurnSettings
+  // One-message plan mode: kept with the draft until a plan send is accepted.
+  const plan = editing ? editing.plan : draftPlan
+  const planSupported = snapshot?.planModeSupported === true
+  const changePlan = (value: boolean) => {
+    if (editing) {
+      setEditing({ ...editing, plan: value })
+      return
+    }
+    setDraftPlan(value)
+    setWorkspace((w) => updateTask(w, task.id, (current) => ({ ...current, draftPlan: value })))
+  }
   const setTurnSettings = setDraftTurnSettings
   const changeTurnSettings = (value: TurnSettings | null) => {
     if (editing) {
@@ -245,7 +265,57 @@ export function Composer({
   const forkAttempt = useRef<{ id: string; text: string; attachmentIds: string[] } | null>(null)
   const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
+  const [composingDuringSend, setComposingDuringSend] = useState<{
+    text: string
+    revision: number
+  } | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
+  const [awaitingQueuedSubmission, setAwaitingQueuedSubmission] = useState<string | null>(null)
+  const [stagingGap, setStagingGap] = useState<{
+    ids: string[]
+    status: Task['status']
+    runId: string | undefined
+  } | null>(null)
+  const stageObserved =
+    !!stagingGap &&
+    (!!task.queuePaused ||
+      [...task.messages, ...(task.queue ?? [])].some((message) =>
+        stagingGap.ids.includes(message.id),
+      ) ||
+      (task.status === 'running' &&
+        (stagingGap.status !== 'running' || task.activeRunId !== stagingGap.runId)))
+  const stagingGapActive = !!stagingGap && !stageObserved
+  useEffect(() => {
+    if (stageObserved) setStagingGap(null)
+  }, [stageObserved])
+  const [failedSubmissionAttachments, setFailedSubmissionAttachments] = useState<string[]>([])
+  const hasFailedSubmissionAttachments = attachments.files.some((file) =>
+    failedSubmissionAttachments.includes(file.id),
+  )
+  const editorController = useMemo(() => {
+    const controller = composerDraft.controller
+    return {
+      ...controller,
+      get text() {
+        return composingDuringSend &&
+          controller.revision === composingDuringSend.revision &&
+          controller.text.trim() === composingDuringSend.text
+          ? ''
+          : controller.text
+      },
+      get revision() {
+        return controller.revision
+      },
+      update(value: string) {
+        const result = controller.update(value)
+        if (composingDuringSend) controller.flush()
+        return result
+      },
+    }
+  }, [composerDraft.controller, composingDuringSend])
+  useLayoutEffect(() => {
+    if (composingDuringSend) input.current?.focus()
+  }, [composingDuringSend])
   useLayoutEffect(() => {
     if (editorFocused && document.activeElement !== input.current) setEditorFocused(false)
   })
@@ -279,11 +349,11 @@ export function Composer({
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setCompactBusy(false))
   }
-  // The newest turn whose file changes can still be undone.
-  const undoable = [...(task.turns ?? [])]
-    .reverse()
-    .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
-  const undoableId = undoable?.id ?? task.historyTotals?.undoableTurnId
+  const undoable = checkpointUndoTurn(task.turns ?? [])
+  const undoableId =
+    (undoable?.checkpoint?.restorePending ? undoable.id : task.historyTotals?.pendingUndoTurnId) ??
+    undoable?.id ??
+    task.historyTotals?.undoableTurnId
   const runCommand = (id: ComposerCommandId) => {
     setCommandError('')
     if (id === 'review')
@@ -346,31 +416,65 @@ export function Composer({
     id: string
     text: string
     attachmentIds: string[]
-    mode: 'queue' | 'steer'
+    mode: 'queue' | 'steer' | 'stage'
     turnSettings?: TurnSettings
+    plan?: boolean
     title?: string
     accepted?: boolean
     draftRevision: number
     runId?: string
+    startupConfiguration?: Task
+    preserveQueuePause?: boolean
   } | null>(null)
   const pendingSubmission = useRef<string | null>(null)
+  const pendingDraftProtections = useRef(new Map<string, NonNullable<typeof attempt.current>>())
   const acceptDraft = composerDraft.accept
   useEffect(() => {
-    const id = pendingSubmission.current
-    if (!id || ![...task.messages, ...(task.queue ?? [])].some((message) => message.id === id))
-      return
-    const submitted = attempt.current
-    if (submitted?.id === id && !submitted.accepted) {
-      submitted.accepted = true
-      acceptDraft(submitted.text, submitted.draftRevision)
-      setTurnSettings((current) =>
-        sameTurnSettings(current, submitted.turnSettings) ? null : current,
-      )
+    const observedIds = new Set(
+      [...task.messages, ...(task.queue ?? [])].map((message) => message.id),
+    )
+    const activeAttempt = attempt.current
+    if (activeAttempt && observedIds.has(activeAttempt.id))
+      pendingDraftProtections.current.set(activeAttempt.id, activeAttempt)
+    for (const [id, submitted] of pendingDraftProtections.current) {
+      if (!observedIds.has(id)) continue
+      pendingDraftProtections.current.delete(id)
+      const unchanged = composerDraft.controller.revision === submitted.draftRevision
+      if (!submitted.accepted) {
+        submitted.accepted = true
+        acceptDraft(submitted.text, submitted.draftRevision)
+        if (unchanged) {
+          setTurnSettings((current) =>
+            sameTurnSettings(current, submitted.turnSettings) ? null : current,
+          )
+          if (submitted.plan) setDraftPlan(false)
+        }
+      }
+      if (!unchanged && composerDraft.controller.text.trim()) {
+        const preserveSettings =
+          !!submitted.turnSettings && sameTurnSettings(draftTurnSettings, submitted.turnSettings)
+        const preservePlan = !!submitted.plan && draftPlan
+        if (preserveSettings || preservePlan) {
+          if (preserveSettings) setTurnSettings(submitted.turnSettings ?? null)
+          if (preservePlan) setDraftPlan(true)
+          setWorkspace((workspace) =>
+            updateTask(workspace, task.id, (current) => ({
+              ...current,
+              ...(preserveSettings ? { draftTurnSettings: submitted.turnSettings } : {}),
+              ...(preservePlan ? { draftPlan: true } : {}),
+            })),
+          )
+        }
+      }
     }
+    const id = pendingSubmission.current
+    if (!id || !observedIds.has(id)) return
     pendingSubmission.current = null
+    setAwaitingQueuedSubmission(null)
     onPending(null)
   }, [task.messages, task.queue, acceptDraft, onPending])
-  const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
+  const firstMessage =
+    !stagingGapActive && task.messages.length === 0 && !task.queue?.length && !task.turns?.length
   const threadAgent = resolveTaskAgent(task, workspace.agents)
   const agent =
     threadAgent && snapshot?.persistentTurnModelsSupported
@@ -382,10 +486,19 @@ export function Composer({
         snapshot?.permissionPolicySupported === true,
       )
     : undefined
+  const planIssue = !plan
+    ? undefined
+    : !planSupported
+      ? 'Update the task computer to use plan mode.'
+      : planModeIssue(agent)
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
   const preferences = useAppPreferences()
   const defaultSteerFirst =
-    !editing && preferences.followUp === 'steer' && task.status === 'running' && !turnSettings
+    !editing &&
+    preferences.followUp === 'steer' &&
+    task.status === 'running' &&
+    !turnSettings &&
+    !plan
   const other = defaultSteerFirst ? 'queue' : 'steer'
   const [altPressed, setAltPressed] = useState(false)
   useEffect(() => {
@@ -410,8 +523,21 @@ export function Composer({
       document.removeEventListener('visibilitychange', visibility)
     }
   }, [task.status])
-  const alternative = !editing && altPressed && task.status === 'running' && !turnSettings
-  const steerFirst = alternative ? !defaultSteerFirst : defaultSteerFirst
+  const alternative = !editing && altPressed && task.status === 'running' && !turnSettings && !plan
+  const retryAutomaticAddition =
+    attempt.current?.preserveQueuePause === true &&
+    attempt.current.text === composerDraft.controller.text.trim() &&
+    sameTurnSettings(attempt.current.turnSettings, turnSettings) &&
+    !!attempt.current.plan === plan &&
+    JSON.stringify(attempt.current.attachmentIds) ===
+      JSON.stringify(attachments.files.map((file) => file.id))
+  const steerFirst =
+    !retryAutomaticAddition && (alternative ? !defaultSteerFirst : defaultSteerFirst)
+  const stageFirst =
+    !retryAutomaticAddition &&
+    snapshot?.promptQueueStagingSupported === true &&
+    (stagingGapActive || (!!task.queue?.length && !!(task.queuePaused || task.queue[0]?.paused)))
+  const hasBackgroundAction = !editing && startup && firstMessage && !!onStartBackground
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
   const stop = async () => {
     const runId = task.activeRunId
@@ -449,6 +575,7 @@ export function Composer({
       controller: createComposerDraft(message.text, () => {}),
       settings: message.turnSettings ?? null,
       files: message.attachments ?? [],
+      plan: message.plan === true,
     })
     requestAnimationFrame(() => input.current?.focus())
   }
@@ -467,8 +594,8 @@ export function Composer({
       setError('Update the task computer to use all settings for this turn.')
       return
     }
-    if (policyIssue) {
-      setError(policyIssue)
+    if (policyIssue || planIssue) {
+      setError(policyIssue || planIssue || '')
       return
     }
     sendingRequest.current = true
@@ -495,6 +622,7 @@ export function Composer({
                 expectedTurnSettings: editing.message.turnSettings ?? null,
               }
             : {}),
+          ...(planSupported ? { plan: editing.plan, expectedPlan: !!editing.message.plan } : {}),
         },
         responses.ok,
       )
@@ -506,8 +634,9 @@ export function Composer({
       setSending(false)
     }
   }
-  const send = async (mode: 'queue' | 'steer' = 'queue') => {
+  const send = async (mode: 'queue' | 'steer' | 'stage' = 'queue', background = false) => {
     if (editing) return saveEdit()
+    if (mode === 'stage' && (!connected || snapshot?.promptQueueStagingSupported !== true)) return
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
       setError('Update the task computer to choose a model for this turn.')
       return
@@ -520,8 +649,12 @@ export function Composer({
       setError('Queue this message to use its model and reasoning settings.')
       return
     }
-    if (policyIssue) {
-      setError(policyIssue)
+    if (plan && mode === 'steer') {
+      setError('Queue this message to plan before the agent changes anything.')
+      return
+    }
+    if (policyIssue || planIssue) {
+      setError(policyIssue || planIssue || '')
       return
     }
     const text = composerDraft.controller.text.trim()
@@ -529,6 +662,8 @@ export function Composer({
     if (
       (!text && !attachmentIds.length) ||
       sending ||
+      !!awaitingQueuedSubmission ||
+      hasFailedSubmissionAttachments ||
       sendingRequest.current ||
       asideRequest.current === 'saving' ||
       stopping ||
@@ -546,6 +681,7 @@ export function Composer({
       attempt.current?.mode !== mode ||
       attempt.current?.text !== text ||
       !sameTurnSettings(attempt.current?.turnSettings, turnSettings) ||
+      !!attempt.current.plan !== plan ||
       JSON.stringify(attempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
     )
       attempt.current = {
@@ -555,9 +691,29 @@ export function Composer({
         mode,
         draftRevision: composerDraft.controller.revision,
         turnSettings: turnSettings ?? undefined,
+        ...(plan ? { plan: true } : {}),
         runId: mode === 'steer' ? task.activeRunId : undefined,
+        preserveQueuePause:
+          mode === 'queue' &&
+          !stageFirst &&
+          !task.queuePaused &&
+          snapshot?.queuePausePreservationSupported === true,
+        startupConfiguration:
+          startup && firstMessage ? { ...task, draftTurnSettings, draftPlan } : undefined,
       }
+    // Project/model selection can resolve before a failed send. A retry still starts
+    // the next composer with the choices made before that resolution.
+    const backgroundTask =
+      background && firstMessage && onStartBackground
+        ? (attempt.current.startupConfiguration ?? { ...task, draftTurnSettings, draftPlan })
+        : undefined
     attempt.current.draftRevision = composerDraft.controller.revision
+    const submittedRevision = attempt.current.draftRevision
+    if (mode === 'stage' || (mode === 'queue' && task.status === 'running')) {
+      setComposingDuringSend({ text, revision: attempt.current.draftRevision })
+      setAwaitingQueuedSubmission(attempt.current.id)
+      pendingDraftProtections.current.set(attempt.current.id, attempt.current)
+    }
     const pending: PendingMessage = {
       taskId: task.id,
       state: 'sending',
@@ -569,6 +725,7 @@ export function Composer({
         createdAt: new Date().toISOString(),
         attachments: attachments.files,
         turnSettings: attempt.current.turnSettings,
+        ...(attempt.current.plan ? { plan: true } : {}),
       },
     }
     pendingSubmission.current = pending.message.id
@@ -586,7 +743,20 @@ export function Composer({
           },
           taskSchema,
         )
-        setWorkspace((w) => updateTask(w, task.id, (current) => ({ ...current, ...selected })))
+        setWorkspace((w) =>
+          updateTask(w, task.id, (current) => ({
+            ...current,
+            ...selected,
+            ...(composerDraft.controller.revision !== submittedRevision
+              ? {
+                  draft: current.draft,
+                  draftTurnSettings: current.draftTurnSettings,
+                  draftPlan: current.draftPlan,
+                  draftAttachments: current.draftAttachments,
+                }
+              : {}),
+          })),
+        )
       }
       if (firstMessage) {
         const summary =
@@ -603,6 +773,7 @@ export function Composer({
         )
         await flush()
       }
+      let acknowledged = false
       if (connection) {
         const result = await request(
           mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
@@ -611,12 +782,24 @@ export function Composer({
             messageId: attempt.current.id,
             runId: attempt.current.runId,
             turnSettings: attempt.current.turnSettings,
+            ...(attempt.current.plan ? { plan: true } : {}),
             text,
             attachmentIds,
+            ...(mode === 'stage' ? { queueOnly: true } : {}),
+            ...(attempt.current.preserveQueuePause ? { preserveQueuePause: true } : {}),
           },
           responses.ok,
         )
         if (result.pending) onPending({ ...pending, state: 'saved' })
+        acknowledged = !result.pending
+        if (mode === 'stage' && !result.pending) {
+          setStagingGap((current) => ({
+            ids: [...(current?.ids ?? []), pending.message.id],
+            status: current?.status ?? task.status,
+            runId: current?.runId ?? task.activeRunId,
+          }))
+          if (!attachmentIds.length) setAwaitingQueuedSubmission(null)
+        } else if (mode === 'queue' && !result.pending) setStagingGap(null)
         if (firstMessage)
           void request(
             '/api/tasks/title',
@@ -634,26 +817,45 @@ export function Composer({
           updateTask(w, task.id, (t) => ({
             ...t,
             messages: [...t.messages, pending.message],
+            ...(pending.message.plan ? { draftPlan: false } : {}),
             snoozedUntil: null,
             ...(t.archived ? { archived: false, autoSettled: undefined } : {}),
           })),
         )
-      if (!attempt.current.accepted) composerDraft.accept(text, attempt.current.draftRevision)
+      const unchanged = composerDraft.controller.revision === attempt.current.draftRevision
+      if (!attempt.current.accepted) {
+        composerDraft.accept(text, attempt.current.draftRevision)
+        attempt.current.accepted = true
+      }
+      if (unchanged && attempt.current.plan) setDraftPlan(false)
       attempt.current = null
-      setTurnSettings(null)
+      if (unchanged) setTurnSettings(null)
+      if (acknowledged && backgroundTask) onStartBackground?.(backgroundTask)
     } catch (e) {
       if (attempt.current?.accepted) {
         attempt.current = null
       } else {
+        pendingDraftProtections.current.delete(pending.message.id)
+        setAwaitingQueuedSubmission(null)
         onPending({ ...pending, state: 'failed' })
-        setError(String(e))
+        if (composerDraft.controller.revision !== submittedRevision && attachmentIds.length) {
+          setFailedSubmissionAttachments(attachmentIds)
+          setError(
+            `${String(e)} Remove the failed prompt's attachments before sending the new draft.`,
+          )
+        } else setError(String(e))
       }
     } finally {
       sendingRequest.current = false
       setSending(false)
+      setComposingDuringSend(null)
     }
   }
   const startFork = async () => {
+    if (plan) {
+      setError('Turn off plan mode before forking. Fork uses this thread’s configuration.')
+      return
+    }
     if (turnSettings) {
       setError(
         'Clear the next-message settings before forking. Fork uses this thread’s configuration.',
@@ -714,7 +916,7 @@ export function Composer({
   }
   const [accessContainer, setAccessContainer] = useState<HTMLSpanElement | null>(null)
   const [addOpen, setAddOpen] = useState(false)
-  const projectSettings = useTaskProjectSettings()
+  const projectSettings = useThreadInfoContext()
   const [infoOpen, setInfoOpen] = useState(false)
   const [infoContainer, setInfoContainer] = useState<HTMLDivElement | null>(null)
   const usesTurnSettings = !!(
@@ -739,6 +941,7 @@ export function Composer({
         (!!editing && !snapshot?.fullTurnSettingsSupported) ||
         !connected ||
         sending ||
+        !!awaitingQueuedSubmission ||
         !!task.archivedAt ||
         attachments.busy
       }
@@ -783,12 +986,12 @@ export function Composer({
   )
   const settings = (
     <section
-      aria-label="Task settings"
+      aria-label="Environment and access"
       className="task-info-settings border-b border-border/60 p-4"
       inert={machineMoving || undefined}
     >
       <h3 className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">
-        Task settings
+        Environment and access
       </h3>
       {workspaceSettings}
     </section>
@@ -847,6 +1050,7 @@ export function Composer({
         </div>
       )}
       <ComposerSurface
+        aria-busy={submitBusy}
         collapsed={collapsed}
         compact={
           preferences.minimalComposer &&
@@ -888,10 +1092,31 @@ export function Composer({
                   </Popover.Portal>
                 </Popover.Root>
               </div>
+              {planSupported && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-pressed={plan}
+                  title={
+                    !plan && planModeIssue(agent)
+                      ? planModeIssue(agent)
+                      : 'Plan the next message read-only before the agent changes anything'
+                  }
+                  className={cn(
+                    'composer-plan-toggle h-8 gap-1.5 rounded-full px-2.5 text-[0.6875rem]',
+                    plan && 'bg-primary/15 text-primary hover:bg-primary/20',
+                  )}
+                  disabled={sending || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
+                  onClick={() => changePlan(!plan)}
+                >
+                  <ListChecks className="size-3.5" />
+                  Plan
+                </Button>
+              )}
               {!startup && !projectSettings && (
                 <Popover.Root open={infoOpen} onOpenChange={setInfoOpen}>
                   <Popover.Trigger asChild>
-                    <IconButton label="Task information" className="size-8" type="button">
+                    <IconButton label="Thread info" className="size-8" type="button">
                       <Info className="size-4" />
                     </IconButton>
                   </Popover.Trigger>
@@ -902,7 +1127,7 @@ export function Composer({
                       side="top"
                       align="start"
                       sideOffset={8}
-                      aria-label="Project information"
+                      aria-label="Thread info"
                       className="z-40 w-72 max-w-[calc(100vw-24px)] rounded-2xl border bg-popover text-popover-foreground shadow-xl"
                     >
                       <div ref={setInfoContainer} />
@@ -950,41 +1175,48 @@ export function Composer({
               <div className="flex shrink-0 items-center" role="group" aria-label="Send message">
                 <ComposerSubmit
                   busy={sending}
-                  data-labeled={editing || task.status === 'running' ? '' : undefined}
+                  data-labeled={editing || task.status === 'running' || stageFirst ? '' : undefined}
                   className={
                     editing
                       ? 'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]'
-                      : task.status === 'running'
+                      : task.status === 'running' || stageFirst
                         ? 'h-8 w-auto gap-1.5 rounded-l-md rounded-r-none bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
                         : undefined
                   }
                   title={
                     editing
                       ? 'Save changes (Enter)'
-                      : steerFirst
-                        ? `Steer agent (${submitShortcut})`
-                        : task.status === 'running'
-                          ? `Queue follow-up (${submitShortcut})`
-                          : 'Send message (Enter)'
+                      : stageFirst
+                        ? 'Add to queue (Enter)'
+                        : steerFirst
+                          ? `Steer agent (${submitShortcut})`
+                          : task.status === 'running'
+                            ? `Queue follow-up (${submitShortcut})`
+                            : 'Send message (Enter)'
                   }
                   aria-label={
                     editing
                       ? 'Save changes'
-                      : steerFirst
-                        ? 'Steer agent'
-                        : task.status === 'running'
-                          ? 'Queue follow-up'
-                          : connected
-                            ? 'Send to agent'
-                            : 'Save message to task'
+                      : stageFirst
+                        ? 'Add to queue'
+                        : steerFirst
+                          ? 'Steer agent'
+                          : task.status === 'running'
+                            ? 'Queue follow-up'
+                            : connected
+                              ? 'Send to agent'
+                              : 'Save message to task'
                   }
                   disabled={
                     (!!editing &&
                       !task.queue?.some((message) => message.id === editing.message.id)) ||
                     !!policyIssue ||
+                    !!planIssue ||
                     (!composerDraft.hasText &&
                       !(editing ? editing.files.length : attachments.files.length)) ||
                     sending ||
+                    !!awaitingQueuedSubmission ||
+                    hasFailedSubmissionAttachments ||
                     stopping ||
                     attachments.busy ||
                     !!task.archivedAt ||
@@ -996,77 +1228,138 @@ export function Composer({
                     <LoaderCircle className="size-4 animate-spin" />
                   ) : steerFirst ? (
                     <CornerUpRight className="size-4" />
-                  ) : task.status === 'running' ? (
+                  ) : task.status === 'running' || stageFirst ? (
                     <ListPlus className="size-4" />
                   ) : (
                     <ArrowUp className="size-4" />
                   )}
                   {editing
                     ? 'Save changes'
-                    : task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
+                    : stageFirst
+                      ? 'Add to queue'
+                      : task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
                 </ComposerSubmit>
-                {!editing && task.status === 'running' && (
-                  <DropdownMenu.Root>
-                    <DropdownMenu.Trigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label="More message actions"
-                        title="Other ways to send this message"
-                        className="h-8 w-6 rounded-l-none rounded-r-md border-l border-border/60 bg-muted p-0 hover:bg-accent"
-                        disabled={
-                          !connected || sending || stopping || attachments.busy || !!task.archivedAt
-                        }
-                      >
-                        <ChevronDown className="size-3" />
-                      </Button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content
-                        side="top"
-                        align="end"
-                        sideOffset={6}
-                        className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
-                      >
-                        <DropdownMenu.Item
-                          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                {!editing &&
+                  (hasBackgroundAction ||
+                    task.status === 'running' ||
+                    (connected && snapshot?.promptQueueStagingSupported === true)) && (
+                    <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label="More message actions"
+                          title="Other ways to send this message"
+                          className="h-8 w-6 rounded-l-none rounded-r-md border-l border-border/60 bg-muted p-0 hover:bg-accent"
                           disabled={
-                            !!policyIssue ||
-                            !!task.archived ||
-                            (!!turnSettings && other === 'steer')
+                            !connected ||
+                            sending ||
+                            !!awaitingQueuedSubmission ||
+                            stopping ||
+                            attachments.busy ||
+                            !!task.archivedAt
                           }
-                          onSelect={() => void send(other)}
                         >
-                          {other === 'steer' ? (
-                            <CornerUpRight className="size-3.5" />
-                          ) : (
-                            <ListPlus className="size-3.5" />
-                          )}
-                          {other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
-                          <span className="ml-auto text-[0.625rem] text-muted-foreground">
-                            Alt+Enter
-                          </span>
-                        </DropdownMenu.Item>
-                        {task.repositoryId &&
-                          !workspace.repositories.find((repo) => repo.id === task.repositoryId)
-                            ?.kind && (
+                          <ChevronDown className="size-3" />
+                        </Button>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          side="top"
+                          align="end"
+                          sideOffset={6}
+                          className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+                        >
+                          {hasBackgroundAction && (
                             <DropdownMenu.Item
                               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                              disabled={!!task.archived || !!turnSettings}
-                              title={
-                                turnSettings
-                                  ? 'Clear next-message settings to fork with this thread’s configuration'
-                                  : undefined
+                              disabled={
+                                !!policyIssue ||
+                                !!planIssue ||
+                                !hasInput ||
+                                !connected ||
+                                !task.repositoryId ||
+                                !agent ||
+                                hasFailedSubmissionAttachments
                               }
-                              onSelect={() => void startFork()}
+                              onSelect={() => void send('queue', true)}
                             >
-                              <GitBranchPlus className="size-3.5" /> Fork
+                              Start in background
+                              <span className="ml-auto text-[0.625rem] text-muted-foreground">
+                                Alt+Enter
+                              </span>
                             </DropdownMenu.Item>
                           )}
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Root>
-                )}
+                          {task.status === 'running' && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                              disabled={
+                                !!policyIssue ||
+                                !!planIssue ||
+                                !!task.archived ||
+                                ((!!turnSettings || plan) && other === 'steer')
+                              }
+                              onSelect={() => void send(other)}
+                            >
+                              {other === 'steer' ? (
+                                <CornerUpRight className="size-3.5" />
+                              ) : (
+                                <ListPlus className="size-3.5" />
+                              )}
+                              {other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
+                              <span className="ml-auto text-[0.625rem] text-muted-foreground">
+                                Alt+Enter
+                              </span>
+                            </DropdownMenu.Item>
+                          )}
+                          {task.status !== 'running' && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                              disabled={
+                                !!policyIssue ||
+                                !!planIssue ||
+                                !!task.archived ||
+                                !hasInput ||
+                                (stageFirst && !!task.queue?.[0]?.paused)
+                              }
+                              onSelect={() => void send('queue')}
+                            >
+                              <ListPlus className="size-3.5" />
+                              {stageFirst ? 'Add and run queue' : 'Add to queue'}
+                            </DropdownMenu.Item>
+                          )}
+                          {snapshot?.promptQueueStagingSupported === true && !stageFirst && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                              disabled={
+                                !!policyIssue || !!planIssue || !!task.archived || !hasInput
+                              }
+                              onSelect={() => void send('stage')}
+                            >
+                              <ListPlus className="size-3.5" />
+                              Add without starting
+                            </DropdownMenu.Item>
+                          )}
+                          {task.repositoryId &&
+                            !workspace.repositories.find((repo) => repo.id === task.repositoryId)
+                              ?.kind && (
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                                disabled={!!task.archived || !!turnSettings || plan}
+                                title={
+                                  turnSettings || plan
+                                    ? 'Clear next-message settings to fork with this thread’s configuration'
+                                    : undefined
+                                }
+                                onSelect={() => void startFork()}
+                              >
+                                <GitBranchPlus className="size-3.5" /> Fork
+                              </DropdownMenu.Item>
+                            )}
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
+                  )}
               </div>
             )}
             {task.status === 'running' && (
@@ -1089,13 +1382,14 @@ export function Composer({
             )}
           </>
         }
-        error={error || policyIssue || composerDraft.error || attachments.error}
+        error={error || policyIssue || planIssue || composerDraft.error || attachments.error}
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
           const allowed =
             connected &&
             !sending &&
+            !awaitingQueuedSubmission &&
             !attachments.busy &&
             !task.archivedAt &&
             (!editing || !!snapshot?.fullTurnSettingsSupported)
@@ -1117,6 +1411,7 @@ export function Composer({
           if (
             connected &&
             !sending &&
+            !awaitingQueuedSubmission &&
             !task.archivedAt &&
             (!editing || snapshot?.fullTurnSettingsSupported)
           )
@@ -1134,6 +1429,7 @@ export function Composer({
           if (
             connected &&
             !sending &&
+            !awaitingQueuedSubmission &&
             !task.archivedAt &&
             (!editing || snapshot?.fullTurnSettingsSupported)
           ) {
@@ -1143,7 +1439,7 @@ export function Composer({
         }}
         onSubmit={(e) => {
           e.preventDefault()
-          void send(steerFirst ? 'steer' : 'queue')
+          void send(stageFirst ? 'stage' : steerFirst ? 'steer' : 'queue')
         }}
       >
         {fileDrag && (
@@ -1169,7 +1465,10 @@ export function Composer({
             remove={attachments.remove}
             edit={attachments.edit}
             disabled={
-              (!!editing && !snapshot?.fullTurnSettingsSupported) || sending || attachments.busy
+              (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+              sending ||
+              !!awaitingQueuedSubmission ||
+              attachments.busy
             }
           />
         </div>
@@ -1199,13 +1498,20 @@ export function Composer({
             ))}
           </div>
         )}
+        {awaitingQueuedSubmission && !sending && (
+          <span role="status" className="px-3 text-xs text-muted-foreground">
+            Waiting for the queued prompt to appear before sending the next draft.
+          </span>
+        )}
         <ComposerEditor
           onAlternativeSubmit={
-            !editing && task.status === 'running' && !turnSettings
-              ? () => void send(other)
-              : undefined
+            hasBackgroundAction
+              ? () => void send('queue', true)
+              : !editing && task.status === 'running' && !turnSettings && !plan
+                ? () => void send(other)
+                : undefined
           }
-          controller={composerDraft.controller}
+          controller={editorController}
           messages={task.messages}
           taskId={task.id}
           input={input}
@@ -1235,7 +1541,7 @@ export function Composer({
           autoFocus={firstMessage}
           hidden={pendingQuestion}
           disabled={machineMoving || !!task.archivedAt || pendingQuestion}
-          submitBusy={submitBusy}
+          submitBusy={submitBusy && !composingDuringSend}
           submittedText={submittedText}
           placeholder={
             editing

@@ -1,7 +1,5 @@
 import { TaskVisualization } from './task-visualization'
-import { markdownImages, type MarkdownImagePart } from './markdown-images'
 import { markdownCodeStyle } from './markdown-code-style'
-import { markdownCodeBlocks, type MarkdownCodePart } from './markdown-code-blocks'
 import { CodeBlock } from './code-block'
 import { ServerImage } from './server-image'
 import { Text } from './text'
@@ -11,18 +9,12 @@ import { openAppLink } from './open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { mermaidBlocks, type MarkdownPart } from './mermaid-blocks'
+import { markdownParts } from './markdown-parts'
 import { RichFile, TemplateCard } from './rich-file'
 import { memo, lazy, Suspense, useMemo, useState } from 'react'
 import { Alert, Platform, View } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
-import {
-  resolveMarkdownLink,
-  localMarkdownPath,
-  markdownFileName,
-  richMarkdown,
-  type RichMarkdownPart,
-} from '@dovo/protocol'
+import { resolveMarkdownLink, localMarkdownPath, markdownFileName } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme, type MobileTheme } from '../theme'
 import { carZoom, useCarMode } from '../../runtime/preferences/app-preferences'
@@ -242,9 +234,12 @@ export const Markdown = memo(function Markdown({
   onLinkPress,
   taskId,
   onUseTemplate,
+  streaming = false,
 }: {
   text: string
   taskId?: string
+  /** Text still growing; its intermediate prefixes are split without being cached. */
+  streaming?: boolean
   onUseTemplate?: (prompt: string) => void
   baseURL?: string
   fileBaseURL?: string
@@ -268,41 +263,10 @@ export const Markdown = memo(function Markdown({
     () => createMarkdownStyles(theme),
     [theme],
   )
-  const parts = useMemo(() => {
-    const result: (
-      | Exclude<RichMarkdownPart, { kind: 'markdown' }>
-      | MarkdownPart
-      | MarkdownCodePart
-      | Extract<MarkdownImagePart, { kind: 'image' }>
-    )[] = []
-    for (const rich of richMarkdown(text, !!taskId && !baseURL && !fileBaseURL)) {
-      if (rich.kind !== 'markdown') {
-        result.push(rich)
-        continue
-      }
-      for (const part of mermaidBlocks(rich.text)) {
-        if (part.kind === 'mermaid') {
-          result.push({ ...part, offset: rich.offset + part.offset })
-          continue
-        }
-        for (const block of markdownCodeBlocks(part.text)) {
-          const offset = rich.offset + part.offset + block.offset
-          if (block.kind === 'code') {
-            result.push({ ...block, offset })
-            continue
-          }
-          for (const image of markdownImages(block.text)) {
-            result.push(
-              image.kind === 'text'
-                ? { kind: 'markdown', text: image.text, offset: offset + image.offset }
-                : { ...image, offset: offset + image.offset },
-            )
-          }
-        }
-      }
-    }
-    return result
-  }, [text, taskId, baseURL, fileBaseURL])
+  const parts = useMemo(
+    () => markdownParts(text, !!taskId && !baseURL && !fileBaseURL, streaming),
+    [text, taskId, baseURL, fileBaseURL, streaming],
+  )
   const car = useCarMode()
   const style =
     variant === 'chat'

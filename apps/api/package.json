@@ -47,10 +47,12 @@
   "dependencies": {
     "@dovo/protocol": "workspace:*",
     "@dovo/runtime": "workspace:*",
+    "better-sqlite3": "^13.0.3",
     "effect": "4.1.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.23.15"
   }

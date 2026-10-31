@@ -3,6 +3,8 @@ import { AppState } from 'react-native'
 import {
   conversationPageSchema,
   compactConversationPages,
+  conversationPagesSize,
+  trimConversationPages,
   mergeConversationHistory,
   type ConversationPage,
   type Task,
@@ -11,6 +13,7 @@ import { useRuntime } from '../../../runtime/connection/provider'
 
 const emptyPages: ConversationPage[] = []
 const recentMessageCount = 500
+const historyBudget = 6 * 1024 * 1024
 export function useConversationHistory<
   T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
 >(live: T, prefetchRecent = true) {
@@ -35,6 +38,7 @@ export function useConversationHistory<
   const generation = useRef(0)
   const pending = useRef<{ scope: string; generation: number } | null>(null)
   const [hydrated, setHydrated] = useState<string | null>(null)
+  const [restoreFinished, setRestoreFinished] = useState<string | null>(null)
   const [cacheError, setCacheError] = useState({ scope, error: '' })
   const previous = useRef({ scope, live })
   const latest = useRef(live)
@@ -45,6 +49,7 @@ export function useConversationHistory<
     generation.current++
     setDelivery({ scope, busy: false, error: '' })
     setHydrated(null)
+    setRestoreFinished(null)
     setCacheError({ scope, error: '' })
     return () => {
       generation.current++
@@ -101,6 +106,23 @@ export function useConversationHistory<
     () => mergeConversationHistory(live, pages, authoritative),
     [live, pages, authoritative],
   )
+  // Keep only IDs for discovered bookmarks when their message bodies are evicted. Revision
+  // changes invalidate the index; loaded authoritative messages can also remove a bookmark.
+  const bookmarkIndex = useRef({ scope, revision, ids: new Set<string>() })
+  const bookmarks = useMemo(() => {
+    const previous = bookmarkIndex.current
+    const ids =
+      previous.scope === scope && previous.revision === revision
+        ? new Set(previous.ids)
+        : new Set<string>()
+    // Trimming removes only an older prefix. Unloaded IDs precede this contiguous window;
+    // reinsert loaded bookmarks in message order as older pages are discovered.
+    for (const message of task.messages) ids.delete(message.id)
+    for (const message of task.messages)
+      if (message.role === 'assistant' && message.bookmarked) ids.add(message.id)
+    bookmarkIndex.current = { scope, revision, ids }
+    return [...ids]
+  }, [scope, revision, task.messages])
   const cursor =
     authoritative && !live.historyBefore
       ? undefined
@@ -110,6 +132,7 @@ export function useConversationHistory<
   useEffect(() => {
     let stopped = false
     setHydrated(null)
+    setRestoreFinished(null)
     const restore = async () => {
       let restored = false
       try {
@@ -168,7 +191,10 @@ export function useConversationHistory<
         if (!stopped)
           setCacheError({ scope, error: `Could not restore conversation: ${String(cause)}` })
       } finally {
-        if (!stopped && restored) setHydrated(scope)
+        if (!stopped) {
+          if (restored) setHydrated(scope)
+          setRestoreFinished(scope)
+        }
       }
     }
     void restore()
@@ -286,7 +312,7 @@ export function useConversationHistory<
     // Keep transport pages small; fill the recent window incrementally.
     if (
       !prefetchRecent ||
-      hydrated !== scope ||
+      restoreFinished !== scope ||
       !cursor ||
       !connected ||
       task.messages.length >= refill.current ||
@@ -294,7 +320,31 @@ export function useConversationHistory<
     )
       return
     void load()
-  }, [scope, cursor, connected, load, hydrated, task.messages.length, delivery, prefetchRecent])
+  }, [
+    scope,
+    cursor,
+    connected,
+    load,
+    restoreFinished,
+    task.messages.length,
+    delivery,
+    prefetchRecent,
+  ])
+  // Whole messages and the reader's visible range stay intact; evicted pages remain reloadable.
+  const trim = useCallback(
+    (protectFrom: string | undefined) => {
+      if (pending.current?.scope === scope) return
+      setLoaded((value) => {
+        if (value.scope !== scope || conversationPagesSize(value.pages) <= historyBudget)
+          return value
+        const pages = trimConversationPages(value.pages, { budget: historyBudget, protectFrom })
+        if (pages === value.pages) return value
+        refill.current = recentMessageCount
+        return { ...value, pages }
+      })
+    },
+    [scope],
+  )
   const setBookmark = useCallback(
     (messageId: string, bookmarked: boolean) =>
       setLoaded((value) =>
@@ -313,13 +363,14 @@ export function useConversationHistory<
     [scope],
   )
   return {
+    bookmarks,
+    trim,
     setBookmark,
     task,
     load,
     hasMore: !!cursor,
     busy: delivery.scope === scope && delivery.busy,
-    error:
-      (delivery.scope === scope ? delivery.error : '') ||
-      (cacheError.scope === scope ? cacheError.error : ''),
+    error: delivery.scope === scope ? delivery.error : '',
+    cacheError: cacheError.scope === scope ? cacheError.error : '',
   }
 }

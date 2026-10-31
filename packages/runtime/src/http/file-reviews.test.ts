@@ -1,8 +1,10 @@
 import { Effect } from 'effect'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
+  createReviewSession,
   decode,
   reviewProgressSchema,
+  type ReviewSessionState,
   pullDetailSchema,
   type ReviewContext,
   type PullDetail,
@@ -231,6 +233,8 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
     headers: { Authorization: `Bearer ${mobile}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       context,
+      guided: true,
+      revision: initial.revision,
       files: initial.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
     }),
   })
@@ -244,6 +248,25 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
   })
   for (const file of initial.files)
     expect((await request(context, mobile, { ...file, viewed: true })).status).toBe(200)
+  const firstGuide = (await read(context)).guide
+  expect(firstGuide).toBeDefined()
+  const previousHead = detail
+  detail = { ...detail, pull: { ...detail.pull, headSha: 'f'.repeat(40) } }
+  await Effect.runPromise(
+    runtime.services.pullCache.sectionEffect('/file-review-test/absent', 1, 'changes', true),
+  )
+  const advanced = await read(context)
+  expect(advanced.files.map((file) => file.fingerprint)).toEqual(
+    initial.files.map((file) => file.fingerprint),
+  )
+  expect(advanced.revision).not.toBe(initial.revision)
+  expect(advanced.guide).toBeUndefined()
+  const staleSection = vi
+    .spyOn(runtime.services.pullCache, 'sectionEffect')
+    .mockReturnValueOnce(Effect.succeed(previousHead))
+  expect((await read(context)).guide).toBeUndefined()
+  expect(staleSection).toHaveBeenCalledWith('/file-review-test/absent', 1, 'changes', true)
+  staleSection.mockRestore()
   vi.spyOn(runtime.services.pulls, 'feedback').mockImplementation(async () => ({
     ...detail,
     files: [],
@@ -380,4 +403,246 @@ it('organizes authenticated current diffs and rejects invalid output and stale a
   model.mockClear()
   expect((await organize()).status).toBe(409)
   expect(model).not.toHaveBeenCalled()
+})
+
+it('shares verified guided reviews and saved step progress, and refuses stale guides after edits', async () => {
+  const { runtime, read, desktop, mobile, request } = await setup()
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
+  const initial = await read(context)
+  vi.spyOn(runtime.services.titles, 'organizeReview').mockResolvedValue(
+    JSON.stringify({
+      groups: [
+        {
+          label: 'Contract',
+          summary: 'Changes value and caller',
+          impact: 'Check the caller',
+          paths: ['types.ts', 'app.ts'],
+          excerpts: [
+            { path: 'types.ts', side: 'after', start: 1, end: 1 },
+            { path: 'app.ts', side: 'after', start: 900, end: 901 },
+          ],
+          questions: ['Does the caller use the new value?'],
+        },
+      ],
+    }),
+  )
+  const response = await fetch(`http://127.0.0.1:${runtime.port}/api/review/organize`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${desktop}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      context,
+      guided: true,
+      revision: initial.revision,
+      files: initial.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+    }),
+  })
+  expect(response.status).toBe(200)
+  const organized = decode(reviewProgressSchema, await response.json())
+  expect(organized.guide?.steps[0].excerpts).toEqual([
+    { path: 'types.ts', side: 'after', start: 1, end: 1, text: 'export const n = 2' },
+  ])
+  expect((await read(context, mobile)).guide).toEqual(organized.guide)
+  const move = (token = mobile, version = 0) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/review/guide`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context,
+        move: { id: organized.guide?.id, version, position: 0, reviewed: 0 },
+      }),
+    })
+  expect((await move('')).status).toBe(401)
+  expect((await move()).status).toBe(200)
+  expect((await move(desktop)).status).toBe(409)
+  expect((await read(context)).guide).toMatchObject({ seen: [0], version: 1 })
+  expect((await read(context)).files.every((file) => !file.viewed)).toBe(true)
+  await request(context, desktop, { ...initial.files[0], viewed: true })
+  expect((await read(context)).guide?.seen).toEqual([0])
+  runtime.services.store.updateTask('task', (task) => ({
+    ...task,
+    files: task.files.map((file) => ({ ...file, after: file.after + '\nchanged' })),
+  }))
+  expect((await read(context)).guide).toBeUndefined()
+  expect((await move(desktop, 1)).status).toBe(409)
+})
+
+it('sends a held guide only as compact state across read, mark and move, and restores it in the session', async () => {
+  const { runtime, read, desktop } = await setup()
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
+  const initial = await read(context)
+  const step = (label: string, path: string) => ({
+    label,
+    summary: `${label} summary `.padEnd(2000, 's'),
+    impact: `${label} impact `.padEnd(2000, 'i'),
+    paths: [path],
+    excerpts: [{ path, side: 'after', start: 1, end: 1 }],
+    questions: Array.from({ length: 5 }, (_, index) =>
+      `${label} question ${index} `.padEnd(500, 'q'),
+    ),
+  })
+  vi.spyOn(runtime.services.titles, 'organizeReview').mockResolvedValue(
+    JSON.stringify({ groups: [step('Contract', 'types.ts'), step('Caller', 'app.ts')] }),
+  )
+  const post = async (path: string, input: unknown) => {
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/review/${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${desktop}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+    const text = await response.text()
+    expect({ status: response.status, text }).toMatchObject({ status: 200 })
+    return { bytes: text.length, progress: decode(reviewProgressSchema, JSON.parse(text)) }
+  }
+  const generated = await post('organize', {
+    context,
+    guided: true,
+    revision: initial.revision,
+    files: initial.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+  })
+  const guide = generated.progress.guide!
+  // Generation stays complete, including its groups.
+  expect(generated.progress.groups.map((group) => group.label)).toEqual(['Contract', 'Caller'])
+  const full = await post('read', { context })
+  expect(full.progress.guide).toEqual(guide)
+  expect(full.progress.groups).toEqual([])
+  const compact = await post('read', { context, knownGuide: guide.id })
+  expect(compact.progress.guide).toBeUndefined()
+  expect(compact.progress.guideState).toEqual({
+    id: guide.id,
+    revision: guide.revision,
+    position: 0,
+    seen: [],
+    version: 0,
+  })
+  expect(full.bytes).toBeGreaterThan(13_000)
+  expect(compact.bytes).toBeLessThan(1_000)
+  // A different held guide still receives the complete one.
+  expect((await post('read', { context, knownGuide: 'other' })).progress.guide).toEqual(guide)
+  const marked = await post('set', {
+    context,
+    knownGuide: guide.id,
+    ...initial.files[0],
+    viewed: true,
+  })
+  expect(marked.progress.guideState?.version).toBe(0)
+  expect(marked.progress.files.find((file) => file.path === initial.files[0].path)?.viewed).toBe(
+    true,
+  )
+  const moved = await post('guide', {
+    context,
+    knownGuide: guide.id,
+    move: { id: guide.id, version: 0, position: 1, reviewed: 0 },
+  })
+  expect(moved.progress.guideState).toMatchObject({ position: 1, seen: [0], version: 1 })
+  expect(moved.bytes).toBeLessThan(1_000)
+
+  // The session names its held guide only after receiving one, then restores steps and groups.
+  const inputs: unknown[] = []
+  const states: ReviewSessionState[] = []
+  const session = createReviewSession(
+    context,
+    async (path, input) => {
+      inputs.push(input)
+      return (await post(path.slice('/api/review/'.length), input)).progress
+    },
+    (state) => states.push(state),
+  )
+  await session.refresh()
+  await session.refresh()
+  expect(inputs).toEqual([{ context }, { context, knownGuide: guide.id }])
+  const restored = states.at(-1)?.progress
+  expect(restored?.guide).toEqual({ ...guide, position: 1, seen: [0], version: 1 })
+  expect(restored?.groups.map((group) => [group.label, group.paths, group.summary])).toEqual(
+    guide.steps.map((step) => [step.title, step.paths, step.summary]),
+  )
+  expect(await session.moveGuide({ id: guide.id, version: 1, position: 0, reviewed: 1 })).toBe(true)
+  expect(states.at(-1)?.progress?.guide).toEqual({
+    ...guide,
+    position: 0,
+    seen: [0, 1],
+    version: 2,
+  })
+  session.stop()
+})
+
+it('does not publish an older guided generation over a newer completed one', async () => {
+  const { runtime, read } = await setup()
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
+  const initial = await read(context)
+  const output = JSON.stringify({
+    groups: [
+      {
+        label: 'Feature',
+        summary: 'Changes both files',
+        impact: 'Check caller',
+        paths: ['types.ts', 'app.ts'],
+      },
+    ],
+  })
+  let finish!: (output: string) => void
+  const model = vi
+    .spyOn(runtime.services.titles, 'organizeReview')
+    .mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve
+        }),
+    )
+    .mockResolvedValue(output)
+  const expected = initial.files.map(({ path, fingerprint }) => ({ path, fingerprint }))
+  const first = runtime.services.fileReviews.organize(
+    context,
+    undefined,
+    expected,
+    runtime.services.titles,
+    true,
+    initial.revision,
+  )
+  await vi.waitFor(() => expect(model).toHaveBeenCalledTimes(1))
+  const second = await runtime.services.fileReviews.organize(
+    context,
+    undefined,
+    expected,
+    runtime.services.titles,
+    true,
+    initial.revision,
+  )
+  const rejected = first.then(
+    () => {
+      throw new Error('The older generation unexpectedly succeeded')
+    },
+    (error: unknown) => {
+      expect(error).toMatchObject({ status: 409 })
+    },
+  )
+  finish(output)
+  await rejected
+  expect((await read(context)).guide?.id).toBe(second.guide?.id)
+})
+
+it('organizes a saved source independently of file ordering', async () => {
+  const { runtime, read } = await setup()
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'turn', turnId: 'turn' }
+  const initial = await read(context)
+  vi.spyOn(runtime.services.titles, 'organizeReview').mockResolvedValue(
+    JSON.stringify({
+      groups: [
+        {
+          label: 'Feature',
+          summary: 'Updates value and caller',
+          impact: 'Check callers',
+          paths: ['types.ts', 'app.ts'],
+        },
+      ],
+    }),
+  )
+  const result = await runtime.services.fileReviews.organize(
+    context,
+    undefined,
+    initial.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+    runtime.services.titles,
+    true,
+    initial.revision,
+  )
+  expect(result.guide?.steps[0].paths).toEqual(['types.ts', 'app.ts'])
 })

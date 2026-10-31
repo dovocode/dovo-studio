@@ -2,13 +2,15 @@ import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Keyboard, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   questionAnswerError,
   questionDraftAnswers,
   type QuestionAnswers,
+  type QuestionAttachmentIds,
+  type AgentQuestion,
   type QuestionDraft,
   type PendingQuestion,
 } from '@dovo/protocol'
@@ -21,12 +23,18 @@ export function QuestionForm({
   request,
   connected,
   onAnswer,
+  attachmentIdsByQuestion = {},
+  renderAttachments,
+  attachmentsBusy = false,
   runtimeId,
   notificationAccessible,
 }: {
   request: PendingQuestion
   connected: boolean
   onAnswer: (answers: QuestionAnswers | null) => Promise<void>
+  attachmentIdsByQuestion?: QuestionAttachmentIds
+  renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
+  attachmentsBusy?: boolean
   runtimeId?: string
   notificationAccessible: boolean
 }) {
@@ -66,8 +74,9 @@ export function QuestionForm({
   const submit = (answers: QuestionAnswers | null) => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (submitting.current || !connected) return
-        const invalid = answers && questionAnswerError(request.prompt.questions, answers)
+        if (submitting.current || !connected || attachmentsBusy) return
+        const invalid =
+          answers && questionAnswerError(request.prompt.questions, answers, attachmentIdsByQuestion)
         if (invalid) {
           setError(invalid)
           return
@@ -136,32 +145,34 @@ export function QuestionForm({
         keyboardShouldPersistTaps="handled"
       >
         {request.prompt.questions.map((q) => (
-          <QuestionField
-            key={q.id}
-            question={q}
-            draft={drafts[q.id]}
-            disabled={busy || !connected}
-            onChange={(draft) => {
-              edited.current = true
-              setDrafts((current) => ({
-                ...current,
-                [q.id]: draft,
-              }))
-              setError('')
-            }}
-          />
+          <View key={q.id} style={{ gap: 8 }}>
+            <QuestionField
+              question={q}
+              draft={drafts[q.id]}
+              disabled={busy || !connected || attachmentsBusy}
+              onChange={(draft) => {
+                edited.current = true
+                setDrafts((current) => ({
+                  ...current,
+                  [q.id]: draft,
+                }))
+                setError('')
+              }}
+            />
+            {renderAttachments?.(q, busy || !connected || attachmentsBusy)}
+          </View>
         ))}
       </ScrollView>
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <Action
           secondary
           label="Decline"
-          disabled={busy || !connected}
+          disabled={busy || !connected || attachmentsBusy}
           onPress={() => void submit(null)}
         />
         <Action
           label="Send answers"
-          disabled={busy || !connected}
+          disabled={busy || !connected || attachmentsBusy}
           onPress={() => void submit(questionDraftAnswers(drafts))}
         />
       </View>

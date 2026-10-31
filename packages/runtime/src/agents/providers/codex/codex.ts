@@ -54,6 +54,9 @@ type CodexConnection = {
   lifetime: AbortController
   requests?: { dispose: () => void }
   closing?: Promise<void>
+  transportError?: Error
+  transportTimer?: ReturnType<typeof setTimeout>
+  rejectTransport?: (error: Error) => void
   consumeNotification?: (method: string, params: unknown) => void
 }
 export function createCodexAdapter(): AgentAdapter {
@@ -68,6 +71,7 @@ export function createCodexAdapter(): AgentAdapter {
       connection.onSubagentEvent = undefined
     }
     connection.closing = (async () => {
+      clearTimeout(connection.transportTimer)
       connection.lifetime.abort()
       connection.requests?.dispose()
       connection.rpc.dispose()
@@ -143,11 +147,17 @@ export function createCodexAdapter(): AgentAdapter {
         previous.launchConfig === launchConfig &&
         previous.cwd === run.cwd &&
         previous.child.exitCode === null &&
+        !previous.transportError &&
+        !previous.closing &&
         !run.signal.aborted
           ? previous
           : undefined
       if (previous && !reusable) {
-        if (previous.nativeAgents.some(nativeAgentWorking)) {
+        if (
+          !previous.transportError &&
+          !previous.closing &&
+          previous.nativeAgents.some(nativeAgentWorking)
+        ) {
           if (run.taskId) idle.set(run.taskId, previous)
           throw new Error('Stop native Codex agents before changing their session configuration')
         }
@@ -217,6 +227,31 @@ export function createCodexAdapter(): AgentAdapter {
           for (const [taskId, connection] of idle) if (connection === transport) idle.delete(taskId)
           rpc.dispose()
         })
+      if (!reusable) {
+        const failTransport = (error: Error) => {
+          if (transport.closing || transport.transportError) return
+          transport.transportError = error
+          // stdout may close before Node reports the exit reason. Also let JSON-RPC
+          // dispatch buffered cancellation/completion messages before retiring the turn.
+          transport.transportTimer = setTimeout(() => {
+            if (transport.closing) return
+            if (transport.rejectTransport) transport.rejectTransport(error)
+            else {
+              for (const [taskId, connection] of idle)
+                if (connection === transport) idle.delete(taskId)
+              void close(transport).catch((error) =>
+                console.error('Could not drain disconnected Codex process:', error),
+              )
+            }
+          }, 1000)
+        }
+        rpc.onClose(() => failTransport(new Error('Codex RPC transport closed')))
+        rpc.onError(([error]) =>
+          failTransport(
+            new Error(`Codex RPC transport failed: ${error.message}`, { cause: error }),
+          ),
+        )
+      }
       const questionItems = new Set<string>()
       let threadId = run.sessionId
       let turnFinished = false
@@ -244,6 +279,7 @@ export function createCodexAdapter(): AgentAdapter {
       })
       // Attach a rejection handler immediately; the turn may fail during initialization.
       void completed.catch(() => {})
+      transport.rejectTransport = rejectTurn
       const onExit = (code: number | null) => {
         // Report why Codex stopped before disposal rejects its pending requests generically.
         rejectTurn(new Error(`Codex exited (${code}). ${transport.stderr.trim()}`.trim()))
@@ -838,6 +874,7 @@ export function createCodexAdapter(): AgentAdapter {
         clearTimeout(timeout)
         run.signal.removeEventListener('abort', abort)
         transport.consumeNotification = undefined
+        transport.rejectTransport = undefined
         child.off('error', rejectTurn)
         child.off('exit', onExit)
         if (
@@ -847,6 +884,7 @@ export function createCodexAdapter(): AgentAdapter {
           threadId &&
           !run.signal.aborted &&
           child.exitCode === null &&
+          !transport.transportError &&
           !transport.lifetime.signal.aborted
         ) {
           transport.sessionId = threadId

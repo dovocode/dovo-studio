@@ -38,13 +38,12 @@ export const ScreenHeader=({title,buttons})=><header><h1>{title}</h1>{buttons?.m
 export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
-const preferenceModule = `
-import {useSyncExternalStore} from 'react';
-const preferences={threadDensity:'compact',computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed'],confirmArchive:false};
-window.listPreferences??=preferences;window.preferenceListeners??=new Set();window.setListPreferences=changes=>{window.listPreferences={...window.listPreferences,...changes};window.preferenceListeners.forEach(notify=>notify())};
-export const useMobilePreferences=()=>useSyncExternalStore(notify=>{window.preferenceListeners.add(notify);return()=>window.preferenceListeners.delete(notify)},()=>window.listPreferences);export const readMobilePreferences=()=>window.listPreferences;export const updateMobilePreferences=changes=>{window.listPreferences={...window.listPreferences,...changes};window.preferenceListeners.forEach(notify=>notify())};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
-`
+const preferenceModule = `export * from '${mobile}runtime/preferences/app-preferences.ts';`
 const stubs = [
+  {
+    path: '@react-native-async-storage/async-storage',
+    contents: `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
+  },
   { path: 'react-native-gesture-handler', contents: controls },
   { path: 'react-native', contents: controls },
   {
@@ -204,6 +203,7 @@ window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['ligh
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,RuntimeContext,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
+import {updateMobilePreferences,readMobilePreferences,preferencesReady} from '${mobile}runtime/preferences/app-preferences.ts';window.setListPreferences=updateMobilePreferences;Object.defineProperty(window,'listPreferences',{get:readMobilePreferences});window.preferencesReady=preferencesReady;
 import TasksScreen from './apps/mobile/src/screens/tasks.tsx';
 const now=Date.now(),iso=age=>new Date(now-age).toISOString();
 const profile=runtimeProfile({address:'http://mobile-owner.lan:8787',token:'test-token-private-at-least-32-characters'},'Owner');
@@ -264,6 +264,19 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   await page.goto('http://mobile-task-list.lan/')
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'dovo.mobile-preferences.v1',
+      JSON.stringify({
+        taskSort: 'newest',
+        taskGrouping: 'none',
+        workingSection: false,
+        collapsedThreadSections: ['working', 'snoozed'],
+        computerRefresh: 'manual',
+        threadSectionOrder: ['active', 'working', 'waiting', 'snoozed', 'settled'],
+      }),
+    ),
+  )
   if (process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.evaluate(() => {
@@ -1375,6 +1388,73 @@ try {
   assert.match(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
     /Working/,
+  )
+  await page.evaluate(() =>
+    window.setListPreferences({
+      taskGrouping: 'status',
+      workingSection: true,
+      collapsedThreadSections: [],
+    }),
+  )
+  await page.reload()
+  const mount = async () => {
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.evaluate(() => window.preferencesReady)
+    await page.getByRole('button', { name: /^Working,/ }).waitFor()
+  }
+  await mount()
+  const working = page.getByRole('button', { name: /^Working,/ })
+  await working.click()
+  assert.equal(await working.getAttribute('aria-expanded'), 'false')
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
+  const project = page.getByRole('button', { name: /^Project, \d+ tasks$/ })
+  await project.click()
+  assert.equal(await project.getAttribute('aria-expanded'), 'false')
+  await page.waitForFunction(() => {
+    const saved = JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1'))
+    return (
+      saved.collapsedThreadSections.includes('working') &&
+      saved.collapsedThreadSections.some((key) => key.startsWith('project:'))
+    )
+  })
+  await page.reload()
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await project.waitFor()
+  assert.equal(
+    await project.getAttribute('aria-expanded'),
+    'false',
+    'Project collapse survives a full restart using the real preference module',
+  )
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'status' }))
+  await working.waitFor()
+  assert.equal(
+    await working.getAttribute('aria-expanded'),
+    'false',
+    'Working collapse survives a full restart',
+  )
+  await working.click()
+  await page.waitForFunction(
+    () =>
+      !JSON.parse(
+        localStorage.getItem('dovo.mobile-preferences.v1'),
+      ).collapsedThreadSections.includes('working'),
+  )
+  await page.reload()
+  await mount()
+  assert.equal(
+    await working.getAttribute('aria-expanded'),
+    'true',
+    'Explicit expansion survives the next restart',
+  )
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
+  assert.equal(
+    await project.getAttribute('aria-expanded'),
+    'false',
+    'Another section toggle preserves the project choice',
+  )
+  assert.deepEqual(errors, [])
+  console.log(
+    'Mobile task-list status and project sections persist collapse and expansion through full reloads using real preferences and a storage adapter.',
   )
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',

@@ -42,7 +42,7 @@ const result = await bundleBrowser(
     {
       path: '../../runtime/connection/provider',
       importer: mobile,
-      contents: `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,snapshot:{workspace:{tasks:[{id:'task',draftAttachments:Array.from({length:window.count},()=>({id:'old'}))}]}},callEffect:(path,input)=>Effect.sync(()=>{window.uploads.push({path,input})})});`,
+      contents: `import {Effect} from 'effect';const review=()=>{window.reviews=(window.reviews||0)+1};export const useRuntime=()=>({connected:true,profile:{id:'host',connection:{address:'host',token:'token'}},snapshot:{workspace:{tasks:[{id:'task',draftAttachments:Array.from({length:window.count},()=>({id:'old'}))}]}},reviewAttachments:review,readRuntimeEffect:(_profile,path,input)=>Effect.try({try:()=>{window.serverGuard??='guard-0';if(path.endsWith('draft-guard')){window.guardReads=(window.guardReads||0)+1;return {guard:window.serverGuard}}window.commits=(window.commits||[]).concat(input);if(window.failCommit)throw Error('commit response lost');if(input.guard!==window.serverGuard)throw Error('draft changed');const nextGuard='guard-'+window.commits.length;window.serverGuard=nextGuard;if(window.changeAfterCommit){window.changeAfterCommit=false;window.serverGuard='new-draft'}return {attachment:{id:input.id,name:'file',mime:'text/plain',size:10},revision:1,nextGuard}},catch:error=>error}),refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.sync(()=>{window.finished=(window.finished||0)+1}),requestAttachmentEffect:(_profile,input)=>Effect.sync(()=>{window.uploads.push({path:'/api/attachments/recoverable-upload',input});return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:10},revision:1}})});`,
     },
     {
       path: '../../ui/controls/use-action',
@@ -94,7 +94,13 @@ try {
     'shot.png',
   ])
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep my draft')
-  assert.equal((await page.evaluate(() => window.uploads[0])).path, '/api/attachments/upload')
+  assert.equal(
+    (await page.evaluate(() => window.uploads[0])).path,
+    '/api/attachments/recoverable-upload',
+  )
+  assert.equal((await page.evaluate(() => window.uploads[0])).input.detached, true)
+  assert.equal(await page.evaluate(() => window.commits.length), 2)
+  assert.deepEqual(await page.evaluate(() => window.alerts), [])
   await drop([
     { uri: 'file:///cache/dovo-file-drops/large', name: 'large.pdf' },
     { uri: 'file:///cache/dovo-file-drops/large-image', name: 'large.png', mimeType: 'image/png' },
@@ -132,6 +138,51 @@ try {
   await page.waitForFunction(() => window.released.length === 4)
   await page.getByRole('alert').filter({ hasText: 'up to 5 files' }).waitFor()
   assert.equal(await page.evaluate(() => window.uploads.length), 5)
+  await page.evaluate(() => {
+    window.count = 0
+    window.failCommit = true
+    window.enableDrop(false)
+    window.enableDrop(true)
+  })
+  await page.evaluate(() =>
+    window.uploadAssets([
+      { uri: 'file:///lost', name: 'lost.txt' },
+      { uri: 'file:///after-lost', name: 'after-lost.txt' },
+    ]),
+  )
+  assert.equal(await page.evaluate(() => window.uploads.length), 6)
+  assert.equal(await page.evaluate(() => window.commits.length), 6)
+  assert.equal(await page.evaluate(() => window.finished), 5)
+  assert.ok(await page.evaluate(() => window.reviews > 0))
+  assert.equal(await page.evaluate(() => window.alerts.at(-1)[0]), 'Attachments saved for review')
+  const beforeBatch = await page.evaluate(() => ({
+    uploads: window.uploads.length,
+    commits: window.commits.length,
+    reads: window.guardReads,
+    finished: window.finished,
+  }))
+  await page.evaluate(() => {
+    window.failCommit = false
+    window.changeAfterCommit = true
+  })
+  await page.evaluate(() =>
+    window.uploadAssets([
+      { uri: 'file:///batch-one', name: 'one.txt' },
+      { uri: 'file:///batch-two', name: 'two.txt' },
+      { uri: 'file:///batch-three', name: 'three.txt' },
+    ]),
+  )
+  assert.equal(await page.evaluate(() => window.guardReads), beforeBatch.reads + 1)
+  assert.deepEqual(
+    await page.evaluate(
+      (start) => window.uploads.slice(start).map((item) => item.input.name),
+      beforeBatch.uploads,
+    ),
+    ['one.txt', 'two.txt'],
+  )
+  assert.equal(await page.evaluate(() => window.commits.length), beforeBatch.commits + 2)
+  assert.equal(await page.evaluate(() => window.finished), beforeBatch.finished + 1)
+  await page.getByRole('alert').filter({ hasText: 'three.txt: not uploaded' }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile native-drop boundary: ordered uploads, draft preservation, size/count limits, disabled composer and temporary-file cleanup passed',

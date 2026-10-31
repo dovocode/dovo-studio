@@ -1,4 +1,6 @@
 import { BrowserAddressInput } from './browser-address-input'
+import { BrowserElementFeedback } from './browser-element-feedback'
+import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/protocol'
 import { BrowserDownloadsPanel } from './browser-downloads-panel'
 import { browserPageFavicon } from '@dovo/protocol'
 import { flushSync } from 'react-dom'
@@ -2579,6 +2581,43 @@ function BrowserContent({
         </>
       )}
       {newTabMenu}
+      {!shared && mode !== 'devices' && (
+        <BrowserElementFeedback
+          key={`${activeRuntimeId}:${taskId}:${browserKey}:${mode}`}
+          taskId={taskId}
+          enabled={!!url && connected && (mode === 'web' ? !!browser : remoteOnline)}
+          capture={async () => {
+            if (mode === 'web' && browser) {
+              const result = await browser({ action: 'element-snapshot', key: browserKey })
+              if (!result?.elementCapture)
+                throw new Error(
+                  'Element selection is unavailable. Update the desktop app and try again.',
+                )
+              return result.elementCapture
+            }
+            return tabRequest(
+              '/api/previews/browser/element-snapshot',
+              { taskId, tabId: activeTab, profileId },
+              browserElementCaptureSchema,
+            )
+          }}
+          inspect={async (point) => {
+            if (mode === 'web' && browser) {
+              const result = await browser({ action: 'element-inspect', key: browserKey, ...point })
+              if (!result?.element)
+                throw new Error('The selected element is unavailable. Capture the page again.')
+              return result.element
+            }
+            return (
+              await tabRequest(
+                '/api/previews/browser/element-inspect',
+                { taskId, tabId: activeTab, profileId, ...point },
+                browserElementResultSchema,
+              )
+            ).element
+          }}
+        />
+      )}
       {browserOptions(pageActions)}
     </form>
   )

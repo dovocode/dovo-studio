@@ -28,6 +28,8 @@ it('keeps public health lightweight and readiness authenticated, showing stale s
     runtime.services.jobs.schedulerStatus.lastSuccess = new Date(now).toISOString()
     const healthy = decode(runtimeDiagnosticsSchema, await (await request(token)).json())
     expect(healthy.ready).toBe(true)
+    expect(healthy.memory?.rssBytes).toBeGreaterThan(0)
+    expect(healthy.memory?.heapUsedBytes).toBeLessThanOrEqual(healthy.memory?.heapLimitBytes ?? 0)
     runtime.services.store.providerActions.record({
       id: 'uncertain',
       taskId: 'task',

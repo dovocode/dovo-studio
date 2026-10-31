@@ -9,6 +9,7 @@ import { githubChecks } from '../forges/providers/github-checks.js'
 import { githubLifecycle } from '../forges/providers/github-lifecycle.js'
 import { Schema } from 'effect'
 import type { GitService } from '../git/git.js'
+import type { GithubAccessContext, GithubCredentialSource } from '../git/github-access.js'
 import {
   pullLineCommentSchema,
   pullLineCommentResponse,
@@ -77,9 +78,12 @@ export class PullRequests {
       profile?: string
       viewerLogin?: string
       env?: Record<string, string>
-      credential?: (
-        cwd: string,
-      ) => Promise<{ token: string | undefined; onUnauthorized: () => void }>
+      access?: GithubAccessContext
+      credential?: (cwd: string) => Promise<{
+        token: string | undefined
+        onUnauthorized: () => void
+        source?: GithubCredentialSource
+      }>
       validate?: () => void
     },
   ) {}
@@ -130,6 +134,12 @@ export class PullRequests {
             token,
             onUnauthorized: credential?.onUnauthorized,
             beforeDispatch: this.target.validate,
+            access: this.target.access ?? {
+              host: this.target.host,
+              repository: this.target.repository,
+              source: credential?.source,
+              login: this.target.viewerLogin,
+            },
             ...(this.target.env ? { env: this.target.env } : {}),
           }
         : undefined,

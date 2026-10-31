@@ -65,6 +65,7 @@ export function TaskRouteScreen() {
         runtimeId={params.runtimeId}
         onBrowse={backToTasks}
         onNewThread={() => router.push('/new', { withAnchor: true })}
+        onDraft={(runtimeId, taskId) => router.setParams({ runtimeId, taskId, draft: 'true' })}
         onCommit={(runtimeId, taskId) => router.setParams({ runtimeId, taskId, draft: undefined })}
       />
     )

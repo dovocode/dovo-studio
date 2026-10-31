@@ -1,6 +1,16 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import Database from 'better-sqlite3'
-import { mkdtemp, readFile, rm, writeFile, open, stat, truncate, utimes } from 'node:fs/promises'
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+  open,
+  stat,
+  truncate,
+  utimes,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { openDatabase } from './database'
@@ -13,7 +23,11 @@ import type { Task } from '@dovo/protocol'
 import * as backup from './backup'
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, statfs: vi.fn<typeof actual.statfs>(actual.statfs) }
+  return {
+    ...actual,
+    statfs: vi.fn<typeof actual.statfs>(actual.statfs),
+    rm: vi.fn<typeof actual.rm>(actual.rm),
+  }
 })
 const paths: string[] = []
 afterEach(async () => {
@@ -26,6 +40,56 @@ async function setup() {
   const path = join(dir, 'runtime.sqlite')
   return { dir, path, db: openDatabase(path), backups: new RuntimeBackups(path) }
 }
+
+it('cleans owned verification sidecars and abandoned partial snapshots without touching other files', async () => {
+  const f = await setup()
+  try {
+    await f.backups.create()
+    for (const suffix of ['', '-wal', '-shm'])
+      await writeFile(
+        join(f.backups.directory, `runtime-backup-abandoned.sqlite.partial${suffix}`),
+        'abandoned',
+      )
+    const unrelated = join(f.backups.directory, 'unrelated.sqlite.partial-wal')
+    await writeFile(unrelated, 'keep')
+    await f.backups.create()
+    expect(
+      (await readdir(f.backups.directory)).filter(
+        (name) => name.startsWith('runtime-backup-') && name.includes('.partial'),
+      ),
+    ).toEqual([])
+    expect(await readFile(unrelated, 'utf8')).toBe('keep')
+    const snapshot = (await f.backups.list())[0]
+    f.db.close()
+    await restoreRuntimeBackup(f.path, snapshot.path)
+    expect((await readdir(f.dir)).filter((name) => name.includes('.restore-'))).toEqual([])
+  } finally {
+    if (f.db.open) f.db.close()
+  }
+})
+
+it('removes staged sidecars when verification rejects a completed backup copy', async () => {
+  const f = await setup()
+  const original = backup.backupRuntimeDatabase
+  vi.spyOn(backup, 'backupRuntimeDatabase').mockImplementation(async (source, destination) => {
+    await original(source, destination)
+    const copy = new Database(destination)
+    try {
+      copy.exec('DROP TABLE documents')
+    } finally {
+      copy.close()
+    }
+  })
+  try {
+    await expect(f.backups.create()).rejects.toThrow('not a Dovo runtime database')
+    expect(
+      (await readdir(f.backups.directory)).filter((name) => name.includes('.partial')),
+    ).toEqual([])
+    expect(await f.backups.list()).toEqual([])
+  } finally {
+    f.db.close()
+  }
+})
 
 it('verifies committed WAL contents, bounds retention and restores under the runtime lock', async () => {
   const f = await setup()
@@ -227,5 +291,89 @@ it('rejects insufficient free space before copying and preserves the last verifi
   } finally {
     vi.mocked(fs.statfs).mockReset()
     f.db.close()
+  }
+})
+
+it('restores a genuinely missing live database and retains existing databases on preservation failure', async () => {
+  const f = await setup()
+  f.db.prepare('INSERT INTO documents VALUES (?, ?)').run('fixture', 'snapshot')
+  const snapshot = await f.backups.create()
+  f.db.close()
+  await rm(f.path)
+  await restoreRuntimeBackup(f.path, snapshot.path)
+  const live = new Database(f.path)
+  live.prepare('UPDATE documents SET value=? WHERE id=?').run('current', 'fixture')
+  live.close()
+  const original = backup.backupRuntimeDatabase
+  vi.spyOn(backup, 'backupRuntimeDatabase').mockImplementation(async (source, destination) => {
+    if (source === f.path)
+      throw Object.assign(new Error('Existing database could not be preserved'), {
+        code: 'SQLITE_CANTOPEN',
+      })
+    await original(source, destination)
+  })
+  await expect(restoreRuntimeBackup(f.path, snapshot.path)).rejects.toThrow(
+    'could not be preserved',
+  )
+  const preserved = new Database(f.path, { readonly: true })
+  try {
+    expect(preserved.prepare('SELECT value FROM documents WHERE id=?').get('fixture')).toEqual({
+      value: 'current',
+    })
+  } finally {
+    preserved.close()
+  }
+  expect((await readdir(f.dir)).filter((name) => name.includes('.restore-'))).toEqual([])
+  const release = acquireProcessLock(join(f.dir, 'runtime-process.lock'))
+  release()
+})
+
+it('waits for every staged unlink before releasing the restore lock and retains the primary failure', async () => {
+  const fs = await import('node:fs/promises')
+  const f = await setup()
+  const snapshot = await f.backups.create()
+  f.db.close()
+  let release!: () => void, started!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const pending = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const remove = vi.mocked(fs.rm).getMockImplementation()!
+  vi.spyOn(backup, 'backupRuntimeDatabase').mockRejectedValueOnce(
+    new Error('primary staging failure'),
+  )
+  vi.mocked(fs.rm).mockImplementation(async (path, options) => {
+    if (String(path).includes('.restore-') && String(path).endsWith('-wal'))
+      throw new Error('WAL cleanup failed')
+    if (String(path).includes('.restore-') && String(path).endsWith('-shm')) {
+      started()
+      await held
+    }
+    return remove(path, options)
+  })
+  const outcome = restoreRuntimeBackup(f.path, snapshot.path).catch((error: unknown) => error)
+  try {
+    await pending
+    expect(() => acquireProcessLock(join(f.dir, 'runtime-process.lock'))).toThrow(
+      'Another runtime operation',
+    )
+    release()
+    const error = await outcome
+    expect(error).toBeInstanceOf(AggregateError)
+    if (!(error instanceof AggregateError)) throw new Error('Expected aggregate cleanup failure')
+    expect(error.message).toContain('primary staging failure')
+    expect(error.errors.map(String)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('primary staging failure'),
+        expect.stringContaining('WAL cleanup failed'),
+      ]),
+    )
+    acquireProcessLock(join(f.dir, 'runtime-process.lock'))()
+  } finally {
+    release()
+    await outcome
+    vi.mocked(fs.rm).mockReset()
   }
 })

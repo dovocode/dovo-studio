@@ -385,6 +385,7 @@ export function ComposerProject({
             disabled={locked}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
                 projects.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
@@ -397,6 +398,7 @@ export function ComposerProject({
             role="group"
             aria-label="Projects"
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
               const buttons = Array.from(
                 event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),

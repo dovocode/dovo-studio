@@ -1,5 +1,11 @@
 import { Effect, Schema } from 'effect'
-import { decode, mutableStruct, usagePriceSchema, resolveTaskAgent } from '@dovo/protocol'
+import {
+  decode,
+  mutableStruct,
+  usagePriceSchema,
+  resolveTaskAgent,
+  type Agent,
+} from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { RuntimeServices } from '../../runtime-services.js'
 import { body } from '../support/body.js'
@@ -54,14 +60,53 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
         const provider = task.history.latestTurn?.provider
         if (provider) sessions.add(`${provider}:${task.sessionId}`)
       }
+    // Transcript scanning only needs directories. Never unlock unrelated API credentials
+    // just to read local history, and never fall back to a different account on failure.
+    const workspace = s.store.get()
+    const configuredAgents = [
+      ...workspace.agents,
+      ...workspace.tasks.flatMap((task) => {
+        const agent = resolveTaskAgent(task, workspace.agents)
+        return agent ? [agent] : []
+      }),
+    ]
+    const directoryVariables = new Set([
+      'HOME',
+      'XDG_DATA_HOME',
+      'CODEX_HOME',
+      'CLAUDE_CONFIG_DIR',
+      'OPENCODE_DATA_DIR',
+    ])
+    const agents: Agent[] = []
+    for (const agent of configuredAgents) {
+      if (!['codex', 'claude', 'opencode'].includes(agent.provider)) continue
+      const resolved = yield* serviceResult(
+        s.agents.secretReferences
+          .resolve(
+            s.agents.configure({
+              ...agent,
+              envSecrets: Object.fromEntries(
+                Object.entries(agent.envSecrets ?? {}).filter(([name]) =>
+                  directoryVariables.has(name),
+                ),
+              ),
+            }),
+          )
+          .then(
+            (agent) => ({ agent }),
+            () => ({ agent: undefined }),
+          ),
+      )
+      if (resolved.agent) agents.push(resolved.agent)
+      else
+        notices.push(
+          `Could not resolve transcript directories for agent ${agent.id}. Its configured history was not scanned.`,
+        )
+    }
     const external = yield* serviceResult(
       s.store.usageTranscripts.read(
         [
-          ...s.store.get().agents,
-          ...s.store.get().tasks.flatMap((task) => {
-            const agent = resolveTaskAgent(task, s.store.get().agents)
-            return agent ? [agent] : []
-          }),
+          ...agents,
           ...(['codex', 'claude', 'opencode'] as const).map((provider) => ({
             id: `usage:${provider}`,
             name: provider,

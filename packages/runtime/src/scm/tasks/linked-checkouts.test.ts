@@ -9,7 +9,9 @@ import { fixture } from '../../testing/fixture.js'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../git/worktrees.js'
 import type { AgentAdapter } from '../../agents/execution/types.js'
+import { checkpointCanUndo } from '@dovo/protocol'
 import type { Automation } from '@dovo/protocol'
+import { WorkspaceStore } from '../../storage/workspace.js'
 
 vi.setConfig(runtimeIntegration)
 function barrier() {
@@ -44,6 +46,272 @@ async function setup() {
   }))
   return { s, primary, secondary }
 }
+
+it('rejects a delayed duplicate undo before it can replace the successful redo backup', async () => {
+  const { s, primary } = await setup()
+  const task = s.tasks.create({
+    title: 'Race',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const before = await s.git.snapshot(primary.directory, 'refs/dovo/checkpoints/race/before')
+  await writeFile(join(primary.directory, 'hello.txt'), 'later edits\n')
+  s.store.updateTaskHistory(task.id, (current) => ({
+    ...current,
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'reply',
+        agentId: 'agent',
+        provider: 'codex',
+        model: '',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        checkpoint: { before, files: [], omitted: [] },
+      },
+    ],
+  }))
+  const entered = barrier()
+  const release = barrier()
+  const directory = s.checkouts.directory.bind(s.checkouts)
+  vi.spyOn(s.checkouts, 'directory').mockImplementationOnce(async (id) => {
+    entered.resolve()
+    await release.promise
+    return directory(id)
+  })
+  const delayed = s.tasks.restoreTurn(task.id, 'turn', 'undo')
+  try {
+    await entered.promise
+    await s.tasks.restoreTurn(task.id, 'turn', 'undo')
+    const undone = s.store.task(task.id).turns?.[0].checkpoint?.undone
+    release.resolve()
+    await expect(delayed).rejects.toMatchObject({ status: 409 })
+    expect(s.store.task(task.id).turns?.[0].checkpoint?.undone).toEqual(undone)
+    await s.tasks.restoreTurn(task.id, 'turn', 'redo')
+    expect(await readFile(join(primary.directory, 'hello.txt'), 'utf8')).toBe('later edits\n')
+  } finally {
+    release.resolve()
+  }
+})
+
+it.each(['undo', 'redo'] as const)(
+  'rolls back both checkouts when %s history persistence fails and preserves retry recovery',
+  async (direction) => {
+    const { s, primary, secondary } = await setup()
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        await writeFile(join(primary.directory, 'hello.txt'), 'agent frontend\n')
+        await writeFile(join(secondary.directory, 'hello.txt'), 'agent backend\n')
+        run.onText('Updated')
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Recovery',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+      linkedCheckouts: [
+        { id: 'backend-link', repositoryId: 'backend', execution: 'main', access: 'edit' },
+      ],
+    })
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    const turn = s.store.task(task.id).turns?.at(-1)
+    if (!turn?.checkpoint) throw new Error('Missing checkpoint')
+    // Redo must recover edits made after the agent finished, too.
+    await writeFile(join(primary.directory, 'hello.txt'), 'later frontend\n')
+    await writeFile(join(secondary.directory, 'hello.txt'), 'later backend\n')
+    if (direction === 'redo') await s.tasks.restoreTurn(task.id, turn.id, 'undo')
+    const checkpoint = s.store.task(task.id).turns?.at(-1)?.checkpoint
+    const contents = await Promise.all(
+      [primary, secondary].map((f) => readFile(join(f.directory, 'hello.txt'), 'utf8')),
+    )
+    const persist = s.store.updateTaskHistory.bind(s.store)
+    let saves = 0
+    vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((...args) => {
+      if (++saves === (direction === 'undo' ? 2 : 1)) throw new Error('disk full')
+      return persist(...args)
+    })
+    await expect(s.tasks.restoreTurn(task.id, turn.id, direction)).rejects.toThrow(
+      'All checkouts restored to their previous contents',
+    )
+    expect(
+      await Promise.all(
+        [primary, secondary].map((f) => readFile(join(f.directory, 'hello.txt'), 'utf8')),
+      ),
+    ).toEqual(contents)
+    // A fresh store must see the same durable undo state after the failed operation.
+    expect(new WorkspaceStore(s.db).task(task.id).turns?.at(-1)?.checkpoint).toEqual(checkpoint)
+    await s.tasks.restoreTurn(task.id, turn.id, direction)
+    if (direction === 'undo') await s.tasks.restoreTurn(task.id, turn.id, 'redo')
+    expect(await readFile(join(primary.directory, 'hello.txt'), 'utf8')).toBe('later frontend\n')
+    expect(await readFile(join(secondary.directory, 'hello.txt'), 'utf8')).toBe('later backend\n')
+  },
+)
+
+async function recoveryFixture() {
+  const f = await setup()
+  const { s, primary, secondary } = f
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      await writeFile(join(primary.directory, 'hello.txt'), 'agent frontend\n')
+      await writeFile(join(secondary.directory, 'hello.txt'), 'agent backend\n')
+      run.onText('Updated')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Durable recovery',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+    linkedCheckouts: [
+      { id: 'primary', repositoryId: 'backend', execution: 'main', access: 'edit' },
+    ],
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const turn = s.store.task(task.id).turns?.at(-1)
+  if (!turn?.checkpoint) throw new Error('Missing checkpoint')
+  await writeFile(join(primary.directory, 'hello.txt'), 'later frontend\n')
+  await writeFile(join(secondary.directory, 'hello.txt'), 'later backend\n')
+  return { ...f, task, turn }
+}
+
+it.each(['file restore', 'history save'] as const)(
+  'preserves original redo targets across failed %s, failed rollback and resumed undo',
+  async (failure) => {
+    const { s, primary, secondary, task, turn } = await recoveryFixture()
+    const restore = s.git.restoreSnapshot.bind(s.git)
+    let restores = 0
+    const fault = vi.spyOn(s.git, 'restoreSnapshot').mockImplementation(async (...args) => {
+      if (args[2].includes('/rollback-')) throw new Error('rollback unavailable')
+      if (failure === 'file restore' && ++restores === 2) throw new Error('checkout unavailable')
+      return restore(...args)
+    })
+    const persist = s.store.updateTaskHistory.bind(s.store)
+    let saves = 0
+    const storageFault = vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((...args) => {
+      if (failure === 'history save' && ++saves === 2) throw new Error('disk full')
+      return persist(...args)
+    })
+    await expect(s.tasks.restoreTurn(task.id, turn.id, 'undo')).rejects.toThrow(
+      'Undo recovery is pending',
+    )
+    const checkpoint = new WorkspaceStore(s.db).task(task.id).turns?.at(-1)?.checkpoint
+    expect(checkpoint?.restorePending).toBe(true)
+    expect(checkpointCanUndo(checkpoint)).toBe(true)
+    expect(checkpoint?.undone?.backup).toBeTruthy()
+    expect(checkpoint?.linked?.[0].undone?.backup).toBeTruthy()
+    // A linked checkout named primary has a separate recovery target.
+    expect(checkpoint?.undone?.backup).not.toBe(checkpoint?.linked?.[0].undone?.backup)
+    await expect(s.tasks.start(task.id)).rejects.toMatchObject({ status: 409 })
+    fault.mockRestore()
+    storageFault.mockRestore()
+    await s.tasks.restoreTurn(task.id, turn.id, 'undo')
+    const finished = new WorkspaceStore(s.db).task(task.id).turns?.at(-1)?.checkpoint
+    expect(finished?.restorePending).toBeUndefined()
+    expect(finished?.undone).toEqual(checkpoint?.undone)
+    expect(finished?.linked?.[0].undone).toEqual(checkpoint?.linked?.[0].undone)
+    expect(await readFile(join(primary.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+    expect(await readFile(join(secondary.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+    await s.tasks.restoreTurn(task.id, turn.id, 'redo')
+    expect(await readFile(join(primary.directory, 'hello.txt'), 'utf8')).toBe('later frontend\n')
+    expect(await readFile(join(secondary.directory, 'hello.txt'), 'utf8')).toBe('later backend\n')
+  },
+)
+
+it('refuses resumed undo after intervening edits and keeps both recovery snapshots reachable', async () => {
+  const { s, primary, task, turn } = await recoveryFixture()
+  const restore = s.git.restoreSnapshot.bind(s.git)
+  const fault = vi.spyOn(s.git, 'restoreSnapshot').mockImplementation(async (...args) => {
+    if (args[2].includes('/rollback-')) throw new Error('rollback unavailable')
+    await restore(...args)
+    throw new Error('restore interrupted after writing files')
+  })
+  await expect(s.tasks.restoreTurn(task.id, turn.id, 'undo')).rejects.toThrow(
+    'Undo recovery is pending',
+  )
+  const original = s.store.task(task.id).turns?.at(-1)?.checkpoint?.undone?.backup
+  fault.mockRestore()
+  await writeFile(join(primary.directory, 'hello.txt'), 'edits after interruption\n')
+  const attempt = s.tasks.restoreTurn(task.id, turn.id, 'undo')
+  await expect(attempt).rejects.toThrow('Files changed after the interrupted undo')
+  await expect(attempt).rejects.toThrow('retained in refs/dovo/checkpoints/')
+  expect(await readFile(join(primary.directory, 'hello.txt'), 'utf8')).toBe(
+    'edits after interruption\n',
+  )
+  expect(new WorkspaceStore(s.db).task(task.id).turns?.at(-1)?.checkpoint?.undone?.backup).toBe(
+    original,
+  )
+})
+
+it('does not touch files when undo intent cannot be persisted', async () => {
+  const { s, primary, task, turn } = await recoveryFixture()
+  const restore = vi.spyOn(s.git, 'restoreSnapshot')
+  vi.spyOn(s.store, 'updateTaskHistory').mockImplementationOnce(() => {
+    throw new Error('disk full')
+  })
+  await expect(s.tasks.restoreTurn(task.id, turn.id, 'undo')).rejects.toThrow('disk full')
+  expect(restore).not.toHaveBeenCalled()
+  expect(await readFile(join(primary.directory, 'hello.txt'), 'utf8')).toBe('later frontend\n')
+  expect(new WorkspaceStore(s.db).task(task.id).turns?.at(-1)?.checkpoint?.undone).toBeUndefined()
+})
+
+it.each(['primary', 'linked-only'] as const)(
+  'retries %s work through durable undo without adding a synthetic request',
+  async (kind) => {
+    const { s, task, turn } = await recoveryFixture()
+    if (kind === 'primary')
+      s.store.updateTaskHistory(task.id, (current) => ({
+        ...current,
+        turns: current.turns?.map((item) =>
+          item.id === turn.id && item.checkpoint
+            ? { ...item, checkpoint: { ...item.checkpoint, linked: undefined } }
+            : item,
+        ),
+      }))
+    else
+      s.store.updateTaskHistory(task.id, (current) => ({
+        ...current,
+        turns: current.turns?.map((item) =>
+          item.id === turn.id && item.checkpoint
+            ? {
+                ...item,
+                checkpoint: { ...item.checkpoint, files: [], omitted: [], after: undefined },
+              }
+            : item,
+        ),
+      }))
+    let prompt = ''
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        prompt = run.prompt
+        run.onText('Retried')
+      },
+    })
+    const restore = vi.spyOn(s.tasks, 'restoreTurn')
+    await runClientEffect(s.tasks.retryTurnEffect(task.id, turn.id))
+    await waitForRuntime(() => expect(s.store.task(task.id).status).toBe('review'))
+    expect(restore).toHaveBeenCalledWith(task.id, turn.id, 'undo', false)
+    const saved = s.store.task(task.id)
+    expect(
+      saved.turns?.find((item) => item.id === turn.id)?.checkpoint?.restorePending,
+    ).toBeUndefined()
+    expect(
+      saved.turns?.find((item) => item.id === turn.id)?.checkpoint?.undone?.backup,
+    ).toBeTruthy()
+    expect(
+      saved.messages.some((message) => message.text.startsWith('I undid the file changes')),
+    ).toBe(false)
+    expect(prompt).toContain('The file changes from your previous attempt were undone.')
+  },
+)
 
 it('keeps long linked identities protected and restores saved history after clean removal and a root change', async () => {
   const { s, secondary } = await setup()

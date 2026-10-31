@@ -34,13 +34,28 @@ it('records fatal errors and unhandled rejections once and hands them to the pre
   })
   installCrashRecorder()
   installCrashRecorder()
-  handler?.(new Error('Boom'), true)
+  handler?.(new Error('Boom X-API-Key: mobile-secret'), true)
   await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(store.get('dovo.lastCrash')).not.toContain('mobile-secret')
   expect(previous).toHaveBeenCalledWith(expect.any(Error), true)
-  expect(await readLastCrash()).toMatchObject({ message: 'Error: Boom', fatal: true })
+  expect(await readLastCrash()).toMatchObject({
+    message: 'Error: Boom X-API-Key: [redacted]',
+    fatal: true,
+  })
   tracker?.onUnhandled(1, 'lost promise')
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(await readLastCrash()).toMatchObject({ message: 'lost promise', fatal: false })
   await clearLastCrash()
+  expect(await readLastCrash()).toBeNull()
+})
+
+it('sanitizes legacy records and rejects malformed crash flags', async () => {
+  const { readLastCrash } = await import('./crash-log')
+  store.set(
+    'dovo.lastCrash',
+    JSON.stringify({ at: 'now', message: 'Authorization: Basic dXNlcjpwYXNz', fatal: false }),
+  )
+  expect(JSON.stringify(await readLastCrash())).not.toContain('dXNlcjpwYXNz')
+  store.set('dovo.lastCrash', JSON.stringify({ at: 'now', message: 'error', fatal: 'yes' }))
   expect(await readLastCrash()).toBeNull()
 })

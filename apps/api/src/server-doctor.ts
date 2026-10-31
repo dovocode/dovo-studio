@@ -11,6 +11,7 @@ import {
 } from '@dovo/protocol'
 import { checkAdapterUpdates } from '@dovo/runtime'
 import { readConnection } from './connection.js'
+import { packagedServiceWarning } from './server-update-recovery.js'
 import { serverStatus } from './server-manager.js'
 export async function serverDoctor(directory: string, checkUpdates = false) {
   const status = await serverStatus(directory)
@@ -18,6 +19,8 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
   let agents: Agent[] = []
   let diagnostics: RuntimeDiagnostics | null = null
   const warnings: string[] = []
+  const serviceWarning = packagedServiceWarning(directory)
+  if (serviceWarning) warnings.push(serviceWarning)
   if (status.running) {
     try {
       const connection = readConnection(join(directory, 'runtime-connection.json'))

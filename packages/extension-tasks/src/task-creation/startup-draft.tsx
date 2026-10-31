@@ -1,5 +1,5 @@
 import type { WorkspaceControls } from '../chat/composer/composer-workspace'
-import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   createTask,
   defaultTaskProjectSelection,
@@ -15,24 +15,27 @@ import type { SelectRemoteProject } from '../chat/composer/composer-project'
 import { TaskEmptyState } from './task-empty-state'
 import type { TaskSource } from '../list/task-collection'
 import type { Repository } from '@dovo/studio-core'
-import { taskMachineDraft } from '@dovo/protocol'
+import { nextThreadDraft, taskMachineDraft } from '@dovo/protocol'
 
 export function StartupDraft({
   onProject,
   onCommit,
   onBrowse,
   onDraftChange,
+  onBackgroundStarted,
   renderThread,
 }: {
   onProject: () => void
   onCommit: (task: Task) => void
   onBrowse?: () => void
   onDraftChange?: (task: Task | null, runtimeId: string | null) => void
+  onBackgroundStarted?: () => void
   renderThread?: (
     task: Task,
     workspaceControls: WorkspaceControls | undefined,
     temporary: boolean,
     onSelectRemote?: SelectRemoteProject,
+    onStartBackground?: (task: Task) => void,
   ) => ReactNode
 }) {
   const store = useWorkspace()
@@ -84,6 +87,14 @@ export function StartupDraft({
     committedTask ??
     (selection?.runtimeId === store.activeRuntimeId ? selection.task : undefined) ??
     initialTask
+  const owner = useRef<{ taskId: string; runtimeId: string | null } | null>(null)
+  useLayoutEffect(() => {
+    const current = { taskId: task.id, runtimeId: store.activeRuntimeId }
+    owner.current = current
+    return () => {
+      if (owner.current === current) owner.current = null
+    }
+  }, [task.id, store.activeRuntimeId])
   if (!repository && !committedTask)
     return (
       <div className="flex h-full items-center justify-center">
@@ -104,6 +115,21 @@ export function StartupDraft({
         onBrowse={onBrowse}
         onDraftChange={onDraftChange}
         renderThread={renderThread}
+        onStartBackground={(source) => {
+          if (
+            owner.current?.taskId !== source.id ||
+            owner.current.runtimeId !== store.activeRuntimeId
+          )
+            return
+          const next = nextThreadDraft(source)
+          setSelection({
+            runtimeId: store.activeRuntimeId,
+            repositoryId: next.repositoryId,
+            task: next,
+          })
+          setCommittedTask(null)
+          onBackgroundStarted?.()
+        }}
         temporary={!committedTask}
         onSelectRemote={async (
           source,
@@ -142,6 +168,7 @@ function StartupComposer({
   onDraftChange,
   renderThread,
   temporary,
+  onStartBackground,
 }: {
   taskId: string
   temporary: boolean
@@ -150,8 +177,10 @@ function StartupComposer({
     workspaceControls: WorkspaceControls | undefined,
     temporary: boolean,
     onSelectRemote?: SelectRemoteProject,
+    onStartBackground?: (task: Task) => void,
   ) => ReactNode
   onDraftChange?: (task: Task | null, runtimeId: string | null) => void
+  onStartBackground: (task: Task) => void
   onBrowse?: () => void
   onSelectRemote: (
     source: TaskSource,
@@ -176,7 +205,13 @@ function StartupComposer({
   )
   if (!task) return null
   if (renderThread)
-    return renderThread(task, undefined, temporary, temporary ? onSelectRemote : undefined)
+    return renderThread(
+      task,
+      undefined,
+      temporary,
+      temporary ? onSelectRemote : undefined,
+      onStartBackground,
+    )
   const workspaceControls: WorkspaceControls = (access) => (
     <ComposerWorkspace
       task={task}
@@ -208,6 +243,7 @@ function StartupComposer({
       <div className="mb-auto w-full shrink-0 pb-8">
         <Composer
           startup
+          onStartBackground={onStartBackground}
           task={task}
           temporary={temporary}
           workspaceMoving={switching}

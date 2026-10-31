@@ -131,7 +131,8 @@ export default function TasksView({
   const task = storedTask ?? (usingStartupDraft ? startupDraft?.task : undefined)
   const hasDiff =
     !!task &&
-    (task.files.length > 0 ||
+    (workspace.repositories.some((repo) => repo.id === task.repositoryId && !repo.kind) ||
+      task.files.length > 0 ||
       !!task.linkedCheckouts?.length ||
       task.historyTotals?.hasChanges ||
       (task.turns ?? []).some(
@@ -220,6 +221,13 @@ export default function TasksView({
   useEffect(() => {
     if (!nativeAgentKey) setNativeThread(undefined)
   }, [entityId, navigationKey, nativeAgentKey])
+  const [fileReveal, setFileReveal] = useState<{
+    threadKey: string
+    path: string
+    line: number
+    checkoutId?: string
+    requestId: string
+  }>()
   const surface = threadSurfaces[threadKey] ?? 'chat'
   const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
   const browserPlacement = browserPlacements[threadKey] ?? 'inline'
@@ -848,6 +856,7 @@ export default function TasksView({
     workspaceControls?: WorkspaceControls,
     temporary = false,
     onSelectRemote?: SelectRemoteProject,
+    onStartBackground?: (task: Task) => void,
   ) => {
     const task = storedTask?.id === currentTask.id ? storedTask : currentTask
     const native =
@@ -954,6 +963,12 @@ export default function TasksView({
             <TaskProjectPopover>
               {!temporary && projectPanelOpen && (
                 <TaskProjectPanel
+                  active={
+                    !native &&
+                    !listOpen &&
+                    !(fileViewer && viewerExpanded) &&
+                    (!compact || surface === 'chat')
+                  }
                   key={taskCollectionKey(activeRuntimeId, task.id)}
                   task={task}
                   onPullLink={(url) => openPullPreview(task, url)}
@@ -976,6 +991,9 @@ export default function TasksView({
             </TaskProjectPopover>
             {!temporary && !projectPanelOpen && !native && (
               <TaskWaitingPanel
+                active={
+                  !listOpen && !(fileViewer && viewerExpanded) && (!compact || surface === 'chat')
+                }
                 onPullLink={(url) => openPullPreview(task, url)}
                 key={`${activeRuntimeId}:${task.id}`}
                 taskId={task.id}
@@ -1016,6 +1034,7 @@ export default function TasksView({
                     temporary={temporary}
                     workspaceControls={workspaceControls}
                     onSelectRemote={onSelectRemote}
+                    onStartBackground={onStartBackground}
                     revealMessage={revealMessage}
                     onRevealHandled={revealHandled}
                     visible={!native && !listOpen && (!compact || surface === 'chat')}
@@ -1056,6 +1075,10 @@ export default function TasksView({
                         key={`bottom:${task.id}`}
                         taskId={task.id}
                         focusId={terminalFocus}
+                        onOpenFile={(file) => {
+                          setFileReveal({ ...file, threadKey, requestId: randomUUID() })
+                          selectSurface('files', true)
+                        }}
                         onAddSelection={(taskId, text) =>
                           addTerminalSelection(threadKey, taskId, text)
                         }
@@ -1347,6 +1370,7 @@ export default function TasksView({
                 <TaskFiles
                   key={task.id}
                   task={task}
+                  reveal={fileReveal?.threadKey === threadKey ? fileReveal : undefined}
                   onEditingChange={setFileEditing}
                   onReference={(text) => addCodeReference(task.id, text)}
                 />
@@ -1364,6 +1388,10 @@ export default function TasksView({
                   key={task.id}
                   taskId={task.id}
                   focusId={terminalFocus}
+                  onOpenFile={(file) => {
+                    setFileReveal({ ...file, threadKey, requestId: randomUUID() })
+                    selectSurface('files', true)
+                  }}
                   visible={surface === 'terminal'}
                   onAddSelection={(taskId, text) => addTerminalSelection(threadKey, taskId, text)}
                   onClose={() => selectSurface('chat', true)}
@@ -1431,6 +1459,11 @@ export default function TasksView({
               <StartupDraft
                 key={draftVersion}
                 onDraftChange={reportStartupDraft}
+                onBackgroundStarted={() => {
+                  setDeselected(true)
+                  setSelectedId('')
+                  host.navigate({ viewId: 'tasks' })
+                }}
                 onProject={() => void startTask()}
                 renderThread={renderThread}
                 onCommit={(draft) => {

@@ -27,6 +27,7 @@ import { BrowserToolbar, type BrowserMode } from './browser-toolbar'
 import { browserAddress } from '../../browser/browser-state'
 import { useOpenAppLink } from '../../ui/content/open-link'
 import { Action } from '../../ui/controls/action'
+import { shareBrowserDownload } from './browser-download'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close', 'screenshot']),
@@ -111,7 +112,24 @@ function RemoteBrowserContent({
   const [landscape, setLandscape] = useApplicationState(false)
 
   const { connection, profiles, readEffect } = useRuntime()
-  const active = usePreviewActive()
+  const [filePicking, setFilePicking] = useApplicationState<string | null>(null)
+  const foreground = usePreviewActive()
+  const active = usePreviewActive(!!filePicking)
+  // Android's document picker backgrounds the app. Keep its socket, but stop capturing frames.
+  useEffect(() => {
+    if (ready.current && !deviceId) post({ type: 'visibility', visible: foreground })
+  }, [foreground, online, deviceId])
+  useEffect(() => {
+    if (!filePicking) return
+    const expired = setTimeout(() => setFilePicking(null), 10 * 60 * 1000)
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setFilePicking(null)
+    })
+    return () => {
+      clearTimeout(expired)
+      subscription.remove()
+    }
+  }, [filePicking])
   const visible = useRef(active)
   const web = useRef<WebView>(null)
   const [generation, setGeneration] = useApplicationState(0)
@@ -121,6 +139,15 @@ function RemoteBrowserContent({
   const failed = useRef(false)
   const mounted = useRef(true)
   const current = useRef(0)
+  const downloadOrigin = useRef('')
+  const transfers = useRef(new Map<string, AbortController>())
+  const stopDownloads = (id?: string) => {
+    for (const [key, controller] of transfers.current)
+      if (!id || key === id) {
+        controller.abort()
+        transfers.current.delete(key)
+      }
+  }
   const pending = useRef(false)
   const ready = useRef(false)
   const presentation = useRef(expanded)
@@ -134,6 +161,9 @@ function RemoteBrowserContent({
         ...message,
       }).replace(/</g, '\\u003c')}}));true;`,
     )
+  useLayoutEffect(() => {
+    if (filePicking && ready.current) post({ type: 'filePickingReady', id: filePicking })
+  }, [filePicking])
   const send = useRef(post)
   send.current = post
   useEffect(() => {
@@ -195,6 +225,9 @@ function RemoteBrowserContent({
             deviceId ? '/ws/simulator' : '/ws/browser',
             result,
           )
+          const downloadTarget = new URL(target)
+          downloadTarget.protocol = downloadTarget.protocol === 'wss:' ? 'https:' : 'http:'
+          downloadOrigin.current = downloadTarget.origin
           post({
             type: 'connect',
             url: target,
@@ -243,8 +276,12 @@ function RemoteBrowserContent({
     resume.current = connect
   })
   useLayoutEffect(() => {
+    if (foreground && !online && ready.current) void resume.current()
+  }, [foreground, online])
+  useLayoutEffect(() => {
     visible.current = active
     if (!active) {
+      stopDownloads()
       current.current++
       pending.current = false
       web.current?.injectJavaScript("window.dispatchEvent(new Event('pagehide'));true;")
@@ -257,6 +294,7 @@ function RemoteBrowserContent({
     mounted.current = true
     return () => {
       mounted.current = false
+      stopDownloads()
       visible.current = false
       current.current++
       pending.current = false
@@ -264,6 +302,8 @@ function RemoteBrowserContent({
     }
   }, [])
   const remount = () => {
+    stopDownloads()
+    setFilePicking(null)
     current.current++
     pending.current = false
     ready.current = false
@@ -273,6 +313,7 @@ function RemoteBrowserContent({
   }
   const processLost = () => {
     if (!mounted.current || generation !== webGeneration.current || failed.current) return
+    stopDownloads()
     if (recovered.current) {
       current.current++
       pending.current = false
@@ -344,6 +385,64 @@ function RemoteBrowserContent({
               'channel' in message &&
               message.channel === 'dovo-browser'
             ) {
+              if ('type' in message && message.type === 'downloadStop') {
+                stopDownloads(
+                  'id' in message && typeof message.id === 'string' ? message.id : undefined,
+                )
+                return
+              }
+              if (
+                'type' in message &&
+                message.type === 'downloadSave' &&
+                'id' in message &&
+                typeof message.id === 'string' &&
+                'requestId' in message &&
+                typeof message.requestId === 'string' &&
+                'url' in message &&
+                typeof message.url === 'string' &&
+                'name' in message &&
+                typeof message.name === 'string' &&
+                'size' in message &&
+                typeof message.size === 'number'
+              ) {
+                const { id, requestId, url, name, size } = message
+                if (!visible.current || AppState.currentState === 'background') return
+                stopDownloads(id)
+                const controller = new AbortController()
+                transfers.current.set(id, controller)
+                void shareBrowserDownload({
+                  url,
+                  name,
+                  size,
+                  origin: downloadOrigin.current,
+                  signal: controller.signal,
+                })
+                  .then(
+                    () => 'Share sheet closed.',
+                    (error: unknown) =>
+                      error instanceof Error ? error.message : 'Download failed.',
+                  )
+                  .then((result) => {
+                    if (transfers.current.get(id) !== controller || !mounted.current) return
+                    transfers.current.delete(id)
+                    post({ type: 'downloadResult', id, requestId, message: result })
+                  })
+                return
+              }
+              if (
+                'type' in message &&
+                message.type === 'filePicking' &&
+                'active' in message &&
+                typeof message.active === 'boolean' &&
+                'id' in message &&
+                typeof message.id === 'string' &&
+                message.id.length <= 100
+              ) {
+                if (message.active) setFilePicking(message.id)
+                else if (AppState.currentState !== 'background')
+                  setFilePicking((current) => (current === message.id ? null : current))
+                return
+              }
               if ('type' in message && message.type === 'focusAddress') {
                 addressField.current?.focus()
                 return

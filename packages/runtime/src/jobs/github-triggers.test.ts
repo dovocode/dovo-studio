@@ -155,3 +155,97 @@ it('reconciles a committed receipt with an unshifted queue after a crash', async
   await f.create().tick(epoch + 120_000)
   expect(f.start).toHaveBeenCalledTimes(1)
 })
+function statements(db: Database.Database) {
+  const prepare = vi.spyOn(db, 'prepare')
+  return () => prepare.mock.calls.map(([sql]) => sql)
+}
+it('keeps idle ticks free of SQL while polling every minute', async () => {
+  const empty = setup()
+  const idle = new GithubTriggers(
+    empty.db,
+    { collect: empty.collect },
+    () => [],
+    empty.start,
+    empty.report,
+  )
+  const idleSql = statements(empty.db)
+  for (let second = 0; second < 600; second++) await idle.tick(epoch + second * 1000)
+  expect(idleSql()).toEqual(["SELECT id FROM documents WHERE id LIKE 'github-trigger:%'"])
+  const f = setup(),
+    poller = f.create(),
+    sql = statements(f.db)
+  for (let second = 0; second < 600; second++) await poller.tick(epoch + second * 1000)
+  expect(f.collect).toHaveBeenCalledTimes(10)
+  // One sweep, one load and initial save, then one cursor save per poll.
+  expect(sql()).toHaveLength(13)
+})
+it('retries queued deliveries every second while idle polling is skipped', async () => {
+  const f = setup(),
+    poller = f.create()
+  await poller.tick(epoch)
+  f.collect.mockResolvedValue({ deliveries: [event()], heads: {} })
+  let busy = true
+  f.start.mockImplementation((id, key) => {
+    if (busy) throw new HttpError(409, 'Active run')
+    f.db.prepare('INSERT INTO deliveries VALUES (?,?)').run(`${id}:${key}`, 'now')
+  })
+  await poller.tick(epoch + 60_000)
+  await poller.tick(epoch + 61_000)
+  expect(f.start).toHaveBeenCalledTimes(2)
+  busy = false
+  await poller.tick(epoch + 62_000)
+  expect(f.start).toHaveBeenCalledTimes(3)
+  expect(f.collect).toHaveBeenCalledTimes(2)
+  const sql = statements(f.db)
+  await poller.tick(epoch + 63_000)
+  expect(sql()).toEqual([])
+})
+it('reloads committed state after a failed write and recovers on the next poll', async () => {
+  const f = setup(),
+    poller = f.create()
+  await poller.tick(epoch)
+  f.collect.mockResolvedValue({ deliveries: [event()], heads: {} })
+  const prepare = f.db.prepare.bind(f.db)
+  const write = vi.spyOn(f.db, 'prepare').mockImplementation((sql: string) => {
+    if (sql.startsWith('INSERT INTO documents')) throw new Error('Disk full')
+    return prepare(sql)
+  })
+  await poller.tick(epoch + 60_000)
+  expect(f.report).toHaveBeenCalledWith('flow', 'GitHub trigger failed: Disk full')
+  expect(f.start).toHaveBeenCalledTimes(1)
+  write.mockRestore()
+  // The unsaved cursor is discarded, so the next poll fetches the event again and its receipt
+  // keeps it from starting twice.
+  await poller.tick(epoch + 61_000)
+  expect(f.collect).toHaveBeenCalledTimes(2)
+  await poller.tick(epoch + 120_000)
+  expect(f.collect.mock.calls.at(-1)?.[1]).toBe(new Date(epoch).toISOString())
+  expect(f.start).toHaveBeenCalledTimes(1)
+  expect(f.db.prepare('SELECT value FROM documents').get()).toMatchObject({
+    value: expect.stringContaining('"pending":[]'),
+  })
+})
+it('sweeps stale state on deletion, re-enable and restart without per-tick scans', async () => {
+  const f = setup()
+  let flows = [f.flow]
+  const create = () =>
+    new GithubTriggers(f.db, { collect: f.collect }, () => flows, f.start, f.report)
+  const poller = create()
+  await poller.tick(epoch)
+  flows = []
+  await poller.tick(epoch + 1000)
+  expect(f.db.prepare('SELECT id FROM documents').all()).toEqual([])
+  flows = [f.flow]
+  await poller.tick(epoch + 2000)
+  expect(f.collect.mock.calls.at(-1)?.[1]).toBe(new Date(epoch + 2000).toISOString())
+  poller.dispose()
+  // A stale document from before a restart, such as a restored backup, is swept once.
+  f.db.prepare('INSERT INTO documents VALUES (?,?)').run('github-trigger:deleted', '{}')
+  const restarted = create()
+  await restarted.tick(epoch + 3000)
+  expect(f.db.prepare('SELECT id FROM documents').all()).toEqual([{ id: 'github-trigger:flow' }])
+  expect(f.collect).toHaveBeenCalledTimes(3)
+  const sql = statements(f.db)
+  await restarted.tick(epoch + 4000)
+  expect(sql()).toEqual([])
+})

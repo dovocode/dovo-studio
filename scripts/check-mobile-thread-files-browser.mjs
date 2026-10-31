@@ -15,7 +15,7 @@ const mobile = root + 'apps/mobile/src/'
 const stubs = [
   {
     path: 'react-native',
-    contents: `export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Image=({source,accessibilityLabel})=><img alt={accessibilityLabel} src={source.uri}/>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const SectionList=({sections,renderItem})=><div>{sections.flatMap(section=>section.data.map(item=><div key={item.node.path}>{renderItem({item})}</div>))}</div>;export const Alert={alert:(_title,_body,actions)=>window.confirmDiscard=()=>actions.find(action=>action.text==='Discard').onPress()};`,
+    contents: `export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Object.assign({},...[].concat(style??{}))}>{children}</div>;export const ScrollView=View;export const Image=({source,accessibilityLabel})=><img alt={accessibilityLabel} src={source.uri}/>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const SectionList=({sections,renderItem})=><div>{sections.flatMap(section=>section.data.map(item=><div key={item.node.path}>{renderItem({item})}</div>))}</div>;export const Alert={alert:(_title,_body,actions)=>window.confirmDiscard=()=>actions.find(action=>action.text==='Discard').onPress()};`,
   },
   {
     path: '../../runtime/connection/provider',
@@ -37,6 +37,7 @@ const stubs = [
     importer: mobile + 'ui/content',
     contents: `export const Icon=()=>null;`,
   },
+  { path: '../../ui/controls/icon', importer: mobile, contents: 'export const Icon=()=>null;' },
   {
     path: '../../ui/content/text',
     importer: mobile,
@@ -76,7 +77,7 @@ const stubs = [
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {decode} from '@dovo/protocol';import {TaskFiles} from '${mobile}tasks/files/task-files';window.runtime={...window.runtime,call:async(path,input,schema)=>{const response=await fetch(window.runtime.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.runtime.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});const result=await response.json();if(!response.ok)throw new Error(result.error??JSON.stringify(result));return decode(schema,result)}};function App(){const[draft,setDraft]=useState(null),[open,setOpen]=useState(true),[,update]=useState(0);window.toggleFiles=()=>setOpen(value=>!value);window.setConnected=connected=>{window.runtime={...window.runtime,connected};update(value=>value+1)};return open&&<TaskFiles task={window.task} draft={draft} onDraftChange={setDraft}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {decode} from '@dovo/protocol';import {Effect} from 'effect';import {TaskFiles} from '${mobile}tasks/files/task-files';window.runtime={...window.runtime,call:async(path,input,schema,signal)=>{const response=await fetch(window.runtime.connection.address+path,{method:'POST',signal,headers:{Authorization:'Bearer '+window.runtime.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});const result=await response.json();if(!response.ok)throw new Error(result.error??JSON.stringify(result));return decode(schema,result)}};window.runtime.readEffect=(...args)=>Effect.tryPromise({try:signal=>window.runtime.call(...args,signal),catch:error=>error});function App(){const[draft,setDraft]=useState(null),[open,setOpen]=useState(true),[,update]=useState(0);window.toggleFiles=()=>setOpen(value=>!value);window.setConnected=connected=>{window.runtime={...window.runtime,connected};update(value=>value+1)};return open&&<TaskFiles task={window.task} draft={draft} onDraftChange={setDraft}/>};createRoot(document.getElementById('app')).render(<App/>);`,
       loader: 'tsx',
       resolveDir: root + 'packages/studio-ui',
     },
@@ -142,7 +143,8 @@ try {
   const errors = []
   const listRequests = []
   page.on('request', (request) => {
-    if (request.url().endsWith('/api/tasks/files/list')) listRequests.push(request.postDataJSON())
+    if (request.url().endsWith('/api/tasks/files/directory'))
+      listRequests.push(request.postDataJSON())
   })
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`http://127.0.0.1:${address.port}`)
@@ -168,7 +170,7 @@ try {
   const releaseList = Promise.withResolvers()
   const listReleased = Promise.withResolvers()
   await page.route(
-    '**/api/tasks/files/list',
+    '**/api/tasks/files/directory',
     async (route) => {
       const response = await route.fetch()
       delayedList.resolve()
@@ -192,9 +194,9 @@ try {
   )
   assert.equal(await page.getByRole('button', { name: 'latest-file.txt', exact: true }).count(), 1)
   assert.equal(await page.getByRole('button', { name: 'stale-file.txt', exact: true }).count(), 0)
-  assert.equal(listRequests.at(-1).fresh, true)
+  assert.equal(listRequests.at(-1).directory, '', 'Refresh reads only the visible directory')
   await page.route(
-    '**/api/tasks/files/list',
+    '**/api/tasks/files/directory',
     (route) =>
       route.fulfill({
         status: 500,
@@ -210,21 +212,18 @@ try {
   await page.getByText('Reconnect to browse and save files.', { exact: true }).waitFor()
   await page.evaluate(() => window.setConnected(true))
   await page.getByRole('button', { name: 'retried-file.txt', exact: true }).waitFor()
-  assert.equal(listRequests.at(-1).fresh, true, 'A failed explicit refresh remains fresh on retry')
+  assert.equal(listRequests.at(-1).directory, '', 'A failed directory read retries the same folder')
   await page.evaluate(() => window.setConnected(false))
   await page.getByText('Reconnect to browse and save files.', { exact: true }).waitFor()
   const beforeReconnect = listRequests.length
   const reconnectResponse = page.waitForResponse((response) =>
-    response.url().endsWith('/api/tasks/files/list'),
+    response.url().endsWith('/api/tasks/files/directory'),
   )
   await page.evaluate(() => window.setConnected(true))
   await reconnectResponse
   assert.equal(listRequests.length, beforeReconnect + 1)
-  assert.equal(
-    listRequests.at(-1).fresh,
-    false,
-    'Successful refresh does not disable the cache on reconnect',
-  )
+  assert.equal(listRequests.at(-1).directory, '', 'Reconnect reloads the visible directory')
+  await page.getByRole('button', { name: 'Open folder src', exact: true }).click()
   await page
     .getByRole('button', { name: 'src/hello.ts', exact: true })
     .click({ timeout: 5000 })
@@ -263,20 +262,24 @@ try {
   await page.getByRole('img', { name: 'pixel.png' }).waitFor()
   await page.getByRole('combobox', { name: 'Project folder' }).selectOption('link')
   await page.getByRole('button', { name: 'linked.txt', exact: true }).click()
-  assert.equal(listRequests.at(-1).fresh, false, 'Changing checkout retains ordinary cached reads')
+  assert.equal(
+    listRequests.at(-1).checkoutId,
+    'link',
+    'Directory reads follow the selected linked checkout',
+  )
   await page.getByText('linked contents', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit file' }).isDisabled(), true)
   await page.getByRole('button', { name: 'Browse files', exact: true }).click()
   await page.getByRole('textbox', { name: 'Search files', exact: true }).fill('missing-file')
   for (const completeness of [true, undefined, false]) {
     await page.route(
-      '**/api/tasks/files/list',
+      '**/api/tasks/files/search-paths',
       (route) =>
         route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            files: ['linked.txt'],
+            files: [],
             ...(completeness === undefined ? {} : { truncated: completeness }),
           }),
         }),

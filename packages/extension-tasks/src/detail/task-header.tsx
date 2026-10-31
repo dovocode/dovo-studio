@@ -229,7 +229,7 @@ export function TaskHeader({
   const actions = (
     <Popover.Trigger asChild>
       <IconButton
-        label={projectPanelOpen ? 'Hide project panel' : 'Show project panel'}
+        label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
         aria-pressed={projectPanelOpen}
         className={cn('size-7', projectPanelOpen && 'bg-accent text-accent-foreground')}
       >

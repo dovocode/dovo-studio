@@ -20,6 +20,7 @@ export const useRouter = () => router
 // Catalog screens are mounted in a ready browser shell; navigation remains local to this adapter.
 const rootNavigationState = { key: 'catalog-root' }
 export const useRootNavigationState = () => rootNavigationState
+export const useIsFocused = () => true
 export const useLocalSearchParams = () => useContext(MobileScreenParamsContext)
 export const useGlobalSearchParams = useLocalSearchParams
 export const usePathname = () => '/catalog'

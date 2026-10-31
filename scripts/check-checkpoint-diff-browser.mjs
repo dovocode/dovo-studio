@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import { build } from 'esbuild'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const ui = root + '/packages/studio-ui/src'
+const worker = await build({
+  entryPoints: [root + '/packages/extension-tasks/src/files/saved-file-diff.worker.ts'],
+  bundle: true,
+  write: false,
+  format: 'esm',
+  platform: 'browser',
+})
 const built = await bundleBrowser(
   {
     stdin: {
@@ -34,6 +43,26 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
       '@dovo/protocol': root + '/packages/protocol/src/index.ts',
     },
     nodePaths: [root + '/packages/studio-ui/node_modules', root + '/node_modules'],
+    plugins: [
+      {
+        name: 'checkpoint-worker-fixture',
+        setup(builder) {
+          builder.onLoad({ filter: /saved-file-diff-job\.ts$/ }, async ({ path }) => {
+            const source = await readFile(path, 'utf8')
+            const asset = "new URL('./saved-file-diff.worker.ts', import.meta.url)"
+            assert.ok(source.includes(asset), 'The fixture worker URL matches the production job')
+            return {
+              contents: source.replace(
+                asset,
+                "new URL('/checkpoint-diff.worker.js', window.location.href)",
+              ),
+              loader: 'ts',
+              resolveDir: root + '/packages/extension-tasks/src/files',
+            }
+          })
+        },
+      },
+    ],
   },
   [
     {
@@ -54,13 +83,42 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
     },
   ],
 )
+const server = createServer((request, response) => {
+  if (request.url === '/checkpoint-diff.worker.js') {
+    response.writeHead(200, { 'content-type': 'text/javascript' })
+    response.end(worker.outputFiles[0].text)
+  } else {
+    response.writeHead(200, { 'content-type': 'text/html' })
+    response.end('<div id="app"></div>')
+  }
+})
 const browser = await chromium.launch()
 try {
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.setContent('<div id="app"></div>')
+  await page.goto(`http://127.0.0.1:${server.address().port}/`)
+  await page.evaluate(() => {
+    const BrowserWorker = window.Worker
+    window.workerStats = { created: 0, terminated: 0, running: 0 }
+    window.Worker = class extends BrowserWorker {
+      constructor(...args) {
+        super(...args)
+        window.workerStats.created++
+        window.workerStats.running++
+      }
+      terminate() {
+        window.workerStats.terminated++
+        window.workerStats.running--
+        return super.terminate()
+      }
+    }
+  })
   const assets = root + '/apps/desktop/dist/assets'
   for (const name of (await readdir(assets)).filter((name) => name.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + name, 'utf8') })
@@ -288,13 +346,41 @@ try {
       ),
     ),
   )
-  await page.evaluate(() => window.renderComplex())
+  const initialWorkers = await page.evaluate(() => window.workerStats.created)
+  await page.evaluate(() => {
+    window.diffTicks = 0
+    window.diffTicker = setInterval(() => window.diffTicks++, 10)
+    window.renderComplex()
+  })
   await page.getByRole('alert').filter({ hasText: 'Complete contents are shown below' }).waitFor()
+  assert.ok(
+    (await page.evaluate(() => window.diffTicks)) >= 2,
+    'Complex parsing leaves the UI responsive',
+  )
+  assert.ok(
+    (await page.evaluate(() => window.workerStats.created)) > initialWorkers,
+    'A real worker parsed the complex diff',
+  )
+  await page.evaluate(() => clearInterval(window.diffTicker))
   assert.ok((await page.locator('pre').first().innerText()).includes('line 24999'))
+  await page.evaluate(() => window.renderSaved())
+  await page.getByRole('button', { name: 'Load full diff', exact: true }).waitFor()
+  const beforeCancellation = await page.evaluate(() => window.workerStats.terminated)
+  const beforeStart = await page.evaluate(() => window.workerStats.created)
+  await page.evaluate(() => window.renderComplex())
+  await page.waitForFunction((count) => window.workerStats.created > count, beforeStart)
+  assert.equal(await page.evaluate(() => window.workerStats.running), 1)
+  await page.evaluate(() => window.renderSaved())
+  await page.getByRole('button', { name: 'Load full diff', exact: true }).waitFor()
+  await page.waitForFunction((count) => window.workerStats.terminated > count, beforeCancellation)
+  await page.waitForTimeout(200)
+  assert.equal(await page.evaluate(() => window.workerStats.running), 0)
+  assert.equal(await page.getByText('line 24999', { exact: false }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Checkpoint dialog: real highlighted diffs, layouts, wrapping, file selection, added/deleted/unchanged files, syntax retry and scoped restore; compact attachments: preview, removal and preserved draft passed.',
+    'Checkpoint dialog: real worker parsing, responsive fallback, cancellation, highlighted diffs, layouts, file selection, syntax retry and scoped restore; compact attachments and preserved draft passed.',
   )
 } finally {
   await browser.close()
+  await new Promise((resolve) => server.close(resolve))
 }

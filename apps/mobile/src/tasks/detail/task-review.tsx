@@ -1,4 +1,5 @@
 import { useTaskReview } from '../../scm/review/use-task-review'
+import { LocalCommitPicker } from './local-commit-picker'
 import { CodeReviewReport, type ReviewTab } from '../../scm/review/code-review-report'
 import type { CodeFinding } from '@dovo/protocol'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
@@ -53,10 +54,51 @@ export function TaskReview({
   const { styles, code } = useTheme()
 
   const task = useConversationSelector((value) => value.task)
-  const { call, connected, callEffect, snapshot } = useRuntime(),
+  const { call, read, connected, callEffect, snapshot, connection } = useRuntime(),
     { busy, error, act } = useAction()
   const tools = useRef<SheetHandle>(null)
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
+  const [checkoutId, setCheckoutId] = useState(initialCheckoutId)
+  const [commit, setCommit] = useState<{ sha: string; subject: string } | null>(null)
+  const commitKey = JSON.stringify([
+    connection?.address,
+    connection?.token,
+    task.id,
+    checkoutId,
+    commit?.sha,
+  ])
+  const [commitResult, setCommitResult] = useState<{
+    key: string
+    files: Task['files']
+    error: string
+  }>()
+  const commitDiff = commitResult?.key === commitKey ? commitResult : undefined
+  const [commitRetry, setCommitRetry] = useState(0)
+  useEffect(() => {
+    if (!commit || !connected) return
+    let active = true
+    setCommitResult(undefined)
+    void read(
+      '/api/tasks/commits/changes',
+      { id: task.id, checkoutId: checkoutId || undefined, sha: commit.sha },
+      responses.files,
+    ).then(
+      (result) => {
+        if (active) setCommitResult({ key: commitKey, files: result.files, error: '' })
+      },
+      (error: unknown) => {
+        if (active)
+          setCommitResult({
+            key: commitKey,
+            files: [],
+            error: error instanceof Error ? error.message : String(error),
+          })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [read, connected, task.id, checkoutId, commit, commitKey, commitRetry])
   const [requestedTab, setTab] = useState<ReviewTab>(initialTab)
   const tab = snapshot?.codeReviewsEnabled ? requestedTab : 'diff'
   const codeReview = useTaskReview(
@@ -105,7 +147,6 @@ export function TaskReview({
     body: string
   } | null>(null)
   const selectedTurn = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
-  const [checkoutId, setCheckoutId] = useState(initialCheckoutId)
   const linkedHistory = selectedTurn?.linked?.find((item) => item.checkoutId === checkoutId)
   const history = checkoutId ? linkedHistory : selectedTurn
   const [linkedFiles, setLinkedFiles] = useState<{
@@ -115,7 +156,7 @@ export function TaskReview({
   } | null>(null)
   const loadKey = `${task.id}:${checkoutId}`
   useEffect(() => {
-    if (!checkoutId || checkpoint) return
+    if (!checkoutId || checkpoint || commit) return
     let active = true
     void call('/api/tasks/checkouts/changes', { id: task.id, checkoutId }, responses.files).then(
       (result) => {
@@ -133,23 +174,37 @@ export function TaskReview({
     return () => {
       active = false
     }
-  }, [call, task.id, checkoutId, checkpoint, loadKey])
+  }, [call, task.id, checkoutId, checkpoint, commit, loadKey])
   const sourceFiles = useMemo(
     () =>
-      since
-        ? since.files
-        : checkpoint
-          ? history
-            ? checkpointFiles(history)
-            : []
-          : checkoutId
-            ? linkedFiles?.key === loadKey
-              ? linkedFiles.files
+      commit
+        ? (commitDiff?.files ?? [])
+        : since
+          ? since.files
+          : checkpoint
+            ? history
+              ? checkpointFiles(history)
               : []
-            : scope === 'branch'
-              ? branchFiles
-              : task.files,
-    [checkpoint, history, task.files, checkoutId, linkedFiles, loadKey, since, scope, branchFiles],
+            : checkoutId
+              ? linkedFiles?.key === loadKey
+                ? linkedFiles.files
+                : []
+              : scope === 'branch'
+                ? branchFiles
+                : task.files,
+    [
+      commit,
+      commitDiff,
+      checkpoint,
+      history,
+      task.files,
+      checkoutId,
+      linkedFiles,
+      loadKey,
+      since,
+      scope,
+      branchFiles,
+    ],
   )
   const fingerprints = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, changedFileFingerprint(file)])),
@@ -160,7 +215,8 @@ export function TaskReview({
     {
       kind: 'task',
       taskId: task.id,
-      source: checkpoint ? 'turn' : scope,
+      source: commit ? 'commit' : checkpoint ? 'turn' : scope,
+      commitSha: commit?.sha,
       turnId: checkpoint || undefined,
       checkoutId: checkoutId || undefined,
     },
@@ -177,14 +233,24 @@ export function TaskReview({
         sourceFiles.map((file) => ({
           ...file,
           viewed:
-            !checkpoint && !checkoutId && scope === 'working'
+            !commit && !checkpoint && !checkoutId && scope === 'working'
               ? file.viewed
               : (fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false),
         })),
         review.progress?.groups ?? [],
         related,
       ),
-    [sourceFiles, fingerprints, fileState, review.progress, related, checkpoint, checkoutId, scope],
+    [
+      sourceFiles,
+      fingerprints,
+      fileState,
+      review.progress,
+      related,
+      commit,
+      checkpoint,
+      checkoutId,
+      scope,
+    ],
   )
   const stats = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, fileStats(file)])),
@@ -214,6 +280,7 @@ export function TaskReview({
       responses.files,
     )
   const openFinding = (finding: CodeFinding) => {
+    setCommit(null)
     setFocusedFinding(finding)
     if (!sourceFiles.some((file) => file.path === finding.path)) {
       act(async () => {
@@ -255,6 +322,7 @@ export function TaskReview({
   }, [initialPath, initialLine, task.id, call])
   const sinceReview = (reviewId: string) =>
     act(async () => {
+      setCommit(null)
       const result = await call(
         '/api/review/task/changes',
         { taskId: task.id, reviewId },
@@ -281,6 +349,7 @@ export function TaskReview({
         scope={scope}
         focusedFinding={focusedFinding}
         onScope={(next) => {
+          setCommit(null)
           setScope(next)
           setSince(null)
           setCheckpoint('')
@@ -316,6 +385,7 @@ export function TaskReview({
                     }))) ?? []),
               ]}
               onChange={(id) => {
+                setCommit(null)
                 setSince(null)
                 setCheckoutId(id)
                 setPath('')
@@ -331,7 +401,7 @@ export function TaskReview({
                 compact
                 hideLabel
                 label="Change history"
-                value={since ? 'review' : checkpoint}
+                value={commit ? `commit:${commit.sha}` : since ? 'review' : checkpoint}
                 disabled={!!edit}
                 items={[
                   {
@@ -339,6 +409,14 @@ export function TaskReview({
                     name: 'Current changes',
                   },
                   ...(since ? [{ id: 'review', name: 'Since last review' }] : []),
+                  ...(commit
+                    ? [
+                        {
+                          id: `commit:${commit.sha}`,
+                          name: `Commit ${commit.sha.slice(0, 8)} · ${commit.subject}`,
+                        },
+                      ]
+                    : []),
                   ...(task.turns ?? [])
                     .filter((turn) => turn.checkpoint)
                     .map((turn, index) => ({
@@ -347,7 +425,8 @@ export function TaskReview({
                     })),
                 ]}
                 onChange={(value) => {
-                  if (value === 'review') return
+                  if (value === 'review' || value.startsWith('commit:')) return
+                  setCommit(null)
                   setSince(null)
                   setCheckpoint(value)
                   setCheckoutId('')
@@ -358,7 +437,7 @@ export function TaskReview({
             <Action
               secondary
               label="Refresh changes"
-              disabled={!connected || busy || task.example || !!edit || !!checkpoint}
+              disabled={!connected || busy || task.example || !!edit || !!checkpoint || !!commit}
               onPress={() =>
                 act(async () => {
                   if (since) {
@@ -388,6 +467,39 @@ export function TaskReview({
               <Action label="Cancel edit" secondary disabled={busy} onPress={() => setEdit(null)} />
             )}
           </View>
+          <LocalCommitPicker
+            taskId={task.id}
+            checkoutId={checkoutId || undefined}
+            disabled={!!edit || !!task.example}
+            onSelect={(selected) => {
+              setCommit({ sha: selected.sha, subject: selected.subject })
+              setScope('working')
+              setSince(null)
+              setCheckpoint('')
+              setPath('')
+              setFocusedFinding(undefined)
+              setFocusedLine(undefined)
+              setTab('diff')
+            }}
+          />
+          {commit && (
+            <Text style={styles.muted}>
+              {commit.subject} · Read-only changes against the first parent.
+            </Text>
+          )}
+          {commit && !commitDiff && <Text>Loading commit changes…</Text>}
+          {commitDiff?.error && commit && (
+            <View>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {commitDiff.error}
+              </Text>
+              <Action
+                secondary
+                label="Retry commit changes"
+                onPress={() => setCommitRetry((value) => value + 1)}
+              />
+            </View>
+          )}
           {!!history?.error && <Text style={styles.error}>{history.error}</Text>}
           {toolsOpen && (
             <Sheet
@@ -407,8 +519,9 @@ export function TaskReview({
                 </Text>
               )}
 
-              {!checkoutId && !checkpoint && <CommitSection task={task} />}
+              {!commit && !checkoutId && !checkpoint && <CommitSection task={task} />}
               <MobileOrganizeReview
+                onOpenFile={setPath}
                 review={review}
                 disabled={!!edit || !!task.example || !!since}
                 onOrganized={() => setRelated(true)}
@@ -421,6 +534,7 @@ export function TaskReview({
                     disabled={
                       busy ||
                       !!checkpoint ||
+                      !!commit ||
                       !!checkoutId ||
                       !!file.preview ||
                       !!since ||
@@ -441,6 +555,7 @@ export function TaskReview({
                 {file &&
                   !edit &&
                   !since &&
+                  !commit &&
                   scope === 'working' &&
                   (!checkpoint || !history?.undone) && (
                     <Action
@@ -589,12 +704,13 @@ export function TaskReview({
             file={file}
             taskId={task.id}
             turnId={checkpoint || undefined}
-            working={!checkpoint}
+            commitSha={commit?.sha}
+            working={!checkpoint && !commit}
             checkoutId={checkoutId || undefined}
           />
         ) : (
           <DiffView
-            key={`${checkpoint}:${checkoutId}:${file?.path}:${since?.id ?? ''}`}
+            key={`${commit?.sha ?? ''}:${checkpoint}:${checkoutId}:${file?.path}:${since?.id ?? ''}`}
             patch={patch}
             wrapLines={wrapLines}
             path={file?.path}
@@ -602,7 +718,7 @@ export function TaskReview({
             after={file?.after}
             focusedLine={focusedLine}
             onLinePress={
-              !checkpoint && !checkoutId && !since && scope === 'working'
+              !commit && !checkpoint && !checkoutId && !since && scope === 'working'
                 ? (line, side) => {
                     setFocusedLine(line)
                     setComment({ line, side, body: '' })
@@ -610,7 +726,7 @@ export function TaskReview({
                 : undefined
             }
             annotations={
-              file && !checkpoint && !since && !checkoutId && scope === 'working'
+              file && !commit && !checkpoint && !since && !checkoutId && scope === 'working'
                 ? pendingReviewComments(task)
                     .filter(
                       (message) =>

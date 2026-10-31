@@ -133,15 +133,32 @@ export class PeerConnections {
       if (room.retry) clearTimeout(room.retry)
       room.retry = undefined
       const socket = room.socket
-      room.socket = undefined
-      room.ready = undefined
       room.online = false
       room.lastError = null
       room.customRelays.clear()
       for (const ice of room.ice.values()) ice.stop()
       room.ice.clear()
-      socket?.terminate()
-      if (mode !== 'lan') this.open(room)
+      if (socket) {
+        // Finish the close handshake before reusing this room's broker registration.
+        // Keep the socket as its owner so enable() cannot race a replacement ahead of close.
+        room.ready = new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => socket.terminate(), 10000)
+          timeout.unref()
+          socket.once('close', () => {
+            clearTimeout(timeout)
+            // The ordinary close listener releases this socket and its reconnect timer first.
+            this.open(room)
+            if (room.ready) void room.ready.then(resolve, reject)
+            else resolve()
+          })
+          if (socket.readyState === WebSocket.OPEN) socket.close(1000, 'Connection policy changed')
+          else if (socket.readyState === WebSocket.CONNECTING) socket.terminate()
+        })
+        void room.ready.catch(() => {})
+      } else {
+        room.ready = undefined
+        if (mode !== 'lan') this.open(room)
+      }
     }
     return status
   }

@@ -1,12 +1,16 @@
 import { spawn } from 'node:child_process'
-import { cp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { managedProcessIsAlive, serverStatus, startServer, stopServer } from './server-manager.js'
-import { writePrivateJson } from './server-config.js'
-import { backupRuntimeDatabase, rotateRuntimeLogs } from '@dovo/runtime'
+import { serverStatus, startServer } from './server-manager.js'
+import {
+  activateSourceRelease,
+  recoverServerUpdate,
+  type ServiceControls,
+} from './server-update-recovery.js'
+import { rotateRuntimeLogs } from '@dovo/runtime'
 interface ServerRelease {
   entrypoint: string
   previousEntrypoint?: string
@@ -151,10 +155,9 @@ async function stageServerSource(root: string, target: string) {
     ? manifest.version
     : 'unknown'
 }
-export async function updateServer(
-  directory: string,
-  service?: { stop: () => Promise<void>; start: () => Promise<void> },
-) {
+export async function updateServer(directory: string, service?: ServiceControls) {
+  // An interrupted attempt is finished before its selection can become another's previous release.
+  const recovered = await recoverServerUpdate(directory, service)
   const initial = await serverStatus(directory)
   if (initial.running && !initial.managed && !service)
     throw new Error(
@@ -183,83 +186,64 @@ export async function updateServer(
     logPath,
   )
   const entrypoint = join(release, 'apps/api/dist/index.js')
-  const previousEntrypoint = selectedEntrypoint(directory)
-  const previousMetadata = existsSync(join(directory, 'server-release.json'))
-    ? JSON.parse(readFileSync(join(directory, 'server-release.json'), 'utf8'))
-    : {
-        entrypoint: previousEntrypoint,
-        version: 'previous',
-        createdAt: new Date().toISOString(),
-      }
   const metadata: ServerRelease = {
     entrypoint,
-    previousEntrypoint,
+    previousEntrypoint: selectedEntrypoint(directory),
     version,
     createdAt: new Date().toISOString(),
   }
-  if (initial.running) await (service ? service.stop() : stopServer(directory))
-  const backupPath = join(directory, 'backups', `runtime-before-${id}.sqlite`)
-  let backedUp = false
-  try {
-    if (existsSync(initial.databasePath)) {
-      await mkdir(dirname(backupPath), {
-        recursive: true,
-        mode: 0o700,
-      })
-      await backupRuntimeDatabase(initial.databasePath, backupPath)
-      backedUp = true
-    }
-    writePrivateJson(join(directory, 'server-release.json'), metadata)
-    if (service) await service.start()
-    else await startServer(directory, entrypoint)
-  } catch (error) {
-    writePrivateJson(join(directory, 'server-release.json'), previousMetadata)
-    if (service) {
-      try {
-        await service.stop()
-      } catch (stopError) {
-        throw new Error(
-          `The new service could not be stopped; the database was not restored. Backup: ${backupPath}. ${stopError instanceof Error ? stopError.message : String(stopError)}`,
-        )
-      }
-    }
-    if (managedProcessIsAlive(directory))
-      throw new Error(
-        `The new runtime did not stop cleanly. The previous release is selected, but the database was not restored while a process is using it. Backup: ${backupPath}. ${error instanceof Error ? error.message : String(error)}`,
-      )
-    if (backedUp) {
-      await cp(backupPath, initial.databasePath)
-      await rm(initial.databasePath + '-wal', {
-        force: true,
-      })
-      await rm(initial.databasePath + '-shm', {
-        force: true,
-      })
-    }
+  const activation = await activateSourceRelease(directory, {
+    id,
+    entrypoint,
+    selection: JSON.stringify(metadata, null, 2) + '\n',
+    databasePath: initial.databasePath,
+    running: initial.running,
+    service,
+  })
+  const failure = (error: unknown) => (error instanceof Error ? error.message : String(error))
+  if (activation.status === 'pending')
+    throw new Error(
+      `The new release failed and its rollback is incomplete. ${failure(activation.cause)} Original error: ${failure(activation.error)}`,
+      { cause: activation.error },
+    )
+  if (activation.status !== 'active') {
+    // The previous selection and database are in place; restart only what was running.
     if (initial.running) {
       try {
         if (service) await service.start()
-        else await startServer(directory, previousEntrypoint)
+        else await startServer(directory, selectedEntrypoint(directory))
       } catch (rollbackError) {
         throw new Error(
-          `The new release failed and the previous runtime could not restart: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}. Original error: ${error instanceof Error ? error.message : String(error)}`,
+          `The new release failed and the previous runtime could not restart: ${failure(rollbackError)}. Original error: ${failure(activation.error)}${activation.warnings.map((warning) => ` ${warning}`).join('')}`,
+          { cause: activation.error },
         )
       }
     }
+    const restored =
+      activation.status === 'rolled-back' ? ' and its database were restored' : ' was kept selected'
+    const preserved =
+      activation.status === 'rolled-back' && activation.preserved
+        ? ` The replaced database is kept at ${activation.preserved}.`
+        : ''
     throw new Error(
-      `The new release failed; the previous release was ${initial.running ? 'restarted' : 'kept selected'}. ${error instanceof Error ? error.message : String(error)}`,
+      `The new release failed; the previous release${restored}${initial.running ? ' and restarted' : ''}. ${failure(activation.error)}${preserved}${activation.warnings.map((warning) => ` ${warning}`).join('')}`,
+      { cause: activation.error },
     )
   }
+  const warnings = [...(recovered?.warnings ?? []), ...activation.warnings]
+  // The release is active; reading its status is reporting, not part of activation.
+  const status = await serverStatus(directory).catch((error: unknown) => {
+    warnings.push(`The new release is active, but its status could not be read: ${failure(error)}`)
+    return {}
+  })
   return {
     updated: true,
     version,
     release,
     updateLogPath: logPath,
-    ...(backedUp
-      ? {
-          backupPath,
-        }
-      : {}),
-    ...(await serverStatus(directory)),
+    ...(activation.backupPath ? { backupPath: activation.backupPath } : {}),
+    ...(recovered ? { recovered: { id: recovered.id, outcome: recovered.outcome } } : {}),
+    ...(warnings.length ? { warnings } : {}),
+    ...status,
   }
 }

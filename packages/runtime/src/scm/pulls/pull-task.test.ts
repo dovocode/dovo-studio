@@ -89,15 +89,11 @@ it('creates a linked task at the PR head and leaves main edits untouched on firs
   await writeFile(join(f.directory, 'hello.txt'), 'Unrelated local edit\n')
   const loadDetail = vi.spyOn(s.pulls, 'detail').mockResolvedValue(detail(sha, base))
   await s.git.command(f.directory, ['update-ref', 'refs/pull/7/head', sha])
-  const command = s.git.command.bind(s.git)
-  vi.spyOn(s.git, 'command').mockImplementation((cwd, args) =>
-    command(
-      cwd,
-      args.includes('fetch')
-        ? ['-c', `url.${f.directory}/.git.insteadOf=https://github.com/test/repo.git`, ...args]
-        : args,
-    ),
-  )
+  await s.git.command(f.directory, [
+    'config',
+    `url.${f.directory}/.git.insteadOf`,
+    'https://github.com/test/repo.git',
+  ])
   const fetch = vi.spyOn(s.git, 'fetchPull')
   const { id } = await createPullTask(s, 'repo', f.directory, {
     number: 7,
@@ -139,6 +135,7 @@ it('creates a linked task at the PR head and leaves main edits untouched on firs
     7,
     expect.stringMatching(/^refs\/dovo\/pull-tasks\//),
     expect.objectContaining({ headBranch: 'test:fix', headSha: sha }),
+    expect.any(AbortSignal),
   )
   expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('Task draft\n')
   expect(canChangeTaskProvider(s.store.task(id))).toBe(true)
@@ -296,14 +293,14 @@ it('uses the actual PR branch, pushes to its fork, and restores committed work w
     headBranch: 'test:fix',
     headCloneUrl: source.pull.headCloneUrl,
   })
-  const command = s.git.command.bind(s.git)
+  const command = s.git.checkoutCommand.bind(s.git)
   let failUpstream = true
-  vi.spyOn(s.git, 'command').mockImplementation((cwd, args, env) => {
+  vi.spyOn(s.git, 'checkoutCommand').mockImplementation((cwd, args, signal, env) => {
     if (failUpstream && args[0] === 'config' && args[1] === 'branch.fix.remote') {
       failUpstream = false
       return Promise.reject(new Error('Upstream setup interrupted'))
     }
-    return command(cwd, args, env)
+    return command(cwd, args, signal, env)
   })
   await expect(s.checkouts.directory(id)).rejects.toThrow('Upstream setup interrupted')
   const cwd = await s.checkouts.directory(id)
@@ -335,7 +332,7 @@ it('uses the actual PR branch, pushes to its fork, and restores committed work w
     'already checked out elsewhere',
   )
   expect(await git('rev-parse', 'refs/heads/fix')).toBe(updated)
-  await rm(cwd, { recursive: true, force: true })
+  await s.git.command(f.directory, ['worktree', 'remove', cwd])
   expect(await s.checkouts.directory(id)).toBe(cwd)
   expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(updated)
   expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('Direct update\n')

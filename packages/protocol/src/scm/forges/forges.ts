@@ -1,4 +1,5 @@
 import { forgeDestinationGuardFields, forgeIdentityTokenSchema } from './source-identity.js'
+import { agentSecretReferenceSchema } from '../../tasks/secret-references.js'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { urlSchema, refine, minValue, maxValue, superRefine } from '../../shared/schema.js'
 import { Schema, Effect, Struct } from 'effect'
@@ -65,7 +66,11 @@ export const forgeConnectionSchema = mutableStruct({
   provider: forgeProviderSchema,
   baseUrl: serverURL,
   username: Schema.optional(maxValue(Schema.String, 200)),
-  credential: Schema.Literals(['gh', 'gh-wrapper', 'token', 'environment', 'cli']),
+  credential: Schema.Literals(['gh', 'gh-wrapper', 'token', 'environment', 'cli', 'reference']),
+  // Only the vault kind is public; the reference itself stays in host-private storage.
+  secretProvider: Schema.optional(
+    Schema.Literals(['environment', 'onepassword', 'bitwarden', 'infisical']),
+  ),
   cliEnv: Schema.optional(cliEnvironmentSchema),
   tokenEnv: Schema.optional(Schema.String),
   cliTool: Schema.optional(Schema.Literals(['fj', 'tea'])),
@@ -128,6 +133,7 @@ export const forgeConnectionInputSchema = superRefine(
       tokenEnv: Schema.optional(
         Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/))),
       ),
+      secret: Schema.optional(agentSecretReferenceSchema),
     },
   }),
   (value, ctx) => {
@@ -193,6 +199,18 @@ export const forgeConnectionInputSchema = superRefine(
         code: 'custom',
         message: 'Enter the named CLI login/profile',
         path: ['cliProfile'],
+      })
+    if (value.credential === 'reference' && value.provider !== 'bitbucket')
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Secret manager references are available for Bitbucket connections',
+        path: ['credential'],
+      })
+    if (value.secret && value.credential !== 'reference')
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A secret reference requires secret manager authentication',
+        path: ['secret'],
       })
     if (value.provider === 'bitbucket' && value.credential !== 'cli' && !value.username)
       ctx.addIssue({

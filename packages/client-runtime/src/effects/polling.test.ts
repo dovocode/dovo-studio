@@ -138,3 +138,40 @@ it('keeps polling after a cycle dies with a defect', async () => {
     await polling.stop()
   }
 })
+
+it('owns no recurring timer while disabled and resumes promptly when refreshed', async () => {
+  vi.useFakeTimers()
+  let enabled = false
+  let calls = 0
+  const polling = startPolling(
+    Effect.sync(() => {
+      calls++
+    }),
+    {
+      interval: 1000,
+      enabled: () => enabled,
+      onError: () => {},
+    },
+  )
+  try {
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(calls).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    enabled = true
+    polling.refresh()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toBe(1)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(calls).toBe(2)
+    enabled = false
+    polling.refresh()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(calls).toBe(2)
+  } finally {
+    await polling.stop()
+  }
+})

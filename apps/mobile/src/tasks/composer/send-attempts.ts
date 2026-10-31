@@ -5,9 +5,11 @@ import { nativeEffect } from '../../runtime/state/native-effect'
 export type SendScope = { runtimeId: string; taskId: string }
 type DraftContent = { text: string; attachmentIds: readonly string[] }
 type SendInput = DraftContent & {
-  mode: 'queue' | 'steer'
+  mode: 'queue' | 'steer' | 'stage'
   runId?: string
   turnSettings?: TurnSettings
+  plan?: boolean
+  preserveQueuePause?: boolean
 }
 export type SendAttempt = SendInput & { id: string; title?: string }
 
@@ -50,7 +52,8 @@ export function createSendAttempts(createId: () => string) {
         previous &&
         previous.mode === input.mode &&
         sameDraft(previous, input) &&
-        sameTurnSettings(previous.turnSettings, input.turnSettings)
+        sameTurnSettings(previous.turnSettings, input.turnSettings) &&
+        !!previous.plan === !!input.plan
       )
         return previous
       const attempt: SendAttempt = {
@@ -60,6 +63,8 @@ export function createSendAttempts(createId: () => string) {
         mode: input.mode,
         runId: input.runId,
         turnSettings: input.turnSettings,
+        ...(input.plan ? { plan: true } : {}),
+        ...(input.preserveQueuePause ? { preserveQueuePause: true } : {}),
       }
       attempts.set(key(scope), attempt)
       return attempt

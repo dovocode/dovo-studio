@@ -946,3 +946,90 @@ it('ignores text evaluation failures only for frames that detached after the foc
   expect(main.evaluate).toHaveBeenCalledTimes(1)
   expect(session.page.title).toHaveBeenCalledOnce()
 })
+
+it('acknowledges scoped file transfers, hides internal errors and rechecks ownership after queued IO', async () => {
+  const { randomUUID } = await import('node:crypto')
+  const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
+  vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const disconnect = vi.spyOn(RemoteBrowsers.prototype, 'disconnectUploads').mockResolvedValue()
+  const token = 'browser-upload-test-owner-token-with-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  const deviceToken = 'browser-upload-test-device-token-with-32-characters'
+  const device = runtime.services.devices.add('Upload phone', deviceToken)
+  const ticket = runtime.services.browserTickets.issue(
+    deviceToken,
+    'upload-tab',
+    STUDIO_BROWSER_SCOPE,
+  )
+  const socket = new WebSocket(`ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}`)
+  cleanups.unshift(async () => {
+    socket.terminate()
+  })
+  const messages: unknown[] = []
+  socket.on('message', (raw) => {
+    const bytes = Array.isArray(raw)
+      ? Buffer.concat(raw)
+      : Buffer.isBuffer(raw)
+        ? raw
+        : Buffer.from(raw)
+    messages.push(JSON.parse(bytes.toString()))
+  })
+  await once(socket, 'open')
+  let delivered = 0
+  const upload = vi
+    .spyOn(RemoteBrowsers.prototype, 'upload')
+    .mockImplementation(async (_id, _command, authorize) => {
+      authorize()
+      delivered++
+    })
+  const chooserId = randomUUID()
+  const first = {
+    type: 'fileUploadStart',
+    requestId: randomUUID(),
+    chooserId,
+    name: 'fixture.csv',
+    mimeType: 'text/csv',
+    size: 3,
+  }
+  socket.send(JSON.stringify(first))
+  await vi.waitFor(() =>
+    expect(messages).toContainEqual({ type: 'fileUploadAck', requestId: first.requestId }),
+  )
+  expect(upload).toHaveBeenCalledWith('upload-tab', first, expect.any(Function))
+  expect(delivered).toBe(1)
+  upload.mockImplementationOnce(async () => {
+    throw new Error('/private/runtime/upload/fixture.csv')
+  })
+  const failed = { ...first, requestId: randomUUID() }
+  socket.send(JSON.stringify(failed))
+  await vi.waitFor(() =>
+    expect(messages).toContainEqual({
+      type: 'fileUploadAck',
+      requestId: failed.requestId,
+      error: 'Could not transfer the selected file. Open the upload control and try again.',
+    }),
+  )
+  expect(JSON.stringify(messages)).not.toContain('/private/runtime/')
+  let finishIO: () => void = () => {
+    throw new Error('Upload IO was not initialized')
+  }
+  const io = new Promise<void>((resolve) => {
+    finishIO = resolve
+  })
+  upload.mockImplementationOnce(async (_id, _command, authorize) => {
+    await io
+    authorize()
+    delivered++
+  })
+  socket.send(JSON.stringify({ ...first, requestId: randomUUID() }))
+  await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(3))
+  const closed = once(socket, 'close')
+  runtime.services.devices.revoke(device)
+  await closed
+  finishIO()
+  await vi.waitFor(() =>
+    expect(disconnect).toHaveBeenCalledWith('upload-tab', upload.mock.calls[2][2]),
+  )
+  expect(delivered).toBe(1)
+})

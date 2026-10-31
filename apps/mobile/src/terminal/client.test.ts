@@ -13,6 +13,8 @@ function fixture() {
   let input: (text: string) => void = () => {}
   let resets = 0
   let fits = 0
+  const buffer = { active: { viewportY: 0, baseY: 0 } }
+  const writes: Array<() => void> = []
   class Element {
     textContent = ''
     disabled = false
@@ -88,6 +90,7 @@ function fixture() {
       refresh() {}
       cols = 80
       rows = 24
+      buffer = buffer
       loadAddon() {}
       open() {}
       onData(listener: typeof input) {
@@ -96,7 +99,15 @@ function fixture() {
       reset() {
         resets++
       }
-      write() {}
+      write(_data: string, callback: () => void) {
+        writes.push(callback)
+      }
+      scrollToLine(line: number) {
+        buffer.active.viewportY = line
+      }
+      scrollToBottom() {
+        buffer.active.viewportY = buffer.active.baseY
+      }
     },
     FitAddon: class {
       fit() {
@@ -130,6 +141,8 @@ function fixture() {
     opened,
     input: (text: string) => input(text),
     resets: () => resets,
+    buffer: buffer.active,
+    writes,
     button: (label: string) => {
       const button = buttons.find((item) => item.textContent === label)
       if (!button) throw new Error(`Missing button: ${label}`)
@@ -139,6 +152,58 @@ function fixture() {
     root,
   }
 }
+
+it('restores a covered viewport after replay, clamps truncation, and ignores stale callbacks', () => {
+  const f = fixture()
+  f.window.connectTerminal('ws://fixture/terminal', 1)
+  f.opened(f.sockets[0])
+  f.sockets[0].onmessage?.({ data: 'initial replay' })
+  f.writes.shift()?.()
+  f.buffer.baseY = 100
+  f.buffer.viewportY = 75
+  f.window.disconnectTerminal(1)
+  f.window.connectTerminal('ws://fixture/terminal', 2)
+  f.opened(f.sockets[1])
+  f.sockets[1].onmessage?.({ data: 'replay' })
+  const stale = f.writes.shift()
+  f.buffer.viewportY = 0
+  f.window.disconnectTerminal(2)
+  f.window.connectTerminal('ws://fixture/terminal', 3)
+  f.opened(f.sockets[2])
+  f.buffer.baseY = 120
+  f.buffer.viewportY = 0
+  stale?.()
+  expect(f.buffer.viewportY).toBe(0)
+  f.sockets[2].onmessage?.({ data: 'replay' })
+  f.writes.shift()?.()
+  expect(f.buffer.viewportY).toBe(75)
+  f.window.disconnectTerminal(3)
+  f.window.connectTerminal('ws://fixture/terminal', 4)
+  f.opened(f.sockets[3])
+  f.buffer.baseY = 40
+  f.buffer.viewportY = 0
+  f.sockets[3].onmessage?.({ data: 'truncated replay' })
+  f.writes.shift()?.()
+  expect(f.buffer.viewportY).toBe(40)
+})
+
+it('continues following the bottom after a covered terminal resumes', () => {
+  const f = fixture()
+  f.window.connectTerminal('ws://fixture/terminal', 1)
+  f.opened(f.sockets[0])
+  f.sockets[0].onmessage?.({ data: 'initial replay' })
+  f.writes.shift()?.()
+  f.buffer.baseY = 20
+  f.buffer.viewportY = 20
+  f.window.disconnectTerminal(1)
+  f.window.connectTerminal('ws://fixture/terminal', 2)
+  f.opened(f.sockets[1])
+  f.buffer.baseY = 80
+  f.buffer.viewportY = 0
+  f.sockets[1].onmessage?.({ data: 'replay' })
+  f.writes.shift()?.()
+  expect(f.buffer.viewportY).toBe(80)
+})
 
 it('applies accessible, cancellable one-shot modifiers to supported inputs', () => {
   const f = fixture()

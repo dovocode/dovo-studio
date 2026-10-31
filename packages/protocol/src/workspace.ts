@@ -1,4 +1,5 @@
 import { taskIsWorking } from './tasks/task-working.js'
+import { providerRetrySchema } from './conversation/workflow/provider-retry.js'
 import { messageSourceSchema } from './tasks/message-source.js'
 import { usageAccountSchema, planLimitSchema } from './conversation/workflow/plan-limits.js'
 export { usageAccountSchema } from './conversation/workflow/plan-limits.js'
@@ -13,6 +14,7 @@ import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct, strictStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
+import { agentSecretReferencesSchema } from './tasks/secret-references.js'
 import { agentTodosSchema } from './conversation/workflow/agent-interactions.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/forges/jira.js'
 import { taskWorkItemSchema } from './scm/work/work-task.js'
@@ -80,6 +82,7 @@ export const agentPresetSchema = mutableStruct({
   executablePath: Schema.optional(Schema.String),
   configDirectory: Schema.optional(Schema.String),
   args: Schema.optional(mutableArray(Schema.String)),
+  envSecrets: Schema.optional(agentSecretReferencesSchema),
   env: Schema.optional(
     Schema.Record(Schema.String, Schema.String).pipe(
       Schema.check(
@@ -533,6 +536,8 @@ export const linkedCheckpointSchema = mutableStruct({
 })
 export type LinkedCheckpoint = Schema.Schema.Type<typeof linkedCheckpointSchema>
 export const turnCheckpointSchema = mutableStruct({
+  // Durable undo intent. Repeat undo to finish or redo to recover after an interrupted restore.
+  restorePending: Schema.optional(Schema.Literal(true)),
   linked: Schema.optional(mutableArray(linkedCheckpointSchema)),
   before: Schema.String,
   after: Schema.optional(Schema.String),
@@ -544,6 +549,8 @@ export const turnCheckpointSchema = mutableStruct({
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
 export const turnSchema = mutableStruct({
+  /** Latest provider-owned retry, replaced in place within this execution. */
+  providerRetry: Schema.optional(providerRetrySchema),
   /** One user-visible run can contain replacement provider attempts. */
   runId: Schema.optional(Schema.String),
   usageAccount: Schema.optional(usageAccountSchema),
@@ -688,6 +695,7 @@ export const taskSchema = mutableStruct({
       milliseconds: Schema.Number,
       hasChanges: Schema.Boolean,
       undoableTurnId: Schema.optional(Schema.String),
+      pendingUndoTurnId: Schema.optional(Schema.String),
     }),
   ),
   // Admission is durable before checkout preparation; a session alone proves no delivery.
@@ -799,6 +807,18 @@ export const taskSchema = mutableStruct({
   /** Reuse a registered Git worktree instead of creating one for this task. */
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
   worktreeBaseBranch: Schema.optional(Schema.String),
+  /** Runtime-owned base resolved before the task worktree was created. Branch diffs and reviews
+   * of `branch` compare against `ref`, or against the starting `commit` once that ref is gone.
+   * Neither is recorded when none is known; those compare against the default branch. */
+  worktreeBase: Schema.optional(
+    mutableStruct({
+      branch: maxValue(minValue(Schema.String, 1), 300),
+      ref: Schema.optional(maxValue(minValue(Schema.String, 1), 600)),
+      commit: Schema.optional(
+        Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40,64}$/))),
+      ),
+    }),
+  ),
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
   /** Copy non-ignored working changes from the current checkout into a fresh worktree. */
   worktreeIncludeChanges: Schema.optional(Schema.Boolean),
@@ -861,6 +881,8 @@ export const taskSchema = mutableStruct({
   fileReviewVersions: Schema.optional(Schema.Record(Schema.String, reviewVersionSchema)),
   draft: Schema.String,
   draftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
+  /** The next composer message asks for a read-only plan turn. */
+  draftPlan: Schema.optional(Schema.Boolean),
   draftAttachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
   example: Schema.Boolean,
   origin: Schema.optional(Schema.String),
@@ -873,6 +895,17 @@ export const taskSchema = mutableStruct({
   workItem: Schema.optional(taskWorkItemSchema),
   sessionId: Schema.optional(Schema.String),
   sessionAgentId: Schema.optional(Schema.String),
+  /** Runtime-owned terminal import receipt, persisted with the authoritative task history. */
+  importedCodexSession: Schema.optional(
+    mutableStruct({
+      key: Schema.String,
+      sessionId: Schema.String,
+      home: Schema.String,
+      transcriptPath: Schema.String,
+      cwd: Schema.String,
+      importedAt: Schema.String,
+    }),
+  ),
   error: Schema.optional(Schema.String),
   activity: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String),

@@ -74,14 +74,16 @@ export function TurnCheckpoint({
   }, [filtered, stats])
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
-  const undone = !!checkpoint.undone
+  const undone = !!checkpoint.undone && !checkpoint.restorePending
   const file = filtered.find((entry) => entry.path === selected) ?? filtered[0]
   const count = files.length
-  const title = undone
-    ? 'Changes undone'
-    : checkpoint.error
-      ? 'Checkpoint incomplete'
-      : `${count} ${count === 1 ? 'file' : 'files'} changed`
+  const title = checkpoint.restorePending
+    ? 'Undo recovery pending'
+    : undone
+      ? 'Changes undone'
+      : checkpoint.error
+        ? 'Checkpoint incomplete'
+        : `${count} ${count === 1 ? 'file' : 'files'} changed`
   // Show checkpoint controls only once the turn has a result to inspect.
   if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
     return null

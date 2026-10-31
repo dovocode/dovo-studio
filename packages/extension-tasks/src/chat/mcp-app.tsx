@@ -9,12 +9,25 @@ import {
   type McpApp,
 } from '@dovo/protocol'
 import { startMcpAppTools } from '@dovo/studio-core'
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { ConversationVisibilityContext } from './conversation-visibility'
 import { useWorkspace, useResolvedTheme, useStudioHost } from '@dovo/studio-core'
 import html from '../../../studio-ui/mcp-apps/host.json'
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : {}
+const subscribeVisibility = (notify: () => void) => {
+  document.addEventListener('visibilitychange', notify)
+  return () => document.removeEventListener('visibilitychange', notify)
+}
+const documentVisible = () => document.visibilityState === 'visible'
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
+  const paneVisible = useContext(ConversationVisibilityContext)
+  const documentIsVisible = useSyncExternalStore(
+    subscribeVisibility,
+    documentVisible,
+    documentVisible,
+  )
+  const visible = paneVisible && documentIsVisible
   const { request, connected, activeRuntimeId, connection, workspace } = useWorkspace()
   const { openLink } = useStudioHost()
   const linkOrigin = useRef<{ runtimeId?: string; repositoryId?: string }>({})
@@ -47,7 +60,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     nonce.current = randomUUID()
   }, [activeRuntimeId, reference.taskId, reference.id])
   useEffect(() => {
-    if (!connected) return
+    if (!connected || !visible) return
     let disposed = false
     setError('')
     void request(
@@ -65,7 +78,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     return () => {
       disposed = true
     }
-  }, [request, activeRuntimeId, reference.taskId, reference.id, connected])
+  }, [request, activeRuntimeId, reference.taskId, reference.id, connected, visible])
   useEffect(() => {
     if (!connected || !connection || !app?.connected || app.format !== 'apps') return
     const key = nonce.current
@@ -88,6 +101,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
       call: (value) => sendTool({ ...value, type: 'app-tool-call', nonce: key }),
       cancel: (requestId) => sendTool({ type: 'app-tool-cancel', requestId, nonce: key }),
       onError: (cause) => setNotice(cause.message),
+      visible,
     })
     tools.current = current
     current.setTools(advertisedTools.current)
@@ -104,6 +118,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     reference.taskId,
     reference.id,
   ])
+  useEffect(() => tools.current?.setVisible(visible), [visible])
   const send = () => {
     if (app && ready.current)
       frame.current?.contentWindow?.postMessage(

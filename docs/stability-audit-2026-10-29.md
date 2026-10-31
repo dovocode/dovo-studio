@@ -1,5 +1,19 @@
 # Stability audit — second discovery round
 
+Follow-up on 2026-10-30: G2 (undo persistence and stale requests), G3 (SCM write admission), G4
+(checkpoint symlink removal) and D1 (owned staging sidecars) are addressed in the
+[quality follow-up](t3-performance-comparison.md#quality-follow-up-2026-10-30). The findings below
+retain their original audit context; other unresolved findings are not marked fixed by that work.
+
+The
+[deeper fault-injection follow-up](t3-performance-comparison.md#deeper-fault-injection-follow-up-2026-10-30)
+also addresses G1 (retain handoff recovery stashes and pin private recovery refs), B2 (cross-profile
+download reservations), A1 (coherent PDF rendering), S1–S3 (supported diagnostic credential formats
+and ambient MCP filtering), and further backup/restore failure handling. Its evidence and limits
+supersede the corresponding original findings below. Updater transactional recovery, worktree
+creation and uncertain mobile uploads remain open; the follow-up distinguishes targeted safeguards
+from complete fixes.
+
 Started: 2026-10-29; consolidated: 2026-10-30 (Europe/Amsterdam). Baseline: `f4cca6d1`, reviewed
 alongside the uncommitted first-round fixes.
 
@@ -373,11 +387,240 @@ No commit, push, nightly publication or physical iPhone update was performed in 
 
 ## Recommended next implementation order
 
-1. Fix G1–G3: stash identity, undo bookkeeping/redo recovery, and SCM mutation admission.
-2. Harden U1 rollback, then S1–S3 credential propagation and redaction boundaries.
-3. Address browser/PDF correctness and database retention/degraded-record recovery.
-4. Verify mobile upload cancellation and uncertain-response reconciliation on native devices.
+The
+[recovery challenge follow-up](t3-performance-comparison.md#recovery-challenge-follow-up-2026-10-30)
+supersedes G1–G3's original evidence with durable handoff refs, intent-before-write undo recovery,
+shared edit admission, task/instruction-save protection and family admission regressions. It also
+records residual shared-stash and externally missing checkout limits.
+
+1. Implement owned/cancellable worktree creation and partial-failure recovery across all callers.
+2. Complete U1 transactional updater rollback; the current startup guard is only a targeted
+   safeguard.
+3. Address open browser/PDF-adjacent and database retention/degraded-record findings.
+4. Implement uncertain-response reconciliation for mobile uploads and verify it on native devices.
 
 Keep seamless relay renewal, old-device transfer receipt recovery, and coordinated log rotation as
 explicit design work with end-to-end failure tests. Do not weaken leases, pairing ownership, HTTP
 LAN/VPN support or uncertain-mutation protections to make recovery appear successful.
+
+## Deeper implementation pass, 2026-10-30
+
+The following changes supersede the corresponding worktree and degraded-record findings above:
+
+- Worktree creation uses Git 2.33's creation lock with a unique attempt reason and an exclusively
+  created folder identity. Hooks, fetches and submodule preparation run as owned process trees with
+  cancellation and a five-minute checkout/setup budget. Origin discovery retains its 30-second
+  budget, and PR fetches retain their existing command budgets, with noninteractive credentials.
+  Confirmed failures clean only the matching owned folder/registration; replacements and unconfirmed
+  shutdowns are preserved. Shared configuration admission remains held until an unconfirmed writer's
+  exit is positively confirmed. Cancellation of a queued writer cannot admit successors ahead of its
+  predecessor.
+- Primary, linked and PR preparation no longer prune unrelated missing registrations. Missing
+  worktree folders can still have staged data in Git's per-worktree index, and now require explicit
+  recovery. Main folders and incompletely created worktrees are excluded from automatic adoption.
+  Repeated handoffs out of the main folder create a fresh branch at its current tip while retaining
+  prior branches. Setup/submodule completion resets before creation; interrupted fork snapshots
+  resume during preparation instead of being lost when a checkout already exists.
+- A failed preparation shutdown is preserved as an ownership error rather than wrapped as a setup
+  error. A live runtime quarantines its checkout until exit is confirmed, across Git service
+  instances and provider admission. Real hook/child cancellation, replacement-folder preservation,
+  retained staged indexes, fork recovery and repeated handoff regressions pass. Snapshot
+  restoration, submodules and setup also hold an attempt-specific `dovo-preparing` Git lock through
+  completion persistence. Checkout inspection permits only that preparation's asynchronous execution
+  context while the lock is held. The lock survives runtime death, so a fresh runtime refuses a
+  checkout whose detached setup may still be alive. A real POSIX SIGKILL probe verifies this refusal
+  while the setup process remains running. Recovery after a hard kill requires confirming those
+  commands stopped before explicitly unlocking; the application does not infer their exit from the
+  runtime PID. Windows hard-kill process behavior was not exercised by this probe.
+- Unreadable v3 metadata rows and their summaries/manifests survive full rewrites. Malformed v2 task
+  identities are also reserved during migration, and identifiable orphans from earlier v2 migration
+  backups can be recovered without rewriting authoritative conversations. Reusing a reserved ID is
+  refused; metadata must be repaired or a backup restored. Conflicting or ambiguous recovery records
+  fail closed. Previously overwritten conversation text cannot be reconstructed. Recovery
+  bookkeeping clears after the outer transaction commits, preserving rollback retries without
+  rewriting the workspace shell on every subsequent streamed update.
+- Mobile history cache-read failures no longer prevent live pagination. Cache failures remain
+  visible, and unread offline content is protected from overwrite. The managed-browser task-list
+  check confirms group/project collapse survives full reloads with the real preference store.
+
+See [performance verification](performance.md#deeper-performance-and-recovery-pass-2026-10-30) for
+reproducible include-discovery, Markdown and compaction measurements and their limits. HTTP LAN/VPN,
+optional HTTPS, pairing and required device tokens are unchanged.
+
+### Final worktree challenge
+
+The independent read-only worktree review was completed; its failure predictions were source traces,
+not executed probes. Parent regressions now cover the strongest additional findings:
+
+- Availability reads precede overlap checks and publication of run directories, closing admission
+  between asynchronous Git-lock reads. A forced concurrent-admission regression admits exactly one
+  provider and rejects the competing run.
+- Refused consumers receive a 409 rather than inheriting another owner's shutdown error. They do not
+  reserve a new folder or quarantine their own run/configuration queue. The actual failed command
+  retains ownership until confirmation.
+- Launcher exit initiates descendant cleanup before pipe EOF. An escaped process retaining output
+  causes a bounded shutdown error and retains both live quarantine and the durable preparation lock
+  until genuine EOF; a real detached-process regression verifies this boundary.
+- Confirmed creation cleanup removes the owned folder before its Git registration, preserving the
+  registration if file deletion fails. Empty reserved folders can be removed without pruning
+  unrelated registrations. Preparation recovery guidance asks users to confirm command shutdown and
+  unlock; it does not suggest deleting a prepared worktree.
+- New task branches disable inherited base tracking, and replacement handoff branches are saved as
+  `checkoutBranch`. A real local bare-remote regression verifies that a task push leaves the origin
+  base unchanged. Existing manually configured upstream behavior is preserved.
+- The worktree version gate is Git 2.36, matching the NUL-delimited porcelain feature in use.
+
+The hard-kill and escaped-pipe probes ran on POSIX. Arbitrary daemonization outside the owned
+process group with redirected output, and native Windows background-process behavior, are not proven
+by these probes. Historical findings below other headings remain historical unless a later
+implementation section explicitly supersedes them.
+
+### Source updater recovery
+
+Source updates now save a durable phase record before stopping the previous runtime. The verified
+SQLite snapshot and release selection share runtime admission; a foreign runtime holding the
+database prevents activation before any stale rollback snapshot is captured. A launched candidate
+waits on a parent-owned stdin gate until its PID is durably recorded, so updater death before that
+write cannot leave a candidate that opens the database later. Existing healthy foreign runtimes
+cannot count as a newly admitted candidate.
+
+Rollback restores through SQLite's transactional backup API while holding runtime admission, then
+reselects the previous release. The candidate database is preserved separately. An initially absent
+database is restored to absence without leaving a WAL to replay. Interrupted rollback remains
+recoverable from the journal and backup; a live or unconfirmed candidate prevents restoration.
+Service boot launchers resolve pending source updates before starting, verify interrupted candidates
+and preserve the rollback decision across another restart. Completion is durable before journal
+cleanup; cleanup failures cannot report a healthy activation as failed. Transaction records use the
+shared schema decoder and the updater imports the same typed SQLite binding as the runtime.
+
+The five targeted updater/manager/activation/service suites passed 53 tests after integration,
+including actual updater SIGKILL, interrupted SQLite restore, failed migrations, late candidates,
+occupied locks and service-manager relaunches. The source-update tests run built Node launchers;
+they do not verify signed packages or operating-system service installation.
+
+**Open at the end of that pass (closed in the follow-up below):** archive/Homebrew
+`activateServerRelease` now holds admission through snapshot and selection and restores on caught
+activation errors, but its callback-based activation has no durable packaged-release journal.
+SIGKILL during a packaged migration is not covered by source recovery. Completing this needs
+persistent launcher selection and boot recovery for the packaged service; the source update journal
+must not be presented as solving that path. The server config already requires the database and
+control files in the same data directory; no new cross-directory configuration was introduced.
+
+### Mobile upload recovery integration
+
+Phone uploads persist their immutable ID and complete request in the mutation journal before
+dispatch. Device-bound runtime receipts reconcile lost responses across restart; reconnect does not
+replay upload requests. Finish and acknowledgement retain the payload until the runtime confirms a
+live draft, queued message or conversation reference. Task deletion and stale recovery flags cannot
+alone justify retiring the last copy. Explicit discard writes a tombstone before retiring the saved
+request.
+
+Ordinary picker, replacement and archive uploads first stage detached bytes, then atomically commit
+to the original runtime draft guard while their UI still owns the task/computer/edit session.
+Keyboard edits continue within the same mobile draft; sending is blocked while attaching. The server
+guard detects changed draft text, attachment IDs, queue IDs and message counts, without invalidating
+on streamed text-only history edits. A multi-file batch captures one guard and advances only from
+its own successful commit receipt. That post-commit guard is persisted transactionally for restart
+replay. An uncertain result stops the remaining batch before further dispatch. Normal success
+reaches the composer directly; changed/closed destinations retain an explicit review item.
+Queued-edit uploads retain their saved payload until the edit is durably committed, with explicit
+recovery into the original task's current draft when the edit cannot be resumed.
+
+The agent's final targeted run passed 95 runtime/protocol tests plus managed-Chromium file-drop,
+image-editor and archive checks. The fixtures cover changed destinations between selected files and
+lost commit responses; runtime tests include streaming stability, HTTP guard chaining and restart
+replay. Native React Native/device behavior was not exercised in this pass. Legacy/old-device
+receipt migration remains separate work.
+
+### Final verification for this deeper pass
+
+- The final complete monorepo test run passed **6,112 tests across 715 suites**, with 12 tests and
+  four suites skipped. Targeted worktree deadline/ownership, updater and mobile upload regressions
+  are included in that run. No new disabled assertions were added to mask failures.
+- All workspace typechecks passed. Recursive workspace builds passed on Node 24.11.0; the final
+  full-test command rebuilt API dependencies after the runtime/protocol/updater integration. The
+  desktop nested build wrapper failure was reproduced on Node 24 and 26 and removed, as recorded in
+  `ci-performance.md`. Final workspace formatting/lint passed with zero errors and the ten existing
+  warnings; `git diff --check` passed.
+- The mobile agent's final managed-browser checks passed for file drops, image editing and archive
+  attachment commits. Earlier real-preference reload checks cover mobile group/project collapse;
+  native-device and signed-package deployment were not performed in this pass.
+- Latest T3 Code was rechecked at `6575ce32508bd7908444241f3719aa33aaf77f90` (2026-10-30 12:44:34
+  UTC); it is the same revision used for the comparison. The worktree Opus review finished as
+  read-only source analysis. Parent failure probes and integration tests provide the executed
+  evidence. The updater child was stopped after implementation and its final integration was
+  completed by the parent; it is not counted as an additional completed independent review.
+
+Open follow-ups remain the packaged-service crash journal, coordinated log rotation across
+uncoordinated writers, seamless TURN renewal, legacy/old-device receipt migration, and native
+platform/release verification. This pass improves the implemented paths without claiming those
+separate gaps are closed. No commit, push, PR or deployment was performed.
+
+## Packaged-service recovery follow-up, 2026-10-30
+
+Packaged/Homebrew service activation now uses the durable update journal. Source journals remain
+version 1; package journals use version 2, so older source-journal decoders refuse incompatible
+metadata. No committed/released source-journal implementation was found in this checkout's Git
+history. Use the updated package CLI when resuming an interrupted package update; do not manually
+start an older, unrelated package on the pending database.
+
+- The transaction records immutable previous/candidate launchers and both service records. A service
+  record is published before the symlink that marks the selection boundary. Recovery uses the pinned
+  launcher identity, including when Homebrew uses identical public-path metadata on both sides.
+  Subsequent attempts derive the previous version from the actual service selection, rather than a
+  public path already advanced by a failed attempt.
+- Before Homebrew preparation, the old launcher is pinned and the stopped database is snapshotted
+  under runtime admission. A killed updater can leave brew running. Abandoning preparation retains
+  the pin even if the public path has not changed yet; later package-manager mutation cannot select
+  an unverified candidate. Status/doctor expose retained or missing packages.
+- Candidate startup requires the selected launcher and its actual package entrypoint. Boot recovery
+  delegates through the restored package launcher instead of accidentally starting the new
+  launcher's own runtime after rollback. An archive launcher refuses a pending source update.
+- Remote-update version expectations survive restart and are checked through the authenticated
+  overview before commit. Failed startup/version verification records rollback before restoring. The
+  candidate must stop before restoring the old database; replaced candidate data is preserved. Boot
+  recovery prints the preservation path and any warnings. Old-service restart failures are reported
+  separately from pending database recovery.
+- Successful commit durably records completion before returning the service link to its public
+  package-manager path, and does so only when that path still selects the verified package. A
+  completed update or rollback remains bootable when optional launcher/record cleanup cannot write
+  to disk. The old callback-only production helper was removed; its six failure tests now exercise
+  the journal implementation.
+- Boot verification observes both child exit and spawn error, so an unspawnable candidate cannot
+  leave the service wrapper polling forever. Fault tests cover runtime-lock contention, failed
+  candidate stop, a database first created by the candidate, partial SQLite restore failure and
+  failure to restart the restored service.
+
+The new crash probes SIGKILL real updater processes during preparation, after migration, after the
+rollback decision, and on either side of launcher publication. Separate copied-package fixtures run
+the actual packaged service launcher through healthy commit and failed-candidate rollback. A late
+public-link mutation after abandoned preparation is also covered. Two injected read-only cleanup
+regressions verify continued boot for both committed updates and completed rollbacks. These use
+Linux/Node subprocesses and simulated package-manager/service controls; they do not validate native
+Homebrew, launchd/systemd registration, power-loss behavior or signed release packages.
+
+A macOS updater killed after service stop can leave the job unregistered until login or an explicit
+service restart. The journal preserves safe recovery; it cannot run after SIGKILL. Existing limits
+for uncoordinated log writers, TURN renewal, legacy receipt migration and native platform/release
+verification remain. Queued-message projection gains and their measurement limits are recorded in
+`performance.md`.
+
+### Follow-up verification
+
+- Final complete run: **6,130 tests passed across 716 suites**, with 12 tests and four suites
+  skipped. The packaged crash probes and both completed-cleanup failure injections are included.
+- All 28 workspace typecheck tasks and all 32 workspace build tasks passed on Node 24.11.0. The
+  final API typecheck includes the new failure tests. Workspace formatting/lint has zero errors and
+  the same ten existing warnings; the 12 changed implementation/test/benchmark files passed their
+  targeted check with no warnings. The adjusted subagent suite passed its separate check.
+  `git diff --check` passed.
+- The first full run hit an unchanged five-second Git integration deadline during concurrent
+  build/check load. Its six-test suite passed in isolation, and the final full run passed with no
+  assertion or deadline change. A clean rerun exposed a separate subagent-test synchronization race:
+  `review` is persisted before the run releases its reservation. Four test waits now assert both
+  `review` and the public `completed` snapshot phase before reading final results; delivery,
+  permission, receipt and offline assertions remain in place. Its 22 tests and the final full run
+  passed.
+- The read-only Opus challenge supplied traced findings. Executed crash/launcher tests and the
+  parent/worker benchmark runs provide the verification evidence. No native service installation,
+  signed package, device deployment, commit, push or PR was performed in this follow-up.

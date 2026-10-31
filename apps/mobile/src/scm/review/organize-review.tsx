@@ -17,16 +17,19 @@ import { Choice } from '../../ui/controls/choice'
 import { Text } from '../../ui/content/text'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
+import { MobileReviewGuide } from './review-guide'
 import type { useFileReview } from './use-file-review'
 
 export function MobileOrganizeReview({
   review,
   disabled = false,
   onOrganized,
+  onOpenFile,
 }: {
   review: ReturnType<typeof useFileReview>
   disabled?: boolean
   onOrganized: () => void
+  onOpenFile: (path: string) => void
 }) {
   const { snapshot, connected } = useRuntime()
   const { styles } = useTheme()
@@ -51,6 +54,16 @@ export function MobileOrganizeReview({
         onPress={() => setOpen(true)}
       />
       {!open && !!review.organizeError && <Text style={styles.error}>{review.organizeError}</Text>}
+      {review.progress?.guide && (
+        <MobileReviewGuide
+          guide={review.progress.guide}
+          busy={review.busy}
+          disabled={disabled || !review.ready}
+          onMove={review.moveGuide}
+          onOpenFile={onOpenFile}
+        />
+      )}
+      {!!review.error && <Text style={styles.error}>{review.error}</Text>}
       {open && (
         <Sheet title="Organize review" onClose={() => setOpen(false)}>
           <Text style={styles.muted}>
@@ -145,6 +158,22 @@ export function MobileOrganizeReview({
                 })
             }}
           />
+          {!!review.progress?.revision && (
+            <Action
+              label="Generate guided review"
+              disabled={blocked}
+              onPress={() => {
+                void review
+                  .organize(agent ? titleSettingsForHarness(agent) : undefined, true)
+                  .then((success) => {
+                    if (success) {
+                      onOrganized()
+                      setOpen(false)
+                    }
+                  })
+              }}
+            />
+          )}
           {review.featureGroups && (
             <Action
               secondary

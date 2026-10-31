@@ -1,14 +1,14 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Image, ScrollView, View } from 'react-native'
 import { filePreviewSchema, markdownMediaKind, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
-import { MobileFileTree } from '../../ui/content/file-tree'
+import { ProjectFileBrowser } from './project-file-browser'
 import { CodeBlock } from '../../ui/content/code-block'
 import { fileLanguage } from '../../ui/content/syntax-highlighter'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
-import { Field, SearchField } from '../../ui/controls/field'
+import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
 
 export type ThreadFileDraft = {
@@ -20,6 +20,11 @@ export type ThreadFileDraft = {
 type FileResult = {
   path: string
   contents?: string
+  size?: number
+  complete?: boolean
+  truncated?: boolean
+  startLine?: number
+  hasMore?: boolean
   image?: string
   notice?: string
   error?: string
@@ -38,22 +43,24 @@ export function TaskFiles({
   const { styles, colors } = useTheme()
   const [checkoutId, setCheckoutId] = useState(draft?.checkoutId ?? '')
   const [selected, setSelected] = useState(draft?.path ?? '')
-  const [query, setQuery] = useState('')
-  const filter = useDeferredValue(query.trim().toLowerCase())
+  const [focusedLine, setFocusedLine] = useState<number>()
+  const [fullRead, setFullRead] = useState(!!draft)
   const [revision, setRevision] = useState(0)
-  const refreshOwner = useRef<string | null>(null)
-  const [listing, setListing] = useState<{
-    key: string
-    files: string[]
-    truncated?: boolean
-    error?: string
-  }>()
   const [result, setResult] = useState<{ key: string; file: FileResult }>()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const owner = JSON.stringify([connection?.address, connection?.token, task.id, checkoutId])
+  const owner = JSON.stringify([
+    connection?.address,
+    connection?.token,
+    task.id,
+    checkoutId,
+    task.execution,
+    task.checkoutBranch,
+    task.existingWorktreePath,
+    task.delegation?.checkoutId,
+  ])
   const listKey = JSON.stringify([owner, revision])
-  const fileKey = JSON.stringify([listKey, selected])
+  const fileKey = JSON.stringify([listKey, selected, focusedLine, fullRead])
   const currentKey = useRef(fileKey)
   currentKey.current = fileKey
   const mounted = useRef(true)
@@ -63,45 +70,12 @@ export function TaskFiles({
       mounted.current = false
     }
   }, [])
-  const files = listing?.key === listKey ? listing.files : []
-  const listError = listing?.key === listKey ? listing.error : ''
   const file = result?.key === fileKey ? result.file : undefined
   const links = task.linkedCheckouts ?? []
   const link = links.find((link) => link.id === checkoutId)
   const readOnly = !!task.example || (checkoutId !== '' && link?.access !== 'edit')
   const editing = draft?.path === selected && draft.checkoutId === checkoutId ? draft : null
   const dirty = !!editing && editing.contents !== editing.expected
-  const entries = useMemo(
-    () => files.filter((path) => path.toLowerCase().includes(filter)).map((path) => ({ path })),
-    [files, filter],
-  )
-  useEffect(() => {
-    if (!connected) return
-    let active = true
-    void call(
-      '/api/tasks/files/list',
-      { id: task.id, checkoutId: checkoutId || undefined, fresh: refreshOwner.current === owner },
-      responses.projectFileList,
-    ).then(
-      (result) => {
-        if (active) {
-          if (refreshOwner.current === owner) refreshOwner.current = null
-          setListing({ key: listKey, files: result.files, truncated: result.truncated })
-        }
-      },
-      (error) => {
-        if (active)
-          setListing({
-            key: listKey,
-            files: [],
-            error: error instanceof Error ? error.message : String(error),
-          })
-      },
-    )
-    return () => {
-      active = false
-    }
-  }, [call, connected, task.id, checkoutId, listKey, owner])
   useEffect(() => {
     if (!connected || !selected) return
     let active = true
@@ -117,7 +91,20 @@ export function TaskFiles({
           error: side?.image ? undefined : 'This image format cannot be previewed.',
         }
       }
-      return call('/api/tasks/files/read', input, responses.projectFile)
+      const result = await call(
+        '/api/tasks/files/read',
+        {
+          ...input,
+          preview: {
+            startLine: fullRead ? 1 : (focusedLine ?? 1),
+            maxBytes: fullRead ? 1024 * 1024 : 256 * 1024,
+          },
+        },
+        responses.projectFile,
+      )
+      return result.complete === undefined
+        ? { ...result, contents: result.contents.slice(0, 200000) }
+        : result
     }
     void load().then(
       (file) => {
@@ -134,7 +121,7 @@ export function TaskFiles({
     return () => {
       active = false
     }
-  }, [call, connected, task.id, checkoutId, selected, fileKey])
+  }, [call, connected, task.id, checkoutId, selected, focusedLine, fullRead, fileKey])
   const discardThen = (action: () => void) => {
     if (saving) return
     const proceed = () => {
@@ -150,7 +137,18 @@ export function TaskFiles({
     else proceed()
   }
   const save = async () => {
-    if (!editing || saving || !connected || readOnly) return
+    if (
+      !editing ||
+      saving ||
+      !connected ||
+      readOnly ||
+      file?.complete !== true ||
+      file.truncated !== false ||
+      file.startLine !== 1 ||
+      file.size === undefined ||
+      file.size > 1024 * 1024
+    )
+      return
     const key = fileKey
     setSaving(true)
     setSaveError('')
@@ -167,7 +165,16 @@ export function TaskFiles({
         responses.projectFile,
       )
       if (mounted.current && currentKey.current === key) {
-        setResult({ key, file: saved })
+        setResult({
+          key,
+          file: {
+            ...saved,
+            size: new TextEncoder().encode(saved.contents).byteLength,
+            complete: true,
+            truncated: false,
+            startLine: 1,
+          },
+        })
         onDraftChange(null)
       }
     } catch (error) {
@@ -178,7 +185,12 @@ export function TaskFiles({
     }
   }
   const editLimit =
-    file?.contents !== undefined && new TextEncoder().encode(file.contents).byteLength > 1024 * 1024
+    file?.complete !== true ||
+    file.truncated !== false ||
+    file.startLine !== 1 ||
+    file.size === undefined ||
+    file.size > 1024 * 1024
+  const visibleContents = file?.contents?.slice(0, 200000) ?? ''
   return (
     <View style={{ flex: 1 }}>
       <View style={{ padding: 12, gap: 8 }}>
@@ -203,7 +215,8 @@ export function TaskFiles({
               discardThen(() => {
                 setCheckoutId(value)
                 setSelected('')
-                setQuery('')
+                setFocusedLine(undefined)
+                setFullRead(false)
               })
             }
           />
@@ -223,53 +236,27 @@ export function TaskFiles({
             disabled={!connected || saving}
             onPress={() =>
               discardThen(() => {
-                refreshOwner.current = owner
                 setRevision((value) => value + 1)
               })
             }
           />
         </View>
         {!connected && <Text style={styles.muted}>Reconnect to browse and save files.</Text>}
-        {!!listError && (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {listError}
-          </Text>
-        )}
-        {listing?.key === listKey && !listError && listing.truncated !== false && (
-          <Text style={styles.muted}>
-            {listing.truncated
-              ? 'Some files are omitted. Folder listings skip directories at 50 levels; listings are limited to 200,000 files.'
-              : 'Listing completeness is unknown. Search covers the loaded files.'}
-          </Text>
-        )}
-        {!selected && <SearchField label="Search files" value={query} onChangeText={setQuery} />}
       </View>
-      {!selected ? (
-        <>
-          {connected && listing?.key !== listKey && (
-            <Text style={styles.content}>Loading files…</Text>
-          )}
-          {listing?.key === listKey && !listError && !entries.length && (
-            <Text style={styles.content}>
-              {listing.truncated === false
-                ? filter
-                  ? 'No matching files.'
-                  : 'No files in this folder.'
-                : filter
-                  ? 'No matching files in this listing.'
-                  : 'No files in this listing.'}
-            </Text>
-          )}
-          {!!entries.length && (
-            <MobileFileTree
-              files={entries}
-              search={filter}
-              disabled={!connected}
-              onSelect={setSelected}
-            />
-          )}
-        </>
-      ) : (
+      <View style={selected ? { display: 'none' } : { flex: 1, minHeight: 0 }}>
+        <ProjectFileBrowser
+          key={owner}
+          taskId={task.id}
+          checkoutId={checkoutId}
+          revision={revision}
+          onSelect={(path, line) => {
+            setSelected(path)
+            setFocusedLine(line)
+            setFullRead(false)
+          }}
+        />
+      </View>
+      {!!selected && (
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[styles.content, { gap: 12 }]}
@@ -293,7 +280,7 @@ export function TaskFiles({
               <Field
                 label="File contents"
                 value={editing.contents}
-                editable={!saving}
+                editable={!saving && !editLimit}
                 multiline
                 autoCorrect={false}
                 autoCapitalize="none"
@@ -303,7 +290,7 @@ export function TaskFiles({
               <View style={[styles.row, { gap: 8 }]}>
                 <Action
                   label={saving ? 'Saving…' : 'Save file'}
-                  disabled={!connected || saving || readOnly || !dirty}
+                  disabled={!connected || saving || readOnly || editLimit || !dirty}
                   onPress={() => void save()}
                 />
                 <Action
@@ -317,6 +304,11 @@ export function TaskFiles({
                 Saves only if the file still matches the version you opened. Refresh to load changes
                 from disk.
               </Text>
+              {editLimit && (
+                <Text style={styles.muted}>
+                  A complete file read is required to continue editing.
+                </Text>
+              )}
             </>
           ) : (
             <>
@@ -335,11 +327,53 @@ export function TaskFiles({
                       })
                     }
                   />
-                  {editLimit && <Text style={styles.muted}>Files over 1 MB are read-only.</Text>}
-                  <CodeBlock
-                    content={file.contents.slice(0, 200000)}
-                    language={fileLanguage(selected)}
-                  />
+                  {editLimit && (
+                    <Text style={styles.muted}>
+                      {file.size === undefined
+                        ? 'Update the runtime for bounded, editable file previews.'
+                        : `Read-only preview · ${file.size} bytes total.`}
+                    </Text>
+                  )}
+                  {editLimit && file.size !== undefined && file.size <= 1024 * 1024 && (
+                    <Action
+                      secondary
+                      label="Load complete file to edit"
+                      onPress={() => setFullRead(true)}
+                    />
+                  )}
+                  {(file.hasMore || file.contents.length > visibleContents.length) &&
+                    visibleContents.includes('\n') && (
+                      <Action
+                        secondary
+                        label="Next lines"
+                        onPress={() => {
+                          setFocusedLine(
+                            (file.startLine ?? 1) + (visibleContents.match(/\n/g)?.length ?? 0),
+                          )
+                          setFullRead(false)
+                        }}
+                      />
+                    )}
+                  {!!focusedLine && (
+                    <View style={{ gap: 6 }} accessibilityLabel={`Selected line ${focusedLine}`}>
+                      <Text style={styles.muted}>Search result · line {focusedLine}</Text>
+                      <CodeBlock
+                        content={file.contents
+                          .split('\n')
+                          .slice(
+                            Math.max(0, focusedLine - (file.startLine ?? 1) - 5),
+                            focusedLine - (file.startLine ?? 1) + 6,
+                          )
+                          .map(
+                            (line, index) =>
+                              `${Math.max(0, focusedLine - (file.startLine ?? 1) - 5) + index + (file.startLine ?? 1) === focusedLine ? '→' : ' '} ${Math.max(0, focusedLine - (file.startLine ?? 1) - 5) + index + (file.startLine ?? 1)}  ${line}`,
+                          )
+                          .join('\n')}
+                        language={fileLanguage(selected)}
+                      />
+                    </View>
+                  )}
+                  <CodeBlock content={visibleContents} language={fileLanguage(selected)} />
                   {file.contents.length > 200000 && (
                     <Text style={styles.muted}>
                       Preview limited to the first 200,000 characters.

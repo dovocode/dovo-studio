@@ -64,6 +64,17 @@ export class PullCache {
   private missing = new Map<string, { at: number; error: RuntimeFailure }>()
   private failedAt = new Map<string, number>()
   private errors = new Map<string, string>()
+  private detailSequence = 0
+  private acceptedDetails = new Map<string, number>()
+  private acceptDetail(detail: PullDetail, scope: string, number: number, attempt: number) {
+    const key = JSON.stringify([scope, number])
+    if (attempt < (this.acceptedDetails.get(key) ?? 0)) return
+    this.onDetail?.(detail)
+    this.acceptedDetails.delete(key)
+    this.acceptedDetails.set(key, attempt)
+    if (this.acceptedDetails.size > 500)
+      this.acceptedDetails.delete(this.acceptedDetails.keys().next().value!)
+  }
   private stopped = false
   private scopes = new Map<string, string>()
   constructor(
@@ -444,10 +455,12 @@ export class PullCache {
           'This integration reader account or destination changed. Refresh before continuing.',
         )
       this.rememberScope(cwd, scope)
+      let attempt = 0
       return yield* this.readEffect(
         JSON.stringify(['detail', scope, number]),
         pullDetailSchema,
         async () => {
+          attempt = ++this.detailSequence
           const result = await (this.pulls.forDestination?.(scope) ?? this.pulls).detail(
             cwd,
             number,
@@ -458,7 +471,7 @@ export class PullCache {
         force,
         (fresh, cached) => {
           const detail = retainUnavailableSections(fresh, cached)
-          this.onDetail?.(detail)
+          this.acceptDetail(detail, scope, number, attempt)
           return detail
         },
         300_000,
@@ -485,10 +498,12 @@ export class PullCache {
           'This integration reader account or destination changed. Refresh before continuing.',
         )
       this.rememberScope(cwd, scope)
+      let attempt = 0
       return yield* this.readEffect(
         JSON.stringify(['section', scope, number, section]),
         pullDetailSchema,
         async () => {
+          attempt = ++this.detailSequence
           const reader = source?.reader ?? this.pulls.forDestination?.(scope) ?? this.pulls
           if (section === 'stack') {
             const detail = await runClientEffect(
@@ -517,7 +532,7 @@ export class PullCache {
         force,
         (fresh, cached) => {
           const detail = retainUnavailableSections(fresh, cached)
-          if (section === 'changes') this.onDetail?.(detail)
+          if (section === 'changes') this.acceptDetail(detail, scope, number, attempt)
           return detail
         },
         section === 'changes' ? 300_000 : 60_000,

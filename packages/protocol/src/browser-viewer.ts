@@ -1,3 +1,5 @@
+import { createBrowserUploadPicker } from './browser-upload-viewer'
+import { createBrowserDownloads } from './browser-download-viewer'
 import { decode } from './shared/schema.js'
 // Browser-only entry point, bundled into a self-contained canvas viewer by build-browser-viewer.mjs.
 import {
@@ -52,7 +54,14 @@ document.addEventListener('pointerdown', (event) => {
 document.addEventListener(
   'keydown',
   (event) => {
-    if (simulator || dialog.open || event.isComposing || !(event.metaKey || event.ctrlKey)) return
+    if (
+      simulator ||
+      dialog.open ||
+      uploadPicker.open ||
+      event.isComposing ||
+      !(event.metaKey || event.ctrlKey)
+    )
+      return
     const key = event.key.toLowerCase()
     if (
       workspaceShortcuts &&
@@ -83,7 +92,7 @@ document.addEventListener(
   true,
 )
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && more.open && !dialog.open) {
+  if (event.key === 'Escape' && more.open && !dialog.open && !uploadPicker.open) {
     event.preventDefault()
     more.open = false
     more.querySelector('summary')?.focus()
@@ -140,6 +149,31 @@ const dialogValue = element('dialogValue', HTMLInputElement)
 const cancelDialog = element('cancelDialog', HTMLButtonElement)
 let discardDialog: (() => void) | undefined
 let socket: WebSocket | undefined
+const downloads = createBrowserDownloads({
+  send(message) {
+    if (simulator || socket?.readyState !== WebSocket.OPEN) return false
+    socket.send(JSON.stringify(message))
+    return true
+  },
+  native: () => !!window.ReactNativeWebView,
+  handoff(message) {
+    window.ReactNativeWebView?.postMessage(JSON.stringify({ channel: 'dovo-browser', ...message }))
+  },
+})
+const uploadPicker = createBrowserUploadPicker({
+  send(command) {
+    if (simulator || socket?.readyState !== WebSocket.OPEN) return false
+    socket.send(JSON.stringify(command))
+    return true
+  },
+  notice,
+  native: () => !!window.ReactNativeWebView,
+  picking(active, id) {
+    window.ReactNativeWebView?.postMessage(
+      JSON.stringify({ channel: 'dovo-browser', type: 'filePicking', active, id }),
+    )
+  },
+})
 let width = 1280,
   height = 800,
   landscape = false
@@ -250,6 +284,8 @@ function enabled(value: boolean) {
   element('close', HTMLButtonElement).disabled = !value
   reconnect.hidden = value
   if (!value) {
+    downloads.disconnect()
+    uploadPicker.disconnect()
     discardDialog?.()
     discardDialog = undefined
     primaryModifier = undefined
@@ -393,6 +429,7 @@ function connect(url: string) {
   next.binaryType = 'arraybuffer'
   socket = next
   enabled(false)
+  downloads.connect(target.href)
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
   connectionStatus('connecting')
   next.onopen = () => {
@@ -501,6 +538,20 @@ function connect(url: string) {
           blob: new Blob([bytes], { type: 'image/jpeg' }),
           receivedAt: performance.now(),
         })
+      } else if (message.type === 'download') {
+        if (!simulator) downloads.offer(message)
+      } else if (message.type === 'downloadRemoved') {
+        downloads.removed(message.id)
+      } else if (message.type === 'downloadReady') {
+        downloads.ready(message)
+      } else if (message.type === 'downloadError') {
+        downloads.error(message)
+      } else if (message.type === 'fileChooser') {
+        if (!simulator) uploadPicker.offer(message)
+      } else if (message.type === 'fileChooserClosed') {
+        uploadPicker.closed(message.id)
+      } else if (message.type === 'fileUploadAck') {
+        uploadPicker.acknowledge(message.requestId, message.error)
       } else if (message.type === 'streamStats') {
         transportMs = message.transportMs
         transportAt = performance.now()
@@ -581,6 +632,28 @@ window.addEventListener('message', (event) => {
     message.channel !== 'dovo-browser'
   )
     return
+  if (
+    'type' in message &&
+    message.type === 'filePickingReady' &&
+    'id' in message &&
+    typeof message.id === 'string'
+  ) {
+    uploadPicker.ready(message.id)
+    return
+  }
+  if (
+    'type' in message &&
+    message.type === 'downloadResult' &&
+    'id' in message &&
+    typeof message.id === 'string' &&
+    'requestId' in message &&
+    typeof message.requestId === 'string' &&
+    'message' in message &&
+    typeof message.message === 'string'
+  ) {
+    downloads.result({ id: message.id, requestId: message.requestId, message: message.message })
+    return
+  }
   if ('type' in message && message.type === 'appearance') {
     if ('theme' in message && (message.theme === 'light' || message.theme === 'dark'))
       document.documentElement.dataset.theme = message.theme

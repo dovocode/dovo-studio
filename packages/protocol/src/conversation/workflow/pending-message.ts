@@ -14,6 +14,40 @@ export function visiblePendingMessages(
   task: Pick<Task, 'id' | 'messages' | 'queue'> & Partial<Pick<Task, 'status'>>,
   pending: readonly PendingMessage[],
 ) {
+  let lookups = 0
+  if (pending.length + (task.status === 'running' ? (task.queue?.length ?? 0) : 0) >= 20) {
+    for (const item of pending) {
+      if (item.taskId === task.id) lookups++
+      if (lookups >= 20) break
+    }
+    if (lookups < 20 && task.status === 'running')
+      for (const message of task.queue ?? []) {
+        if (message.steering) lookups++
+        if (lookups >= 20) break
+      }
+  }
+  if (lookups >= 20) {
+    const candidates = new Set(
+      pending.filter((item) => item.taskId === task.id).map((item) => item.message.id),
+    )
+    if (task.status === 'running')
+      for (const message of task.queue ?? []) if (message.steering) candidates.add(message.id)
+    const delivered = new Set<string>()
+    for (const message of task.messages) if (candidates.has(message.id)) delivered.add(message.id)
+    const queued = new Set((task.queue ?? []).map((message) => message.id))
+    const byId = new Map<string, PendingMessage>()
+    for (const item of pending)
+      if (
+        item.taskId === task.id &&
+        !delivered.has(item.message.id) &&
+        !queued.has(item.message.id)
+      )
+        byId.set(item.message.id, item)
+    for (const message of task.queue ?? [])
+      if (message.steering && task.status === 'running' && !delivered.has(message.id))
+        byId.set(message.id, { taskId: task.id, message, state: 'sending', destination: 'thread' })
+    return [...byId.values()]
+  }
   const byId = new Map<string, PendingMessage>()
   for (const item of pending) if (visiblePendingMessage(task, item)) byId.set(item.message.id, item)
   for (const message of task.queue ?? []) {
@@ -46,6 +80,8 @@ const savedSendSchema = mutableStruct({
   messageId: Schema.String,
   turnSettings: Schema.optional(turnSettingsSchema),
   text: Schema.String,
+  queueOnly: Schema.optional(Schema.Boolean),
+  plan: Schema.optional(Schema.Boolean),
   attachmentIds: Schema.optional(Schema.Array(Schema.String)),
 })
 
@@ -61,13 +97,14 @@ export function savedPendingMessages(task: Task, journal: MutationOutbox): Pendi
       state: item.blocked ? 'failed' : 'saved',
       destination: pendingMessageDestination(
         task,
-        item.path === '/api/tasks/steer' ? 'steer' : 'queue',
+        item.path === '/api/tasks/steer' ? 'steer' : input.data.queueOnly ? 'stage' : 'queue',
       ),
       message: {
         id: input.data.messageId,
         role: 'user',
         text: input.data.text,
         turnSettings: input.data.turnSettings,
+        ...(input.data.plan ? { plan: true } : {}),
         attachments: task.draftAttachments?.filter((file) =>
           input.data.attachmentIds?.includes(file.id),
         ),
@@ -91,8 +128,9 @@ export function visiblePendingMessage(
 
 export function pendingMessageDestination(
   task: Pick<Task, 'status' | 'queue'>,
-  mode: 'queue' | 'steer',
+  mode: 'queue' | 'steer' | 'stage',
 ) {
+  if (mode === 'stage') return 'queue'
   return mode === 'queue' && (task.status === 'running' || !!task.queue?.length)
     ? 'queue'
     : 'thread'

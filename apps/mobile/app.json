@@ -68,13 +68,16 @@
             "appGroupId": "group.com.dovo.studio",
             "activationRule": {
               "supportsText": true,
+              "supportsImageWithMaxCount": 5,
+              "supportsMovieWithMaxCount": 5,
+              "supportsFileWithMaxCount": 5,
               "supportsWebUrlWithMaxCount": 10
             }
           },
           "android": {
             "enabled": true,
-            "singleShareMimeTypes": ["text/plain"],
-            "multipleShareMimeTypes": ["text/plain"]
+            "singleShareMimeTypes": ["*/*"],
+            "multipleShareMimeTypes": ["*/*"]
           }
         }
       ],

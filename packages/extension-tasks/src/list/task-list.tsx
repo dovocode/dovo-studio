@@ -253,9 +253,6 @@ export function TaskList({
   const preferences = useAppPreferences()
   const sort = preferences.taskSort
   const grouping = preferences.taskGrouping
-  const [expanded, setExpanded, expandedRef] = useApplicationState<Record<string, boolean>>(
-    () => readTaskListViewState(host).expanded ?? {},
-  )
   const scroll = useRef<HTMLDivElement>(null)
   // Rows measure against the container after it commits; a ref is attached after their effects.
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
@@ -273,11 +270,10 @@ export function TaskList({
       saveTaskListViewState(host, {
         query: queryRef.current,
         environment: environmentRef.current,
-        expanded: expandedRef.current,
         scrollTop: scrollTop.current,
         rowHeights: [...rowHeights.current],
       }),
-    [host, queryRef, expandedRef, environmentRef],
+    [host, queryRef, environmentRef],
   )
   const projects = useMemo(
     () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
@@ -440,17 +436,11 @@ export function TaskList({
   const revealedEntryKey =
     temporaryEntry?.key ?? (selectedEntry?.task.status === 'draft' ? selectedMainKey : undefined)
   const groups = useMemo(() => {
-    const sectionOpen = (id: string) =>
-      ['working', 'waiting', 'snoozed', 'settled'].includes(id)
-        ? !preferences.collapsedThreadSections.includes(id)
-        : expanded[id]
+    const sectionOpen = (id: string) => !preferences.collapsedThreadSections.includes(id)
 
     const ordered = (
       sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean; total?: number }[],
-    ) =>
-      orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder).map(
-        (group, index) => (index === 0 && group.id === 'active' ? { ...group, open: true } : group),
-      )
+    ) => orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder)
 
     const attention = tasks.filter(
       ({ task, needsInput }) => needsInput && !task.archived && !task.archivedAt,
@@ -461,7 +451,7 @@ export function TaskList({
             id: 'needs-input',
             name: 'Needs input',
             tasks: attention,
-            open: expanded['needs-input'] ?? true,
+            open: sectionOpen('needs-input'),
           },
         ]
       : []
@@ -547,7 +537,7 @@ export function TaskList({
       )
       .map((group) => ({
         ...group,
-        open: sectionOpen(group.id) ?? false,
+        open: sectionOpen(group.id),
       }))
     const visibleActive = active.filter(
       ({ task, needsInput }) =>
@@ -564,7 +554,7 @@ export function TaskList({
                 tasks: visibleActive,
                 open:
                   visibleActive.some((entry) => entry.key === revealedEntryKey) ||
-                  (expanded.active ?? true),
+                  sectionOpen('active'),
               },
             ]
           : []),
@@ -575,8 +565,7 @@ export function TaskList({
         statusGroups.map((group) => ({
           ...group,
           open:
-            group.tasks.some((entry) => entry.key === revealedEntryKey) ||
-            (sectionOpen(group.id) ?? group.open),
+            group.tasks.some((entry) => entry.key === revealedEntryKey) || sectionOpen(group.id),
         })),
       )
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
@@ -604,8 +593,7 @@ export function TaskList({
         .map((group) => ({
           ...group,
           open:
-            group.tasks.some((entry) => entry.key === revealedEntryKey) ||
-            (expanded[group.id] ?? true),
+            group.tasks.some((entry) => entry.key === revealedEntryKey) || sectionOpen(group.id),
         })),
       ...collapsedGroups,
     ])
@@ -613,7 +601,6 @@ export function TaskList({
     tasks,
     now,
     grouping,
-    expanded,
     preferences.projectGrouping,
     preferences.workingSection,
     preferences.threadSectionOrder,
@@ -956,7 +943,7 @@ export function TaskList({
                 />
               )
             })
-          if (groups[0]?.id === 'active' && group.id === 'active')
+          if (groups[0]?.id === 'active' && group.id === 'active' && group.open)
             return (
               <div key={group.id} className="shrink-0 pt-1">
                 {rows}
@@ -975,20 +962,16 @@ export function TaskList({
                   // (including keyboard activation), leaving temporary expansion out of preferences.
                   event.preventDefault()
                   const open = !group.open
-                  if (['working', 'waiting', 'snoozed', 'settled'].includes(group.id)) {
-                    const collapsed = new Set(readAppPreferences().collapsedThreadSections)
-                    if (open) collapsed.delete(group.id)
-                    else {
-                      collapsed.add(group.id)
-                      if (group.id === 'settled') {
-                        setShowAllSettled(false)
-                        setSettledLimit(settledSummaryPageSize)
-                      }
+                  const collapsed = new Set(readAppPreferences().collapsedThreadSections)
+                  if (open) collapsed.delete(group.id)
+                  else {
+                    collapsed.add(group.id)
+                    if (group.id === 'settled') {
+                      setShowAllSettled(false)
+                      setSettledLimit(settledSummaryPageSize)
                     }
-                    updateAppPreferences({ collapsedThreadSections: [...collapsed] })
-                  } else {
-                    setExpanded((current) => ({ ...current, [group.id]: open }))
                   }
+                  updateAppPreferences({ collapsedThreadSections: [...collapsed] })
                 }}
                 className="studio-list-section-header"
               >

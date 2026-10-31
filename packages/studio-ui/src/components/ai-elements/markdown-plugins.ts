@@ -7,13 +7,12 @@ type MarkdownNode = {
   tagName?: string
   properties?: Record<string, unknown>
 }
+type LinkOptions = { baseURL?: string; fileBaseURL?: string; localFiles: boolean }
 
-export function markdownPluginsForLinks(
-  baseURL?: string,
-  fileBaseURL?: string,
-  localFiles = false,
-): StreamdownProps['rehypePlugins'] {
-  const resolveLinks = () => (tree: MarkdownNode) => {
+// Streamdown caches processors by plugin name and JSON options, so plugins stay
+// module-level and receive every link context value through serializable options.
+function resolveLinks({ baseURL, fileBaseURL, localFiles }: LinkOptions) {
+  return (tree: MarkdownNode) => {
     const link = (url: string) =>
       localFiles && !baseURL && !fileBaseURL
         ? ((markdownURLLocalPath(url) !== undefined ? url : localMarkdownURL(url)) ??
@@ -29,7 +28,9 @@ export function markdownPluginsForLinks(
     }
     visit(tree)
   }
-  const labelTaskItems = () => (tree: MarkdownNode) => {
+}
+function labelTaskItems() {
+  return (tree: MarkdownNode) => {
     const text = (node: MarkdownNode): string =>
       node.tagName === 'ul' || node.tagName === 'ol'
         ? ''
@@ -42,11 +43,22 @@ export function markdownPluginsForLinks(
     }
     visit(tree)
   }
+}
+
+export function markdownPluginsForLinks(
+  baseURL?: string,
+  fileBaseURL?: string,
+  localFiles = false,
+): StreamdownProps['rehypePlugins'] {
+  const links: [typeof resolveLinks, LinkOptions] = [
+    resolveLinks,
+    { baseURL, fileBaseURL, localFiles },
+  ]
   // Bare repository paths must become URLs before rehype-harden checks them.
   // Keep Streamdown's HTML parsing, sanitization and hardening in their original order.
   return [
     ...Object.entries(defaultRehypePlugins).flatMap(([name, plugin]) =>
-      name === (localFiles ? 'sanitize' : 'harden') ? [resolveLinks, plugin] : [plugin],
+      name === (localFiles ? 'sanitize' : 'harden') ? [links, plugin] : [plugin],
     ),
     labelTaskItems,
   ]

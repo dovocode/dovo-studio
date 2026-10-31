@@ -1,15 +1,22 @@
-import { createRuntimeClient, taskFileShareSchema, taskImageReadSchema } from '@dovo/protocol'
+import {
+  createRuntimeClient,
+  filePreviewSchema,
+  taskFileShareSchema,
+  taskImageReadSchema,
+} from '@dovo/protocol'
 import { useEffect, useState } from 'react'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
 export function ProjectImagePreview({
   taskId,
+  checkoutId,
   path,
   onOpenOriginal,
   refreshRevision,
 }: {
   taskId: string
+  checkoutId?: string
   path: string
   onOpenOriginal: () => void
   refreshRevision: number
@@ -19,6 +26,7 @@ export function ProjectImagePreview({
   const [result, setResult] = useState<{ key: string; uri?: string; error?: string }>()
   const key = JSON.stringify([
     taskId,
+    checkoutId,
     path,
     connection?.address,
     connection?.token,
@@ -29,6 +37,16 @@ export function ProjectImagePreview({
     if (!connected || !connection) return
     let active = true
     const load = async () => {
+      if (checkoutId) {
+        const preview = await request(
+          '/api/tasks/files/preview',
+          { id: taskId, path, checkoutId },
+          filePreviewSchema,
+        )
+        if (!preview.after?.image)
+          throw new Error(preview.after?.notice ?? 'Image preview unavailable.')
+        return preview.after.image
+      }
       // Use bounded thumbnails for the formats supported by the runtime image decoder.
       if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
         const { uri } = await request(
@@ -53,7 +71,7 @@ export function ProjectImagePreview({
     return () => {
       active = false
     }
-  }, [request, connected, connection, taskId, path, key])
+  }, [request, connected, connection, taskId, checkoutId, path, key])
   const current = result?.key === key ? result : undefined
   const error = !connected ? 'Reconnect to preview this image.' : current?.error
   return (
@@ -62,7 +80,12 @@ export function ProjectImagePreview({
         <span className="min-w-0 flex-1 truncate" title={path}>
           {path}
         </span>
-        <Button variant="ghost" size="sm" disabled={!connected} onClick={onOpenOriginal}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!connected || !!checkoutId}
+          onClick={onOpenOriginal}
+        >
           Open original
         </Button>
       </header>

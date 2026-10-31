@@ -3,7 +3,13 @@ import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
 import { WatchMessageCard } from './components/watch-message'
 import { MessageSource } from './components/message-source'
-import { watchMessage, checkpointFiles, formatTurnDuration, type FileKind } from '@dovo/protocol'
+import {
+  watchMessage,
+  checkpointFiles,
+  formatTurnDuration,
+  providerRetryLabel,
+  type FileKind,
+} from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { ChangeSummary } from '../../ui/content/change-summary'
 import { CheckpointFiles } from './components/checkpoint-files'
@@ -16,7 +22,20 @@ import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { useCallback, useEffect, useRef, useMemo, type ReactNode, type ComponentRef } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+  type ReactNode,
+  type ComponentRef,
+} from 'react'
+import {
+  createReadingPositionCache,
+  readingPositionOffset,
+  type ConversationReadingPosition,
+} from '@dovo/protocol'
 import {
   ActivityIndicator,
   FlatList,
@@ -35,6 +54,7 @@ import {
   useAuiState,
   unstable_useThreadMessageIds,
   type DataMessagePartProps,
+  type TextMessagePartProps,
   type ToolCallMessagePartProps,
 } from '@assistant-ui/react-native'
 import {
@@ -72,7 +92,16 @@ const checkpointSchema = mutableStruct({
 })
 function AttachmentPart({ data }: DataMessagePartProps<unknown>) {
   const taskId = useConversationSelector((value) => value.task.id)
-  return <MessageAttachments taskId={taskId} files={decode(mutableArray(attachmentSchema), data)} />
+  const setAttaching = useConversationSelector((value) => value.actions.setAttaching)
+  const editing = useConversationSelector((value) => !!value.actions.editing)
+  return (
+    <MessageAttachments
+      taskId={taskId}
+      files={decode(mutableArray(attachmentSchema), data)}
+      draftAttachmentDisabled={editing}
+      onBusy={setAttaching}
+    />
+  )
 }
 function TurnSummaryPart({ data }: DataMessagePartProps<unknown>) {
   const { styles } = useTheme()
@@ -199,8 +228,8 @@ function ReasoningPart({ data }: DataMessagePartProps<unknown>) {
   if (useCarMode()) return null
   return <ReasoningActivity events={decode(mutableArray(toolSchema), data)} />
 }
-function AssistantText({ text }: { text: string }) {
-  return <ThreadMarkdown text={text} variant="chat" />
+function AssistantText({ text, status }: TextMessagePartProps) {
+  return <ThreadMarkdown text={text} variant="chat" streaming={status.type === 'running'} />
 }
 /** Car mode hides each turn's commands, edits and searches; only what the agent says stays. */
 function WorkGroup(props: Parameters<typeof ConversationWorkGroup>[0]) {
@@ -344,6 +373,11 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
           )}
         </Pressable>
       )}
+      {presentation?.header && providerRetryLabel(turn) && (
+        <Text accessibilityLiveRegion="polite" style={[styles.muted, { fontSize: 13 }]}>
+          {providerRetryLabel(turn)}
+        </Text>
+      )}
       {open
         ? renderRange(0, end)
         : foldedTurnPartRanges(content, finalIndex, end).flatMap((range) =>
@@ -480,6 +514,7 @@ const renderConversationMessage = ({ item }: { item: string }) => (
   <ThreadPrimitive.Unstable_MessageById messageId={item} components={messageComponents} />
 )
 const messageKey = (id: string) => id
+const readingPositions = createReadingPositionCache()
 export function Conversation({
   setup,
   startModes,
@@ -499,11 +534,10 @@ export function Conversation({
   const followRequest = useConversationSelector((value) => value.followRequest)
   const recentReady = useConversationSelector((value) => value.recentReady)
   const onRecentLayout = useConversationSelector((value) => value.onRecentLayout)
-  const bookmarks = task.messages.flatMap((message, index) =>
-    message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
-  )
+  const bookmarks = history.bookmarks
   const car = useCarMode()
-  const { activeId, connected, snapshot } = useRuntime()
+  const { activeId, connected, snapshot, connection } = useRuntime()
+  const positionKey = JSON.stringify([connection?.address, connection?.token, task.id])
   const project = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const messageIds = unstable_useThreadMessageIds()
   const messageCount = messageIds.length
@@ -514,6 +548,7 @@ export function Conversation({
     !task.turns?.length &&
     !history.hasMore &&
     !history.error &&
+    !history.cacheError &&
     !activityError
   const newestFirst = useMemo(() => [...messageIds].reverse(), [messageIds])
   const list = useRef<FlatList<string>>(null)
@@ -527,14 +562,54 @@ export function Conversation({
       }),
     [],
   )
-  const [scroll] = useApplicationState(() => createConversationScroll({ inverted: true }))
+  const scroll = useMemo(() => {
+    const value = createConversationScroll({ inverted: true })
+    if (readingPositions.read(positionKey)?.atEnd === false) value.pause()
+    return value
+  }, [positionKey])
   const [following, setFollowing] = useApplicationState(true)
   const frame = useRef<number | null>(null)
   const pendingOffset = useRef<number | undefined>(undefined)
+  const indexRetry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const restoreFrame = useRef<number | undefined>(undefined)
+  const restoreStep = useRef<() => void>(() => {})
+  const restoration = useRef<
+    | {
+        key: string
+        position: ConversationReadingPosition
+        started: boolean
+        attempts: number
+        stable: number
+      }
+    | undefined
+  >(undefined)
+  const offset = useRef(0)
+  const offsetScope = useRef(positionKey)
+  const cellViews = useRef(new Map<string, ComponentRef<typeof View>>())
+  const visibleIds = useRef<string[]>([])
+  const capturePending = useRef<object | undefined>(undefined)
+  const currentScope = useRef({ key: positionKey, visible })
+  currentScope.current = { key: positionKey, visible }
+  const retryTrim = useRef<() => void>(() => {})
+  const cancelRestore = useCallback(() => {
+    restoration.current = undefined
+    if (restoreFrame.current !== undefined) cancelAnimationFrame(restoreFrame.current)
+    restoreFrame.current = undefined
+    retryTrim.current()
+  }, [])
+  const scheduleRestore = useCallback(() => {
+    if (!restoration.current || restoreFrame.current !== undefined) return
+    restoreFrame.current = requestAnimationFrame(() => {
+      restoreFrame.current = undefined
+      restoreStep.current()
+    })
+  }, [])
   const cancelMove = useCallback(() => {
     if (frame.current !== null) cancelAnimationFrame(frame.current)
     frame.current = null
     pendingOffset.current = undefined
+    clearTimeout(indexRetry.current)
+    indexRetry.current = undefined
   }, [])
   useEffect(() => cancelMove, [cancelMove])
   const move = useCallback((offset: number | undefined) => {
@@ -550,25 +625,189 @@ export function Conversation({
     })
   }, [])
   const latest = useCallback(() => {
+    cancelRestore()
+    // A request at offset zero may produce no native scroll event. Save the new intention now.
+    readingPositions.remember(positionKey, { anchorOffset: 0, scrollOffset: 0, atEnd: true })
     move(scroll.latest())
     setFollowing(true)
-  }, [move, scroll])
-  useEffect(latest, [followRequest, latest])
-  const previous = useRef({ id: task.id, visible, settled: task.archived })
+  }, [move, scroll, cancelRestore, positionKey])
+  const previousFollow = useRef({ key: positionKey, value: followRequest })
   useEffect(() => {
-    const before = previous.current
-    previous.current = { id: task.id, visible, settled: task.archived }
-    if (visible && (before.id !== task.id || !before.visible || (before.settled && !task.archived)))
-      latest()
-  }, [task.id, task.archived, visible, latest])
+    const before = previousFollow.current
+    previousFollow.current = { key: positionKey, value: followRequest }
+    // A new send/jump owns positioning; mounting a thread does not imply a new jump.
+    if (before.key === positionKey && before.value !== followRequest) latest()
+  }, [positionKey, followRequest, latest])
+  useLayoutEffect(() => {
+    cancelRestore()
+    cancelMove()
+    capturePending.current = undefined
+    if (offsetScope.current !== positionKey) {
+      offsetScope.current = positionKey
+      offset.current = 0
+    }
+    if (!visible) return
+    const position = readingPositions.read(positionKey)
+    if (position && !position.atEnd) {
+      scroll.pause()
+      setFollowing(false)
+      restoration.current = { key: positionKey, position, started: false, attempts: 0, stable: 0 }
+      scheduleRestore()
+    } else latest()
+    return cancelRestore
+  }, [positionKey, visible, scroll, latest, cancelMove, cancelRestore, scheduleRestore])
+  restoreStep.current = () => {
+    const pending = restoration.current
+    if (!pending || pending.key !== positionKey || !visible) return
+    const index = newestFirst.indexOf(pending.position.anchorId ?? '')
+    if (index < 0) {
+      if (history.hasMore && connected && !history.error) return
+      move(pending.position.scrollOffset)
+      cancelRestore()
+      return
+    }
+    if (!pending.started) {
+      pending.started = true
+      list.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 })
+    }
+    pending.attempts++
+    const cell = cellViews.current.get(newestFirst[index])
+    if (!cell || !viewportView.current) {
+      if (pending.attempts >= 60) {
+        move(pending.position.scrollOffset)
+        cancelRestore()
+      } else scheduleRestore()
+      return
+    }
+    viewportView.current.measureInWindow((_x, viewportY) =>
+      cell.measureInWindow((_cx, cellY) => {
+        if (restoration.current !== pending || !Number.isFinite(cellY - viewportY)) return
+        const target = readingPositionOffset(
+          offset.current,
+          cellY - viewportY,
+          pending.position.anchorOffset,
+          true,
+        )
+        if (Math.abs(target - offset.current) > 1) {
+          pending.stable = 0
+          move(target)
+        } else pending.stable++
+        if (pending.stable >= 3 || pending.attempts >= 60) cancelRestore()
+        else scheduleRestore()
+      }),
+    )
+  }
+  useEffect(() => {
+    const pending = restoration.current
+    if (!pending) return
+    if (
+      !newestFirst.includes(pending.position.anchorId ?? '') &&
+      history.hasMore &&
+      !history.busy &&
+      !history.error &&
+      connected
+    )
+      void history.load()
+    else scheduleRestore()
+  }, [
+    newestFirst,
+    history.hasMore,
+    history.busy,
+    history.error,
+    history.load,
+    connected,
+    scheduleRestore,
+  ])
+  const capture = useCallback(() => {
+    if (restoration.current || !visible || !viewportView.current) return
+    if (scroll.following) {
+      readingPositions.remember(positionKey, { anchorOffset: 0, scrollOffset: 0, atEnd: true })
+      return
+    }
+    if (capturePending.current) return
+    const id = visibleIds.current.at(-1)
+    const cell = id ? cellViews.current.get(id) : undefined
+    if (!cell) return
+    const pending = {}
+    capturePending.current = pending
+    viewportView.current.measureInWindow((_x, viewportY) =>
+      cell.measureInWindow((_cx, cellY) => {
+        if (capturePending.current !== pending) return
+        capturePending.current = undefined
+        if (
+          currentScope.current.key !== positionKey ||
+          !currentScope.current.visible ||
+          restoration.current
+        )
+          return
+        readingPositions.remember(positionKey, {
+          anchorId: id,
+          anchorOffset: cellY - viewportY,
+          scrollOffset: offset.current,
+          atEnd: scroll.following,
+        })
+      }),
+    )
+  }, [positionKey, visible, scroll])
+  const retention = useRef({ history, newestFirst })
+  retention.current = { history, newestFirst }
+  const trimTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const scheduleTrim = useCallback(() => {
+    clearTimeout(trimTimer.current)
+    trimTimer.current = setTimeout(() => {
+      if (restoration.current || !currentScope.current.visible) return
+      const { history, newestFirst } = retention.current
+      if (history.busy) return
+      const oldestVisible = visibleIds.current.reduce(
+        (index, id) => Math.max(index, newestFirst.indexOf(id)),
+        -1,
+      )
+      // Protect some rows beyond the viewport as well as the active reading anchor.
+      if (oldestVisible >= 0)
+        history.trim(newestFirst[Math.min(newestFirst.length - 1, oldestVisible + 50)])
+    }, 1000)
+  }, [])
+  retryTrim.current = scheduleTrim
+  useEffect(() => {
+    if (visible && !history.busy) scheduleTrim()
+    return () => clearTimeout(trimTimer.current)
+  }, [positionKey, visible, history.busy, messageCount, scheduleTrim])
+  const viewability = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: string; isViewable: boolean }> }) => {
+      visibleIds.current = viewableItems.filter((item) => item.isViewable).map((item) => item.item)
+      scheduleTrim()
+    },
+  )
+  const renderMessage = useCallback(
+    ({ item }: { item: string }) => (
+      <View
+        collapsable={false}
+        ref={(node) => {
+          if (node) cellViews.current.set(item, node)
+          else cellViews.current.delete(item)
+        }}
+        onLayout={() => {
+          scheduleRestore()
+          capture()
+        }}
+      >
+        {renderConversationMessage({ item })}
+      </View>
+    ),
+    [scheduleRestore, capture],
+  )
   const recordScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     viewport.refresh()
+    offset.current = nativeEvent.contentOffset.y
     scroll.scroll(nativeEvent.contentOffset.y)
     setFollowing(scroll.following)
+    capture()
   }
   const endInteraction = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offset.current = nativeEvent.contentOffset.y
     scroll.endInteraction(nativeEvent.contentOffset.y)
     setFollowing(scroll.following)
+    capture()
   }
   const conversation = (
     <ThreadPrimitive.Root
@@ -584,20 +823,36 @@ export function Conversation({
           accessibilityLabel="Bookmarked replies"
           contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 5 }}
         >
-          {bookmarks.map(({ message, index }, position) => (
+          {bookmarks.map((messageId, position) => (
             <Pressable
-              key={message.id}
+              key={messageId}
               accessibilityRole="button"
               accessibilityLabel={`Jump to bookmarked reply ${position + 1}`}
               onPress={() => {
+                cancelRestore()
                 cancelMove()
                 scroll.pause()
                 setFollowing(false)
-                list.current?.scrollToIndex({
-                  index: messageCount - 1 - index,
-                  animated: !reduceMotion,
-                  viewPosition: 0.3,
-                })
+                const index = newestFirst.indexOf(messageId)
+                if (index >= 0) {
+                  list.current?.scrollToIndex({ index, animated: !reduceMotion, viewPosition: 0.3 })
+                } else {
+                  // Reuse history-aware restoration to seek a bookmark whose body was released.
+                  restoration.current = {
+                    key: positionKey,
+                    position: {
+                      anchorId: messageId,
+                      anchorOffset: 0,
+                      scrollOffset: offset.current,
+                      atEnd: false,
+                    },
+                    started: false,
+                    attempts: 0,
+                    stable: 0,
+                  }
+                  if (history.hasMore && !history.busy && connected) void history.load()
+                  scheduleRestore()
+                }
               }}
               style={{
                 minHeight: 44,
@@ -621,10 +876,11 @@ export function Conversation({
           onLayout={viewport.refresh}
         >
           <FlatList
-            key={task.id}
+            key={positionKey}
             data={newestFirst}
             inverted
-            renderItem={renderConversationMessage}
+            renderItem={renderMessage}
+            onViewableItemsChanged={viewability.current}
             keyExtractor={messageKey}
             maintainVisibleContentPosition={following ? undefined : { minIndexForVisible: 0 }}
             initialNumToRender={8}
@@ -637,12 +893,18 @@ export function Conversation({
             onEndReachedThreshold={2}
             ref={list}
             onScrollToIndexFailed={({ index, averageItemLength }) => {
+              if (restoration.current) {
+                restoration.current.started = false
+                list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
+                scheduleRestore()
+                return
+              }
               if (scroll.following) {
                 latest()
                 return
               }
               list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
-              setTimeout(
+              indexRetry.current = setTimeout(
                 () =>
                   list.current?.scrollToIndex({
                     index,
@@ -657,25 +919,30 @@ export function Conversation({
             onContentSizeChange={(_width, height) => {
               viewport.refresh()
               move(scroll.content(height))
+              scheduleRestore()
             }}
             onLayout={({ nativeEvent }) => {
               viewport.refresh()
               move(scroll.viewport(nativeEvent.layout.height))
+              scheduleRestore()
               if (!messageCount) onRecentLayout()
             }}
             onScrollBeginDrag={() => {
+              cancelRestore()
               cancelMove()
               scroll.beginInteraction()
             }}
             onMomentumScrollBegin={() => scroll.beginMomentum()}
             onScroll={recordScroll}
             onScrollEndDrag={({ nativeEvent }) => {
+              offset.current = nativeEvent.contentOffset.y
               scroll.endDrag(
                 nativeEvent.contentOffset.y,
                 nativeEvent.velocity?.y,
                 nativeEvent.targetContentOffset?.y,
               )
               setFollowing(scroll.following)
+              capture()
             }}
             onMomentumScrollEnd={endInteraction}
             scrollEventThrottle={16}
@@ -721,6 +988,7 @@ export function Conversation({
                   />
                 )}
                 {!!history.error && <Text style={styles.error}>{history.error}</Text>}
+                {!!history.cacheError && <Text style={styles.error}>{history.cacheError}</Text>}
               </View>
             }
             ListHeaderComponent={

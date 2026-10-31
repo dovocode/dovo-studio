@@ -1,8 +1,8 @@
 import { studioToolDefinitions } from '../studio/tool-definitions.js'
-import { studioToolsSchema, noStudioTools } from '@dovo/protocol'
+import { studioToolsSchema, noStudioTools } from '@dovo/protocol/agent-tools'
 import { deviceHubAgentInstructions } from './device-guidance.js'
 import { readFileSync } from 'node:fs'
-import { terminalInputFrames } from '@dovo/client-runtime'
+import { terminalInputFrames } from '@dovo/client-runtime/terminal-input'
 import {
   decode,
   mutableArray,
@@ -19,7 +19,7 @@ import {
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
   agentTodosCommandSchema,
-} from '@dovo/protocol'
+} from '@dovo/protocol/agent-tools'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { fromJSONSchema } from 'zod'
@@ -1181,12 +1181,19 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
     }
   }
 }
-const enabledTools = tools.filter(
-  (tool) =>
-    (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
-    (deviceHubEnabled || !deviceTools.has(tool.name)) &&
-    (!terminalsDisabled || !tool.name.startsWith('terminal_')),
-)
+const strictInputs = new Set(['subagent_spawn', 'pipeline_watch', 'pull_request_watch'])
+const enabledTools = tools
+  .filter(
+    (tool) =>
+      (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
+      (deviceHubEnabled || !deviceTools.has(tool.name)) &&
+      (!terminalsDisabled || !tool.name.startsWith('terminal_')),
+  )
+  .map((tool) =>
+    strictInputs.has(tool.name)
+      ? { ...tool, inputSchema: { ...tool.inputSchema, additionalProperties: false } }
+      : tool,
+  )
 for (const tool of enabledTools)
   server.registerTool(
     tool.name,

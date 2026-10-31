@@ -235,7 +235,10 @@ export class TaskReviews {
                 `refs/dovo/reviews/${id}/baseline`,
               )
               const base =
-                scope === 'branch' ? (await this.s.git.branchTrees(directory)).before : undefined
+                scope === 'branch'
+                  ? (await this.s.git.branchTrees(directory, this.s.checkouts.branchBase(taskId)))
+                      .before
+                  : undefined
               const files = base
                 ? checkpointFiles(await this.s.git.checkpointChanges(directory, base, baseline))
                 : await this.s.git.changes(directory)

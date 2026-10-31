@@ -1,3 +1,4 @@
+import { Sheet } from '../ui/layout/sheet'
 import { Choice } from '../ui/controls/choice'
 import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
@@ -16,18 +17,49 @@ export function TerminalPane({
   task,
   selected,
   onSelect,
+  visible,
 }: {
   task: Task
   selected: string
   onSelect: (id: string) => void
+  visible: boolean
 }) {
   const { colors, styles } = useTheme()
 
-  const { snapshot, connected, callEffect } = useRuntime(),
+  const { snapshot, connected, callEffect, connection } = useRuntime(),
     { busy, error, act } = useAction()
   const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>([])
-  const closeShell = (id: string) =>
-    act(() => callEffect('/api/terminals/close', { id }, responses.ok))
+  const scope = JSON.stringify([
+    connection?.runtimeId,
+    connection?.address,
+    connection?.token,
+    task.id,
+  ])
+  const owner = useRef({ scope, callEffect, generation: 0 })
+  if (owner.current.scope !== scope || owner.current.callEffect !== callEffect)
+    owner.current = { scope, callEffect, generation: owner.current.generation + 1 }
+  useEffect(
+    () => () => {
+      owner.current.generation++
+    },
+    [scope, callEffect],
+  )
+  type CloseTarget = {
+    ids: string[]
+    labels: string[]
+    generation: number
+    callEffect: typeof callEffect
+    next?: string
+  }
+  const pendingClose = useRef<CloseTarget | null>(null)
+  const [closing, setClosing] = useApplicationState<CloseTarget | null>(null)
+  const cancelClose = () => {
+    pendingClose.current = null
+    setClosing(null)
+  }
+  useEffect(() => {
+    cancelClose()
+  }, [scope, callEffect, visible, connected])
   const [generation, setGeneration] = useApplicationState(0)
   const [checkoutId, setCheckoutId] = useApplicationState('')
   const autoTried = useRef(false)
@@ -45,11 +77,41 @@ export function TerminalPane({
     terminals.map((terminal) => terminal.id),
   )
   const group = groups.find((group) => group.sessions.includes(active?.id ?? ''))
+  const askClose = (ids: string[]) => {
+    if (!connected || !visible || busy || pendingClose.current) return
+    const target: CloseTarget = {
+      ids: [...ids],
+      labels: ids.map((id) => terminals.find((terminal) => terminal.id === id)?.title ?? id),
+      generation: owner.current.generation,
+      callEffect,
+      next: ids.includes(active?.id ?? '')
+        ? (group?.sessions.find((id) => !ids.includes(id)) ??
+          groups.flatMap((item) => item.sessions).find((id) => !ids.includes(id)))
+        : active?.id,
+    }
+    pendingClose.current = target
+    setClosing(target)
+  }
+  const confirmClose = () => {
+    const target = pendingClose.current
+    cancelClose()
+    if (!target || target.generation !== owner.current.generation || !visible || !connected) return
+    act(() =>
+      mobileWorkflow(function* () {
+        for (const id of target.ids) {
+          if (target.generation !== owner.current.generation) return
+          yield* target.callEffect('/api/terminals/close', { id }, responses.ok)
+        }
+        if (target.next && target.generation === owner.current.generation) onSelect(target.next)
+      }),
+    )
+  }
   const layout = group?.layout ?? 'columns'
   const shellReady =
     !task.example &&
     (task.execution !== 'worktree' || !!task.existingWorktreePath || !canChangeTaskCheckout(task))
-  const openShell = (split?: TerminalGroup['layout']) =>
+  const openShell = (split?: TerminalGroup['layout']) => {
+    if (pendingClose.current) return
     act(() =>
       mobileWorkflow(function* () {
         const terminal = yield* callEffect(
@@ -61,6 +123,7 @@ export function TerminalPane({
         onSelect(terminal.id)
       }),
     )
+  }
   useEffect(() => {
     if (autoTried.current || !connected || !shellReady || !!selected) return
     autoTried.current = true
@@ -77,6 +140,24 @@ export function TerminalPane({
   }, [connected, shellReady, task.id, terminals, selected])
   return (
     <View style={styles.screen}>
+      {closing && closing.generation === owner.current.generation && visible && connected && (
+        <Sheet
+          title={
+            closing.ids.length === 1
+              ? 'Close terminal?'
+              : `Close ${closing.ids.length} terminal panes?`
+          }
+          presentation="dialog"
+          onClose={cancelClose}
+        >
+          <Text>
+            This terminates the shell and any running processes in {closing.labels.join(', ')} and
+            clears their terminal history. Hide the terminal instead to keep them running.
+          </Text>
+          <Action secondary label="Cancel" onPress={cancelClose} />
+          <Action label="Close terminal" onPress={confirmClose} />
+        </Sheet>
+      )}
       {!!task.linkedCheckouts?.length && (
         <Choice
           label="New terminal checkout"
@@ -141,14 +222,7 @@ export function TerminalPane({
                     icon="close"
                     label={`Close terminal tab ${index + 1}`}
                     disabled={!connected || busy}
-                    onPress={() =>
-                      act(() =>
-                        mobileWorkflow(function* () {
-                          for (const id of tab.sessions)
-                            yield* callEffect('/api/terminals/close', { id }, responses.ok)
-                        }),
-                      )
-                    }
+                    onPress={() => askClose(tab.sessions)}
                   />
                 </View>
               )
@@ -206,11 +280,15 @@ export function TerminalPane({
                       icon="close"
                       label={`Close ${terminal.title}`}
                       disabled={!connected || busy}
-                      onPress={() => closeShell(terminal.id)}
+                      onPress={() => askClose([terminal.id])}
                     />
                   </View>
                 )}
-                <TerminalSession key={`${terminal.id}:${generation}`} id={terminal.id} />
+                <TerminalSession
+                  key={`${terminal.id}:${generation}`}
+                  id={terminal.id}
+                  visible={visible}
+                />
               </View>
             ))}
         </View>

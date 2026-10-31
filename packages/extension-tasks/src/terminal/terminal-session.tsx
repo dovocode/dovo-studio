@@ -1,3 +1,4 @@
+import { terminalFileLinks, type TerminalFileLink } from './terminal-file-links'
 import { createRuntimeClient } from '@dovo/protocol'
 import { terminalInputFrames } from '@dovo/studio-core'
 import {
@@ -21,11 +22,15 @@ export function TerminalSession({
   id,
   active,
   onAddSelection,
+  onOpenFile,
+  focusRequest = 0,
   readOnly = false,
 }: {
   id: string
   active: boolean
   onAddSelection?: (text: string) => void
+  onOpenFile?: (file: TerminalFileLink) => Promise<void>
+  focusRequest?: number
   readOnly?: boolean
 }) {
   const { connection, request, connected } = useWorkspace(),
@@ -36,6 +41,8 @@ export function TerminalSession({
   const [hasSelection, setHasSelection] = useApplicationState(false)
   const [writable, setWritable] = useApplicationState(false)
   const [actionError, setActionError] = useApplicationState('')
+  const fileHandler = useRef(onOpenFile)
+  fileHandler.current = onOpenFile
   const actionScope = useRef(0)
   const canWriteRef = useRef<(() => boolean) | null>(null)
   const menuContext = useRef<{ terminal: Terminal; scope: number; selection: string } | null>(null)
@@ -95,6 +102,78 @@ export function TerminalSession({
     terminal.loadAddon(fit)
     terminalRef.current = terminal
     terminal.open(container.current)
+    const links = terminal.registerLinkProvider({
+      provideLinks(y, callback) {
+        if (!fileHandler.current) {
+          callback(undefined)
+          return
+        }
+        const buffer = terminal.buffer.active
+        let first = y - 1,
+          last = first
+        while (first > 0 && buffer.getLine(first)?.isWrapped) {
+          if (y - first > 16) {
+            callback(undefined)
+            return
+          }
+          first--
+        }
+        while (buffer.getLine(last + 1)?.isWrapped) {
+          if (last - first >= 16) {
+            callback(undefined)
+            return
+          }
+          last++
+        }
+        let text = ''
+        const cells: { x: number; y: number; end: number }[] = []
+        for (let row = first; row <= last; row++) {
+          const line = buffer.getLine(row)
+          if (!line) continue
+          for (let x = 0; x < line.length; x++) {
+            const cell = line.getCell(x)
+            if (!cell || !cell.getWidth()) continue
+            const chars = cell.getChars() || ' '
+            for (let index = 0; index < chars.length; index++)
+              cells.push({ x: x + 1, y: row + 1, end: x + cell.getWidth() })
+            text += chars
+          }
+          if (text.length > 65536) {
+            callback(undefined)
+            return
+          }
+        }
+        callback(
+          terminalFileLinks(text).flatMap((file) => {
+            const start = cells[file.start],
+              end = cells[file.end - 1]
+            if (!start || !end || y < start.y || y > end.y) return []
+            return [
+              {
+                text: text.slice(file.start, file.end),
+                range: { start: { x: start.x, y: start.y }, end: { x: end.end, y: end.y } },
+                activate() {
+                  const handler = fileHandler.current,
+                    scope = actionScope.current
+                  if (!handler) return
+                  setActionError('')
+                  void handler({
+                    path: file.path,
+                    line: file.line,
+                    ...(file.column ? { column: file.column } : {}),
+                  }).catch((cause: unknown) => {
+                    if (scope === actionScope.current)
+                      setActionError(
+                        `Could not open terminal file (relative paths use the terminal’s starting directory): ${cause instanceof Error ? cause.message : String(cause)}`,
+                      )
+                  })
+                },
+              },
+            ]
+          }),
+        )
+      },
+    })
     const selection = terminal.onSelectionChange(() => {
       setHasSelection(terminal.hasSelection())
       setSelectionError('')
@@ -186,6 +265,7 @@ export function TerminalSession({
       window.removeEventListener('online', wake)
       document.removeEventListener('visibilitychange', wake)
       void reconnect.stop()
+      links.dispose()
       input.dispose()
       observer.disconnect()
       selection.dispose()
@@ -223,6 +303,9 @@ export function TerminalSession({
       cancelled = true
     }
   }, [terminalFontFamily, terminalFontSize, id, connection, request, active, setFontError])
+  useEffect(() => {
+    if (active && focusRequest) terminalRef.current?.focus()
+  }, [active, focusRequest])
   const currentMenu = () => {
     const context = menuContext.current
     return context &&

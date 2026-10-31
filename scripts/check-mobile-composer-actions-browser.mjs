@@ -236,10 +236,13 @@ function App(){
   const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;window.setTurnSettings=setTurnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
-  const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
+  const snapshot={promptQueueStagingSupported:window.stageSupported===true,queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
   window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
+  window.conversation.actions.stageSupported=snapshot.promptQueueStagingSupported;
+  window.conversation.actions.defaultSendMode=snapshot.promptQueueStagingSupported && task.queue?.length && (task.queuePaused || task.queue[0]?.paused) ? 'stage' : 'queue';
+  window.conversation.actions.attachmentPicker.pasteImage=()=>window.calls.push({mode:'paste-image'});
   return <Composer task={task} renderAbove={(setup,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -251,6 +254,7 @@ function App(){
     jsx: 'automatic',
     alias: {
       react: mobile + 'node_modules/react',
+      '@dovo/protocol/browser-viewer': root + 'packages/protocol/src/generated/browser-viewer.ts',
       '@dovo/protocol': root + 'packages/protocol/src/index.ts',
     },
     nodePaths: [mobile + 'node_modules'],
@@ -271,6 +275,57 @@ try {
     '<style>body{margin:0;background:#101010;color:#eee;font-family:system-ui}button,textarea,select{font:inherit}#app{display:flex;flex-direction:column}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  if (process.env.DOVO_COMPOSER_MESSAGE_ACTIONS_ONLY === '1') {
+    await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor()
+    await page.evaluate(() => {
+      window.stageSupported = true
+      window.setTask({ status: 'review', queue: [] })
+      window.setDraftText('Queue this prompt')
+    })
+    const more = page.getByRole('button', { name: 'More message actions', exact: true })
+    await more.waitFor()
+    const bounds = await more.boundingBox()
+    const send = page.getByRole('button', { name: 'Send', exact: true })
+    const sendBounds = await send.boundingBox()
+    assert.ok(bounds.width >= 44 && bounds.height >= 44)
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
+    assert.ok(bounds.x + bounds.width <= sendBounds.x + 1)
+    assert.ok(Math.abs(bounds.y - sendBounds.y) < 1)
+    const input = page.getByRole('textbox', { name: 'Message', exact: true })
+    await input.focus()
+    await more.click()
+    const menu = page.getByRole('menu', { name: 'More message actions', exact: true })
+    await menu.waitFor()
+    await menu.getByRole('menuitem', { name: 'Add to queue', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
+    await more.click()
+    await menu.getByRole('menuitem', { name: 'Add without starting', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stage' })
+    assert.equal(await input.evaluate((node) => node === document.activeElement), true)
+    await send.click()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
+    await page.evaluate(() =>
+      window.setTask({
+        queuePaused: true,
+        queue: [{ id: 'older', role: 'user', text: 'Older queued prompt' }],
+      }),
+    )
+    await more.click()
+    await menu.getByRole('menuitem', { name: 'Add and run queue', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
+    await page.evaluate(() => {
+      window.stageSupported = false
+      window.setTask({})
+    })
+    await more.waitFor({ state: 'detached' })
+    assert.deepEqual(errors, [])
+    console.log(
+      'Mobile visible message actions: idle capability gate, 44pt trigger beside Send at 320px, automatic Add to queue, explicit Add without starting, preserved input focus and normal Send passed.',
+    )
+    await browser.close()
+    process.exit(0)
+  }
+
   const initialQueued = page.getByRole('button', { name: /^View queued message 1:/ })
   const queuedMessages = page.getByTestId('Queued messages')
   await initialQueued.waitFor()
@@ -571,7 +626,13 @@ try {
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   const menu = page.getByRole('menu', { name: 'Actions for queued message 1', exact: true })
   const menuBox = await menu.boundingBox()
-  assert.ok(menuBox.width <= 264 && menuBox.height <= 230, JSON.stringify(menuBox))
+  const menuItems = menu.getByRole('menuitem')
+  assert.equal(await menuItems.count(), 7)
+  assert.ok(menuBox.width <= 264 && menuBox.height <= 7 * 44 + 10, JSON.stringify(menuBox))
+  for (const item of await menuItems.all()) {
+    const bounds = await item.boundingBox()
+    assert.ok(bounds.height >= 44, 'Queue actions retain accessible touch targets')
+  }
   assert.ok(menuBox.x >= 0 && menuBox.x + menuBox.width <= 320)
   assert.ok(menuBox.y >= 0 && menuBox.y + menuBox.height <= 900)
   assert.equal(await page.getByRole('dialog').count(), 0)
@@ -582,9 +643,11 @@ try {
       .boundingBox(),
     steerBeforeMenu,
   )
-  await page.getByRole('button', { name: 'Dismiss queued message actions', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Dismiss queued message actions', exact: true })
+    .click({ position: { x: 2, y: 2 } })
   assert.equal(await page.getByRole('menu').count(), 0)
-  // Lost responses keep the same duplicate id; a successful new click gets a fresh id.
+  // This fixture mocks requests before the durable journal, which owns retry identity.
   const duplicate = async () => {
     await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Duplicate queued message 1', exact: true }).click()
@@ -604,11 +667,13 @@ try {
   })
   await duplicate()
   await page.waitForFunction(() => !document.querySelector('[role="alert"]'))
-  assert.equal(await page.evaluate(() => window.calls.at(-1).input.duplicateMessageId), duplicateId)
+  const retriedCandidateId = await page.evaluate(() => window.calls.at(-1).input.duplicateMessageId)
+  assert.ok(retriedCandidateId)
+  assert.notEqual(retriedCandidateId, duplicateId)
   await duplicate()
   await page.waitForFunction(
     (id) => window.calls.at(-1).input.duplicateMessageId !== id,
-    duplicateId,
+    retriedCandidateId,
   )
   assert.equal(
     await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
@@ -807,7 +872,9 @@ try {
       true,
     )
   }
-  await page.getByRole('button', { name: 'Dismiss queued message actions', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Dismiss queued message actions', exact: true })
+    .click({ position: { x: 2, y: 2 } })
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
   await page.getByRole('menuitem', { name: 'Fork', exact: true }).waitFor({ state: 'detached' })
   await page.evaluate(() => {
@@ -1241,6 +1308,9 @@ try {
     await page.getByRole('menuitem', { name, exact: true }).click()
     await page.waitForFunction((source) => window.calls.at(-1)?.source === source, source)
   }
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Paste Image', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.calls.at(-1).mode), 'paste-image')
   assert.equal(await page.getByRole('menu', { name: 'Add to draft', exact: true }).count(), 0)
   // Prompt-first native layout uses the production empty state and start modes.
   await page.evaluate(() => {

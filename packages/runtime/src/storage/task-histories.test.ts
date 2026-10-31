@@ -121,6 +121,34 @@ it('evicts the least recently used histories by count and approximate bytes', ()
   }
 })
 
+it('accounts for large diff excerpts and checkpoint disk contents when retaining histories', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const large = 'x'.repeat(100_000)
+    const first = task('a', 1)
+    const second = task('b', 1)
+    first.messages[0].diffComment = {
+      side: 'additions',
+      start: 1,
+      end: 1,
+      excerpt: large,
+      body: 'comment',
+    }
+    second.turns![0].checkpoint!.files[0].diskContents = large
+    seed(db, [first, second])
+    const store = new WorkspaceStore(db, undefined, {
+      historyBudget: { tasks: 10, bytes: 300_000 },
+    })
+    store.task('a')
+    expect(store.retainedHistories().bytes).toBeGreaterThan(200_000)
+    store.task('b')
+    expect(store.retainedHistories().tasks).toEqual(['b'])
+    expect(store.retainedHistories().bytes).toBeGreaterThan(200_000)
+  } finally {
+    db.close()
+  }
+})
+
 it('keeps summaries stable across unrelated updates and restarts, and derives a missing one again', () => {
   const db = openDatabase(':memory:')
   try {

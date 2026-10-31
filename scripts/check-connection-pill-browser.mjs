@@ -3,13 +3,13 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mocks = {
-  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(){}};`,
+  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(_title,_message,choices){window.confirmChoice=name=>choices.find(choice=>choice.text===name)?.onPress?.()}};`,
   'expo-router': 'export const router={navigate(){}};',
-  '@dovo/protocol': `export const connectionProgress=e=>[{label:e.connected?'Ready':'Connect',state:e.connected?'done':'failed'}];export const runtimeSyncStatus=c=>c.status;export const runtimeReachability=e=>e.connected?'online':'offline';export const retryRuntimeSync=()=>{};export const runtimeComputerName=e=>e.profile.id;`,
+  '@dovo/protocol': `export const connectionProgress=e=>[{label:e.connected?'Ready':'Connect',state:e.connected?'done':'failed'}];export const runtimeSyncStatus=c=>c.status;export const runtimeReachability=e=>e.connected?'online':'offline';export const retryRuntimeSync=()=>{};export const runtimeComputerName=e=>e.profile.id;export const attachmentUploadSchema={};export const decodeResult=(_schema,input)=>({success:!!input?.name,data:input});`,
   '../state/application-state': "export {useState as useApplicationState} from 'react';",
   './connection-type': 'export const useConnectionTypes=()=>()=>({label:"Private · LAN / VPN"});',
   './account-context': 'export const useOptionalMobileAccount=()=>null;',
-  './provider': `import {useEffect,useSyncExternalStore} from 'react';let state={id:'host',connected:true,status:'live',pending:0,error:null};const listeners=new Set();window.connectionState=next=>{state={...state,...next};listeners.forEach(fn=>fn())};export const useRuntime=()=>{const current=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>state);useEffect(()=>{window.renderedConnection=current.status+':'+current.id+':'+current.connected+':'+current.pending},[current]);return {ready:true,overviews:[{profile:{id:current.id,connection:{address:'http://host',status:current.status}},connected:current.connected}],mutationStatus:()=>({pending:current.pending,error:current.error}),refreshAll:async()=>{}}};`,
+  './provider': `import {useEffect,useSyncExternalStore} from 'react';let state={id:'host',connected:true,status:'live',pending:0,error:null,uploads:[]};window.actions=[];const listeners=new Set();window.connectionState=next=>{state={...state,...next};listeners.forEach(fn=>fn())};export const useRuntime=()=>{const current=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>state);useEffect(()=>{window.renderedConnection=current.status+':'+current.id+':'+current.connected+':'+current.pending},[current]);return {ready:true,overviews:[{profile:{id:current.id,connection:{address:'http://host',status:current.status}},snapshot:current.snapshot,connected:current.connected}],mutationStatus:()=>({pending:current.pending,error:current.error}),attachmentUploads:()=>current.uploads,recoverAttachment:async(_p,id)=>window.actions.push(['attach',id]),discardAttachment:async(_p,id)=>window.actions.push(['discard',id]),refreshAll:async()=>{}}};`,
   '../../ui/content/text': 'export const Text=({children})=><span>{children}</span>;',
   '../../ui/controls/action':
     'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
@@ -109,6 +109,40 @@ try {
   assert.equal(await count(), 0)
   await page.clock.runFor(1)
   await page.getByRole('button', { name: 'Saved actions · Review', exact: true }).waitFor()
+  await update({
+    status: 'live',
+    pending: 1,
+    error: 'Saved attachments need review.',
+    snapshot: { workspace: { tasks: [{ id: 'task', title: 'Release notes' }] } },
+    uploads: [
+      { id: 'upload', input: { name: 'photo.png', taskId: 'task', queuedMessageId: 'message' } },
+    ],
+  })
+  await page.getByRole('button', { name: 'Saved actions · Review', exact: true }).click()
+  await page.getByText('photo.png · Release notes · queued edit').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Retry saved actions' }).count(), 0)
+  await page.getByRole('button', { name: 'Attach to current task draft' }).click()
+  assert.deepEqual(await page.evaluate(() => window.actions), [])
+  await page.evaluate(() => window.confirmChoice('Attach'))
+  await page.getByRole('button', { name: 'Discard saved upload' }).click()
+  await page.evaluate(() => window.confirmChoice('Discard'))
+  assert.deepEqual(await page.evaluate(() => window.actions), [
+    ['attach', 'upload'],
+    ['discard', 'upload'],
+  ])
+  await update({
+    status: 'live',
+    pending: 2,
+    error: 'Saved attachments need review.',
+    snapshot: null,
+    uploads: [
+      { id: 'private-upload-id', input: { name: 'report.txt', taskId: 'private-task-id' } },
+      { id: 'another-private-id', input: null },
+    ],
+  })
+  await page.getByText('report.txt', { exact: true }).waitFor()
+  await page.getByText('Saved attachment', { exact: true }).waitFor()
+  assert.equal(await page.getByText(/private-(upload|task)-id|another-private-id/).count(), 0)
   await update({ status: 'live', pending: 0, error: null })
   assert.equal(await count(), 0)
   assert.deepEqual(errors, [])

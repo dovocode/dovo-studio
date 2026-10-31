@@ -19,6 +19,12 @@
       "import": "./dist/shared/request-timeout.js",
       "default": "./dist/shared/request-timeout.js"
     },
+    "./agent-tools": {
+      "types": "./src/agent-tools.ts",
+      "development": "./src/agent-tools.ts",
+      "import": "./dist/agent-tools.js",
+      "default": "./dist/agent-tools.js"
+    },
     "./browser-viewer": {
       "types": "./src/generated/browser-viewer.ts",
       "development": "./src/generated/browser-viewer.ts",

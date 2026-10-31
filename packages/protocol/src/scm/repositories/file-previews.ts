@@ -32,6 +32,7 @@ const previewSideSchema = mutableStruct({
 export const filePreviewSchema = mutableStruct({
   before: Schema.optional(previewSideSchema),
   after: Schema.optional(previewSideSchema),
+  patch: Schema.optional(Schema.String),
 })
 export type FilePreview = Schema.Schema.Type<typeof filePreviewSchema>
 export type FilePreviewMetadata = Schema.Schema.Type<typeof filePreviewMetadataSchema>
@@ -92,9 +93,20 @@ export function checkpointFileCount(checkpoint: TaskTurn['checkpoint']) {
 }
 
 export function checkpointCanUndo(checkpoint: TaskTurn['checkpoint']) {
+  if (checkpoint?.restorePending) return true
   if (!checkpoint || checkpoint.error) return false
   return [checkpoint, ...(checkpoint.linked ?? [])].some(
     (item) =>
       !!item.after && !item.error && !item.undone && item.files.length + item.omitted.length > 0,
+  )
+}
+
+/** Finish an interrupted undo before undoing another turn. */
+export function checkpointUndoTurn(turns: readonly TaskTurn[]) {
+  return (
+    turns.find((turn) => turn.status !== 'running' && turn.checkpoint?.restorePending) ??
+    [...turns]
+      .reverse()
+      .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
   )
 }

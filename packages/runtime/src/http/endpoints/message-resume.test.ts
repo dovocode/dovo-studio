@@ -1,10 +1,12 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
+import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import type { AgentAdapter } from '../../agents/execution/types'
 import type { Task } from '@dovo/protocol'
+import { ModelSelection } from '../../agents/tasks/model-selection'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
@@ -31,7 +33,15 @@ async function setup() {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: task.id, messageId, text, attachmentIds }),
     })
-  return { ...runtime.services, task, send }
+  const post = (path: 'message' | 'steer' | 'queue', input: Record<string, unknown>) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/tasks/${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const stage = (id: string, messageId: string, text: string, input = {}) =>
+    post('message', { id, messageId, text, queueOnly: true, ...input })
+  return { ...runtime.services, task, send, post, stage }
 }
 it.each([
   { status: 'completed', hidden: true },
@@ -206,4 +216,286 @@ it('reopens a settled thread on an attachment-only message after validating its 
   expect(s.store.task(s.task.id).archived).toBe(false)
   expect(s.store.task(s.task.id).draftAttachments).toEqual([])
   expect(run.mock.calls[0]?.[0].attachments?.[0]?.name).toBe('note.txt')
+})
+
+it('stages several prompts on an idle thread, from its first message, and runs them in order on request', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const start = vi.spyOn(s.tasks, 'startEffect')
+  const blank = s.tasks.create({
+    title: 'Staged',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const { attachment } = await s.attachments.upload({
+    taskId: blank.id,
+    id: '00000000-0000-4000-8000-000000000002',
+    name: 'context.txt',
+    data: Buffer.from('Staged context').toString('base64'),
+  })
+  const turnSettings = { provider: 'codex', model: 'large', reasoning: 'high' }
+  const first = { attachmentIds: [attachment.id], turnSettings }
+  expect((await s.stage(blank.id, 'first', 'First staged', first)).status).toBe(200)
+  expect((await s.stage(blank.id, 'second', 'Second staged', { plan: true })).status).toBe(200)
+  expect((await s.stage(blank.id, 'third', 'Third staged')).status).toBe(200)
+  // A lost-response retry is acknowledged without a second copy.
+  expect((await s.stage(blank.id, 'first', 'First staged', first)).status).toBe(200)
+  expect(start).not.toHaveBeenCalled()
+  expect(run).not.toHaveBeenCalled()
+  expect(s.store.task(blank.id)).toMatchObject({ status: 'draft', messages: [], queuePaused: true })
+  const queue = s.store.task(blank.id).queue
+  expect(queue?.map((message) => message.id)).toEqual(['first', 'second', 'third'])
+  expect(queue?.[0]).toMatchObject({ attachments: [attachment], turnSettings })
+  expect(queue?.[1]?.plan).toBe(true)
+  expect(s.store.task(blank.id).draftAttachments ?? []).toEqual([])
+
+  expect((await s.post('queue', { id: blank.id, action: 'resume' })).status).toBe(200)
+  await waitForRuntime(() => {
+    expect(run).toHaveBeenCalledTimes(3)
+    expect(s.store.task(blank.id).status).toBe('review')
+    expect(s.store.task(blank.id).queue ?? []).toHaveLength(0)
+  })
+  const calls = run.mock.calls.map(([input]) => input)
+  expect(calls.map((input) => input.prompt)).toEqual([
+    expect.stringContaining('First staged'),
+    expect.stringContaining('Second staged'),
+    expect.stringContaining('Third staged'),
+  ])
+  expect(calls[0]?.attachments?.map((file) => file.name)).toEqual(['context.txt'])
+  expect(calls[0]?.agent.model).toBe('large')
+  expect(calls[1]?.agent.permission).toBe('read-only')
+  expect(calls[2]?.agent.permission).toBe('ask')
+  expect(s.store.task(blank.id).queuePaused).toBe(false)
+})
+
+it('several normal prompts on an idle blank thread start automatically and run in order', async () => {
+  const s = await setup()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let active = 0
+  let overlapped = false
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    overlapped ||= active++ > 0
+    // Only the first turn waits, so the later prompts must queue behind it.
+    if (run.mock.calls.length === 1) await gate
+    input.onText('Done')
+    active--
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const blank = s.tasks.create({
+    title: 'Queued',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const send = (messageId: string, text: string) =>
+    s.post('message', { id: blank.id, messageId, text, preserveQueuePause: true })
+  // No queue resume request is ever made: delivery is automatic from the first send.
+  try {
+    expect((await send('first', 'First queued')).status).toBe(200)
+    await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(1))
+    expect((await send('second', 'Second queued')).status).toBe(200)
+    expect((await send('third', 'Third queued')).status).toBe(200)
+    // Lost-response retries of the running and the waiting prompt add no second copy.
+    expect((await send('first', 'First queued')).status).toBe(200)
+    expect((await send('second', 'Second queued')).status).toBe(200)
+    expect(s.store.task(blank.id).queuePaused).toBe(false)
+    expect(s.store.task(blank.id).queue?.map((message) => message.id)).toEqual(['second', 'third'])
+    expect(run).toHaveBeenCalledTimes(1)
+    release()
+    await waitForRuntime(() => {
+      expect(run).toHaveBeenCalledTimes(3)
+      expect(s.store.task(blank.id).status).toBe('review')
+      expect(s.store.task(blank.id).queue ?? []).toHaveLength(0)
+      expect(s.store.task(blank.id).activeRunId).toBeUndefined()
+    })
+    expect(run.mock.calls.map(([input]) => input.prompt)).toEqual([
+      expect.stringContaining('First queued'),
+      expect.stringContaining('Second queued'),
+      expect.stringContaining('Third queued'),
+    ])
+    expect(overlapped).toBe(false)
+    // Replaying any delivered prompt is acknowledged without running it again.
+    expect((await send('third', 'Third queued')).status).toBe(200)
+    expect(run).toHaveBeenCalledTimes(3)
+    expect(s.store.task(blank.id).queue ?? []).toHaveLength(0)
+  } finally {
+    release()
+  }
+})
+
+it.each([false, true])(
+  'automatic additions respect an idle queue pause (existing prompts: %s)',
+  async (existing) => {
+    const s = await setup()
+    const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    if (existing) s.tasks.queue.add(s.task.id, 'earlier', 'Earlier queued request')
+    s.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review', queuePaused: true }))
+    const input = {
+      id: s.task.id,
+      messageId: 'automatic',
+      text: 'Automatically added',
+      preserveQueuePause: true,
+    }
+    expect((await s.post('message', input)).status).toBe(200)
+    expect((await s.post('message', input)).status).toBe(200)
+    expect(run).not.toHaveBeenCalled()
+    expect(s.store.task(s.task.id).queuePaused).toBe(true)
+    expect(s.store.task(s.task.id).queue?.map((message) => message.id)).toEqual([
+      ...(existing ? ['earlier'] : []),
+      'automatic',
+    ])
+    expect((await s.send('explicit', 'Explicitly add and run')).status).toBe(200)
+    await waitForRuntime(() => {
+      expect(s.store.task(s.task.id).activeRunId).toBeUndefined()
+      expect(s.store.task(s.task.id).queue ?? []).toHaveLength(0)
+    })
+    expect(run).toHaveBeenCalledTimes(existing ? 3 : 2)
+  },
+)
+
+it('automatic additions respect a paused head without pausing the whole queue', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  s.tasks.queue.add(s.task.id, 'head', 'Paused head')
+  s.tasks.queue.setPaused(s.task.id, 'head', true)
+  expect(
+    (
+      await s.post('message', {
+        id: s.task.id,
+        messageId: 'automatic',
+        text: 'Wait behind the head',
+        preserveQueuePause: true,
+      })
+    ).status,
+  ).toBe(200)
+  expect(run).not.toHaveBeenCalled()
+  expect(s.store.task(s.task.id).queuePaused).not.toBe(true)
+  expect(s.store.task(s.task.id).queue?.map(({ id, paused }) => ({ id, paused }))).toEqual([
+    { id: 'head', paused: true },
+    { id: 'automatic', paused: undefined },
+  ])
+})
+
+it.each(['queue', 'head'] as const)(
+  'rechecks a %s pause made while automatic startup awaits model resolution',
+  async (pause) => {
+    const s = await setup()
+    const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    let entered = false
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(ModelSelection.prototype, 'resolveEffect').mockImplementation((_id, text) =>
+      text !== undefined
+        ? Effect.void
+        : Effect.promise(async () => {
+            entered = true
+            await gate
+          }),
+    )
+    const sending = s.post('message', {
+      id: s.task.id,
+      messageId: 'automatic',
+      text: 'Pause before admission',
+      preserveQueuePause: true,
+    })
+    try {
+      await waitForRuntime(() => expect(entered).toBe(true))
+      if (pause === 'queue') s.tasks.queue.change(s.task.id, 'pause')
+      else s.tasks.queue.setPaused(s.task.id, 'automatic', true)
+      release()
+      expect((await sending).status).toBe(200)
+      expect(run).not.toHaveBeenCalled()
+      const task = s.store.task(s.task.id)
+      expect(task.activeRunId).toBeUndefined()
+      expect(task.queue?.map((message) => message.id)).toEqual(['automatic'])
+      expect(pause === 'queue' ? task.queuePaused : task.queue?.[0]?.paused).toBe(true)
+    } finally {
+      release()
+      await sending
+    }
+  },
+)
+
+it('stages into a stopped, paused queue without resuming or recovering it', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const start = vi.spyOn(s.tasks, 'startEffect')
+  s.tasks.queue.add(s.task.id, 'earlier', 'Earlier queued request')
+  const restartRecovery = { kind: 'turn', automatic: false } as const
+  s.store.updateTask(s.task.id, (task) => ({
+    ...task,
+    status: 'cancelled',
+    queuePaused: true,
+    restartRecovery,
+  }))
+  expect((await s.stage(s.task.id, 'staged', 'Later request')).status).toBe(200)
+  // An unpaused idle queue is paused by staging rather than started.
+  const idle = s.tasks.create({
+    title: 'Idle',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  s.store.updateTask(idle.id, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  expect((await s.stage(idle.id, 'idle-staged', 'Wait for me')).status).toBe(200)
+  expect(start).not.toHaveBeenCalled()
+  expect(run).not.toHaveBeenCalled()
+  expect(s.store.task(s.task.id)).toMatchObject({
+    status: 'cancelled',
+    queuePaused: true,
+    restartRecovery,
+  })
+  expect(s.store.task(s.task.id).queue?.map((message) => message.id)).toEqual(['earlier', 'staged'])
+  expect(s.store.task(idle.id)).toMatchObject({ status: 'review', queuePaused: true })
+  expect(s.store.task(idle.id).queue?.map((message) => message.id)).toEqual(['idle-staged'])
+  const steer = { id: s.task.id, messageId: 'steer', text: 'Now', runId: 'run', queueOnly: true }
+  expect((await s.post('steer', steer)).status).toBe(400)
+})
+
+it('replaying a staged message after the queue was resumed does not pause it again', async () => {
+  const s = await setup()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    await gate
+    input.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    s.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review' }))
+    expect((await s.stage(s.task.id, 'a', 'Staged A')).status).toBe(200)
+    expect((await s.stage(s.task.id, 'b', 'Staged B')).status).toBe(200)
+    expect(s.store.task(s.task.id).queuePaused).toBe(true)
+    expect((await s.post('queue', { id: s.task.id, action: 'resume' })).status).toBe(200)
+    await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(1))
+    expect(s.store.task(s.task.id).queuePaused).toBe(false)
+    // Both the started message and the one still waiting replay as acknowledgements.
+    expect((await s.stage(s.task.id, 'a', 'Staged A')).status).toBe(200)
+    expect((await s.stage(s.task.id, 'b', 'Staged B')).status).toBe(200)
+    expect((await s.stage(s.task.id, 'b', 'Changed B')).status).toBe(409)
+    expect(s.store.task(s.task.id).queuePaused).toBe(false)
+    expect(s.store.task(s.task.id).queue?.map((message) => message.id)).toEqual(['b'])
+    release()
+    await waitForRuntime(() => {
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(s.store.task(s.task.id).queue ?? []).toHaveLength(0)
+      expect(s.store.task(s.task.id).activeRunId).toBeUndefined()
+    })
+    expect(run.mock.calls[1]?.[0].prompt).toContain('Staged B')
+  } finally {
+    release()
+  }
 })

@@ -13,6 +13,48 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 const discovery = ['repo', 'view', '--json', 'nameWithOwner,url']
+it('retains captured credential provenance after token injection and an ambient account change', async () => {
+  vi.stubEnv('GH_TOKEN', 'ambient-secret')
+  const git = new GitService()
+  let reject: (error: unknown) => void = () => {
+    throw new Error('Request not started')
+  }
+  const dispatched = Promise.withResolvers<void>()
+  vi.spyOn(GithubTransport.prototype, 'send').mockImplementation((_request, token) => {
+    expect(token).toBe('saved-secret')
+    dispatched.resolve()
+    return new Promise<string>((_resolve, fail) => {
+      reject = fail
+    })
+  })
+  const request = git.githubAccount(
+    ['api', '--hostname', 'github.com', 'repos/team/project/pulls/1'],
+    undefined,
+    '/repo',
+    {
+      host: 'github.com',
+      token: 'saved-secret',
+      access: {
+        host: 'github.com',
+        repository: 'team/project',
+        login: 'original-user',
+        source: 'settings',
+      },
+    },
+  )
+  await dispatched.promise
+  vi.stubEnv('GH_TOKEN', 'replacement-secret')
+  reject(new GithubApiError(404, 'upstream-secret'))
+  await expect(request).rejects.toMatchObject({
+    status: 404,
+    message: expect.stringContaining('saved GitHub token'),
+  })
+  await expect(request).rejects.toThrow('original-user')
+  await expect(request).rejects.not.toThrow(
+    /ambient-secret|saved-secret|replacement-secret|upstream-secret|environment token/,
+  )
+})
+
 function setup() {
   vi.stubEnv('GH_TOKEN', 'fixture-secret')
   vi.stubEnv('GH_HOST', 'github.com')

@@ -5,6 +5,10 @@ import {
   questionPromptSchema,
   questionAnswersSchema,
   questionAnswerError,
+  questionAllowsAttachments,
+  questionAttachmentIdsSchema,
+  type QuestionAttachmentIds,
+  type Attachment,
   type QuestionPrompt,
   type QuestionAnswers,
   type PendingQuestion,
@@ -12,26 +16,38 @@ import {
   type NotificationAnswer,
 } from '@dovo/protocol'
 import type { Activity } from '../../storage/activity.js'
+import type { Attachments } from '../../storage/attachments.js'
 import { HttpError } from '../../errors.js'
+type ResponseReceipt = { id: string; fingerprint: string; attachments?: Attachment[] }
 type Pending = {
   info: PendingQuestion
-  finish: (answers: QuestionAnswers | null, status: string) => void
+  finish: (answers: QuestionAnswers | null, status: string, receipt?: ResponseReceipt) => void
   validate?: (answers: QuestionAnswers) => void
 }
-function answerFingerprint(answers: QuestionAnswers | null) {
+function answerFingerprint(
+  answers: QuestionAnswers | null,
+  attachments: QuestionAttachmentIds = {},
+) {
+  const files = Object.entries(attachments)
+    .filter(([, ids]) => ids.length)
+    .sort(([a], [b]) => a.localeCompare(b))
+  const sorted = answers && Object.entries(answers).sort(([a], [b]) => a.localeCompare(b))
   return createHash('sha256')
-    .update(
-      JSON.stringify(answers && Object.entries(answers).sort(([a], [b]) => a.localeCompare(b))),
-    )
+    .update(JSON.stringify(files.length ? { answers: sorted, attachments: files } : sorted))
     .digest('hex')
 }
 export class Questions {
   private answered = new Map<string, string>()
   private requests = new Map<string, Pending>()
+  private responding = new Map<string, { fingerprint: string; promise: Promise<void> }>()
   constructor(
     private activity: Pick<Activity, 'add'>,
     private receipts?: { questionResponse: (id: string) => string | undefined },
   ) {}
+  private attachments?: Pick<Attachments, 'metadata' | 'materialize'>
+  setAttachments(attachments: Pick<Attachments, 'metadata' | 'materialize'>) {
+    this.attachments = attachments
+  }
   private route?: (taskId: string) => boolean
   private notificationOwner?: (taskId: string) => string
   private routed?: (question: PendingQuestion) => void
@@ -83,10 +99,7 @@ export class Questions {
     value: QuestionPrompt,
     signal: AbortSignal,
     validate?: (answers: QuestionAnswers) => void,
-    onResponse?: (
-      answers: QuestionAnswers | null,
-      receipt: { id: string; fingerprint: string },
-    ) => void,
+    onResponse?: (answers: QuestionAnswers | null, receipt: ResponseReceipt) => void,
     requestId?: string,
   ) {
     if (signal.aborted) return Promise.resolve(null)
@@ -108,6 +121,9 @@ export class Questions {
       taskId,
       prompt,
       createdAt: new Date().toISOString(),
+      ...(this.attachments && prompt.questions.some(questionAllowsAttachments)
+        ? { attachments: true }
+        : {}),
       ...(this.route?.(taskId)
         ? {
             routing: prompt.questions.some((q) => q.secret)
@@ -127,11 +143,15 @@ export class Questions {
       `question:${id}`,
     )
     return new Promise<QuestionAnswers | null>((resolve) => {
-      const finish = (answers: QuestionAnswers | null, status: string) => {
+      const finish = (
+        answers: QuestionAnswers | null,
+        status: string,
+        receipt?: ResponseReceipt,
+      ) => {
         if (!this.requests.has(id)) return
         // Admission must succeed before resolving or remembering the response.
-        if (status !== 'cancelled')
-          onResponse?.(answers, { id, fingerprint: answerFingerprint(answers) })
+        const accepted = receipt ?? { id, fingerprint: answerFingerprint(answers) }
+        if (status !== 'cancelled') onResponse?.(answers, accepted)
         const logged =
           answers &&
           Object.fromEntries(
@@ -155,7 +175,7 @@ export class Questions {
           console.error('Could not record question response', error)
         }
         if (status !== 'cancelled') {
-          this.answered.set(id, answerFingerprint(answers))
+          this.answered.set(id, accepted.fingerprint)
           if (this.answered.size > 256) this.answered.delete(this.answered.keys().next().value!)
         }
         this.requests.delete(id)
@@ -191,6 +211,7 @@ export class Questions {
     })
   }
   respond(id: string, value: QuestionAnswers | null) {
+    if (this.responding.has(id)) throw new HttpError(409, 'This question is already being answered')
     const request = this.requests.get(id)
     const answers = value === null ? null : decode(questionAnswersSchema, value)
     const receipt = this.receipts?.questionResponse(id)
@@ -210,6 +231,89 @@ export class Questions {
       request.validate?.(answers)
     }
     request.finish(answers, answers ? 'answered' : 'declined')
+  }
+  async respondWithAttachments(
+    id: string,
+    value: QuestionAnswers | null,
+    files: QuestionAttachmentIds = {},
+  ) {
+    const ids = decode(questionAttachmentIdsSchema, files)
+    if (!Object.values(ids).some((values) => values.length)) return this.respond(id, value)
+    if (value === null) throw new HttpError(400, 'Declined answers cannot contain files')
+    const answers = decode(questionAnswersSchema, value)
+    const fingerprint = answerFingerprint(answers, ids)
+    const previous = this.responding.get(id)
+    if (previous) {
+      if (previous.fingerprint !== fingerprint)
+        throw new HttpError(409, 'This question is already being answered differently')
+      return previous.promise
+    }
+    const promise = this.respondFiles(id, answers, ids, fingerprint)
+    this.responding.set(id, { fingerprint, promise })
+    try {
+      await promise
+    } finally {
+      if (this.responding.get(id)?.promise === promise) this.responding.delete(id)
+    }
+  }
+  private async respondFiles(
+    id: string,
+    answers: QuestionAnswers,
+    ids: QuestionAttachmentIds,
+    fingerprint: string,
+  ) {
+    const replay = () => {
+      const previous = this.receipts?.questionResponse(id) ?? this.answered.get(id)
+      if (!previous) return false
+      if (previous !== fingerprint)
+        throw new HttpError(409, 'This question was already answered differently')
+      return true
+    }
+    const accepted = replay()
+    const request = this.requests.get(id)
+    if (!request) {
+      if (accepted) return
+      throw new HttpError(409, 'This question was already answered or cancelled')
+    }
+    const invalid = questionAnswerError(request.info.prompt.questions, answers, ids)
+    if (invalid) throw new HttpError(400, invalid)
+    const storage = this.attachments
+    if (!storage) throw new HttpError(409, 'Question attachments are not supported')
+    const attached = Object.entries(ids).map(([questionId, fileIds]) => ({
+      questionId,
+      files: storage.metadata(request.info.taskId, fileIds),
+    }))
+    const result = new Map(Object.entries(answers))
+    // Resolve paths on the owning runtime; callers never supply filesystem paths.
+    for (const group of attached) {
+      const references: string[] = []
+      for (const file of group.files) {
+        const materialized = await storage.materialize(request.info.taskId, file)
+        references.push(
+          `Attached file ${JSON.stringify(file.name)}: ${JSON.stringify(materialized.path)}`,
+        )
+      }
+      if (references.length) {
+        const values = Object.hasOwn(answers, group.questionId) ? answers[group.questionId] : []
+        const question = request.info.prompt.questions.find((q) => q.id === group.questionId)!
+        result.set(
+          group.questionId,
+          question.multiple
+            ? [...values, references.join('\n')]
+            : [[...values, ...references].join('\n')],
+        )
+      }
+    }
+    if (replay() && this.requests.get(id) !== request) return
+    if (this.requests.get(id) !== request)
+      throw new HttpError(409, 'This question was already answered or cancelled')
+    const resolved = Object.fromEntries(result)
+    request.validate?.(resolved)
+    request.finish(resolved, 'answered', {
+      id,
+      fingerprint,
+      attachments: attached.flatMap((group) => group.files),
+    })
   }
   respondNotification(input: NotificationAnswer) {
     const request = this.requests.get(input.id)

@@ -442,7 +442,7 @@ it('snapshots project defaults and retries failed worktree setup without rerunni
     })),
   }))
   await expect(s.checkouts.directory(task.id)).rejects.toThrow('Worktree setup failed')
-  expect(s.store.task(task.id).worktreeSetupComplete).toBeUndefined()
+  expect(s.store.task(task.id).worktreeSetupComplete).toBe(false)
   const cwd = await s.checkouts.directory(task.id)
   cleanups.push(() => rm(cwd, { recursive: true, force: true }))
   expect(await readFile(join(cwd, 'setup-result'), 'utf8')).toBe('done')
@@ -611,7 +611,7 @@ it('populates worktree submodules before setup and does not repeat initializatio
     agentId: 'agent',
     objective: 'Work',
   })
-  const command = vi.spyOn(s.git, 'command')
+  const command = vi.spyOn(s.git, 'checkoutCommand')
   const cwd = await s.checkouts.directory(task.id)
   cleanups.push(() => rm(cwd, { recursive: true, force: true }))
   expect(
@@ -623,4 +623,172 @@ it('populates worktree submodules before setup and does not repeat initializatio
   command.mockClear()
   await s.checkouts.directory(task.id)
   expect(command.mock.calls.some(([, args]) => args[0] === 'submodule')).toBe(false)
+})
+
+it('compares stacked task branches with the base recorded before the folder switches or the base is deleted', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const ownerToken = 'stacked-base-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const git = (cwd: string, ...args: string[]) => s.git.command(cwd, args).then((out) => out.trim())
+  await git(f.directory, 'branch', '-M', 'main')
+  await git(f.directory, 'checkout', '--quiet', '-b', 'feature/base')
+  await writeFile(join(f.directory, 'base.txt'), 'stacked base\n')
+  await git(f.directory, 'add', 'base.txt')
+  await git(f.directory, 'commit', '-qm', 'Base work')
+  const baseCommit = await git(f.directory, 'rev-parse', 'HEAD')
+  const branchChanges = async (taskId: string, includeWorking = false) => {
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/scm/branch-changes`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repositoryId: 'repo', taskId, includeWorking }),
+    })
+    const result = decode(responses.branchDiff, await response.json())
+    return { base: result.base, paths: result.files.map((file) => file.path).sort() }
+  }
+  const start = async (title: string, base?: string) => {
+    const task = s.tasks.create({
+      title,
+      agentId: 'agent',
+      repositoryId: 'repo',
+      execution: 'worktree',
+      objective: 'Work on the stack',
+    })
+    s.store.updateTask(task.id, (t) => ({
+      ...t,
+      worktreeBaseBranch: base,
+      worktreeFromOrigin: false,
+    }))
+    const cwd = await s.checkouts.directory(task.id)
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+    await writeFile(join(cwd, `${title}.txt`), 'task work\n')
+    await git(cwd, 'add', '.')
+    await git(cwd, 'commit', '-qm', 'Task work')
+    return { id: task.id, cwd }
+  }
+
+  // An explicit stacked base, and the folder's current branch chosen by default.
+  const chosen = await start('chosen', 'refs/heads/feature/base')
+  const current = await start('current')
+  const branch = s.store.taskSummary(current.id).checkoutBranch
+  expect(s.store.taskSummary(current.id).worktreeBase).toEqual({
+    branch,
+    ref: 'refs/heads/feature/base',
+    commit: baseCommit,
+  })
+  // Switching the project folder afterwards must not change either task's base.
+  await git(f.directory, 'checkout', '--quiet', 'main')
+  for (const task of [chosen, current])
+    expect(await branchChanges(task.id)).toEqual({
+      base: 'refs/heads/feature/base',
+      paths: [`${task === chosen ? 'chosen' : 'current'}.txt`],
+    })
+  await writeFile(join(current.cwd, 'dirty.txt'), 'uncommitted\n')
+  expect((await branchChanges(current.id, true)).paths).toEqual(['current.txt', 'dirty.txt'])
+  // Branch file previews use the same base: the stacked file is unchanged, not added.
+  const preview = await s.tasks.filePreview(current.id, 'base.txt')
+  expect(preview.before?.text).toBe('stacked base\n')
+
+  // A deleted base ref falls back to the commit the task branch started from.
+  await git(f.directory, 'branch', '-D', 'feature/base')
+  expect(await branchChanges(current.id)).toEqual({ base: baseCommit, paths: ['current.txt'] })
+
+  // Older tasks without a recorded base keep their chosen name, else use the default branch.
+  await git(f.directory, 'branch', 'feature/base', baseCommit)
+  s.store.updateTask(chosen.id, (t) => ({ ...t, worktreeBase: undefined }))
+  expect((await branchChanges(chosen.id)).paths).toEqual(['chosen.txt'])
+  s.store.updateTask(current.id, (t) => ({ ...t, worktreeBase: undefined }))
+  expect(await branchChanges(current.id)).toEqual({
+    base: 'refs/heads/main',
+    paths: ['base.txt', 'current.txt'],
+  })
+})
+
+it('never uses the checked-out branch as its own base', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'self-base-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  const git = (...args: string[]) => s.git.command(f.directory, args).then((out) => out.trim())
+  await git('branch', '-M', 'main')
+  await git('checkout', '--quiet', '-b', 'task')
+  await writeFile(join(f.directory, 'task.txt'), 'task\n')
+  await git('add', 'task.txt')
+  await git('commit', '-qm', 'Task work')
+  const result = await s.git.branchChangesFiles(f.directory, {
+    branch: 'task',
+    ref: 'refs/heads/task',
+  })
+  expect(result.base).toBe('refs/heads/main')
+  expect(result.files.map((file) => file.path)).toEqual(['task.txt'])
+  // A recorded base for another branch is ignored once the folder switches away from it.
+  const other = await s.git.branchChangesFiles(f.directory, {
+    branch: 'elsewhere',
+    ref: 'refs/heads/task',
+  })
+  expect(other.base).toBe('refs/heads/main')
+  // On the default branch itself there is nothing else to compare with.
+  await git('checkout', '--quiet', 'main')
+  expect((await s.git.branchChangesFiles(f.directory)).files).toEqual([])
+})
+
+it('compares a fork started at a source commit with that commit, not the project branch', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'fork-base-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const git = (cwd: string, ...args: string[]) => s.git.command(cwd, args).then((out) => out.trim())
+  await git(f.directory, 'branch', '-M', 'main')
+  const parent = s.tasks.create({
+    title: 'Parent',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Feature work',
+  })
+  s.store.updateTask(parent.id, (t) => ({ ...t, worktreeFromOrigin: false }))
+  const parentCwd = await s.checkouts.directory(parent.id)
+  cleanups.push(() => rm(parentCwd, { recursive: true, force: true }))
+  await writeFile(join(parentCwd, 'parent.txt'), 'parent feature\n')
+  await git(parentCwd, 'add', 'parent.txt')
+  await git(parentCwd, 'commit', '-qm', 'Parent feature')
+  const head = await git(parentCwd, 'rev-parse', 'HEAD')
+  // Shaped like Tasks.startFork: the source commit, with no chosen base branch.
+  const fork = s.tasks.create({
+    title: 'Fork: Parent',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'New direction',
+  })
+  s.store.updateTask(fork.id, (t) => ({
+    ...t,
+    worktreeFromOrigin: false,
+    forkedFrom: { taskId: parent.id, title: 'Parent', head },
+  }))
+  const cwd = await s.checkouts.directory(fork.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect(await git(cwd, 'rev-parse', 'HEAD')).toBe(head)
+  const task = s.store.taskSummary(fork.id)
+  expect(task.worktreeBase).toEqual({ branch: task.checkoutBranch, commit: head })
+  await writeFile(join(cwd, 'child.txt'), 'child work\n')
+  await git(cwd, 'add', 'child.txt')
+  await git(cwd, 'commit', '-qm', 'Child work')
+  const result = await s.git.branchChangesFiles(cwd, s.checkouts.branchBase(fork.id))
+  expect(result.base).toBe(head)
+  expect(result.files.map((file) => file.path)).toEqual(['child.txt'])
 })

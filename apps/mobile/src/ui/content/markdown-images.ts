@@ -5,6 +5,7 @@ export type MarkdownImagePart =
   | { kind: 'image'; url: string; alt: string; offset: number }
 /** Parse Markdown images (including references) without interpreting fenced/escaped text. */
 export function markdownImages(text: string): MarkdownImagePart[] {
+  if (!text.includes('![')) return [{ kind: 'text', text, offset: 0 }]
   const root = fromMarkdown(text),
     definitions = new Map(
       root.children.flatMap((node) =>

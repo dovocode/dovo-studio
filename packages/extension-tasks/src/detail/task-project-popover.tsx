@@ -1,13 +1,8 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Popover } from '@dovo/studio-ui'
-
-const TaskProjectSettingsContext = createContext<{
-  container: HTMLDivElement | null
-  setContainer: (element: HTMLDivElement | null) => void
-  open: boolean
-} | null>(null)
-
-export const useTaskProjectSettings = () => useContext(TaskProjectSettingsContext)
+import { useAppPreferences } from '@dovo/studio-core'
+import { ThreadInfoCustomization } from './thread-info-customization'
+import { ThreadInfoContext, useThreadInfoContext } from './thread-info-context'
 
 export function TaskProjectPanelRoot({
   open,
@@ -20,18 +15,19 @@ export function TaskProjectPanelRoot({
 }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   return (
-    <TaskProjectSettingsContext.Provider value={{ container, setContainer, open }}>
+    <ThreadInfoContext.Provider value={{ container, setContainer, open }}>
       <Popover.Root open={open} onOpenChange={onOpenChange}>
         <div className="flex h-full min-h-0 flex-col">{children}</div>
       </Popover.Root>
-    </TaskProjectSettingsContext.Provider>
+    </ThreadInfoContext.Provider>
   )
 }
 
 /** Anchor the card to the conversation, independently of the header and tools pane. */
 export function TaskProjectPopover({ children }: { children: ReactNode }) {
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null)
-  const settings = useTaskProjectSettings()
+  const settings = useThreadInfoContext()
+  const { threadInfoSections } = useAppPreferences()
   return (
     <>
       <Popover.Anchor
@@ -43,7 +39,7 @@ export function TaskProjectPopover({ children }: { children: ReactNode }) {
         <Popover.Content
           forceMount={settings ? true : undefined}
           hidden={settings ? !settings.open : undefined}
-          aria-label="Project information"
+          aria-label="Thread info"
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => event.preventDefault()}
           onOpenAutoFocus={(event) => event.preventDefault()}
@@ -56,7 +52,16 @@ export function TaskProjectPopover({ children }: { children: ReactNode }) {
           collisionPadding={32}
           className="studio-project-popover studio-menu-surface z-40 overflow-y-auto rounded-2xl border bg-popover text-popover-foreground outline-none"
         >
-          {settings && <div ref={settings.setContainer} />}
+          <header className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
+            <h2 className="text-sm font-semibold">Thread info</h2>
+            <ThreadInfoCustomization />
+          </header>
+          {settings && (
+            <div
+              ref={settings.setContainer}
+              style={threadInfoSections.settings === false ? { display: 'none' } : undefined}
+            />
+          )}
           {children}
         </Popover.Content>
       </Popover.Portal>

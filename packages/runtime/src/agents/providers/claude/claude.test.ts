@@ -85,17 +85,34 @@ it('runs the Claude compact command and reports its boundary', async () => {
     sessionId: undefined,
     ephemeral: true,
     tools: 'none',
+    agent: {
+      ...run.agent,
+      args: [
+        '--settings={"env":{"ANTHROPIC_BASE_URL":"http://gateway","ANTHROPIC_AUTH_TOKEN":"fixture-token","UNRELATED_SECRET":"private"},"hooks":{}}',
+        '--setting-sources=',
+        '--managed-settings={"env":{"ANTHROPIC_BASE_URL":"http://ignored-managed"},"permissions":{"deny":["Read"]}}',
+      ],
+    },
   })
   expect(mocks.query).toHaveBeenCalledWith(
     expect.objectContaining({
       options: expect.objectContaining({
         settingSources: [],
+        env: expect.objectContaining({
+          ANTHROPIC_BASE_URL: 'http://gateway',
+          ANTHROPIC_AUTH_TOKEN: 'fixture-token',
+          ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
+        }),
+        extraArgs: expect.not.objectContaining({ settings: expect.anything() }),
         tools: [],
         strictMcpConfig: true,
         mcpServers: {},
       }),
     }),
   )
+  expect(mocks.query.mock.calls[0][0].options.env?.UNRELATED_SECRET).toBeUndefined()
+  expect(mocks.query.mock.calls[0][0].options.extraArgs).not.toHaveProperty('setting-sources')
+  expect(mocks.query.mock.calls[0][0].options.extraArgs).not.toHaveProperty('managed-settings')
 })
 it('requests native JSON output and delivers the canonical result separately from streamed prose', async () => {
   mocks.query.mockClear()

@@ -287,6 +287,84 @@ try {
     'snoozed',
     'settled',
   ])
+  await page.keyboard.press('Escape')
+  const restart = async () => {
+    const source = await page.evaluate(() => window.source)
+    await page.reload()
+    await page.evaluate((source) => {
+      window.source = source
+      window.host = {}
+      window.store = {}
+    }, source)
+    await page.addStyleTag({ content: css })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+  }
+  await page.evaluate(() => window.groupBy('project'))
+  const projectSummary = page.locator('summary').filter({ hasText: 'Project' })
+  await projectSummary.click()
+  const projectSection = projectSummary.locator('..')
+  const projectId = await projectSection.getAttribute('data-section')
+  assert.equal(await projectSection.evaluate((element) => element.open), false)
+  assert.ok((await page.evaluate(() => window.collapsedSections())).includes(projectId))
+  await restart()
+  await projectSummary.waitFor()
+  assert.equal(
+    await projectSection.evaluate((element) => element.open),
+    false,
+    'Project collapse survives a full restart',
+  )
+  await projectSummary.click()
+  await restart()
+  await projectSummary.waitFor()
+  assert.equal(
+    await projectSection.evaluate((element) => element.open),
+    true,
+    'Project expansion survives a full restart',
+  )
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = window.source.workspace.tasks.map((task) =>
+      task.id === 'active' ? { ...task, pinned: true } : task,
+    )
+    window.groupBy('status')
+    await window.remount()
+  })
+  const pinnedSummary = page.locator('summary').filter({ hasText: 'Pinned' })
+  await pinnedSummary.click()
+  await restart()
+  await pinnedSummary.waitFor()
+  assert.equal(
+    await pinnedSummary.locator('..').evaluate((element) => element.open),
+    false,
+    'Pinned task groups survive a full restart',
+  )
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = window.source.workspace.tasks.map((task) => ({
+      ...task,
+      pinned: false,
+    }))
+    await window.remount()
+  })
+  await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const openSummary = page.locator('summary').filter({ hasText: 'Open' })
+  await openSummary.click()
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = window.source.workspace.tasks.filter(
+      (task) => task.id !== 'waiting',
+    )
+    await window.remount()
+  })
+  await restart()
+  await openSummary.waitFor()
+  assert.equal(
+    await openSummary.locator('..').evaluate((element) => element.open),
+    false,
+    'A collapsed Open group stays collapsed when earlier sections disappear across restart',
+  )
+  await openSummary.click()
+  await page.getByText('Active thread', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Thread categories: overview organizer, live reordering, collapse state, keyboard task order, cold-start persistence, hidden/empty sections, boundaries and reset verified.',

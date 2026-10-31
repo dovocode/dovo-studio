@@ -76,7 +76,7 @@ const mocks = {
     };
   `,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-  '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;`,
+  '../../runtime/preferences/app-preferences': `export const useCarMode=()=>!!window.carMode;`,
   '../../shell/navigation': `import {createContext,useContext} from 'react';export const FocusContext=createContext(true);export const useNavigation=()=>({focused:useContext(FocusContext),navigate:()=>{}});`,
   '../../shell/use-route-computer': `export const useRouteComputer=()=>({error:'',retry:()=>{}});`,
   '../../ui/content/text': `export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;`,
@@ -141,7 +141,7 @@ const mocks = {
     };
   `,
   './use-task-lifecycle': `export const useTaskLifecycle=()=>({enabled:true,error:'',busy:false});export const chooseSnoozeDuration=async()=>3600000;`,
-  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose})=><section><TaskWaitingPanel task={task}/><button onClick={onClose}>Close project information</button></section>;`,
+  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose,inline})=>{window.projectInfoInline=inline;return <section><TaskWaitingPanel task={task}/><button onClick={onClose}>Close project information</button></section>};`,
   './use-task-viewed': `export const useTaskViewed=()=>({error:false});`,
 }
 for (const [path, names] of Object.entries({
@@ -390,20 +390,18 @@ try {
     'Advanced',
   ])
   assert.equal(
-    await page.evaluate(
-      () => window.headerActions.find((a) => a.label === 'Project information').overflow,
-    ),
+    await page.evaluate(() => window.headerActions.find((a) => a.label === 'Thread info').overflow),
     true,
   )
   // General threads show their linked project's information directly when it is available.
   await page.evaluate(() => window.setLinkedProject(true))
   await page.waitForFunction(
-    () => window.headerActions.find((a) => a.label === 'Project information').overflow === false,
+    () => window.headerActions.find((a) => a.label === 'Thread info').overflow === false,
   )
   assert.ok((await page.locator('header').innerText()).includes('Linked project'))
   await page.evaluate(() => window.setLinkedProject(false))
   await page.waitForFunction(
-    () => window.headerActions.find((a) => a.label === 'Project information').overflow === true,
+    () => window.headerActions.find((a) => a.label === 'Thread info').overflow === true,
   )
   const threadActions = await page.evaluate(() =>
     window.headerActions
@@ -424,7 +422,7 @@ try {
     false,
   )
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
   // Blurred stack screens remain mounted, but must not retain project information.
   const projectClose = page.getByRole('button', { name: 'Close project information', exact: true })
@@ -432,13 +430,13 @@ try {
   await projectClose.waitFor({ state: 'detached' })
   await page.evaluate(() => window.setFocused(true))
   assert.equal(await projectClose.count(), 0)
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.waitFor()
   await page.getByRole('button', { name: 'Files', exact: true }).click()
   await projectClose.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Chat', exact: true }).click()
   assert.equal(await projectClose.count(), 0)
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.click()
   await page.getByText('First prompt', { exact: true }).waitFor()
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
@@ -452,7 +450,7 @@ try {
 
   // Moving an unsent draft changes its runtime intentionally; committing it must only
   // update the owning route params, including after a failed upload and a retry.
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.waitFor()
   await page.evaluate(() => window.openRoute('/new'))
   await page.getByRole('button', { name: 'Remote', exact: true }).waitFor()
@@ -512,11 +510,31 @@ try {
     })
   })
   await page.waitForFunction(
-    () => window.headerActions.find((a) => a.label === 'Project information').overflow === false,
+    () => window.headerActions.find((a) => a.label === 'Thread info').overflow === false,
   )
-  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await projectClose.waitFor()
   await projectClose.click()
+  await page.evaluate(() => {
+    window.carMode = true
+    window.setLinkedProject(true)
+  })
+  await page.waitForFunction(
+    () => window.headerActions.find((action) => action.label === 'Thread info').overflow === true,
+  )
+  await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
+  await projectClose.waitFor()
+  assert.equal(
+    await page.evaluate(() => window.projectInfoInline),
+    false,
+    'Car mode opens Thread Info as a sheet',
+  )
+  await projectClose.click()
+  await page.evaluate(() => {
+    window.carMode = false
+    window.setLinkedProject(false)
+  })
   // The real thread header exposes checkout copying for Git and plain-folder threads.
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   for (const kind of [undefined, 'folder']) {

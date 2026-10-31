@@ -97,6 +97,7 @@ import {
   previewActionSchema,
   browserProfilesResultSchema,
   remoteBrowserOpenSchema,
+  browserElementPointSchema,
   simulatorInputSchema,
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
@@ -682,7 +683,13 @@ export function route(
         )
       }
       if (method === 'GET' && path === '/api/mutations/status')
-        return { version: 1, acknowledgements: true, workspaceMutations: 1 }
+        return {
+          version: 1,
+          acknowledgements: true,
+          workspaceMutations: 1,
+          attachmentUploads: 2,
+          queueMutations: 1,
+        }
       if (
         (receipted || request.headers['x-dovo-mutation-id'] === undefined) &&
         method === 'POST' &&
@@ -729,6 +736,11 @@ export function route(
               '/api/agents/title-settings/save',
               '/api/previews/browser/profiles/save',
             ].includes(path) ||
+              (path === '/api/tasks/queue' &&
+                typeof input === 'object' &&
+                input !== null &&
+                'action' in input &&
+                input.action === 'duplicate') ||
               (method === 'PATCH' && path === '/api/workspace'),
           ),
         )
@@ -775,6 +787,10 @@ export function route(
               '/api/notifications/register',
               '/api/attachments/upload',
               '/api/attachments/replace',
+              '/api/attachments/recoverable-upload',
+              '/api/attachments/recoverable-replace',
+              '/api/attachments/abandon-upload',
+              '/api/attachments/abandon-replace',
               '/api/scm/connections/save',
               '/api/scm/work/pipelines/action',
             ].includes(path),
@@ -949,6 +965,26 @@ export function route(
       }
       if (
         method === 'POST' &&
+        (path === '/api/previews/browser/element-snapshot' ||
+          path === '/api/previews/browser/element-inspect')
+      ) {
+        const input = yield* serviceResult(body(request))
+        const { taskId, tabId, profileId = 'default' } = decode(remoteBrowserOpenSchema, input)
+        if (taskId !== STUDIO_BROWSER_SCOPE) s.store.taskSummary(taskId)
+        const resourceId = JSON.stringify(
+          profileId === 'default' ? [taskId, tabId ?? null] : [taskId, tabId ?? null, profileId],
+        )
+        return yield* serviceResult(
+          s.browsers.element(
+            resourceId,
+            path.endsWith('/element-inspect')
+              ? decode(browserElementPointSchema, input)
+              : undefined,
+          ),
+        )
+      }
+      if (
+        method === 'POST' &&
         (path === '/api/previews/browser/close' ||
           path === '/api/previews/browser/selection' ||
           path === '/api/previews/browser/activity')
@@ -1002,6 +1038,64 @@ export function route(
         return yield* serviceResult(s.attachments.replace(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/attachments/upload')
         return yield* serviceResult(s.attachments.upload(yield* serviceResult(body(request))))
+      if (method === 'POST' && path === '/api/attachments/recoverable-upload')
+        return yield* serviceResult(
+          s.attachments.uploadRecoverable(device.id, yield* serviceResult(body(request))),
+        )
+      if (method === 'POST' && path === '/api/attachments/recoverable-replace')
+        return yield* serviceResult(
+          s.attachments.uploadRecoverable(device.id, yield* serviceResult(body(request)), true),
+        )
+      if (
+        method === 'POST' &&
+        ['/api/attachments/abandon-upload', '/api/attachments/abandon-replace'].includes(path)
+      ) {
+        s.attachments.abandonUpload(
+          device.id,
+          yield* serviceResult(body(request)),
+          path.endsWith('abandon-replace'),
+        )
+        return { ok: true }
+      }
+      if (method === 'POST' && path === '/api/attachments/draft-guard') {
+        const { taskId } = decode(
+          mutableStruct({ taskId: idSchema }),
+          yield* serviceResult(body(request, 8192)),
+        )
+        return { guard: s.attachments.draftUploadGuard(taskId) }
+      }
+      if (method === 'POST' && path === '/api/attachments/commit-upload') {
+        const { id, guard } = decode(
+          mutableStruct({ id: uuidSchema, guard: Schema.String }),
+          yield* serviceResult(body(request, 8192)),
+        )
+        return s.attachments.commitUploadToDraft(device.id, id, guard)
+      }
+      if (
+        method === 'POST' &&
+        [
+          '/api/attachments/upload-receipt',
+          '/api/attachments/upload-handled',
+          '/api/attachments/acknowledge-upload',
+          '/api/attachments/recover-to-draft',
+        ].includes(path)
+      ) {
+        const { id } = decode(
+          mutableStruct({ id: uuidSchema }),
+          yield* serviceResult(body(request, 8192)),
+        )
+        if (path === '/api/attachments/upload-receipt')
+          return {
+            receipt: s.attachments.uploadReceipt(device.id, id),
+            available: s.attachments.uploadAvailable(device.id, id),
+          }
+        if (path === '/api/attachments/upload-handled')
+          return { handled: s.attachments.confirmUploadHandled(device.id, id) }
+        if (path === '/api/attachments/recover-to-draft')
+          return s.attachments.recoverUploadToDraft(device.id, id)
+        s.attachments.acknowledgeUpload(device.id, id)
+        return { ok: true }
+      }
       if (
         method === 'POST' &&
         ['/api/attachments/read', '/api/attachments/remove'].includes(path)

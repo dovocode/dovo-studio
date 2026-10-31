@@ -10,6 +10,7 @@ import {
   sharedSettingsSyncSchema,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
+  attachmentUploadResultSchema,
   runtimeSnapshotPath,
   learnRuntimeRoutes,
   retryRuntimeSync,
@@ -1368,6 +1369,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     let wakeFallback = () => {}
     const live = startRuntimeSync(profile.connection, {
       onWake: () => wakeFallback(),
+      onStatus: () => wakeFallback(),
       onSnapshot: (snapshot) => {
         if (
           stopped ||
@@ -1402,6 +1404,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           : Effect.void,
       ),
       {
+        enabled: () => !live.online() && !entryRef.current[profile.id]?.unauthorized,
         interval: 1000,
         // An unreachable host is not hammered every second; foregrounding still retries at once.
         backoff: 10000,
@@ -1708,6 +1711,57 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (owner: RuntimeProfile) => runClientEffect(mutations.discardEffect(owner.connection)),
     [mutations],
   )
+  const attachmentUploads = useCallback(
+    (owner: RuntimeProfile) => mutations.attachmentUploads(owner.connection),
+    [mutations],
+  )
+  const attachmentPendingEffect = useCallback(
+    (owner: RuntimeProfile, id: string) => mutations.attachmentPendingEffect(owner.connection, id),
+    [mutations],
+  )
+  const reviewAttachments = useCallback(
+    (owner: RuntimeProfile) => mutations.reviewAttachments(owner.connection),
+    [mutations],
+  )
+  const requestAttachmentEffect = useCallback(
+    (owner: RuntimeProfile, input: unknown, replacement: boolean) =>
+      Effect.suspend(() => {
+        if (!resolveRuntimeTarget(current.current.profiles, owner))
+          return Effect.fail(new Error('This computer connection changed.'))
+        return mutations
+          .requestAttachmentEffect(owner.connection, input, replacement)
+          .pipe(
+            Effect.tapError(() => Effect.sync(() => mutations.reviewAttachments(owner.connection))),
+          )
+      }),
+    [mutations],
+  )
+  const finishAttachmentEffect = useCallback(
+    (owner: RuntimeProfile, id: string) => mutations.finishAttachmentEffect(owner.connection, id),
+    [mutations],
+  )
+  const recoverAttachment = useCallback(
+    (owner: RuntimeProfile, id: string) =>
+      runClientEffect(
+        mobileWorkflow(function* () {
+          yield* mutations.retryAttachmentAfterReviewEffect(owner.connection, id)
+          yield* readRuntimeEffect(
+            owner,
+            '/api/attachments/recover-to-draft',
+            { id },
+            attachmentUploadResultSchema,
+          )
+          yield* refreshProfileEffect(owner).pipe(Effect.catch(() => Effect.void))
+          yield* mutations.finishAttachmentEffect(owner.connection, id)
+        }),
+      ),
+    [mutations, readRuntimeEffect, refreshProfileEffect],
+  )
+  const discardAttachment = useCallback(
+    (owner: RuntimeProfile, id: string) =>
+      runClientEffect(mutations.discardAttachmentEffect(owner.connection, id)),
+    [mutations],
+  )
   const refreshAllOrRestore = useCallback(async () => {
     if (!registryWritable.current) {
       setRestoreAttempt((attempt) => attempt + 1)
@@ -1765,6 +1819,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       mutationStatus,
       retryMutations,
       discardMutations,
+      attachmentUploads,
+      attachmentPendingEffect,
+      requestAttachmentEffect,
+      finishAttachmentEffect,
+      reviewAttachments,
+      recoverAttachment,
+      discardAttachment,
       cacheForRuntime: cacheFor,
       readCache,
       refreshEffect,
@@ -1814,6 +1875,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       mutationStatus,
       retryMutations,
       discardMutations,
+      attachmentUploads,
+      attachmentPendingEffect,
+      requestAttachmentEffect,
+      finishAttachmentEffect,
+      reviewAttachments,
+      recoverAttachment,
+      discardAttachment,
       cacheFor,
       readCache,
       refreshEffect,

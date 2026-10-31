@@ -22,6 +22,48 @@ async function loadPreferences() {
   return import('./app-preferences')
 }
 
+it('preserves unknown saved preferences across delayed loading, edits and reloads', async () => {
+  let resolveRead!: (value: string) => void
+  const read = new Promise<string>((resolve) => {
+    resolveRead = resolve
+  })
+  let saved = ''
+  storage.getItem = () => read
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  preferences.updateMobilePreferences({ keepScreenOn: true })
+  resolveRead(
+    JSON.stringify({
+      futurePreference: { mode: 'custom', values: [1, 2] },
+      taskSort: 'invalid',
+      theme: 'light',
+    }),
+  )
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).not.toHaveProperty('futurePreference')
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved)).toMatchObject({
+      futurePreference: { mode: 'custom', values: [1, 2] },
+      taskSort: 'priority',
+      theme: 'light',
+      keepScreenOn: true,
+    }),
+  )
+  storage.getItem = async () => saved
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  reopened.updateMobilePreferences({ taskSort: 'title' })
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved)).toMatchObject({
+      futurePreference: { mode: 'custom', values: [1, 2] },
+      taskSort: 'title',
+      keepScreenOn: true,
+    }),
+  )
+})
+
 it('preserves unread settings through failed hydration and merges pending edits on retry', async () => {
   const saved = JSON.stringify({ taskSort: 'title', carMode: true })
   const writes: string[] = []
@@ -285,6 +327,87 @@ it('restores complete section orders and falls back for invalid orders', async (
     theme: 'light',
     threadSectionOrder: ['pinned', 'active', 'working', 'waiting', 'snoozed', 'settled'],
   })
+})
+
+it('merges early section toggles into unread saved groups and restores them after restart', async () => {
+  let finishRead!: (value: string) => void
+  const pending = new Promise<string>((resolve) => {
+    finishRead = resolve
+  })
+  let saved: string | null = null
+  storage.getItem = () => pending
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const first = await loadPreferences()
+  first.setMobileThreadSectionCollapsed('working', false)
+  first.setMobileThreadSectionCollapsed('status:pinned', true)
+  first.setMobileThreadSectionCollapsed('project:another', true)
+  first.setMobileThreadSectionCollapsed('project:another', false)
+  expect(saved).toBeNull()
+  finishRead(
+    JSON.stringify({
+      theme: 'light',
+      collapsedThreadSections: ['working', 'project:saved-offline'],
+    }),
+  )
+  await first.preferencesReady
+  await vi.waitFor(() => expect(saved).not.toBeNull())
+  storage.getItem = async () => saved
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    theme: 'light',
+    collapsedThreadSections: ['project:saved-offline', 'status:pinned'],
+  })
+})
+
+it('restores Thread Info choices after restart and resets without changing other preferences', async () => {
+  let saved: string | null = JSON.stringify({ theme: 'light' })
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const first = await loadPreferences()
+  await first.preferencesReady
+  expect(first.readMobilePreferences().threadInfoSections).toEqual({})
+  first.updateMobilePreferences({ threadInfoSections: { usage: false, scripts: false } })
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved ?? '{}').threadInfoSections).toEqual({ usage: false, scripts: false }),
+  )
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences().threadInfoSections).toEqual({
+    usage: false,
+    scripts: false,
+  })
+  reopened.updateMobilePreferences({ threadInfoSections: {} })
+  await vi.waitFor(() => expect(JSON.parse(saved ?? '{}').threadInfoSections).toEqual({}))
+  expect(reopened.readMobilePreferences().theme).toBe('light')
+})
+
+it('keeps sequential section choices and explicit full-list replacement independent', async () => {
+  let saved: string | null = JSON.stringify({
+    collapsedThreadSections: ['working', 'project:saved'],
+  })
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  preferences.setMobileThreadSectionCollapsed('working', false)
+  preferences.setMobileThreadSectionCollapsed('waiting', true)
+  preferences.setMobileThreadSectionCollapsed('project:current', true)
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved ?? '{}').collapsedThreadSections).toEqual([
+      'project:saved',
+      'waiting',
+      'project:current',
+    ]),
+  )
+  preferences.updateMobilePreferences({ collapsedThreadSections: [] })
+  await vi.waitFor(() => expect(JSON.parse(saved ?? '{}').collapsedThreadSections).toEqual([]))
 })
 
 it('restores section collapse choices across phone restarts independently of list items', async () => {

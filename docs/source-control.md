@@ -182,6 +182,32 @@ never replace committed branch content. Only regular files are copied; symbolic 
 copied. Paths outside the project and explicit `.git` entries are rejected; broad globs skip Git
 metadata. The manifest can be committed or kept local to the registered project.
 
+Creating worktrees requires Git 2.36 or newer for NUL-delimited registration reads. Creation uses a
+unique Git lock while checkout hooks and local-file copying finish. Stop cancels the owned Git
+process tree, including fetch and submodule preparation; a checkout whose process shutdown is
+unconfirmed remains unavailable until exit is confirmed. A confirmed failed attempt removes only the
+folder and registration it still owns. An unknown replacement folder or registration is preserved
+and reported for recovery.
+
+Retries never prune missing worktree registrations automatically: those registrations can contain
+staged files even when the working folder is gone. Restore the folder, or inspect and explicitly
+remove that specific registration before retrying. Worktrees still locked by an incomplete creation
+attempt are not adopted as ready checkouts. Creation unlocks before setup, which takes its own
+attempt-specific `dovo-preparing` lock through snapshot restoration, submodules, setup and saved
+completion state. Ordinary failures unlock after their commands drain and can be retried without
+recreating the worktree. Unconfirmed commands retain the lock until exit is confirmed. A hard
+runtime kill leaves the lock in Git; new runtimes refuse the checkout. Confirm its setup commands
+have stopped before explicitly unlocking the registration. A stale runtime PID alone does not prove
+its detached commands have exited. A launcher exiting while descendants retain its output pipes
+produces a bounded shutdown error and keeps ownership until the pipes actually close. Windows setup
+commands that deliberately leave background processes with redirected output are not covered by the
+POSIX hard-kill verification.
+
+New task branches created from an origin base use `--no-track`, so their first push creates the task
+branch instead of advancing that base. Existing branch tracking and explicitly configured upstream
+destinations are preserved. Check the upstream of task branches created by older versions before
+pushing; changing it requires an explicit Git configuration change.
+
 ## Orphaned worktrees and thread deletion
 
 In **Settings → Coding → Worktrees**, enable **Show orphaned only** to list Dovo-created checkouts
@@ -246,3 +272,31 @@ The **Linked projects tool** switch in the computer’s Running tasks settings c
 on desktop and mobile. It is enabled by default. Disabling it blocks new calls immediately and omits
 the tool and its guidance on the next turn. It preserves existing/pending links and manual linking.
 A new provider session is created when the setting changes between turns.
+
+## Review local commits
+
+Open a thread's changes and choose **Local commits** on desktop/web or mobile. The picker pages the
+selected checkout's first-parent history, including linked checkouts. Choose a commit to review its
+saved changes without checking out a branch, preparing a worktree, changing the index or discarding
+working files. Viewed-file progress is isolated by thread, checkout and full commit SHA.
+
+Each commit is compared with its first parent; a merge uses its first parent and a root commit shows
+its initial files. A shallow boundary with an unavailable parent reports **Fetch more history**
+instead of presenting all files as additions. Only commits reachable from the selected checkout's
+HEAD can be reviewed. Draft threads show project history before their worktree is created. Renames
+currently appear as a deletion and addition. Large/binary previews stay tied to the selected
+immutable commit, and the full-file action uses that same commit.
+
+Commit review is read-only. Switch back to working changes to edit, discard or attach working-diff
+comments. File grouping and viewed marks remain available for the chosen commit.
+
+## GitHub access failures
+
+GitHub API failures with HTTP 401, 403 or 404 identify the captured host, repository and verified
+account when available, together with the credential source used for that request. Guidance points
+to the saved token, runtime environment, GitHub CLI login or configured CLI wrapper that needs
+attention. Use the connection check in **Settings → Source Control** to verify access after repair.
+An account switch while a request is running does not relabel its original credential. Error text
+does not include token values or upstream error bodies. A 404 means missing or inaccessible; it does
+not establish that a private repository was deleted. Rate-limit failures retain their existing quota
+and retry behavior.

@@ -5,6 +5,7 @@ import {
   turnSettingsKey,
   applyTurnSettings,
   permissionPolicyIssue,
+  planModeIssue,
   supportsAccess,
   resolveTaskAgent,
   turnSettingsMatchHarness,
@@ -16,11 +17,17 @@ import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { Activity } from '../../storage/activity.js'
 import { HttpError } from '../../errors.js'
 import { createHash, randomUUID } from 'node:crypto'
-const fingerprint = (text: string, attachments: Attachment[], turnSettings?: TurnSettings) =>
+const fingerprint = (
+  text: string,
+  attachments: Attachment[],
+  turnSettings?: TurnSettings,
+  plan?: boolean,
+) =>
   createHash('sha256')
     .update(
       JSON.stringify({
         text,
+        ...(plan ? { plan: true } : {}),
         ...(turnSettings
           ? {
               turnSettings: {
@@ -58,17 +65,24 @@ export class TaskQueue {
         throw new HttpError(400, 'This access mode is unavailable for this harness.')
     }
   }
+  private validatePlan(id: string, settings?: TurnSettings | null, review = false) {
+    if (review) throw new HttpError(400, 'Request a review without plan mode')
+    const agent = resolveTaskAgent(this.store.taskSummary(id), this.store.get().agents)
+    const issue = planModeIssue(agent && applyTurnSettings(agent, settings ?? undefined))
+    if (issue) throw new HttpError(400, issue)
+  }
   accepted(
     id: string,
     messageId: string,
     text: string,
     attachments: Attachment[] = [],
     turnSettings?: TurnSettings,
+    plan = false,
   ) {
     const task = this.store.task(id)
     const receipt = this.store.taskSubmission(id, messageId)
     if (receipt) {
-      if (receipt !== fingerprint(text, attachments, turnSettings))
+      if (receipt !== fingerprint(text, attachments, turnSettings, plan))
         throw new HttpError(
           409,
           'This message id already has different text or attachments or model settings',
@@ -78,8 +92,12 @@ export class TaskQueue {
     const existing = [...task.messages, ...(task.queue ?? [])].find((m) => m.id === messageId)
     if (existing) {
       if (
-        fingerprint(existing.text, existing.attachments ?? [], existing.turnSettings) !==
-        fingerprint(text, attachments, turnSettings)
+        fingerprint(
+          existing.text,
+          existing.attachments ?? [],
+          existing.turnSettings,
+          existing.plan,
+        ) !== fingerprint(text, attachments, turnSettings, plan)
       )
         throw new HttpError(409, 'This message id already has different text')
       return true
@@ -91,21 +109,30 @@ export class TaskQueue {
     messageId: string,
     text: string,
     attachments: Attachment[] = [],
-    response?: { id: string; fingerprint: string },
+    response?: { id: string; fingerprint: string; attachments?: Attachment[] },
     review = false,
     resumePaused = false,
     subagentResultId?: string,
     options: {
       turnSettings?: TurnSettings
+      queueOnly?: boolean
       steering?: boolean
       reopenSettled?: boolean
       unsnooze?: boolean
       clearCompletedTodos?: boolean
       source?: MessageSource
+      /** One read-only planning turn; it cannot steer a run with broader access. */
+      plan?: boolean
     } = {},
   ) {
-    if (this.accepted(id, messageId, text, attachments, options.turnSettings)) return false
+    if (this.accepted(id, messageId, text, attachments, options.turnSettings, options.plan))
+      return false
     this.validateSettings(id, options.turnSettings)
+    if (options.plan) {
+      if (options.steering)
+        throw new HttpError(409, 'Queue this message to plan before the agent changes anything')
+      this.validatePlan(id, options.turnSettings, review)
+    }
     const task = this.store.taskSummary(id)
     if (task.archivedAt || (task.archived && !task.autoSettled && !options.reopenSettled))
       throw new HttpError(409, 'Restore this task before sending a message')
@@ -144,12 +171,21 @@ export class TaskQueue {
                 sameTurnSettings(t.draftTurnSettings, options.turnSettings)
                   ? null
                   : t.draftTurnSettings,
+              // Only a sent plan consumes the toggle; normal sends leave it for the next draft.
+              draftPlan:
+                options.plan && (!t.draft.trim() || t.draft.trim() === text.trim())
+                  ? undefined
+                  : t.draftPlan,
               draftAttachments: t.draftAttachments?.filter(
                 (f) => !attachments.some((a) => a.id === f.id),
               ),
             }
           : {}),
-        ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
+        ...(options.queueOnly
+          ? { queuePaused: true }
+          : resumePaused
+            ? { queuePaused: false, restartRecovery: undefined }
+            : {}),
         queue: [
           ...(t.queue ?? []),
           {
@@ -160,6 +196,7 @@ export class TaskQueue {
             text,
             ...(attachments.length ? { attachments } : {}),
             ...(review ? { review: true } : {}),
+            ...(options.plan ? { plan: true } : {}),
             ...(subagentResultId ? { subagentResultId } : {}),
             createdAt,
             ...(options.steering ? { steering: true } : {}),
@@ -168,7 +205,7 @@ export class TaskQueue {
       }),
       {
         id: messageId,
-        fingerprint: fingerprint(text, attachments, options.turnSettings),
+        fingerprint: fingerprint(text, attachments, options.turnSettings, options.plan),
         response,
       },
     )
@@ -230,31 +267,49 @@ export class TaskQueue {
       .digest('hex')
     const accepted = this.store.taskSubmission(id, duplicateMessageId)
     if (accepted) {
-      if (accepted !== receipt) throw new HttpError(409, 'This message id is already in use')
+      if (accepted !== receipt)
+        throw new HttpError(409, 'This message id is already in use', { mutationRejected: true })
       return
     }
     if (task.archived || task.archivedAt)
-      throw new HttpError(409, 'Restore this task before changing its queue')
+      throw new HttpError(409, 'Restore this task before changing its queue', {
+        mutationRejected: true,
+      })
     if (
       [...this.store.task(id).messages, ...(task.queue ?? [])].some(
         (item) => item.id === duplicateMessageId,
       )
     )
-      throw new HttpError(409, 'This message id is already in use')
+      throw new HttpError(409, 'This message id is already in use', { mutationRejected: true })
     const index = task.queue?.findIndex((item) => item.id === messageId) ?? -1
     const message = task.queue?.[index]
-    if (!message) throw new HttpError(409, 'This message already started or was removed')
-    if (message.steering) throw new HttpError(409, 'This message is being delivered to the agent')
+    if (!message)
+      throw new HttpError(409, 'This message already started or was removed', {
+        mutationRejected: true,
+      })
+    if (message.steering)
+      throw new HttpError(409, 'This message is being delivered to the agent', {
+        mutationRejected: true,
+      })
     if ((task.queue?.length ?? 0) >= 50)
-      throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
-    this.validateSettings(id, message.turnSettings)
+      throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.', {
+        mutationRejected: true,
+      })
+    try {
+      this.validateSettings(id, message.turnSettings)
+      if (message.plan) this.validatePlan(id, message.turnSettings, message.review)
+    } catch (error) {
+      if (error instanceof HttpError)
+        throw new HttpError(error.status, error.message, { mutationRejected: true })
+      throw error
+    }
     const createdAt = new Date().toISOString()
     this.store.updateTask(
       id,
       (current) => ({
         ...current,
         checkoutLocked: true,
-        lastPromptAt: createdAt,
+        ...(!message.review ? { lastPromptAt: createdAt } : {}),
         queue: [
           ...(current.queue ?? []).slice(0, index + 1),
           {
@@ -262,8 +317,10 @@ export class TaskQueue {
             role: 'user',
             source: { kind: 'user' },
             text: message.text,
+            ...(message.review ? { review: true } : {}),
             attachments: message.attachments,
             turnSettings: message.turnSettings,
+            ...(message.plan ? { plan: true } : {}),
             paused: message.paused,
             createdAt,
           },
@@ -283,10 +340,15 @@ export class TaskQueue {
     expectedTurnSettings?: TurnSettings | null,
     attachments?: Attachment[],
     expectedAttachmentIds?: string[],
+    plan?: boolean,
+    expectedPlan?: boolean,
   ) {
     const task = this.store.taskSummary(id)
     const message = task.queue?.find((item) => item.id === messageId)
-    if (!message) throw new HttpError(409, 'This message already started or was removed')
+    if (!message)
+      throw new HttpError(409, 'This message already started or was removed', {
+        mutationRejected: true,
+      })
     if (message.steering) throw new HttpError(409, 'This message is being delivered to the agent')
     if (
       message.text !== expectedText ||
@@ -294,6 +356,8 @@ export class TaskQueue {
         (expectedTurnSettings === undefined ||
           !sameTurnSettings(message.turnSettings, expectedTurnSettings)))
     )
+      throw new HttpError(409, 'This queued message changed. Reopen it before editing.')
+    if (plan !== undefined && (expectedPlan === undefined || !!message.plan !== expectedPlan))
       throw new HttpError(409, 'This queued message changed. Reopen it before editing.')
     if (
       attachments &&
@@ -307,6 +371,12 @@ export class TaskQueue {
     if (!text.trim() && !(attachments ?? message.attachments)?.length)
       throw new HttpError(400, 'A message needs text or attachments')
     this.validateSettings(id, turnSettings)
+    if (plan ?? message.plan)
+      this.validatePlan(
+        id,
+        turnSettings === undefined ? message.turnSettings : turnSettings,
+        message.review,
+      )
     this.store.updateTask(id, (current) => ({
       ...current,
       queue: current.queue?.map((item) =>
@@ -317,6 +387,7 @@ export class TaskQueue {
               source: { kind: 'user' },
               ...(turnSettings !== undefined ? { turnSettings: turnSettings ?? undefined } : {}),
               ...(attachments ? { attachments } : {}),
+              ...(plan !== undefined ? { plan: plan || undefined } : {}),
             }
           : item,
       ),
@@ -390,7 +461,10 @@ export class TaskQueue {
     if (task.archived || task.archivedAt)
       throw new HttpError(400, 'Restore this task before changing its queue')
     const message = task.queue?.find((item) => item.id === messageId)
-    if (!message) throw new HttpError(409, 'This message already started or was removed')
+    if (!message)
+      throw new HttpError(409, 'This message already started or was removed', {
+        mutationRejected: true,
+      })
     if (message.steering) throw new HttpError(409, 'This message is being delivered to the agent')
     if (!!message.paused === paused) return
     this.store.updateTask(id, (task) => ({
@@ -403,12 +477,41 @@ export class TaskQueue {
       messageId,
     })
   }
-  move(id: string, messageId: string, beforeMessageId: string | null) {
-    const queue = [...(this.store.taskSummary(id).queue ?? [])]
+  move(
+    id: string,
+    messageId: string,
+    beforeMessageId: string | null,
+    expectedMessageIds?: string[],
+  ) {
+    const task = this.store.taskSummary(id)
+    if (task.archived || task.archivedAt)
+      throw new HttpError(409, 'Restore this task before changing its queue', {
+        mutationRejected: true,
+      })
+    const queue = [...(task.queue ?? [])]
+    if (
+      expectedMessageIds &&
+      (expectedMessageIds.length !== queue.length ||
+        queue.some((message, index) => message.id !== expectedMessageIds[index]))
+    )
+      throw new HttpError(
+        409,
+        'The queue changed. Check its order before moving this message again.',
+        { mutationRejected: true },
+      )
+    if (queue.some((message) => message.steering))
+      throw new HttpError(409, 'Wait until the current message is delivered before reordering', {
+        mutationRejected: true,
+      })
     const index = queue.findIndex((message) => message.id === messageId)
-    if (index < 0) throw new HttpError(409, 'This message already started or was removed')
+    if (index < 0)
+      throw new HttpError(409, 'This message already started or was removed', {
+        mutationRejected: true,
+      })
     if (beforeMessageId !== null && !queue.some((message) => message.id === beforeMessageId))
-      throw new HttpError(409, 'The queue changed while dragging. Try again.')
+      throw new HttpError(409, 'The queue changed while dragging. Try again.', {
+        mutationRejected: true,
+      })
     if (messageId === beforeMessageId) return
     const [message] = queue.splice(index, 1)
     const target =
@@ -440,7 +543,10 @@ export class TaskQueue {
           'The draft model settings changed. Check the composer before restoring',
         )
       const message = task.queue?.find((item) => item.id === input.messageId)
-      if (!message) throw new HttpError(409, 'This message already started or was removed')
+      if (!message)
+        throw new HttpError(409, 'This message already started or was removed', {
+          mutationRejected: true,
+        })
       if (
         message.text !== input.expectedText ||
         !sameTurnSettings(message.turnSettings, input.expectedTurnSettings) ||
@@ -451,7 +557,12 @@ export class TaskQueue {
       this.change(id, 'restore', input.messageId)
     })
   }
-  change(id: string, action: 'remove' | 'restore' | 'up' | 'down' | 'pause', messageId?: string) {
+  change(
+    id: string,
+    action: 'remove' | 'restore' | 'up' | 'down' | 'pause',
+    messageId?: string,
+    expectedMessageIds?: string[],
+  ) {
     const task = this.store.taskSummary(id)
     if (action === 'pause') {
       this.store.updateTask(id, (t) => ({
@@ -461,9 +572,23 @@ export class TaskQueue {
       }))
       return
     }
+    if (action === 'up' || action === 'down') {
+      const queue = task.queue ?? []
+      const index = queue.findIndex((message) => message.id === messageId)
+      if (index < 0) throw new HttpError(409, 'This message already started or was removed')
+      const before =
+        action === 'up'
+          ? (queue[Math.max(0, index - 1)]?.id ?? null)
+          : (queue[index + 2]?.id ?? null)
+      this.move(id, queue[index].id, before, expectedMessageIds)
+      return
+    }
     const queue = [...(task.queue ?? [])],
       index = queue.findIndex((m) => m.id === messageId)
-    if (index < 0) throw new HttpError(409, 'This message already started or was removed')
+    if (index < 0)
+      throw new HttpError(409, 'This message already started or was removed', {
+        mutationRejected: true,
+      })
     if ((action === 'remove' || action === 'restore') && queue[index].steering)
       throw new HttpError(409, 'This message is being delivered to the agent')
     if (action === 'restore') {
@@ -474,6 +599,14 @@ export class TaskQueue {
         throw new HttpError(
           409,
           'Clear the composer before restoring a message with different model settings',
+        )
+      if (
+        (task.draft.trim() || task.draftAttachments?.length) &&
+        !!queue[index].plan !== !!task.draftPlan
+      )
+        throw new HttpError(
+          409,
+          'Clear the composer before restoring a message with a different plan mode',
         )
       const ids = new Set(
         [...(task.draftAttachments ?? []), ...(queue[index].attachments ?? [])].map(
@@ -488,11 +621,6 @@ export class TaskQueue {
     }
     const removed = action === 'remove' || action === 'restore' ? queue[index] : undefined
     if (removed) queue.splice(index, 1)
-    else {
-      const target = index + (action === 'up' ? -1 : 1)
-      if (target >= 0 && target < queue.length)
-        [queue[index], queue[target]] = [queue[target], queue[index]]
-    }
     this.store.updateTask(
       id,
       (t) => ({
@@ -502,6 +630,7 @@ export class TaskQueue {
           ? {
               draft: [t.draft, removed.text].filter(Boolean).join('\n\n'),
               draftTurnSettings: removed.turnSettings ?? null,
+              draftPlan: removed.plan || undefined,
               draftAttachments: [
                 ...(t.draftAttachments ?? []),
                 ...(removed.attachments ?? []).filter(
@@ -517,7 +646,12 @@ export class TaskQueue {
       removed && !this.store.taskSubmission(id, removed.id)
         ? {
             id: removed.id,
-            fingerprint: fingerprint(removed.text, removed.attachments ?? [], removed.turnSettings),
+            fingerprint: fingerprint(
+              removed.text,
+              removed.attachments ?? [],
+              removed.turnSettings,
+              removed.plan,
+            ),
           }
         : undefined,
     )

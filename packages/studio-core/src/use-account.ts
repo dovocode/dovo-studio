@@ -33,8 +33,16 @@ export function useAccount(
   const state = useSyncExternalStore(client.subscribe, client.snapshot, client.snapshot)
   const session = client.sessionId()
   useEffect(() => {
-    if (services?.ready !== false && state.loaded && state.directory && !state.deletionPending)
-      return client.sharing.startSync()
+    if (services?.ready === false || !state.loaded || !state.directory || state.deletionPending)
+      return
+    const active = () => document.visibilityState === 'visible'
+    const stop = client.sharing.startSync(active)
+    const foreground = () => client.sharing.refreshSync()
+    document.addEventListener('visibilitychange', foreground)
+    return () => {
+      document.removeEventListener('visibilitychange', foreground)
+      stop()
+    }
   }, [
     client,
     session,

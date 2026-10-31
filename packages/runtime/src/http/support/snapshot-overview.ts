@@ -1,6 +1,6 @@
 import {
   checkpointFileCount,
-  checkpointCanUndo,
+  checkpointUndoTurn,
   taskMetadata,
   decode,
   mutableStruct,
@@ -23,9 +23,7 @@ function pagedTask(task: Task): Task {
   const visible = new Set(page.turns.map((turn) => turn.id))
   const older = task.turns?.filter((turn) => !visible.has(turn.id)) ?? []
   const budget = taskBudgetUsage({ turns: older })
-  const undoable = [...older]
-    .reverse()
-    .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
+  const undoable = checkpointUndoTurn(older)
   const result = {
     ...task,
     messages: page.messages,
@@ -39,6 +37,7 @@ function pagedTask(task: Task): Task {
             (turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0,
           ),
           undoableTurnId: undoable?.id,
+          pendingUndoTurnId: undoable?.checkpoint?.restorePending ? undoable.id : undefined,
         }
       : undefined,
   }
@@ -180,6 +179,7 @@ const olderTurnSchema = mutableStruct({
   tokens: Schema.NullOr(Schema.Number),
   changed: Schema.Number,
   undoable: Schema.Number,
+  pending: Schema.Number,
 })
 const storedPages = new WeakMap<TaskSummary, Task>()
 const olderBudgets = new WeakMap<object, Map<string, Task['historyTotals']>>()
@@ -204,8 +204,10 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
       + COALESCE((SELECT SUM(COALESCE(json_array_length(link.value, '$.files'), 0)
           + COALESCE(json_array_length(link.value, '$.omitted'), 0))
         FROM json_each(item.value, '$.checkpoint.linked') AS link), 0) > 0) AS changed,
+    COALESCE(json_extract(item.value, '$.checkpoint.restorePending'), 0) AS pending,
     (json_extract(item.value, '$.status') != 'running'
-      AND COALESCE(length(json_extract(item.value, '$.checkpoint.error')), 0) = 0
+      AND (COALESCE(json_extract(item.value, '$.checkpoint.restorePending'), 0) = 1
+      OR (COALESCE(length(json_extract(item.value, '$.checkpoint.error')), 0) = 0
       AND ((COALESCE(length(json_extract(item.value, '$.checkpoint.after')), 0) > 0
         AND COALESCE(json_extract(item.value, '$.checkpoint.undone'), 0) = 0
         AND COALESCE(json_array_length(item.value, '$.checkpoint.files'), 0)
@@ -215,13 +217,14 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
           AND COALESCE(length(json_extract(link.value, '$.error')), 0) = 0
           AND COALESCE(json_extract(link.value, '$.undone'), 0) = 0
           AND COALESCE(json_array_length(link.value, '$.files'), 0)
-            + COALESCE(json_array_length(link.value, '$.omitted'), 0) > 0))) AS undoable
+            + COALESCE(json_array_length(link.value, '$.omitted'), 0) > 0))))) AS undoable
     FROM conversation_items AS item WHERE task_id = ? AND kind = 'turn'
       AND item_id NOT IN (SELECT value FROM json_each(?)) ORDER BY ordinal`)
   let tokens: number | undefined
   let milliseconds = 0
   let hasChanges = false
   let undoableTurnId: string | undefined
+  let pendingUndoTurnId: string | undefined
   const now = Date.now()
   for (const value of rows.iterate(summary.id, JSON.stringify(visible))) {
     const turn = decode(olderTurnSchema, value)
@@ -230,9 +233,18 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
     const end = turn.finished ? Date.parse(turn.finished) : now
     if (Number.isFinite(start) && Number.isFinite(end)) milliseconds += Math.max(0, end - start)
     hasChanges ||= !!turn.changed
-    if (turn.undoable) undoableTurnId = turn.id
+    if (turn.undoable) {
+      undoableTurnId = turn.id
+      if (turn.pending) pendingUndoTurnId ??= turn.id
+    }
   }
-  const totals = { tokens, milliseconds, hasChanges, undoableTurnId }
+  const totals = {
+    tokens,
+    milliseconds,
+    hasChanges,
+    undoableTurnId: pendingUndoTurnId ?? undoableTurnId,
+    pendingUndoTurnId,
+  }
   if (earlier && latestVisible) {
     if (!cached) olderBudgets.set(earlier, (cached = new Map()))
     cached.set(key, totals)
@@ -248,10 +260,11 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
 export function pagedSummaryTask(
   db: Database.Database,
   summary: TaskSummary,
-  page: ConversationPage,
+  readPage: () => ConversationPage,
 ): Task {
   const cached = storedPages.get(summary)
   if (cached) return cached
+  const page = readPage()
   const task = {
     ...taskMetadata(summary),
     messages: page.messages,

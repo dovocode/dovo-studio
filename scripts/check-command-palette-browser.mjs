@@ -91,6 +91,20 @@ try {
     await page.screenshot({ path: screenshots + '/commands-320-flat.png' })
     await page.setViewportSize({ width: 900, height: 800 })
   }
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    const selected = await input.getAttribute('aria-activedescendant')
+    for (const key of ['ArrowDown', 'End', 'Enter'])
+      await input.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }),
+          ),
+        { ...shape, key },
+      )
+    assert.equal(await input.getAttribute('aria-activedescendant'), selected)
+    assert.deepEqual(await page.evaluate(() => window.executed), [])
+    assert.equal(await input.isVisible(), true)
+  }
   const declarationOrder = await titles()
   assert.equal(declarationOrder.length, 7)
   await input.fill('  ThReAd  ')

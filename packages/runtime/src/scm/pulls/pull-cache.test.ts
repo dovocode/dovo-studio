@@ -703,3 +703,67 @@ it('backs off confirmed missing PRs per account while allowing explicit refresh 
   await expect(cache.status('/repo', 142)).rejects.toThrow('Missing PR')
   expect(load).toHaveBeenCalledTimes(3)
 })
+
+it('does not reconcile an older full-detail fetch after newer changes finished', async () => {
+  const { db, store, pulls } = setup()
+  const detail: PullDetail = {
+    pull: {
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/a/b/pull/7',
+      repositoryUrl: 'https://github.com/a/b',
+      state: 'open',
+      draft: false,
+      author: 'dev',
+      updatedAt: '',
+      head: 'feature',
+      base: 'main',
+      labels: [],
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      body: '',
+      additions: 1,
+      deletions: 0,
+      changedFiles: 1,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    },
+    comments: [],
+    checks: [],
+    files: [],
+    warnings: [],
+  }
+  let finish!: (value: PullDetail) => void
+  const full = vi.spyOn(pulls, 'detail').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  vi.spyOn(pulls, 'section').mockResolvedValue({
+    ...detail,
+    pull: { ...detail.pull, headSha: 'c'.repeat(40) },
+  })
+  const reconciled: string[] = []
+  const cache = new PullCache(
+    db,
+    pulls,
+    store,
+    async () => 'same-account',
+    (value) => {
+      reconciled.push(value.pull.headSha)
+    },
+  )
+  cleanup.push(() => cache.dispose())
+  const pending = cache.detail('/repo', 7, true)
+  await vi.waitFor(() => expect(full).toHaveBeenCalledTimes(1))
+  await Effect.runPromise(cache.sectionEffect('/repo', 7, 'changes', true))
+  finish(detail)
+  await pending
+  expect(reconciled).toEqual(['c'.repeat(40)])
+  // A later-started fetch may advance the revision normally.
+  full.mockResolvedValue(detail)
+  await cache.detail('/repo', 7, true)
+  expect(reconciled).toEqual(['c'.repeat(40), 'a'.repeat(40)])
+})

@@ -5,6 +5,7 @@ import {
   reviewOrganizeSchema,
   reviewReadSchema,
   reviewSetSchema,
+  reviewGuideSetSchema,
   taskReviewReadSchema,
   taskReviewStartSchema,
   taskReviewFindingSchema,
@@ -62,14 +63,24 @@ export function reviewRoute(request: IncomingMessage, path: string) {
         )
       }
       if (path === '/api/review/organize') {
-        const { context, selection, files } = decode(reviewOrganizeSchema, input)
-        return yield* serviceResult(s.fileReviews.organize(context, selection, files, s.titles))
+        const { context, selection, files, guided, revision } = decode(reviewOrganizeSchema, input)
+        return yield* serviceResult(
+          s.fileReviews.organize(context, selection, files, s.titles, guided, revision),
+        )
       }
-      if (path === '/api/review/read')
-        return yield* serviceResult(s.fileReviews.request(decode(reviewReadSchema, input).context))
+      if (path === '/api/review/guide') {
+        const { context, move, knownGuide } = decode(reviewGuideSetSchema, input)
+        return yield* serviceResult(s.fileReviews.request(context, undefined, { move }, knownGuide))
+      }
+      if (path === '/api/review/read') {
+        const { context, knownGuide } = decode(reviewReadSchema, input)
+        return yield* serviceResult(
+          s.fileReviews.request(context, undefined, undefined, knownGuide),
+        )
+      }
       if (path === '/api/review/set') {
-        const { context, ...mark } = decode(reviewSetSchema, input)
-        return yield* serviceResult(s.fileReviews.request(context, mark))
+        const { context, knownGuide, ...mark } = decode(reviewSetSchema, input)
+        return yield* serviceResult(s.fileReviews.request(context, mark, undefined, knownGuide))
       }
       throw new HttpError(404, 'Unknown file review action')
     }),

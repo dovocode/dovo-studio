@@ -4,6 +4,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
+  '@dovo/protocol': `export * from '${root}/packages/protocol/src/index.ts';import {aggregateRuntimeTasks as aggregate,liveTaskProps as props} from '${root}/packages/protocol/src/index.ts';export const aggregateRuntimeTasks=(...args)=>{window.widgetProjections=(window.widgetProjections??0)+1;return aggregate(...args)};export const liveTaskProps=(...args)=>{window.activityProjections=(window.activityProjections??0)+1;return props(...args)};`,
   'react-native': `import React from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,listener)=>{listeners.add(listener);return {remove:()=>listeners.delete(listener)}}};window.setAppState=state=>{AppState.currentState=state;for(const listener of listeners)listener(state)};export const Platform={OS:'ios'};export const View=({children,onLayout})=>{React.useEffect(()=>onLayout?.({nativeEvent:{layout:{width:100}}}),[]);return <div>{children}</div>};
 export const Text=({children})=><span>{children}</span>;
 export const ActivityIndicator=()=>null;
@@ -14,7 +15,7 @@ export const Animated={Value,View,timing(value,options){let running=false;return
   '../runtime/connection/account-provider': `export const useMobileAccount=()=>({directory:null,client:{}});`,
   'expo-constants': `export default {expoConfig:{extra:{pushEnvironment:'sandbox'}}};`,
   expo: `export const requireOptionalNativeModule=()=>({});`,
-  '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
+  '../runtime/connection/provider': `import {useRef} from 'react';export const useRuntime=()=>window.runtime;export const useRuntimeSelector=(select,equals)=>{const current=select(window.runtime);const last=useRef(current);if(!equals(last.current,current))last.current=current;return last.current};`,
   '../runtime/state/application-state': `import {useState,useRef} from 'react';export const useApplicationState=initial=>{const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]};`,
   '../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../ui/theme': `export const useTheme=()=>({styles:{}});`,
@@ -30,7 +31,7 @@ export const Animated={Value,View,timing(value,options){let running=false;return
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TaskWidgetProvider} from '${root}/apps/mobile/src/widgets/provider.tsx';import {updateMobilePreferences} from '${root}/apps/mobile/src/runtime/preferences/app-preferences.ts';import {LiveActivityProvider,useLiveActivities} from '${root}/apps/mobile/src/live-activities/provider.tsx';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {useForegroundInterval} from '${root}/apps/mobile/src/runtime/state/app-active.ts';import {PreparationProgress} from '${root}/apps/mobile/src/tasks/conversation/components/preparation-progress.tsx';import {decode,snapshotSchema,taskSchema,runtimeProfile} from '@dovo/protocol';window.animationStarts=0;window.animationStops=0;window.controllers=0;window.activitySyncs=0;window.activityDisposals=0;window.pollers=0;window.pollStops=0;window.writes=[];window.commands=[];window.starts=0;window.stops=0;window.ticks=0;window.tickets=0;const task=decode(taskSchema,{id:'task',title:'Build',repositoryId:'',agentId:'',status:'running',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false});const profile=runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'});window.runtime={ready:true,connection:profile.connection,call:async()=>{window.tickets++;return {ticket:'test'}},overviews:[{profile,connected:true,lastSeen:null,error:null,pulls:null,pullError:null,snapshot:decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})}]};function Clock(){window.setActivities=useLiveActivities().setEnabled;window.setWidgets=value=>updateMobilePreferences({widgetUpdates:value});useForegroundInterval(()=>window.ticks++,50);return null}const node=createRoot(document.getElementById('app'));const render=()=>flushSync(()=>node.render(<LiveActivityProvider><TaskWidgetProvider><Clock/><PreparationProgress preparation={{progress:window.preparationProgress??0.1,startedAt:new Date().toISOString(),steps:[]}}/><TerminalSession id="terminal"/></TaskWidgetProvider></LiveActivityProvider>));window.renderUpdates=render;window.unmount=()=>flushSync(()=>node.unmount());render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TaskWidgetProvider} from '${root}/apps/mobile/src/widgets/provider.tsx';import {updateMobilePreferences} from '${root}/apps/mobile/src/runtime/preferences/app-preferences.ts';import {LiveActivityProvider,useLiveActivities} from '${root}/apps/mobile/src/live-activities/provider.tsx';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {useForegroundInterval} from '${root}/apps/mobile/src/runtime/state/app-active.ts';import {PreparationProgress} from '${root}/apps/mobile/src/tasks/conversation/components/preparation-progress.tsx';import {decode,snapshotSchema,taskSchema,runtimeProfile} from '@dovo/protocol';window.animationStarts=0;window.animationStops=0;window.controllers=0;window.activitySyncs=0;window.activityDisposals=0;window.pollers=0;window.pollStops=0;window.writes=[];window.commands=[];window.starts=0;window.stops=0;window.ticks=0;window.tickets=0;const task=decode(taskSchema,{id:'task',title:'Build',repositoryId:'',agentId:'',status:'running',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false});const profile=runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'});window.runtime={ready:true,connection:profile.connection,call:async()=>{window.tickets++;return {ticket:'test'}},overviews:[{profile,connected:true,lastSeen:null,error:null,pulls:null,pullError:null,snapshot:decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task,{...task,id:'older-thread',title:'Older task',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2030-01-01T00:00:00Z'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})}]};function Clock(){window.setActivities=useLiveActivities().setEnabled;window.setWidgets=value=>updateMobilePreferences({widgetUpdates:value});useForegroundInterval(()=>window.ticks++,50);return null}const node=createRoot(document.getElementById('app'));const render=()=>flushSync(()=>node.render(<LiveActivityProvider><TaskWidgetProvider><Clock/><PreparationProgress preparation={{progress:window.preparationProgress??0.1,startedAt:new Date().toISOString(),steps:[]}}/><TerminalSession id="terminal"/></TaskWidgetProvider></LiveActivityProvider>));window.changeTitle=title=>{const old=window.runtime.overviews[0];const snapshot=old.snapshot;window.runtime={...window.runtime,overviews:[{...old,snapshot:{...snapshot,workspace:{...snapshot.workspace,tasks:snapshot.workspace.tasks.map((task,index)=>index===0?{...task,title}:task)}}}]}};window.renderUpdates=render;window.unmount=()=>flushSync(()=>node.unmount());render();`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -71,6 +72,11 @@ try {
     () => window.writes.length === 1 && window.tickets === 1 && window.activitySyncs > 0,
   )
   await page.waitForFunction(() => window.animationStarts - window.animationStops === 2)
+  assert.equal(
+    await page.evaluate(() => window.writes[0].items[0].title),
+    'Build',
+    'widget order follows creation time within priority, not streaming updatedAt',
+  )
   const starts = await page.evaluate(() => window.animationStarts)
   await page.evaluate(() => {
     window.preparationProgress = 0.5
@@ -80,17 +86,38 @@ try {
   assert.equal(await page.evaluate(() => window.animationStarts - window.animationStops), 2)
   await page.waitForTimeout(350)
   const initialSyncs = await page.evaluate(() => window.activitySyncs)
+  const projections = await page.evaluate(() => ({
+    widget: window.widgetProjections,
+    activity: window.activityProjections,
+  }))
   // Assistant streaming changes the overview object, but not widget or activity content.
   await page.evaluate(() => {
     for (let i = 0; i < 20; i++) {
-      window.runtime = { ...window.runtime, overviews: structuredClone(window.runtime.overviews) }
-      window.runtime.overviews[0].snapshot.workspace.tasks[0].draft = 'stream ' + i
+      const old = window.runtime.overviews[0]
+      const snapshot = old.snapshot
+      const tasks = snapshot.workspace.tasks.map((task, index) =>
+        index === 0 ? { ...task, draft: 'stream ' + i, updatedAt: new Date().toISOString() } : task,
+      )
+      window.runtime = {
+        ...window.runtime,
+        overviews: [
+          { ...old, snapshot: { ...snapshot, workspace: { ...snapshot.workspace, tasks } } },
+        ],
+      }
       window.renderUpdates()
     }
   })
   await page.waitForTimeout(1200)
   assert.equal(await page.evaluate(() => window.writes.length), 1)
   assert.equal(await page.evaluate(() => window.activitySyncs), initialSyncs)
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      widget: window.widgetProjections,
+      activity: window.activityProjections,
+    })),
+    projections,
+    'streaming does not repeat task-wide widget or activity projections',
+  )
   // Inactive pauses UI timers; a permission prompt must preserve the terminal.
   await page.evaluate(() => window.setAppState('inactive'))
   await page.waitForTimeout(100)
@@ -111,7 +138,7 @@ try {
   await page.evaluate(() => window.setAppState('background'))
   await page.waitForFunction(() => window.stops === 1)
   await page.evaluate(() => {
-    window.runtime.overviews[0].snapshot.workspace.tasks[0].title = 'Needs attention'
+    window.changeTitle('Needs attention')
     window.renderUpdates()
   })
   await page.waitForTimeout(1200)
@@ -125,9 +152,9 @@ try {
   )
   // Rapid status changes coalesce to the newest visible snapshot.
   await page.evaluate(() => {
-    window.runtime.overviews[0].snapshot.workspace.tasks[0].title = 'A'
+    window.changeTitle('A')
     window.renderUpdates()
-    window.runtime.overviews[0].snapshot.workspace.tasks[0].title = 'B'
+    window.changeTitle('B')
     window.renderUpdates()
   })
   await page.waitForFunction(() => window.writes.length === 3)
@@ -142,7 +169,7 @@ try {
   const disabledSyncs = await page.evaluate(() => window.activitySyncs)
   await page.evaluate(() => {
     for (let i = 0; i < 20; i++) {
-      window.runtime.overviews[0].snapshot.workspace.tasks[0].title = 'Disabled ' + i
+      window.changeTitle('Disabled ' + i)
       window.renderUpdates()
     }
   })

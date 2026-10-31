@@ -1,3 +1,6 @@
+import { isAbsolute, relative } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
@@ -198,6 +201,33 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         )
         if (isRunToken(token)) s.runCredentials.addTerminal(token, terminal.id)
         return terminal
+      }
+      if (method === 'POST' && path === '/api/terminals/file') {
+        const input = decode(
+          mutableStruct({ id: idSchema, path: maxValue(minValue(Schema.String, 1), 4000) }),
+          yield* serviceResult(body(request)),
+        )
+        const session = s.terminals.get(input.id)
+        terminalCheckout(s.store, session.info.taskId, session.info.checkoutId)
+        const root = yield* serviceResult(
+          repositoryPath(
+            yield* serviceResult(
+              s.checkouts.selectedDirectory(session.info.taskId, session.info.checkoutId),
+            ),
+          ),
+        )
+        const original = yield* serviceResult(repositoryPath(session.directory))
+        if (root !== original)
+          throw new HttpError(409, 'The working directory changed. Reopen the terminal.')
+        const path = isAbsolute(input.path) ? relative(root, input.path) : input.path
+        const filename = yield* serviceResult(safeFile(root, path))
+        const details = yield* serviceResult(stat(filename))
+        if (!details.isFile()) throw new HttpError(400, 'Choose a regular file')
+        return {
+          taskId: session.info.taskId,
+          checkoutId: session.info.checkoutId,
+          path: relative(root, filename).replaceAll('\\', '/'),
+        }
       }
       if (method === 'POST' && path === '/api/terminals/close') {
         const { id } = decode(

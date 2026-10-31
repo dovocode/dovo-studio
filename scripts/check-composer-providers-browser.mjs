@@ -243,6 +243,24 @@ try {
   await page.evaluate(() => {
     window.deferModels = false
   })
+  const modelSearch = page.getByRole('combobox', { name: 'Search models', exact: true })
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    const selected = await modelSearch.getAttribute('aria-activedescendant')
+    const changes = await page.evaluate(() => window.changes.length)
+    for (const key of ['ArrowDown', 'Enter'])
+      await modelSearch.evaluate(
+        (element, options) =>
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }),
+          ),
+        { ...shape, key },
+      )
+    if (
+      (await modelSearch.getAttribute('aria-activedescendant')) !== selected ||
+      (await page.evaluate(() => window.changes.length)) !== changes
+    )
+      throw new Error('IME changed model selection')
+  }
   await page.getByRole('combobox', { name: 'Search models', exact: true }).fill('gpt-6.1-terra')
   await page.getByRole('option', { name: 'Use custom model “gpt-6.1-terra”' }).click()
   if (await page.evaluate(() => window.value.model !== 'gpt-6.1-terra'))

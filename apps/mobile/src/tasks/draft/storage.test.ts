@@ -163,6 +163,7 @@ const submission = {
   id: 'sent-message',
   text: 'Send this message',
   attachmentIds: ['attachment'],
+  preserveQueuePause: true,
   mode: 'queue' as const,
   turnSettings: { provider: 'codex' as const, model: 'large', reasoning: 'high' },
 }

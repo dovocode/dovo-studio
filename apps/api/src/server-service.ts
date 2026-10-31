@@ -1,13 +1,12 @@
 import { acquireProcessLock } from './process-lock.js'
 import { githubReleaseToken } from '@dovo/protocol/github-release-auth'
-import { spawn } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -20,7 +19,26 @@ import { persistRuntimeEnvironment, readRuntimeEnvironment } from './runtime-env
 import { readServerConfig, setupServer, writePrivateJson } from './server-config.js'
 import { processExists, serverStatus } from './server-manager.js'
 import { selectedEntrypoint, updateServer } from './server-update.js'
-import { activateServerRelease } from './server-activation.js'
+import {
+  activatePackagedRelease,
+  packagedServiceWarning,
+  prepareLaunch,
+  recoverServerUpdate,
+  settleLaunch,
+  verifyPendingLaunch,
+  type ServiceControls,
+} from './server-update-recovery.js'
+import {
+  CHILD_OOM_SCORE_ENV,
+  disableProtection,
+  enableProtection,
+  inspectProtection,
+  protectionPlan,
+  protectionStatus,
+  releaseChildOomProtection,
+  systemProtectionHost,
+  type ProtectionHost,
+} from './server-service-protection.js'
 
 type ServicePlatform = 'darwin' | 'linux'
 type ServiceRecord = { platform: ServicePlatform; name: string; path: string; launcher: string }
@@ -195,33 +213,125 @@ async function stopServiceRuntime(directory: string, record: ServiceRecord) {
   }
   throw new Error(`Runtime ${previous.pid} is still shutting down after the service stopped.`)
 }
+/** Source-update controls; start waits for a runtime other than `previousPid`. */
+function sourceUpdateControls(
+  directory: string,
+  record: ServiceRecord,
+  previousPid?: number,
+): ServiceControls {
+  return {
+    stop: () => stopServiceRuntime(directory, record),
+    start: async () => {
+      await control(record, 'start', directory)
+      await waitForRuntime(directory, previousPid)
+    },
+  }
+}
+/**
+ * Commit the launched candidate once it serves its owner API. Exiting first decides rollback,
+ * unless the service manager stopped it; the next launch then verifies it again.
+ */
+async function verifyLaunch(
+  directory: string,
+  child: ChildProcess,
+  stopped: () => boolean,
+  finished: () => boolean,
+) {
+  while (!finished()) {
+    const status = await serverStatus(directory).catch(() => undefined)
+    if (status?.running && status.pid === child.pid) {
+      try {
+        await verifyPendingLaunch(directory)
+        for (const warning of settleLaunch(directory, true)) console.error(warning)
+      } catch (error) {
+        console.error('Service release verification failed', error)
+        if (!stopped()) settleLaunch(directory, false)
+        child.kill('SIGTERM')
+      }
+      return
+    }
+    await delay(250)
+  }
+  if (!stopped()) settleLaunch(directory, false)
+}
 export async function runService(directory: string) {
   const config = readServerConfig(directory)
   const environmentPath = join(directory, 'runtime-environment.json')
-  const child = spawn(process.execPath, [selectedEntrypoint(directory)], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      ...readRuntimeEnvironment(environmentPath),
-      DOVO_DATABASE_PATH: config.databasePath,
-      DOVO_HOST: config.host,
-      PORT: String(config.port),
-      DOVO_RUNTIME_ENV_FILE: environmentPath,
-      ELECTRON_RUN_AS_NODE: undefined,
+  const packaged =
+    process.env.DOVO_SERVER_DISTRIBUTION === 'archive' && !!process.env.DOVO_SERVER_LAUNCHER
+  // The service manager can launch at boot without a server command, after an interrupted update.
+  const verify = await prepareLaunch(directory)
+  const selectedLauncher = packaged ? realpathSync(join(directory, 'service-launcher')) : undefined
+  // A rollback can select another package. Its own launcher chooses its bundled Node and runtime.
+  const redirect =
+    selectedLauncher &&
+    realpathSync(selectedEntrypoint(directory)) !==
+      realpathSync(join(dirname(selectedLauncher), '..', 'libexec', 'server', 'dist', 'index.js'))
+  const child = spawn(
+    redirect ? selectedLauncher : process.execPath,
+    redirect ? ['service', 'run', '--data-dir', directory] : [selectedEntrypoint(directory)],
+    {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        ...readRuntimeEnvironment(environmentPath),
+        DOVO_DATABASE_PATH: config.databasePath,
+        DOVO_HOST: config.host,
+        PORT: String(config.port),
+        DOVO_RUNTIME_ENV_FILE: environmentPath,
+        ELECTRON_RUN_AS_NODE: undefined,
+        ...(selectedLauncher ? { DOVO_SERVER_LAUNCHER: selectedLauncher } : {}),
+        // A redirected launcher is itself a supervisor and releases its runtime's children.
+        ...(redirect ? {} : { [CHILD_OOM_SCORE_ENV]: undefined }),
+      },
     },
-  })
-  const terminate = () => child.kill('SIGTERM')
-  const interrupt = () => child.kill('SIGINT')
+  )
+  // Set only by the opt-in protection drop-in. A redirected launcher does this itself.
+  const childScore = Number(process.env[CHILD_OOM_SCORE_ENV])
+  const stopReleasing =
+    !redirect && process.env[CHILD_OOM_SCORE_ENV] && Number.isInteger(childScore)
+      ? releaseChildOomProtection(childScore, () =>
+          [process.pid, process.ppid, child.pid].filter((pid) => pid !== undefined),
+        )
+      : undefined
+  let stopping = false
+  const terminate = () => {
+    stopping = true
+    child.kill('SIGTERM')
+  }
+  const interrupt = () => {
+    stopping = true
+    child.kill('SIGINT')
+  }
   process.on('SIGTERM', terminate)
   process.on('SIGINT', interrupt)
-  try {
-    process.exitCode = await new Promise<number>((resolve, reject) => {
-      child.once('error', reject)
-      child.once('exit', (code) => resolve(code ?? 1))
+  let finished = false
+  const exited = new Promise<number>((resolve, reject) => {
+    child.once('error', (error) => {
+      finished = true
+      reject(error)
     })
+    child.once('exit', (code) => {
+      finished = true
+      resolve(code ?? 1)
+    })
+  })
+  const verified =
+    verify && !redirect
+      ? verifyLaunch(
+          directory,
+          child,
+          () => stopping,
+          () => finished,
+        )
+      : undefined
+  try {
+    process.exitCode = await exited
   } finally {
+    stopReleasing?.()
     process.removeListener('SIGTERM', terminate)
     process.removeListener('SIGINT', interrupt)
+    await verified
   }
 }
 export async function installService(
@@ -231,6 +341,8 @@ export async function installService(
   const platform = supportedPlatform()
   if (existsSync(recordPath(directory)))
     throw new Error('A server service is already registered. Use server service restart or update.')
+  // The service will launch the selected release, so an interrupted update must finish first.
+  if (existsSync(join(directory, 'server.json'))) await recoverServerUpdate(directory)
   if (existsSync(join(directory, 'server.json')) && (await serverStatus(directory)).running)
     throw new Error(
       'A runtime is already running for this data directory. Stop it before registering a service.',
@@ -285,18 +397,52 @@ export async function installService(
 }
 export async function serviceStatus(directory: string) {
   const record = readService(directory)
-  return { service: record, ...(await serverStatus(directory)) }
+  const warning = packagedServiceWarning(directory)
+  return { service: record, ...(await serverStatus(directory)), warnings: warning ? [warning] : [] }
+}
+/** Linux memory-pressure settings. Only `enable` and `disable` change anything. */
+export async function serviceProtection(
+  directory: string,
+  action: 'preview' | 'status' | 'enable' | 'disable',
+  options: { memoryLow?: string } = {},
+  host: ProtectionHost = systemProtectionHost(),
+) {
+  const record = readService(directory)
+  if (record.platform !== 'linux')
+    throw new Error('Service protection uses systemd and is available for Linux services only.')
+  if (action === 'enable') return enableProtection(record, host, options)
+  if (action === 'disable') return disableProtection(record, host)
+  if (action === 'status') return protectionStatus(record, host)
+  return {
+    preview: true as const,
+    ...protectionPlan(await inspectProtection(record, host), options),
+  }
 }
 export async function restartService(directory: string) {
   const record = readService(directory)
+  // An interrupted update decides which release and database the service may start.
+  await recoverServerUpdate(
+    directory,
+    sourceUpdateControls(directory, record, (await serverStatus(directory)).pid),
+  )
   const previous = await serverStatus(directory)
   await control(record, 'restart', directory)
   return waitForRuntime(directory, previous.pid)
 }
 export async function removeService(directory: string) {
   const record = readService(directory)
+  // Only this service's controls can finish an update it was running.
+  await recoverServerUpdate(
+    directory,
+    sourceUpdateControls(directory, record, (await serverStatus(directory)).pid),
+  )
   await stopServiceRuntime(directory, record)
   if (record.platform === 'linux') await control(record, 'remove', directory)
+  // Only Dovo's own protection drop-in goes with the unit; anything else stays.
+  if (record.platform === 'linux')
+    await disableProtection(record, systemProtectionHost()).catch((error: unknown) =>
+      console.error(error instanceof Error ? error.message : String(error)),
+    )
   rmSync(record.path, { force: true })
   rmSync(recordPath(directory), { force: true })
   rmSync(join(directory, 'service-launcher'), { force: true })
@@ -306,39 +452,36 @@ export async function removeService(directory: string) {
 export async function updateService(
   directory: string,
   nextLauncher?: string,
-  verify?: () => Promise<void>,
+  expectedVersion?: string,
 ) {
+  await recoverServerUpdate(
+    directory,
+    sourceUpdateControls(directory, readService(directory), (await serverStatus(directory)).pid),
+  )
   const record = readService(directory)
   const activateLauncher = async (
     replacement: string,
-    previousLauncher = record.launcher,
+    previousLauncher = realpathSync(join(directory, 'service-launcher')),
     prepare?: () => Promise<void>,
   ) => {
     const status = await serverStatus(directory)
-    const link = join(directory, 'service-launcher')
-    const temporary = `${link}.${process.pid}.tmp`
-    const select = (launcher: string) => {
-      rmSync(temporary, { force: true })
-      symlinkSync(launcher, temporary)
-      renameSync(temporary, link)
-      writePrivateJson(recordPath(directory), { ...record, launcher })
-    }
-    await activateServerRelease({
+    const result = await activatePackagedRelease(directory, {
+      replacement,
+      previous: previousLauncher,
+      candidateRecord: JSON.stringify({ ...record, launcher: replacement }, null, 2) + '\n',
       databasePath: status.databasePath,
-      backupPath: join(directory, 'backups', `runtime-before-${Date.now()}-${randomUUID()}.sqlite`),
-      wasRunning: status.running,
-      stop: () => stopServiceRuntime(directory, record),
-      select: async () => {
-        await prepare?.()
-        select(replacement)
-      },
-      rollback: () => select(previousLauncher),
-      start: async () => {
-        await control(record, 'start', directory)
-        await waitForRuntime(directory, status.pid)
-      },
-      verify,
+      running: status.running,
+      service: sourceUpdateControls(directory, record, status.pid),
+      prepare,
+      expectedVersion,
     })
+    if (result.status === 'pending') throw result.cause
+    for (const warning of result.warnings) console.error(warning)
+    if (result.status !== 'active')
+      throw new Error(
+        `Release activation failed: ${result.error instanceof Error ? result.error.message : String(result.error)}. Previous release and database were restored.${result.status === 'rolled-back' && result.preserved ? ` The replaced database is kept at ${result.preserved}.` : ''}`,
+        { cause: result.error },
+      )
     return serverStatus(directory)
   }
   if (nextLauncher) {
@@ -352,13 +495,7 @@ export async function updateService(
   }
   if (process.env.DOVO_SERVER_DISTRIBUTION !== 'archive') {
     const previous = await serverStatus(directory)
-    return updateServer(directory, {
-      stop: () => stopServiceRuntime(directory, record),
-      start: async () => {
-        await control(record, 'start', directory)
-        await waitForRuntime(directory, previous.pid)
-      },
-    })
+    return updateServer(directory, sourceUpdateControls(directory, record, previous.pid))
   }
   const formula = basename(record.launcher).includes('nightly')
     ? 'dovo-server-nightly'
@@ -374,7 +511,7 @@ export async function updateService(
     )
   await run('brew', ['list', '--formula', formula])
   // Preserve the resolved old Cellar launcher; the public brew symlink changes on upgrade.
-  const previousLauncher = realpathSync(record.launcher)
+  const previousLauncher = realpathSync(join(directory, 'service-launcher'))
   const githubToken = process.env.HOMEBREW_GITHUB_API_TOKEN || (await githubReleaseToken())
   return activateLauncher(record.launcher, previousLauncher, () =>
     run('brew', ['upgrade', formula], undefined, {

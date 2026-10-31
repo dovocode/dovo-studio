@@ -1,12 +1,12 @@
 import { Schema } from 'effect'
 import { questionAnswersSchema } from '../conversation/workflow/questions.js'
-import { mutableStruct, maxValue, minValue } from '../shared/schema.js'
+import { mutableStruct, strictStruct, maxValue, minValue } from '../shared/schema.js'
 import { agentSchema, providerSchema, executionSchema, type Task } from '../workspace.js'
 import type { TaskMetadata } from './task-summary.js'
 import { nativeAgentWorking, type Subagent } from '../conversation/workflow/subagents.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
 export const subagentScopeSchema = mutableStruct({ taskId: id, parentRunId: Schema.optional(id) })
-export const subagentSpawnSchema = mutableStruct({
+export const subagentSpawnSchema = strictStruct({
   ...subagentScopeSchema.fields,
   checkoutId: Schema.optional(id),
   runtimeId: Schema.optional(id),

@@ -1,15 +1,8 @@
 import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
 import { ProjectImagePreview } from './project-image-preview'
-import { fileStats } from '../files/presentation'
+import { ProjectFileBrowser } from './project-file-browser'
 import { useApplicationState } from '@dovo/studio-core/state'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useDeferredValue,
-  useSyncExternalStore,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { getFiletypeFromFileName } from '@pierre/diffs'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
@@ -21,28 +14,16 @@ import {
 } from '@pierre/diffs/react'
 import { RefreshCw } from 'lucide-react'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
-import { Button, IconButton, FileBrowserTree, SearchField } from '@dovo/studio-ui'
+import { Button, IconButton } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
 import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
+import { fileDrafts as drafts, draftPressureMessage } from './file-drafts'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
   new Editor(type, options, key)
 let nextEditorOwner = 0
 
-type FileDraft = { contents: string; expectedContents: string; saving: boolean; error: string }
-const drafts = new Map<string, FileDraft>()
-const draftListeners = new Set<() => void>()
-function setDraft(key: string, draft: FileDraft | null) {
-  if (draft) drafts.set(key, draft)
-  else drafts.delete(key)
-  for (const listener of draftListeners) listener()
-}
-function subscribeDrafts(listener: () => void) {
-  draftListeners.add(listener)
-  return () => {
-    draftListeners.delete(listener)
-  }
-}
+const setDraft = drafts.set.bind(drafts)
 
 function HighlightedFile({
   draftKey,
@@ -53,7 +34,11 @@ function HighlightedFile({
   onSavedElsewhere,
   onEditingChange,
   readOnly,
+  focusedLine,
+  focusRevision,
 }: {
+  focusedLine?: number
+  focusRevision: number
   readOnly: boolean
   draftKey: string
   path: string
@@ -67,11 +52,27 @@ function HighlightedFile({
   const [error, setError] = useApplicationState('')
   const [selection, setSelection] = useApplicationState<{ start: number; end: number } | null>(null)
   const [editing, setEditing] = useApplicationState(false)
-  const draft = useSyncExternalStore(
-    subscribeDrafts,
-    () => drafts.get(draftKey),
-    () => undefined,
-  )
+  useSyncExternalStore(drafts.subscribe, drafts.snapshot, drafts.snapshot)
+  const draft = drafts.get(draftKey)
+  const canEdit = drafts.canBegin(draftKey, contents)
+  const editorRelease = useRef<(() => void) | null>(null)
+  const releaseEditor = useCallback(() => {
+    const release = editorRelease.current
+    editorRelease.current = null
+    release?.()
+  }, [])
+  const startEditing = () => {
+    if (editorRelease.current || !drafts.begin(draftKey, contents)) return
+    // Record ownership before batching the state update. The component can
+    // unmount in this same event without ever committing editing=true.
+    editorRelease.current = () => drafts.end(draftKey)
+    setEditing(true)
+  }
+  const stopEditing = () => {
+    releaseEditor()
+    setEditing(false)
+  }
+  useEffect(() => releaseEditor, [draftKey, releaseEditor])
   const [editRevision, setEditRevision] = useApplicationState(0)
   const [editorOwner] = useApplicationState(() => ++nextEditorOwner)
   const wasSaving = useRef(false)
@@ -98,10 +99,36 @@ function HighlightedFile({
       active = false
     }
   }, [path])
+  const revealedLine = useRef('')
+  const revealFrame = useRef<number | undefined>(undefined)
+  useEffect(
+    () => () => {
+      if (revealFrame.current !== undefined) cancelAnimationFrame(revealFrame.current)
+    },
+    [],
+  )
   const options = useMemo<FileOptions<undefined, undefined>>(
     () => ({
       ...diffs.options,
       disableFileHeader: true,
+      onPostRender: (node, _file, phase) => {
+        if (revealFrame.current !== undefined) {
+          cancelAnimationFrame(revealFrame.current)
+          revealFrame.current = undefined
+        }
+        if (phase === 'unmount' || !focusedLine || editing) return
+        const target = `${path}:${focusedLine}:${focusRevision}`
+        if (revealedLine.current === target) return
+        // Pierre applies controlled selection after rendering. Wait for layout, and
+        // locate the source line directly rather than depending on selection timing.
+        revealFrame.current = requestAnimationFrame(() => {
+          revealFrame.current = undefined
+          const line = (node.shadowRoot ?? node).querySelector(`[data-line="${focusedLine}"]`)
+          if (!line?.isConnected) return
+          revealedLine.current = target
+          line.scrollIntoView({ block: 'center' })
+        })
+      },
       enableLineSelection: !editing,
       enableGutterUtility: !editing,
       onLineSelectionEnd: (range) =>
@@ -116,7 +143,7 @@ function HighlightedFile({
           end: Math.max(range.start, range.end),
         }),
     }),
-    [diffs.options, editing],
+    [diffs.options, editing, focusedLine, focusRevision, path],
   )
   const displayedContents = draft?.contents ?? contents
   const file = useRef({ name: path, contents: displayedContents })
@@ -188,7 +215,7 @@ function HighlightedFile({
               variant="outline"
               className="h-6 px-2 text-[0.625rem]"
               disabled={draft.saving || readOnly}
-              onClick={() => setEditing(true)}
+              onClick={startEditing}
             >
               Resume editing
             </Button>
@@ -201,7 +228,7 @@ function HighlightedFile({
               className="h-6 px-2 text-[0.625rem]"
               onClick={() => {
                 setDraft(draftKey, null)
-                setEditing(false)
+                stopEditing()
                 setEditRevision((value) => value + 1)
               }}
             >
@@ -212,7 +239,7 @@ function HighlightedFile({
               variant="default"
               className="h-6 px-2 text-[0.625rem]"
               onClick={() => {
-                setEditing(false)
+                stopEditing()
                 void persist()
                 setEditRevision((value) => value + 1)
               }}
@@ -225,13 +252,18 @@ function HighlightedFile({
             size="sm"
             variant="outline"
             className="h-6 px-2 text-[0.625rem]"
-            disabled={readOnly || !!selection}
-            onClick={() => setEditing(true)}
+            disabled={readOnly || !!selection || !canEdit}
+            onClick={startEditing}
           >
             Edit
           </Button>
         )}
       </div>
+      {(drafts.pressure || (!editing && !canEdit)) && (
+        <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">
+          {draftPressureMessage}
+        </p>
+      )}
       {draft?.error && (
         <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">
           {draft.error}
@@ -248,6 +280,7 @@ function HighlightedFile({
               key={editRevision}
               file={file.current}
               options={options}
+              selectedLines={focusedLine ? { start: focusedLine, end: focusedLine } : undefined}
               edit={editing}
               editStateKey={`project-file:${editorOwner}:${editRevision}`}
               onEditChange={(event) => {
@@ -285,28 +318,43 @@ function HighlightedFile({
 
 export function TaskFiles({
   task,
+  reveal,
   onReference,
   onEditingChange,
 }: {
   task: Task
+  reveal?: { path: string; line: number; checkoutId?: string; requestId: string }
   onEditingChange?: (editing: boolean) => void
   onReference?: (text: string) => void
 }) {
-  const stats = useMemo(
-    () => new Map(task.files.map((file) => [file.path, fileStats(file)])),
-    [task.files],
-  )
   const { request, connected, connection } = useWorkspace()
   const { openExternalLink } = useStudioHost()
   const [readError, setReadError] = useApplicationState('')
-  const [paths, setPaths] = useApplicationState<string[]>([])
-  const [truncated, setTruncated] = useApplicationState<boolean | null | undefined>(undefined)
+  const [focusedLine, setFocusedLine] = useApplicationState<number | undefined>(undefined)
+  const [focusRevision, setFocusRevision] = useApplicationState(0)
   const [selected, setSelected] = useApplicationState('')
+  const [checkoutId, setCheckoutId] = useApplicationState<string | undefined>(undefined)
+  const [preview, setPreview] = useApplicationState<{
+    size?: number
+    complete: boolean
+    startLine: number
+    hasMore: boolean
+  } | null>(null)
+  const [fullRead, setFullRead] = useApplicationState(false)
+  useEffect(() => {
+    if (!reveal) return
+    setCheckoutId(reveal.checkoutId)
+    setSelected(reveal.path)
+    setFocusedLine(reveal.line)
+    setFocusRevision((value) => value + 1)
+    setFullRead(false)
+  }, [reveal?.requestId])
   const draftScope = JSON.stringify([
     connection?.runtimeId,
     connection?.address,
     connection?.token,
     task.id,
+    checkoutId,
     task.repositoryId,
     task.execution,
     task.checkoutBranch,
@@ -314,25 +362,23 @@ export function TaskFiles({
     task.delegation?.checkoutId,
   ])
   const draftKey = JSON.stringify([draftScope, selected])
+  useSyncExternalStore(drafts.subscribe, drafts.snapshot, drafts.snapshot)
   const imageFile = markdownMediaKind(selected) === 'image'
   const selectedRef = useRef(selected)
   selectedRef.current = selected
   const sourceRef = useRef({ request, taskId: task.id, draftScope })
   sourceRef.current = { request, taskId: task.id, draftScope }
   const reads = useRef(0)
-  const listings = useRef(0)
   useEffect(
     () => () => {
       reads.current++
-      listings.current++
     },
     [],
   )
   const [contents, setContents] = useApplicationState('')
-  const readOnly = useMemo(
-    () => new TextEncoder().encode(contents).byteLength > 1024 * 1024,
-    [contents],
-  )
+  const linked = task.linkedCheckouts?.find((link) => link.id === checkoutId)
+  const readOnly =
+    !preview?.complete || (checkoutId !== undefined && linked?.access !== 'edit') || !!task.example
   const [loading, setLoading] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const editing = useRef(false)
@@ -364,37 +410,15 @@ export function TaskFiles({
     [onEditingChange, draftScope],
   )
   const refreshAfterSave = useCallback(() => setRevision((value) => value + 1), [])
-  const [query, setQuery] = useApplicationState('')
-  const filter = useDeferredValue(query.trim().toLowerCase())
   useEffect(() => {
     setContents('')
+    setPreview(null)
     setReadError('')
     setLoading(!!selected)
   }, [selected, draftScope])
   useEffect(() => {
     onEditingChange?.(false)
   }, [selected, draftScope, onEditingChange])
-  const refreshListing = useCallback(async () => {
-    const attempt = ++listings.current
-    const listing = await request(
-      '/api/tasks/files/list',
-      { id: task.id },
-      responses.projectFileList,
-    )
-    if (
-      attempt !== listings.current ||
-      sourceRef.current.request !== request ||
-      sourceRef.current.taskId !== task.id
-    )
-      return
-    setPaths((previous) =>
-      previous.length === listing.files.length &&
-      previous.every((path, index) => path === listing.files[index])
-        ? previous
-        : listing.files,
-    )
-    setTruncated(listing.truncated ?? null)
-  }, [request, task.id, revision])
   const refresh = useCallback(async () => {
     const attempt = ++reads.current
     if (!selected || (editing.current && editingPath.current === selected)) return
@@ -412,7 +436,15 @@ export function TaskFiles({
       }
       const result = await request(
         '/api/tasks/files/read',
-        { id: task.id, path: selected },
+        {
+          id: task.id,
+          path: selected,
+          checkoutId,
+          preview: {
+            startLine: fullRead ? 1 : (focusedLine ?? 1),
+            maxBytes: fullRead ? 1024 * 1024 : 256 * 1024,
+          },
+        },
         responses.projectFile,
       )
       if (
@@ -420,7 +452,21 @@ export function TaskFiles({
         !(editing.current && editingPath.current === selected) &&
         generation === editGeneration.current
       ) {
-        setContents(result.contents)
+        const complete =
+          result.complete === true &&
+          result.truncated === false &&
+          result.startLine === 1 &&
+          result.size !== undefined &&
+          result.size <= 1024 * 1024
+        setContents(
+          result.complete === undefined ? result.contents.slice(0, 200000) : result.contents,
+        )
+        setPreview({
+          size: result.size,
+          complete,
+          startLine: result.startLine ?? 1,
+          hasMore: result.hasMore === true,
+        })
         setReadError('')
       }
     } catch (cause: unknown) {
@@ -433,8 +479,18 @@ export function TaskFiles({
     } finally {
       if (current()) setLoading(false)
     }
-  }, [request, task.id, selected, revision, imageFile, draftScope])
-  const listingError = useLiveRefresh(connected, refreshListing)
+  }, [
+    request,
+    task.id,
+    selected,
+    revision,
+    imageFile,
+    draftScope,
+    checkoutId,
+    focusedLine,
+    focusRevision,
+    fullRead,
+  ])
   useLiveRefresh(connected, refresh)
   const openOriginal = () => {
     const preview = openExternalLink ? null : window.open('about:blank', '_blank')
@@ -453,17 +509,24 @@ export function TaskFiles({
           setReadError(cause instanceof Error ? cause.message : String(cause))
       })
   }
-  const root = useMemo(
-    () =>
-      paths
-        .filter((path) => path.toLowerCase().includes(filter))
-        .map((path) => ({ ...stats.get(path), path })),
-    [paths, filter, stats],
-  )
   return (
     <section className="flex h-full min-w-0 flex-col bg-background" aria-label="Project files">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs font-medium">
-        Files <span className="text-muted-foreground">{paths.length}</span>
+        Files
+        {checkoutId && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setCheckoutId(undefined)
+              setSelected('')
+              setFocusedLine(undefined)
+              setFullRead(false)
+            }}
+          >
+            Show primary checkout
+          </Button>
+        )}
         <IconButton
           label="Refresh files"
           className="ml-auto size-7"
@@ -473,23 +536,63 @@ export function TaskFiles({
           <RefreshCw size={14} />
         </IconButton>
       </header>
-      {listingError && (
-        <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
-          {listingError}
-        </p>
-      )}
-      {!listingError && truncated !== undefined && truncated !== false && (
-        <p className="border-b px-3 py-2 text-xs text-muted-foreground">
-          {truncated
-            ? 'Some files are omitted. Folder listings skip directories at 50 levels; listings are limited to 200,000 files.'
-            : 'Listing completeness is unknown. Search covers the loaded files.'}
-        </p>
+      {drafts.entries().length > 0 && (
+        <div
+          className="flex max-h-48 shrink-0 flex-wrap gap-2 overflow-auto border-b px-3 py-2 text-xs"
+          aria-label="Unsaved file drafts"
+        >
+          <span>Unsaved drafts stay in this window. Save or download before closing.</span>
+          {drafts.entries().map(({ key, scope, path, draft }) => (
+            <div key={key} className="flex w-full flex-wrap items-center gap-2">
+              {scope === draftScope ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSelected(path)
+                    setFullRead(true)
+                  }}
+                >
+                  Recover draft: {path}
+                </Button>
+              ) : (
+                <span>Draft from another task or checkout: {path}</span>
+              )}
+              {draft.saving && <span>Saving…</span>}
+              {draft.error && <span role="alert">{draft.error}</span>}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const url = URL.createObjectURL(
+                    new Blob([draft.contents], { type: 'text/plain;charset=utf-8' }),
+                  )
+                  const link = document.createElement('a')
+                  link.href = url
+                  link.download = path.split('/').pop() || 'draft.txt'
+                  link.click()
+                  setTimeout(() => URL.revokeObjectURL(url), 1000)
+                }}
+              >
+                Download draft: {path}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={draft.saving || drafts.isEditing(key)}
+                onClick={() => drafts.discard(key)}
+              >
+                Discard draft: {path}
+              </Button>
+            </div>
+          ))}
+        </div>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {selected ? (
             <>
-              {readError ? (
+              {readError && !drafts.get(draftKey) ? (
                 <div role="alert" className="space-y-3 p-4 text-sm">
                   <p>{readError}</p>
                   <div className="flex gap-2">
@@ -499,48 +602,93 @@ export function TaskFiles({
                     >
                       Retry file
                     </Button>
-                    <Button variant="outline" disabled={!connected} onClick={openOriginal}>
+                    <Button
+                      variant="outline"
+                      disabled={!connected || !!checkoutId}
+                      onClick={openOriginal}
+                    >
                       Open in browser
                     </Button>
                   </div>
                 </div>
-              ) : loading ? (
+              ) : loading && !drafts.get(draftKey) ? (
                 <p className="p-4 text-xs text-muted-foreground">Loading file…</p>
               ) : imageFile ? (
                 <ProjectImagePreview
                   taskId={task.id}
+                  checkoutId={checkoutId}
                   path={selected}
                   onOpenOriginal={openOriginal}
                   refreshRevision={revision}
                 />
               ) : (
-                <HighlightedFile
-                  key={draftKey}
-                  draftKey={draftKey}
-                  onEditingChange={changedEditing}
-                  onSavedElsewhere={refreshAfterSave}
-                  path={selected}
-                  contents={contents}
-                  readOnly={readOnly}
-                  onReference={onReference}
-                  onSave={async (next, expectedContents) => {
-                    const source = { request, taskId: task.id, draftScope }
-                    const readGeneration = reads.current
-                    await source.request(
-                      '/api/tasks/files/write',
-                      { id: source.taskId, path: selected, contents: next, expectedContents },
-                      responses.projectFile,
-                    )
-                    if (
-                      selectedRef.current === selected &&
-                      sourceRef.current.draftScope === source.draftScope &&
-                      sourceRef.current.taskId === source.taskId &&
-                      sourceRef.current.request === source.request &&
-                      reads.current === readGeneration
-                    )
-                      setContents(next)
-                  }}
-                />
+                <>
+                  {preview && !preview.complete && (
+                    <div className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
+                      <span>
+                        Read-only preview starting at line {preview.startLine}.{' '}
+                        {preview.size === undefined
+                          ? 'Update the runtime for bounded file reads.'
+                          : `${preview.size} bytes total.`}
+                      </span>
+                      {preview.size !== undefined && preview.size <= 1024 * 1024 && (
+                        <Button size="sm" variant="outline" onClick={() => setFullRead(true)}>
+                          Load complete file to edit
+                        </Button>
+                      )}
+                      {preview.hasMore && contents.includes('\n') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setFocusedLine(preview.startLine + (contents.match(/\n/g)?.length ?? 0))
+                            setFocusRevision((value) => value + 1)
+                            setFullRead(false)
+                          }}
+                        >
+                          Next lines
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  <HighlightedFile
+                    key={draftKey}
+                    draftKey={draftKey}
+                    onEditingChange={changedEditing}
+                    onSavedElsewhere={refreshAfterSave}
+                    path={selected}
+                    contents={contents}
+                    focusedLine={
+                      focusedLine && preview ? focusedLine - preview.startLine + 1 : undefined
+                    }
+                    focusRevision={focusRevision}
+                    readOnly={readOnly}
+                    onReference={preview?.startLine === 1 ? onReference : undefined}
+                    onSave={async (next, expectedContents) => {
+                      const source = { request, taskId: task.id, draftScope }
+                      const readGeneration = reads.current
+                      await source.request(
+                        '/api/tasks/files/write',
+                        {
+                          id: source.taskId,
+                          checkoutId,
+                          path: selected,
+                          contents: next,
+                          expectedContents,
+                        },
+                        responses.projectFile,
+                      )
+                      if (
+                        selectedRef.current === selected &&
+                        sourceRef.current.draftScope === source.draftScope &&
+                        sourceRef.current.taskId === source.taskId &&
+                        sourceRef.current.request === source.request &&
+                        reads.current === readGeneration
+                      )
+                        setContents(next)
+                    }}
+                  />
+                </>
               )}
             </>
           ) : (
@@ -556,30 +704,20 @@ export function TaskFiles({
           aria-label="Project file tree"
           className="flex min-h-0 flex-col border-l bg-sidebar"
         >
-          <div className="border-b p-2">
-            <SearchField
-              role="searchbox"
-              aria-label="Search project files"
-              placeholder="Search files…"
-              value={query}
-              onValueChange={setQuery}
-              clearLabel="Clear file search"
-              className="text-xs"
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5">
-            {filter && !root.length && (
-              <p className="px-2 py-1 text-xs text-muted-foreground">
-                {truncated === false ? 'No matching files.' : 'No matching files in this listing.'}
-              </p>
-            )}
-            <FileBrowserTree
-              files={root}
-              selected={selected}
-              onSelect={setSelected}
-              search={filter}
-            />
-          </div>
+          <ProjectFileBrowser
+            key={draftScope}
+            taskId={task.id}
+            checkoutId={checkoutId}
+            revision={revision}
+            selected={selected}
+            changedFiles={checkoutId ? [] : task.files}
+            onSelect={(path, line) => {
+              setSelected(path)
+              setFullRead(false)
+              setFocusedLine(line)
+              setFocusRevision((value) => value + 1)
+            }}
+          />
         </ResizableSidebar>
       </div>
     </section>

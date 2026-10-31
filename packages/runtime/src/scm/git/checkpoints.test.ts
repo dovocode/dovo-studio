@@ -1,12 +1,37 @@
 import { afterEach, expect, it } from 'vite-plus/test'
-import { chmod, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
 import sharp from 'sharp'
+import { safeFile } from '../repositories/paths.js'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
+})
+it('undoes external and dangling symlink creation without following their targets', async () => {
+  const f = await fixture()
+  const outside = await fixture()
+  cleanups.push(f.cleanup, outside.cleanup)
+  const git = new GitService()
+  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/symlinks/before')
+  await symlink(join(outside.directory, 'hello.txt'), join(f.directory, 'external'))
+  await symlink(join(outside.directory, 'missing.txt'), join(f.directory, 'dangling'))
+  const after = await git.snapshot(f.directory, 'refs/dovo/checkpoints/symlinks/after')
+  await git.restoreSnapshot(f.directory, before, 'refs/dovo/checkpoints/symlinks/undo')
+  for (const name of ['external', 'dangling'])
+    await expect(lstat(join(f.directory, name))).rejects.toHaveProperty('code', 'ENOENT')
+  expect(await readFile(join(outside.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+  await git.restoreSnapshot(f.directory, after, 'refs/dovo/checkpoints/symlinks/redo')
+  expect((await lstat(join(f.directory, 'external'))).isSymbolicLink()).toBe(true)
+  expect((await lstat(join(f.directory, 'dangling'))).isSymbolicLink()).toBe(true)
+  await symlink(outside.directory, join(f.directory, 'parent'))
+  await expect(
+    safeFile(f.directory, 'parent/hello.txt', { followFinalSymlink: false }),
+  ).rejects.toThrow('Symlink points outside')
+  await expect(safeFile(f.directory, '.git/config', { followFinalSymlink: false })).rejects.toThrow(
+    'Invalid file path',
+  )
 })
 it('captures each turn against dirty starting contents and preserves HEAD, staging and ignored files', async () => {
   const f = await fixture()

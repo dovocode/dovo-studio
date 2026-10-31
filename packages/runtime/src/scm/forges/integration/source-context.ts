@@ -126,9 +126,11 @@ export async function verifySourceContext(
           env: connection?.cliEnv,
           onUnauthorized: selected.onUnauthorized,
           beforeDispatch: validate,
+          access: { host, repository, source: selected.source },
         }
       : await git.githubCredential(cwd, host, connection?.cliEnv, true)
     github.beforeDispatch = validate
+    github.access = { host, repository, source: github.access?.source }
     const credential = github
     const invalidate = credential.onUnauthorized
     credential.onUnauthorized = () => {
@@ -164,6 +166,7 @@ export async function verifySourceContext(
       return { account: String(user.id), login: user.login }
     })
     account = (await verification.value).account
+    github.access.login = (await verification.value).login
     git.confirmGithubHost(new URL(connection?.baseUrl ?? `https://${host}`).host)
   } else {
     if (!connection) throw new HttpError(409, 'Connect this provider account before continuing.')

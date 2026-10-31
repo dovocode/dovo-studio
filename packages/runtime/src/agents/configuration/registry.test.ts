@@ -5,9 +5,50 @@ import type { AcpLaunch } from '../execution/types.js'
 import { AgentRegistry } from './registry.js'
 import * as acpModule from '../providers/acp/acp.js'
 import type { AgentAdapter } from '../execution/types.js'
-import { decode, commandsSchema } from '@dovo/protocol'
+import { decode, commandsSchema, defaultTaskHarness } from '@dovo/protocol'
 
 afterEach(() => vi.restoreAllMocks())
+it('resolves external credentials only at the adapter boundary for model discovery and probes', async () => {
+  vi.stubEnv('DOVO_TEST_PROVIDER_REFERENCE', 'synthetic-credential')
+  const models = vi
+    .fn<NonNullable<AgentAdapter['models']>>()
+    .mockResolvedValue({ models: [], reasoning: [] })
+  const probe = vi
+    .fn<AgentAdapter['probe']>()
+    .mockResolvedValue({ provider: 'acp', available: true, detail: '' })
+  vi.spyOn(acpModule, 'createAcpAdapter').mockReturnValue({
+    run: vi.fn<AgentAdapter['run']>(),
+    models,
+    probe,
+  })
+  const registry = new AgentRegistry()
+  const agent = {
+    ...defaultTaskHarness('acp'),
+    id: 'agent',
+    name: 'Agent',
+    envSecrets: {
+      API_KEY: { provider: 'environment' as const, reference: 'DOVO_TEST_PROVIDER_REFERENCE' },
+    },
+  }
+  try {
+    expect(registry.configure(agent).envSecrets).toEqual(agent.envSecrets)
+    expect(registry.configure(agent).env?.API_KEY).toBeUndefined()
+    const adapter = await registry.get('acp')
+    await adapter.models?.(agent)
+    await adapter.probe(agent)
+    for (const call of [models.mock.calls[0], probe.mock.calls[0]]) {
+      expect(call?.[0].env?.API_KEY).toBe('synthetic-credential')
+      expect(call?.[0].envSecrets).toBeUndefined()
+    }
+    expect(agent).not.toHaveProperty('env')
+    const generation = registry.secretGeneration
+    registry.secretReferences.refresh()
+    expect(registry.secretGeneration).toBe(generation + 1)
+  } finally {
+    await registry.dispose()
+    vi.unstubAllEnvs()
+  }
+})
 it('releases loaded task providers and reports cleanup failures', async () => {
   const releaseTask = vi.fn<NonNullable<AgentAdapter['releaseTask']>>().mockResolvedValue()
   vi.spyOn(acpModule, 'createAcpAdapter').mockReturnValue({
@@ -166,4 +207,22 @@ it('activates the Cursor SDK without resolving a CLI command or mutating its cre
   } finally {
     await registry.dispose()
   }
+})
+
+it('finishes provider and host disposal when secret command shutdown fails', async () => {
+  const dispose = vi.fn<NonNullable<AgentAdapter['dispose']>>().mockResolvedValue()
+  vi.spyOn(acpModule, 'createAcpAdapter').mockReturnValue({
+    run: vi.fn<AgentAdapter['run']>(),
+    probe: vi.fn<AgentAdapter['probe']>(),
+    dispose,
+  })
+  const registry = new AgentRegistry()
+  await registry.get('acp')
+  vi.spyOn(registry.secretReferences, 'close').mockRejectedValue(
+    new Error('Secret command shutdown is unconfirmed'),
+  )
+  const host = vi.spyOn(registry.host, 'dispose')
+  await expect(registry.dispose()).rejects.toThrow('Could not close all agent providers')
+  expect(dispose).toHaveBeenCalledOnce()
+  expect(host).toHaveBeenCalledOnce()
 })

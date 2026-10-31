@@ -384,10 +384,16 @@ it('allows confirmed paired TURN setup, keeps secrets out of snapshots and refre
   ).toBe(200)
   expect((await join(true))?.iceServers[0]?.credential).toBe('rotated-password')
   runtime.services.peers.setConnectionMode('webrtc')
-  await runtime.services.peers.enable(device)
+  await expect(
+    runtime.services.peers.enable(device),
+    'Rejoin after switching to WebRTC',
+  ).resolves.toBeDefined()
   expect(await join(true)).toBeUndefined()
   runtime.services.peers.setConnectionMode('automatic')
-  await runtime.services.peers.enable(device)
+  await expect(
+    runtime.services.peers.enable(device),
+    'Rejoin after restoring automatic mode',
+  ).resolves.toBeDefined()
   expect((await join(true))?.iceServers[0]?.credential).toBe('rotated-password')
   runtime.services.devices.revoke(device)
   expect((await call({ consent: true, config })).status).toBe(401)

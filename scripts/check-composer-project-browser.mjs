@@ -118,6 +118,25 @@ try {
     await page.getByRole('button', { name: 'No Project', exact: true }).isVisible(),
     true,
   )
+  for (const shape of [{ isComposing: true }, { keyCode: 229 }]) {
+    await search.evaluate(
+      (element, shape) =>
+        element.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'ArrowDown',
+            bubbles: true,
+            cancelable: true,
+            ...shape,
+          }),
+        ),
+      shape,
+    )
+    assert.equal(
+      await search.evaluate((element) => element === document.activeElement),
+      true,
+      'Candidate navigation stays in project search',
+    )
+  }
   await search.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')

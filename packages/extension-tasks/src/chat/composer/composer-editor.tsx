@@ -97,11 +97,11 @@ export const ComposerEditor = memo(function ComposerEditor({
         disabled={disabled}
         readOnly={submitBusy}
         onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return
           mentions.onKeyDown(event)
           if (
             !event.defaultPrevented &&
             !submitBusy &&
-            !event.nativeEvent.isComposing &&
             event.key === 'Enter' &&
             event.altKey &&
             !event.shiftKey &&
@@ -116,7 +116,6 @@ export const ComposerEditor = memo(function ComposerEditor({
           if (
             event.defaultPrevented ||
             submitBusy ||
-            event.nativeEvent.isComposing ||
             event.altKey ||
             event.ctrlKey ||
             event.metaKey ||

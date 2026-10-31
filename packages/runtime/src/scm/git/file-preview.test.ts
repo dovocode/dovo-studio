@@ -1,6 +1,19 @@
 import { expect, it } from 'vite-plus/test'
 import { createFilePreview } from './file-preview'
 
+it('computes complete compact diffs off-thread only when requested', async () => {
+  const contents = { old: Buffer.from('old\n'), next: Buffer.from('new\n') }
+  const metadata = {
+    before: { hash: 'old', size: contents.old.length, mode: '100644' },
+    after: { hash: 'next', size: contents.next.length, mode: '100644' },
+  }
+  const read = async (hash: string) => (hash === 'old' ? contents.old : contents.next)
+  const preview = await createFilePreview('file.txt', metadata, read, false, true)
+  expect(preview.patch).toContain('-old')
+  expect(preview.patch).toContain('+new')
+  expect((await createFilePreview('file.txt', metadata, read)).patch).toBeUndefined()
+})
+
 it('does not read oversized images and reports the saved size instead', async () => {
   let reads = 0
   const result = await createFilePreview(
@@ -41,8 +54,9 @@ it('loads complete larger text only on request and rejects an incomplete full re
   expect((await createFilePreview('large.ts', metadata, read)).after).toMatchObject({
     truncated: true,
   })
-  const full = await createFilePreview('large.ts', metadata, read, true)
+  const full = await createFilePreview('large.ts', metadata, read, true, true)
   expect(full.after).toMatchObject({ truncated: false, text: text.toString() })
+  expect(full.patch).toContain('+change past the compact prefix')
   await expect(
     createFilePreview('large.ts', metadata, async () => text.subarray(0, 100), true),
   ).rejects.toThrow('changed while loading')

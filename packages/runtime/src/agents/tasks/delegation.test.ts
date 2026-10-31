@@ -154,6 +154,95 @@ it.each(['failed', 'cancelled'] as const)(
     expect(s.tasks.subagentCancel(parent.id, children[1]).running).toBe(false)
   },
 )
+it('refuses a parent turn with unconfirmed child shutdown without cancelling healthy siblings', async () => {
+  const s = await setup()
+  const fail = barrier(),
+    confirmed = barrier(),
+    healthyDone = barrier()
+  const prompts: string[] = []
+  let heldId = '',
+    healthyId = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'claude') {
+        if (run.prompt.includes('Keep working')) {
+          await Promise.race([
+            healthyDone.promise,
+            new Promise<void>((resolve) =>
+              run.signal.addEventListener('abort', () => resolve(), { once: true }),
+            ),
+          ])
+          run.signal.throwIfAborted()
+          run.onText('Healthy answer')
+          return
+        }
+        run.onText('Unconfirmed partial answer')
+        await fail.promise
+        throw new OwnedProcessShutdownError('Provider shutdown was not confirmed', {
+          confirmed: confirmed.promise,
+        })
+      }
+      prompts.push(run.prompt)
+      if (prompts.length === 1) {
+        heldId = s.tasks.subagentSpawn({
+          taskId: taskId(run),
+          key: 'unconfirmed',
+          name: 'Unconfirmed',
+          prompt: 'Exit without confirmation',
+          provider: 'claude',
+        }).id
+        healthyId = s.tasks.subagentSpawn({
+          taskId: taskId(run),
+          key: 'healthy',
+          name: 'Healthy',
+          prompt: 'Keep working',
+          provider: 'claude',
+        }).id
+      }
+      run.onText(`Parent turn ${prompts.length}`)
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Delegate',
+  })
+  try {
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    await waitForRuntime(() => {
+      expect(s.tasks.subagentResult(parent.id, heldId, false).running).toBe(true)
+      expect(s.tasks.subagentResult(parent.id, healthyId, false).running).toBe(true)
+    })
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    expect(prompts).toHaveLength(2)
+    fail.resolve()
+    await waitForRuntime(() => expect(s.store.task(heldId).status).toBe('failed'))
+    expect(s.store.task(heldId).activeRunId).toBeTypeOf('string')
+    await expect(s.tasks.start(parent.id)).rejects.toMatchObject({ status: 409 })
+    expect(prompts).toHaveLength(2)
+    expect(s.store.task(healthyId).delegation?.completion).not.toBe('disposed')
+    expect(s.tasks.subagentResult(parent.id, healthyId, false).running).toBe(true)
+    expect(s.store.task(heldId).delegation?.completion).not.toBe('disposed')
+    s.store.updateTask(parent.id, (task) => ({ ...task, queuePaused: true }))
+    confirmed.resolve()
+    await waitForRuntime(() => expect(s.store.task(heldId).activeRunId).toBeUndefined())
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    expect(prompts).toHaveLength(3)
+    expect(prompts[2]).toContain('Unconfirmed partial answer')
+  } finally {
+    fail.resolve()
+    confirmed.resolve()
+    healthyDone.resolve()
+  }
+})
 it('releases a failed child only after late shutdown confirmation and keeps its queue paused', async () => {
   const s = await setup()
   const confirmed = barrier()
@@ -174,6 +263,10 @@ it('releases a failed child only after late shutdown confirmation and keeps its 
         throw new OwnedProcessShutdownError('Provider shutdown was not confirmed', {
           confirmed: confirmed.promise,
         })
+      }
+      if (childId) {
+        run.onText('Parent continued')
+        return
       }
       childId = s.tasks.subagentSpawn({
         taskId: taskId(run),
@@ -209,6 +302,9 @@ it('releases a failed child only after late shutdown confirmation and keeps its 
       objective: 'Wait',
     })
     await expect(s.tasks.start(competing.id)).rejects.toThrow('Another task is running')
+    parentRelease.resolve()
+    await running.done
+    await expect(s.tasks.start(parent.id)).rejects.toThrow('Another task is running')
     confirmed.resolve()
     await waitForRuntime(() =>
       expect(s.tasks.subagentResult(parent.id, childId).running).toBe(false),
@@ -222,6 +318,9 @@ it('releases a failed child only after late shutdown confirmation and keeps its 
     expect(s.store.providerActions.state(`interrupt:${attempt}`)).toBe('completed')
     expect(s.tasks.subagentResult(parent.id, childId).subagent?.status).toBe('stopped')
     expect(() => s.tasks.requireIdle(childId)).not.toThrow()
+    await (
+      await s.tasks.start(parent.id)
+    ).done
   } finally {
     confirmed.resolve()
     parentRelease.resolve()

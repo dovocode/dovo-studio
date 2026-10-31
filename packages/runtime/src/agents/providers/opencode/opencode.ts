@@ -11,7 +11,12 @@ import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type { AgentAdapter } from '../../execution/types.js'
-import { OpenCodeServers, opencodeHeaders, isOpencodeV2 } from './opencode-server.js'
+import {
+  OpenCodeServers,
+  opencodeHeaders,
+  isOpencodeV2,
+  type OpenCodeConnection,
+} from './opencode-server.js'
 import { opencodeV2Adapter } from './opencode-v2.js'
 import { OpenCodeClientCache } from './client-cache.js'
 import { readOpencodeThread } from './opencode-thread.js'
@@ -608,15 +613,25 @@ const remoteAdapter: AgentAdapter = {
 }
 
 export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAdapter {
-  const resolve = async <T extends import('@dovo/protocol').AgentDiscovery>(agent: T) =>
-    servers.resolve(agent)
+  /** Holds the local server for the whole call so idle retirement cannot stop it mid-use. */
+  const withServer = async <T extends import('@dovo/protocol').AgentDiscovery, R>(
+    agent: T,
+    use: (agent: T & OpenCodeConnection) => Promise<R>,
+  ) => {
+    const lease = await servers.acquire(agent)
+    try {
+      return await use(lease.agent)
+    } finally {
+      lease.release()
+    }
+  }
   return {
-    readNativeThread: async (agent, id, _sessionId, cwd) =>
-      readOpencodeThread(await resolve(agent), id, cwd),
-    models: async (agent) => remoteAdapter.models!(await resolve(agent)),
+    readNativeThread: (agent, id, _sessionId, cwd) =>
+      withServer(agent, (resolved) => readOpencodeThread(resolved, id, cwd)),
+    models: (agent) => withServer(agent, (resolved) => remoteAdapter.models!(resolved)),
     probe: async (agent) => {
       try {
-        return await remoteAdapter.probe(await resolve(agent))
+        return await withServer(agent, (resolved) => remoteAdapter.probe(resolved))
       } catch (error) {
         return {
           provider: 'opencode',
@@ -627,8 +642,25 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
     },
     run: async (run) => {
       run = checkedPolicyRun(run, 'opencode')
-      return remoteAdapter.run({ ...run, agent: await resolve(run.agent) })
+      const lease = await servers.acquire(run.agent, run.taskId, run.cwd)
+      let completed = false
+      let held = false
+      try {
+        await remoteAdapter.run({ ...run, agent: lease.agent })
+        completed = true
+      } catch (error) {
+        // An unconfirmed stop keeps this turn's lease until the stop itself is confirmed.
+        if (error instanceof OwnedProcessShutdownError && error.confirmed) {
+          held = true
+          void error.confirmed.then(() => lease.release())
+        }
+        throw error
+      } finally {
+        // Successful turns drained their native children; any failure waits for server confirmation.
+        if (!held) lease.release(completed)
+      }
     },
+    releaseTask: (taskId) => servers.releaseTask(taskId),
     dispose: () => servers.dispose(),
   }
 }

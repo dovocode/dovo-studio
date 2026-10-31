@@ -8,6 +8,18 @@ import {
 
 it.each([
   ['src/contest.ts', 'normal'],
+  ['evals/title-generation.ts', 'tests'],
+  ['src/title.eval.ts', 'tests'],
+  ['src/login.cy.ts', 'tests'],
+  ['convex/_generated/api.ts', 'generated'],
+  ['tests/_generated/client.test.ts', 'generated'],
+  ['evals/_generated/fixtures/api.ts', 'generated'],
+  ['evals/fixtures/title.eval.ts', 'mocks'],
+  ['evals/README.md', 'tests'],
+  ['src/evaluate.ts', 'normal'],
+  ['src/evaluation.ts', 'normal'],
+  ['generatedness/api.ts', 'normal'],
+  ['_generatedness/api.ts', 'normal'],
   ['src/Latest.java', 'normal'],
   ['src/mocking.ts', 'normal'],
   ['requirements.txt', 'normal'],

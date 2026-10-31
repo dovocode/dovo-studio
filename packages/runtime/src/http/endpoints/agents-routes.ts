@@ -1,8 +1,11 @@
+import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
 import { agentTodosSchema, turnSettingsSchema, nextQueuedMessage } from '@dovo/protocol'
+import { localCommitRoute } from './local-commit-routes.js'
+import { codexSessionRoute } from './codex-session-routes.js'
 import { acknowledgeSubagentFailure } from '../../studio/subagent-failures.js'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
-import { runtimeOperation } from '../../errors.js'
+import { runtimeOperation, errorMessage } from '../../errors.js'
 import { approvalDecisionSchema, linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
@@ -24,9 +27,10 @@ import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { createFilePreview } from '../../scm/git/file-preview.js'
-import { constants } from 'node:fs'
-import { open, readFile, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
+import { openContainedPreview } from '../../scm/repositories/file-preview-open.js'
+import { withFileWrite } from '../../scm/repositories/file-writes.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { ModelCatalogCache, configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
 import { HarnessAvailabilityCache } from '../../agents/catalogs/harness-availability.js'
@@ -57,12 +61,18 @@ const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const modelCaches = new WeakMap<object, ModelCatalogCache>()
 const availabilityCaches = new WeakMap<object, HarnessAvailabilityCache>()
 export function agentsRoute(request: IncomingMessage, path: string) {
+  if (path.startsWith('/api/tasks/codex-sessions/')) return codexSessionRoute(request, path)
+  if (path.startsWith('/api/tasks/commits/')) return localCommitRoute(request, path)
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const publicDefaults = (value: unknown) =>
         decode(runtimeDefaultsSchema, s.store.publicValue(value))
       const method = request.method
+      if (method === 'POST' && path === '/api/agents/secrets/refresh') {
+        s.agents.secretReferences.refresh()
+        return { ok: true }
+      }
       if (method === 'POST' && path === '/api/agents/availability') {
         const { repositoryId, refresh } = decode(
           mutableStruct({
@@ -361,6 +371,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.task.workItem ||
           input.task.archivedAt ||
           input.task.worktreeSetupComplete !== undefined ||
+          input.task.worktreeBase !== undefined ||
           input.task.worktreeInitialSnapshot !== undefined
         )
           throw new HttpError(400, 'Only unsent drafts can change machines')
@@ -497,14 +508,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({ taskId: idSchema, expectedTitle: Schema.optional(Schema.String) }),
           input,
         )
+        const message = taskInput.success
+          ? s.store.task(taskInput.data.taskId).messages.find((message) => message.role === 'user')
+          : undefined
         const value = taskInput.success
           ? {
               taskId: taskInput.data.taskId,
               expectedTitle: taskInput.data.expectedTitle,
-              text:
-                s.store
-                  .task(taskInput.data.taskId)
-                  .messages.find((message) => message.role === 'user')?.text ?? '',
+              text: message?.text ?? '',
+              attachments: message?.attachments,
             }
           : input
         return yield* s.titles.generateEffect(value)
@@ -519,7 +531,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* s.titles.cleanupEffect(yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/tasks/answer') {
         const input = decode(questionReplySchema, yield* serviceResult(body(request)))
-        s.questions.respond(input.id, input.answers)
+        yield* serviceResult(
+          s.questions.respondWithAttachments(
+            input.id,
+            input.answers,
+            input.attachmentIdsByQuestion,
+          ),
+        )
         return yield* serviceResult({
           ok: true,
         })
@@ -617,6 +635,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             ),
             turnSettings: Schema.optional(turnSettingsSchema),
             review: Schema.optional(Schema.Boolean),
+            plan: Schema.optional(Schema.Boolean),
+            queueOnly: Schema.optional(Schema.Boolean),
+            preserveQueuePause: Schema.optional(Schema.Boolean),
             runId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
@@ -624,6 +645,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (!input.text && !input.attachmentIds.length)
           throw new HttpError(400, 'Add a message or attachment')
         if (path === '/api/tasks/steer') {
+          if (input.queueOnly) throw new HttpError(400, 'A staged message cannot steer the agent')
+          if (input.plan)
+            throw new HttpError(409, 'Queue this message to plan before the agent changes anything')
           if (input.turnSettings)
             throw new HttpError(
               409,
@@ -650,6 +674,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.review,
           true,
           input.turnSettings,
+          undefined,
+          input.plan,
+          input.queueOnly,
+          input.preserveQueuePause,
         )
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
@@ -674,8 +702,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             duplicateMessageId: Schema.optional(idSchema),
             restoreRequestId: Schema.optional(idSchema),
             beforeMessageId: Schema.optional(Schema.NullOr(idSchema)),
+            expectedMessageIds: Schema.optional(maxValue(mutableArray(idSchema), 50)),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
+            plan: Schema.optional(Schema.Boolean),
+            expectedPlan: Schema.optional(Schema.Boolean),
             turnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             expectedTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             expectedDraftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
@@ -685,7 +716,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        const wasBlockedByMessage = !!s.store.taskSummary(input.id).queue?.[0]?.paused
+        let wasBlockedByMessage: boolean
+        try {
+          wasBlockedByMessage = !!s.store.taskSummary(input.id).queue?.[0]?.paused
+        } catch (error) {
+          if (
+            error instanceof HttpError &&
+            error.status === 404 &&
+            ['duplicate', 'move'].includes(input.action)
+          )
+            throw new HttpError(error.status, error.message, { mutationRejected: true })
+          throw error
+        }
         if (input.action === 'restore' && input.restoreRequestId) {
           if (
             !input.messageId ||
@@ -724,11 +766,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.expectedTurnSettings,
             input.attachmentIds ? s.attachments.metadata(input.id, input.attachmentIds) : undefined,
             input.expectedAttachmentIds,
+            input.plan,
+            input.expectedPlan,
           )
         } else if (input.action === 'move') {
           if (!input.messageId || input.beforeMessageId === undefined)
             throw new HttpError(400, 'Choose a queued message and its destination')
-          s.tasks.queue.move(input.id, input.messageId, input.beforeMessageId)
+          s.tasks.queue.move(
+            input.id,
+            input.messageId,
+            input.beforeMessageId,
+            input.expectedMessageIds,
+          )
         } else if (input.action === 'steer') {
           if (!input.runId)
             throw new HttpError(
@@ -755,13 +804,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               queuePaused: false,
             }))
           else yield* s.tasks.startEffect(input.id)
-        } else s.tasks.queue.change(input.id, input.action, input.messageId)
+        } else
+          s.tasks.queue.change(input.id, input.action, input.messageId, input.expectedMessageIds)
         if (
           wasBlockedByMessage &&
           ['move', 'up', 'down', 'remove', 'restore'].includes(input.action)
         ) {
           const canContinue = () => {
-            const task = s.store.taskSummary(input.id)
+            const task = s.store.get().tasks.find((task) => task.id === input.id)
+            if (!task) return false
             return (
               !task.queuePaused &&
               !task.archived &&
@@ -772,10 +823,34 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               !!nextQueuedMessage(task)
             )
           }
-          if (canContinue()) yield* s.tasks.startEffect(input.id, false, canContinue)
+          if (canContinue())
+            yield* s.tasks.startEffect(input.id, false, canContinue).pipe(
+              Effect.catch((error) =>
+                runtimeOperation(() => {
+                  // The queue edit is already committed. A failed automatic start must not
+                  // turn its acknowledgement into an uncertain mutation or undo its order.
+                  if (
+                    s.tasks.hasWorkingFamily(input.id) ||
+                    !s.store.get().tasks.some((task) => task.id === input.id)
+                  )
+                    return
+                  s.store.updateTask(input.id, (task) => ({
+                    ...task,
+                    queuePaused: true,
+                    error: `Queue updated. Could not start: ${errorMessage(error)}`,
+                  }))
+                }),
+              ),
+            )
         }
         return yield* serviceResult({
           ok: true,
+          ...(input.action === 'duplicate' ? { duplicateMessageId: input.duplicateMessageId } : {}),
+          queueMessageIds:
+            s.store
+              .get()
+              .tasks.find((task) => task.id === input.id)
+              ?.queue?.map((message) => message.id) ?? [],
         })
       }
       if (method === 'POST' && path === '/api/tasks/feedback')
@@ -1023,6 +1098,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             checkoutId: Schema.optional(idSchema),
             working: Schema.optional(Schema.Boolean),
             full: Schema.optional(Schema.Boolean),
+            patch: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
@@ -1034,6 +1110,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.checkoutId,
             input.working,
             input.full,
+            input.patch,
           ),
         )
       }
@@ -1085,6 +1162,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       if (
         method === 'POST' &&
         (path === '/api/tasks/files/list' ||
+          path === '/api/tasks/files/directory' ||
+          path === '/api/tasks/files/search-content' ||
+          path === '/api/tasks/files/search-paths' ||
           path === '/api/tasks/files/preview' ||
           path === '/api/tasks/files/read' ||
           path === '/api/tasks/files/write')
@@ -1094,9 +1174,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             id: idSchema,
             checkoutId: Schema.optional(idSchema),
             fresh: Schema.optional(Schema.Boolean),
+            directory: Schema.optional(maxValue(Schema.String, 4000)),
+            cursor: Schema.optional(maxValue(Schema.String, 100)),
+            query: Schema.optional(maxValue(minValue(Schema.String, 1), 256)),
             path: Schema.optional(maxValue(minValue(Schema.String, 1), 4000)),
             contents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
             expectedContents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
+            preview: Schema.optional(
+              mutableStruct({
+                startLine: Schema.optional(Schema.Number),
+                maxBytes: Schema.optional(Schema.Number),
+              }),
+            ),
           }),
           yield* serviceResult(body(request)),
         )
@@ -1111,28 +1200,65 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           .get()
           .repositories.find((item) => item.id === (link?.repositoryId ?? task.repositoryId))
         if (!repo) throw new HttpError(404, 'Repository not found')
-        const cwd = link
-          ? yield* serviceResult(s.checkouts.selectedDirectory(input.id, link.id))
-          : canChangeTaskCheckout(task) && repo.kind !== 'scratch'
+        const browserRead =
+          path === '/api/tasks/files/directory' ||
+          path === '/api/tasks/files/search-content' ||
+          path === '/api/tasks/files/search-paths'
+        const cwd =
+          !link && canChangeTaskCheckout(task) && repo.kind !== 'scratch'
             ? repo.path
-            : yield* serviceResult(s.checkouts.directory(input.id))
+            : browserRead
+              ? yield* serviceResult(s.checkouts.fileDirectory(input.id, input.checkoutId))
+              : link
+                ? yield* serviceResult(s.checkouts.selectedDirectory(input.id, link.id))
+                : yield* serviceResult(s.checkouts.directory(input.id))
         if (path === '/api/tasks/files/list')
           return yield* serviceResult(s.projectFiles.all(cwd, !!repo.kind, input.fresh))
+        if (path === '/api/tasks/files/directory' || path === '/api/tasks/files/search-content') {
+          return yield* runtimeOperation(async () => {
+            const controller = new AbortController()
+            const aborted = () => controller.abort()
+            request.once('aborted', aborted)
+            request.socket.once('close', aborted)
+            try {
+              if (path === '/api/tasks/files/directory')
+                return await s.projectFiles.directory(
+                  cwd,
+                  input.directory,
+                  input.cursor,
+                  !!repo.kind,
+                  controller.signal,
+                )
+              if (!input.query) throw new HttpError(400, 'Search text is required')
+              return await s.projectFiles.contentSearch(
+                cwd,
+                input.query,
+                !!repo.kind,
+                controller.signal,
+              )
+            } finally {
+              request.off('aborted', aborted)
+              request.socket.off('close', aborted)
+            }
+          })
+        }
+        if (path === '/api/tasks/files/search-paths') {
+          if (!input.query) throw new HttpError(400, 'Search text is required')
+          return yield* serviceResult(s.projectFiles.pathSearch(cwd, input.query, !!repo.kind))
+        }
         if (!input.path) throw new HttpError(400, 'File path is required')
-        const filename = yield* serviceResult(
-          safeFile(yield* serviceResult(repositoryPath(cwd)), input.path),
-        )
+        const root = yield* serviceResult(repositoryPath(cwd))
+        const filename = yield* serviceResult(safeFile(root, input.path))
         const details = yield* serviceResult(stat(filename))
         if (!details.isFile()) throw new HttpError(400, 'Choose a regular file')
         if (path === '/api/tasks/files/preview') {
-          const handle = yield* serviceResult(
-            open(filename, constants.O_RDONLY | constants.O_NOFOLLOW),
-          )
-          try {
-            const info = yield* serviceResult(handle.stat())
-            return yield* serviceResult(
-              createFilePreview(
-                input.path,
+          const filePath = input.path
+          return yield* runtimeOperation(async () => {
+            const { handle } = await openContainedPreview(root, filePath)
+            try {
+              const info = await handle.stat()
+              return await createFilePreview(
+                filePath,
                 {
                   after: { hash: 'working', size: info.size, mode: '100644' },
                 },
@@ -1151,11 +1277,23 @@ export function agentsRoute(request: IncomingMessage, path: string) {
                   }
                   return buffer.subarray(0, total)
                 },
-              ),
-            )
-          } finally {
-            yield* serviceResult(handle.close())
-          }
+              )
+            } finally {
+              await handle.close()
+            }
+          })
+        }
+        if (path === '/api/tasks/files/read' && input.preview) {
+          const filePath = input.path,
+            preview = input.preview
+          return yield* runtimeOperation(async () => {
+            const { handle } = await openContainedPreview(root, filePath)
+            try {
+              return await readBoundedFile(handle, filePath, preview)
+            } finally {
+              await handle.close()
+            }
+          })
         }
         const maxBytes = path === '/api/tasks/files/write' ? 1024 * 1024 : 100 * 1024 * 1024
         if (details.size > maxBytes)
@@ -1165,8 +1303,6 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               ? 'Only text files up to 1 MB can be edited'
               : 'Only text files up to 100 MB can be previewed',
           )
-        const contents = yield* serviceResult(readFile(filename, 'utf8'))
-        if (contents.includes('\0')) throw new HttpError(415, 'Binary files cannot be previewed')
         if (path === '/api/tasks/files/write') {
           if (input.contents === undefined || input.expectedContents === undefined)
             throw new HttpError(400, 'File contents and original contents are required')
@@ -1174,11 +1310,27 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             throw new HttpError(415, 'Binary files cannot be edited')
           if (Buffer.byteLength(input.contents, 'utf8') > 1024 * 1024)
             throw new HttpError(413, 'Only text files up to 1 MB can be edited')
-          if (contents !== input.expectedContents)
-            throw new HttpError(409, 'File changed on disk. Reload it before saving.')
-          yield* serviceResult(writeFile(filename, input.contents, 'utf8'))
-          return { path: input.path, contents: input.contents }
+          const { path: name, contents, expectedContents } = input
+          yield* s.tasks.withCheckoutEditEffect(
+            root,
+            runtimeOperation(() =>
+              withFileWrite(filename, async () => {
+                const target = await safeFile(root, name)
+                if ((await stat(target)).size > maxBytes)
+                  throw new HttpError(413, 'Only text files up to 1 MB can be edited')
+                const current = await readFile(target, 'utf8')
+                if (current.includes('\0'))
+                  throw new HttpError(415, 'Binary files cannot be edited')
+                if (current !== expectedContents)
+                  throw new HttpError(409, 'File changed on disk. Reload it before saving.')
+                await writeFile(target, contents, 'utf8')
+              }),
+            ),
+          )
+          return { path: name, contents }
         }
+        const contents = yield* serviceResult(readFile(filename, 'utf8'))
+        if (contents.includes('\0')) throw new HttpError(415, 'Binary files cannot be previewed')
         return { path: input.path, contents }
       }
       if (method === 'POST' && path === '/api/tasks/feedback/remove') {

@@ -1,6 +1,7 @@
+import { useAttachmentPicker } from '../composer/attachment-picker'
 import { FolderPicker } from './folder-picker'
 import { runtimeComputerName } from '@dovo/protocol'
-import { createDraftCreation } from './draft-creation'
+import { createDraftCreation, transferSharedDraft } from './draft-creation'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -41,7 +42,24 @@ export function NewTask({
   const [id] = useApplicationState(() => initial?.id ?? randomUUID()),
     [error, setError] = useApplicationState(''),
     [retry, setRetry] = useApplicationState(0)
+  const attachments = useAttachmentPicker(id)
+  const attachmentUpload = useRef(attachments.uploadContext)
+  attachmentUpload.current = attachments.uploadContext
   const createRequest = useRef(createDraftCreation())
+  const requestKey = JSON.stringify([
+    profile?.id,
+    profile?.connection.address,
+    profile?.connection.token,
+    id,
+    repositoryId,
+    retry,
+  ])
+  const transfer = useRef<{ key: string; controller: AbortController } | null>(null)
+  if (transfer.current?.key !== requestKey) {
+    transfer.current?.controller.abort()
+    transfer.current = { key: requestKey, controller: new AbortController() }
+  }
+  const transferSignal = transfer.current.controller.signal
   const callbacks = useRef({
     onCreated,
     onCancel,
@@ -55,7 +73,7 @@ export function NewTask({
   const workspace = useRef(snapshot?.workspace)
   workspace.current = snapshot?.workspace
   useEffect(() => {
-    if (!connected || !requested) return
+    if (!connected || !requested || initial?.shareError) return
     let active = true
     const state = workspace.current
     if (!state) return
@@ -89,17 +107,24 @@ export function NewTask({
     // A template prefills the draft and settings; nothing is sent until the user sends it.
     const task: Task = template && !initial ? { ...base, ...templateTaskFields(template) } : base
     setError('')
-    const requestKey = JSON.stringify([profile?.id, id, repositoryId, retry])
-    const request = existing
-      ? Promise.resolve()
-      : createRequest.current(requestKey, () =>
-          call(
-            '/api/workspace',
-            { collection: 'tasks', id, create: task, changes: {} },
-            mutableStruct({ revision: Schema.Number.pipe(Schema.check(Schema.isFinite())) }),
-            'PATCH',
-          ),
-        )
+    // Capture this destination's uploader before task creation can yield to another runtime.
+    const upload = attachmentUpload.current
+    const request = createRequest.current(requestKey, () =>
+      transferSharedDraft({
+        create: async () => {
+          if (!existing)
+            await call(
+              '/api/workspace',
+              { collection: 'tasks', id, create: task, changes: {} },
+              mutableStruct({ revision: Schema.Number.pipe(Schema.check(Schema.isFinite())) }),
+              'PATCH',
+            )
+        },
+        upload,
+        files: initial?.files ?? [],
+        signal: transferSignal,
+      }),
+    )
     void runClientEffect(
       nativeEffect(() => request)
         .pipe(
@@ -126,6 +151,8 @@ export function NewTask({
     call,
     connected,
     profile?.id,
+    requestKey,
+    transferSignal,
     retry,
     requested,
     repositoryId,
@@ -136,6 +163,10 @@ export function NewTask({
     <View style={styles.content}>
       <Text style={styles.title}>{requested ? 'Opening draft chat…' : 'Choose a project'}</Text>
       <Text style={styles.muted}>On {runtimeComputerName({ profile, snapshot })}</Text>
+      {!!initial?.files?.length && (
+        <Text style={styles.muted}>{initial.files.map((file) => file.name).join(', ')}</Text>
+      )}
+      {!!initial?.shareError && <Text style={styles.error}>{initial.shareError}</Text>}
       {!requested && (
         <>
           <FolderPicker
@@ -165,7 +196,9 @@ export function NewTask({
           <Action
             label="Open chat"
             disabled={
-              !connected || !snapshot?.workspace.repositories.some((r) => r.id === repositoryId)
+              !connected ||
+              !!initial?.shareError ||
+              !snapshot?.workspace.repositories.some((r) => r.id === repositoryId)
             }
             onPress={() => setRequested(true)}
           />
@@ -183,6 +216,7 @@ export function NewTask({
           )}
         </>
       )}
+      {attachments.editor}
       <Action label="Cancel" secondary onPress={onCancel} />
     </View>
   )

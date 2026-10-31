@@ -2,6 +2,7 @@ import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
 import { serveTaskFile } from './endpoints/task-files.js'
+import { browserDownloadPath, serveBrowserDownload } from './endpoints/browser-downloads.js'
 import { assertForeignDeviceScope } from '../previews/device-hosts.js'
 import { attachRuntimeSync } from './support/runtime-sync.js'
 import { pairingAddresses } from './support/pairing-addresses.js'
@@ -23,6 +24,7 @@ import { HttpError, errorMessage } from '../errors.js'
 import { attachBrowserSocket } from './support/browser-socket.js'
 import { attachDesktopUnlockSocket } from './support/desktop-unlock-socket.js'
 import type { PeerOrigin } from './peer-connections.js'
+import { expensiveRequestName, memoryAttribution } from '../diagnostics/memory-attribution.js'
 /** `tunnel` marks the dedicated internet listener. Its connections arrive over loopback, so
  * their provenance comes only from the tunnel itself, never from the socket address. */
 export function createRuntimeServer(
@@ -75,6 +77,9 @@ export function createRuntimeServer(
       response.once('finish', resolve)
       response.once('close', resolve)
     })
+    // Measured until the response finishes, because serializing a large result also holds memory.
+    const expensive = expensiveRequestName(request.method, request.url?.split('?')[0] ?? '/')
+    if (expensive) void finished.then(memoryAttribution(services).begin(expensive))
     const handled = Promise.resolve()
       .then(() => {
         let url: URL
@@ -83,6 +88,8 @@ export function createRuntimeServer(
         } catch {
           throw new HttpError(400, 'Invalid request URL')
         }
+        if (request.method === 'GET' && url.pathname.startsWith(browserDownloadPath))
+          return serveBrowserDownload(services, response, url, peer)
         if (
           request.method === 'GET' &&
           url.pathname.startsWith('/api/tasks/files/shared/') &&
