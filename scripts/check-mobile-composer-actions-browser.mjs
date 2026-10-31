@@ -662,8 +662,9 @@ try {
   const menu = page.getByRole('menu', { name: 'Actions for queued message 1', exact: true })
   const menuBox = await menu.boundingBox()
   const menuItems = menu.getByRole('menuitem')
-  assert.equal(await menuItems.count(), 7)
-  assert.ok(menuBox.width <= 264 && menuBox.height <= 7 * 44 + 10, JSON.stringify(menuBox))
+  assert.equal(await menuItems.count(), 8)
+  await menu.getByRole('menuitem', { name: 'Remove queued message 1', exact: true }).waitFor()
+  assert.ok(menuBox.width <= 264 && menuBox.height <= 8 * 44 + 10, JSON.stringify(menuBox))
   for (const item of await menuItems.all()) {
     const bounds = await item.boundingBox()
     assert.ok(bounds.height >= 44, 'Queue actions retain accessible touch targets')
