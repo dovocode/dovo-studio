@@ -948,8 +948,45 @@ export function Composer({
       upload={attachments.upload}
     />
   )
+  const planControl = planSupported && (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-pressed={plan}
+      title={
+        !plan && planModeIssue(agent)
+          ? planModeIssue(agent)
+          : 'Plan the next message read-only before the agent changes anything'
+      }
+      className={cn(
+        'composer-plan-toggle',
+        preferences.showPlanButton
+          ? 'h-8 gap-1.5 rounded-full px-2.5 text-[0.6875rem]'
+          : 'h-9 w-full justify-start gap-2 rounded-md px-2 text-xs',
+        plan && 'bg-primary/15 text-primary hover:bg-primary/20',
+      )}
+      disabled={sending || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
+      onClick={() => {
+        changePlan(!plan)
+        if (!preferences.showPlanButton) {
+          setAddOpen(false)
+          input.current?.focus()
+        }
+      }}
+    >
+      <ListChecks className="size-3.5" />
+      Plan
+    </Button>
+  )
+  const showSendOptions =
+    preferences.showSendOptions &&
+    !editing &&
+    (hasBackgroundAction ||
+      task.status === 'running' ||
+      (connected && snapshot?.promptQueueStagingSupported === true))
   const extraActions = !pendingQuestion && (
     <>
+      {!preferences.showPlanButton && planControl}
       <DraftStash
         key={JSON.stringify(['draft-stash', stashRuntimeId, task.id])}
         scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
@@ -1069,7 +1106,11 @@ export function Composer({
                       type="button"
                       variant="ghost"
                       aria-label="More composer actions"
-                      className="composer-add-menu"
+                      aria-pressed={!preferences.showPlanButton && plan}
+                      className={cn(
+                        'composer-add-menu',
+                        !preferences.showPlanButton && plan && 'text-primary bg-primary/15',
+                      )}
                       disabled={sending || !!task.archivedAt}
                     >
                       <ChevronDown className="size-4" />
@@ -1092,27 +1133,7 @@ export function Composer({
                   </Popover.Portal>
                 </Popover.Root>
               </div>
-              {planSupported && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-pressed={plan}
-                  title={
-                    !plan && planModeIssue(agent)
-                      ? planModeIssue(agent)
-                      : 'Plan the next message read-only before the agent changes anything'
-                  }
-                  className={cn(
-                    'composer-plan-toggle h-8 gap-1.5 rounded-full px-2.5 text-[0.6875rem]',
-                    plan && 'bg-primary/15 text-primary hover:bg-primary/20',
-                  )}
-                  disabled={sending || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
-                  onClick={() => changePlan(!plan)}
-                >
-                  <ListChecks className="size-3.5" />
-                  Plan
-                </Button>
-              )}
+              {preferences.showPlanButton && planControl}
               {!startup && !projectSettings && (
                 <Popover.Root open={infoOpen} onOpenChange={setInfoOpen}>
                   <Popover.Trigger asChild>
@@ -1172,7 +1193,12 @@ export function Composer({
               />
             )}
             {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
-              <div className="flex shrink-0 items-center" role="group" aria-label="Send message">
+              <div
+                className="composer-send-group flex shrink-0 items-center"
+                data-options={showSendOptions || undefined}
+                role="group"
+                aria-label="Send message"
+              >
                 <ComposerSubmit
                   busy={sending}
                   data-labeled={editing || task.status === 'running' || stageFirst ? '' : undefined}
@@ -1180,7 +1206,7 @@ export function Composer({
                     editing
                       ? 'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]'
                       : task.status === 'running' || stageFirst
-                        ? 'h-8 w-auto gap-1.5 rounded-l-md rounded-r-none bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
+                        ? 'h-8 w-auto gap-1.5 rounded-full bg-muted px-3 text-[0.6875rem] text-foreground hover:bg-accent'
                         : undefined
                   }
                   title={
@@ -1239,127 +1265,122 @@ export function Composer({
                       ? 'Add to queue'
                       : task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
                 </ComposerSubmit>
-                {!editing &&
-                  (hasBackgroundAction ||
-                    task.status === 'running' ||
-                    (connected && snapshot?.promptQueueStagingSupported === true)) && (
-                    <DropdownMenu.Root>
-                      <DropdownMenu.Trigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          aria-label="More message actions"
-                          title="Other ways to send this message"
-                          className="h-8 w-6 rounded-l-none rounded-r-md border-l border-border/60 bg-muted p-0 hover:bg-accent"
-                          disabled={
-                            !connected ||
-                            sending ||
-                            !!awaitingQueuedSubmission ||
-                            stopping ||
-                            attachments.busy ||
-                            !!task.archivedAt
-                          }
-                        >
-                          <ChevronDown className="size-3" />
-                        </Button>
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content
-                          side="top"
-                          align="end"
-                          sideOffset={6}
-                          className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
-                        >
-                          {hasBackgroundAction && (
-                            <DropdownMenu.Item
-                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                              disabled={
-                                !!policyIssue ||
-                                !!planIssue ||
-                                !hasInput ||
-                                !connected ||
-                                !task.repositoryId ||
-                                !agent ||
-                                hasFailedSubmissionAttachments
-                              }
-                              onSelect={() => void send('queue', true)}
-                            >
-                              Start in background
-                              <span className="ml-auto text-[0.625rem] text-muted-foreground">
-                                Alt+Enter
-                              </span>
-                            </DropdownMenu.Item>
-                          )}
-                          {task.status === 'running' && (
-                            <DropdownMenu.Item
-                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                              disabled={
-                                !!policyIssue ||
-                                !!planIssue ||
-                                !!task.archived ||
-                                ((!!turnSettings || plan) && other === 'steer')
-                              }
-                              onSelect={() => void send(other)}
-                            >
-                              {other === 'steer' ? (
-                                <CornerUpRight className="size-3.5" />
-                              ) : (
-                                <ListPlus className="size-3.5" />
-                              )}
-                              {other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
-                              <span className="ml-auto text-[0.625rem] text-muted-foreground">
-                                Alt+Enter
-                              </span>
-                            </DropdownMenu.Item>
-                          )}
-                          {task.status !== 'running' && (
-                            <DropdownMenu.Item
-                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                              disabled={
-                                !!policyIssue ||
-                                !!planIssue ||
-                                !!task.archived ||
-                                !hasInput ||
-                                (stageFirst && !!task.queue?.[0]?.paused)
-                              }
-                              onSelect={() => void send('queue')}
-                            >
+                {showSendOptions && (
+                  <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label="More message actions"
+                        title="Other ways to send this message"
+                        className="composer-send-options h-8 w-5 rounded-none p-0 text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                        disabled={
+                          !connected ||
+                          sending ||
+                          !!awaitingQueuedSubmission ||
+                          stopping ||
+                          attachments.busy ||
+                          !!task.archivedAt
+                        }
+                      >
+                        <ChevronDown className="size-3" />
+                      </Button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.Content
+                        side="top"
+                        align="end"
+                        sideOffset={6}
+                        className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+                      >
+                        {hasBackgroundAction && (
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                            disabled={
+                              !!policyIssue ||
+                              !!planIssue ||
+                              !hasInput ||
+                              !connected ||
+                              !task.repositoryId ||
+                              !agent ||
+                              hasFailedSubmissionAttachments
+                            }
+                            onSelect={() => void send('queue', true)}
+                          >
+                            Start in background
+                            <span className="ml-auto text-[0.625rem] text-muted-foreground">
+                              Alt+Enter
+                            </span>
+                          </DropdownMenu.Item>
+                        )}
+                        {task.status === 'running' && (
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                            disabled={
+                              !!policyIssue ||
+                              !!planIssue ||
+                              !!task.archived ||
+                              ((!!turnSettings || plan) && other === 'steer')
+                            }
+                            onSelect={() => void send(other)}
+                          >
+                            {other === 'steer' ? (
+                              <CornerUpRight className="size-3.5" />
+                            ) : (
                               <ListPlus className="size-3.5" />
-                              {stageFirst ? 'Add and run queue' : 'Add to queue'}
-                            </DropdownMenu.Item>
-                          )}
-                          {snapshot?.promptQueueStagingSupported === true && !stageFirst && (
-                            <DropdownMenu.Item
-                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                              disabled={
-                                !!policyIssue || !!planIssue || !!task.archived || !hasInput
-                              }
-                              onSelect={() => void send('stage')}
-                            >
-                              <ListPlus className="size-3.5" />
-                              Add without starting
-                            </DropdownMenu.Item>
-                          )}
-                          {task.repositoryId &&
-                            !workspace.repositories.find((repo) => repo.id === task.repositoryId)
-                              ?.kind && (
-                              <DropdownMenu.Item
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                                disabled={!!task.archived || !!turnSettings || plan}
-                                title={
-                                  turnSettings || plan
-                                    ? 'Clear next-message settings to fork with this thread’s configuration'
-                                    : undefined
-                                }
-                                onSelect={() => void startFork()}
-                              >
-                                <GitBranchPlus className="size-3.5" /> Fork
-                              </DropdownMenu.Item>
                             )}
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu.Root>
-                  )}
+                            {other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
+                            <span className="ml-auto text-[0.625rem] text-muted-foreground">
+                              Alt+Enter
+                            </span>
+                          </DropdownMenu.Item>
+                        )}
+                        {task.status !== 'running' && (
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                            disabled={
+                              !!policyIssue ||
+                              !!planIssue ||
+                              !!task.archived ||
+                              !hasInput ||
+                              (stageFirst && !!task.queue?.[0]?.paused)
+                            }
+                            onSelect={() => void send('queue')}
+                          >
+                            <ListPlus className="size-3.5" />
+                            {stageFirst ? 'Add and run queue' : 'Add to queue'}
+                          </DropdownMenu.Item>
+                        )}
+                        {snapshot?.promptQueueStagingSupported === true && !stageFirst && (
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                            disabled={!!policyIssue || !!planIssue || !!task.archived || !hasInput}
+                            onSelect={() => void send('stage')}
+                          >
+                            <ListPlus className="size-3.5" />
+                            Add without starting
+                          </DropdownMenu.Item>
+                        )}
+                        {task.repositoryId &&
+                          !workspace.repositories.find((repo) => repo.id === task.repositoryId)
+                            ?.kind && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                              disabled={!!task.archived || !!turnSettings || plan}
+                              title={
+                                turnSettings || plan
+                                  ? 'Clear next-message settings to fork with this thread’s configuration'
+                                  : undefined
+                              }
+                              onSelect={() => void startFork()}
+                            >
+                              <GitBranchPlus className="size-3.5" /> Fork
+                            </DropdownMenu.Item>
+                          )}
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Root>
+                )}
               </div>
             )}
             {task.status === 'running' && (

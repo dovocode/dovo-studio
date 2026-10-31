@@ -559,3 +559,28 @@ it.each(['showContextUsage', 'minimalComposer'] as const)(
     expect(reopened.readMobilePreferences()[key]).toBe(false)
   },
 )
+
+it.each(['showPlanButton', 'showSendOptions'] as const)(
+  'defaults %s off and saves opting in on this phone',
+  async (key) => {
+    storage.getItem = async () => null
+    const writes: string[] = []
+    storage.setItem = async (value) => {
+      writes.push(value)
+    }
+    const preferences = await loadPreferences()
+    await preferences.preferencesReady
+    expect(preferences.readMobilePreferences()[key]).toBe(false)
+    preferences.updateMobilePreferences({ [key]: true })
+    await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0))
+    storage.getItem = async () => writes.at(-1) ?? null
+    const reopened = await loadPreferences()
+    await reopened.preferencesReady
+    expect(reopened.readMobilePreferences()[key]).toBe(true)
+    expect(
+      reopened.readMobilePreferences()[
+        key === 'showPlanButton' ? 'showSendOptions' : 'showPlanButton'
+      ],
+    ).toBe(false)
+  },
+)

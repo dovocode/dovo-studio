@@ -2295,3 +2295,29 @@ a.studio-project-row:hover {
     outline: 2px solid Highlight;
   }
 }
+
+/* Optional alternate-send actions share the send control's silhouette. */
+.task-composer .composer-send-group[data-options] {
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.task-composer .composer-send-group[data-options] button[type='submit'] {
+  border-radius: 0;
+  box-shadow: none;
+}
+.task-composer .composer-send-group[data-options]:has([data-labeled]) {
+  background: var(--muted);
+}
+.task-composer .composer-send-group[data-options]:has([data-labeled]) .composer-send-options {
+  color: var(--muted-foreground);
+}
+
+.task-composer .composer-send-group[data-options]:has(button[type='submit']:disabled) {
+  background: var(--secondary);
+}
+.task-composer
+  .composer-send-group[data-options]:has(button[type='submit']:disabled)
+  .composer-send-options {
+  color: var(--muted-foreground);
+}
