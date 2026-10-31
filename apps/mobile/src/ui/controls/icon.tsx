@@ -1,4 +1,5 @@
 import {
+  GripVertical,
   WandSparkles,
   Zap,
   Camera,
@@ -105,6 +106,7 @@ const icons = {
   refresh: RotateCw,
   star: Star,
   moveUp: ArrowUp,
+  drag: GripVertical,
   moveDown: ArrowDown,
   trash: Trash2,
   restore: Undo2,
