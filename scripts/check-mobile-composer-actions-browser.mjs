@@ -16,7 +16,7 @@ export const View=({children,style,testID,accessibilityRole,accessibilityLabel,o
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal,keyboardShouldPersistTaps})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div onMouseDown={keyboardShouldPersistTaps==='always'?event=>event.preventDefault():undefined} ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>{onChangeText(event.target.value);onSelectionChange?.({start:event.target.value.length,end:event.target.value.length})}}/>;
-export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,accessibilityValue,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={event=>{event.preventDefault();press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-valuetext={accessibilityValue?.text} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
+export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,accessibilityValue,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={event=>{event.preventDefault();press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-valuetext={accessibilityValue?.text} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,borderStyle:'solid',padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
 export const Platform={OS:'android'};
@@ -33,7 +33,7 @@ export const Choice=({label,value,items,onChange,disabled})=><select aria-label=
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
 export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return createPortal(<div role="dialog" aria-label={title} style={{position:"fixed",inset:0,zIndex:1000,overflowY:"auto",background:"#202020",padding:12}}>{children}<button onClick={onClose}>Close</button></div>,document.body)};
-export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
+export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff',selection:'#24354c'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
   {
@@ -171,7 +171,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     path: '../../runtime/preferences/app-preferences',
     importer: mobile,
     contents:
-      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showPlanButton:window.showPlanButton===true,showSendOptions:window.showSendOptions!==false,showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
+      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showPlanButton:window.showPlanButton===true,showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
   },
   { path: './harness-icon', importer: mobile, contents: 'export const HarnessIcon=()=>null;' },
   {
@@ -300,23 +300,30 @@ try {
       window.setTask({ status: 'review', queue: [] })
       window.setDraftText('Queue this prompt')
     })
-    const more = page.getByRole('button', { name: 'More message actions', exact: true })
-    await more.waitFor()
-    const bounds = await more.boundingBox()
+    assert.equal(
+      await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
+      0,
+    )
     const send = page.getByRole('button', { name: 'Send', exact: true })
-    const sendBounds = await send.boundingBox()
-    assert.ok(bounds.width >= 44 && bounds.height >= 44)
-    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
-    assert.ok(bounds.x + bounds.width <= sendBounds.x + 1)
-    assert.ok(Math.abs(bounds.y - sendBounds.y) < 1)
+    const holdSend = async () => {
+      const button = page
+        .getByTestId('Composer toolbar')
+        .getByRole('button', { name: /^(Send|Add to queue)$/ })
+      await button.hover()
+      const before = await page.evaluate(() => window.calls.length)
+      await page.mouse.down()
+      await page.getByRole('menu', { name: 'Message actions', exact: true }).waitFor()
+      await page.mouse.up()
+      assert.equal(await page.evaluate(() => window.calls.length), before, 'Holding must not send')
+    }
     const input = page.getByRole('textbox', { name: 'Message', exact: true })
     await input.focus()
-    await more.click()
-    const menu = page.getByRole('menu', { name: 'More message actions', exact: true })
+    await holdSend()
+    const menu = page.getByRole('menu', { name: 'Message actions', exact: true })
     await menu.waitFor()
     await menu.getByRole('menuitem', { name: 'Add to queue', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
-    await more.click()
+    await holdSend()
     await menu.getByRole('menuitem', { name: 'Add without starting', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stage' })
     assert.equal(await input.evaluate((node) => node === document.activeElement), true)
@@ -328,17 +335,20 @@ try {
         queue: [{ id: 'older', role: 'user', text: 'Older queued prompt' }],
       }),
     )
-    await more.click()
+    await holdSend()
     await menu.getByRole('menuitem', { name: 'Add and run queue', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
     await page.evaluate(() => {
       window.stageSupported = false
       window.setTask({})
     })
-    await more.waitFor({ state: 'detached' })
+    assert.equal(
+      await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
+      0,
+    )
     assert.deepEqual(errors, [])
     console.log(
-      'Mobile visible message actions: idle capability gate, 44pt trigger beside Send at 320px, automatic Add to queue, explicit Add without starting, preserved input focus and normal Send passed.',
+      'Mobile held Send actions: no extra toolbar button, idle capability gate, automatic Add to queue, explicit Add without starting, preserved input focus and normal Send passed.',
     )
     await browser.close()
     process.exit(0)
@@ -1421,6 +1431,21 @@ try {
         path: screenshots + '/native-adapter-' + viewport.width + 'x' + viewport.height + '.png',
       })
   }
+  const assertSelectedFill = async (control, split = false) => {
+    const appearance = await control.evaluate((element, split) => {
+      const style = getComputedStyle(split ? element.parentElement : element)
+      return {
+        border: style.borderTopWidth,
+        color: style.borderTopColor,
+        fill: style.backgroundColor,
+      }
+    }, split)
+    assert.deepEqual(appearance, {
+      border: '1px',
+      color: 'rgb(118, 161, 255)',
+      fill: 'rgb(36, 53, 76)',
+    })
+  }
   const general = page.getByRole('button', { name: 'Start without a project', exact: true })
   const scope = page.getByRole('button', { name: 'Start in Scope', exact: true })
   const projects = page.getByRole('button', { name: 'Choose project', exact: true })
@@ -1442,6 +1467,8 @@ try {
   await page.waitForFunction(() => window.currentTask.autoProject === true)
   assert.equal(await page.getByRole('dialog', { name: 'Project', exact: true }).count(), 0)
   assert.equal(await scope.getAttribute('aria-selected'), 'true')
+  await assertSelectedFill(scope, true)
+  if (screenshots) await page.screenshot({ path: screenshots + '/scope-selected.png' })
   assert.equal(await page.evaluate(() => window.currentTask.repositoryId), 'scratch')
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep this draft')
   const beforeScopeReselect = await page.evaluate(() => window.calls.length)
@@ -1457,6 +1484,8 @@ try {
   })
   assert.equal(await scope.count(), 0)
   assert.equal(await selectedProject.getAttribute('aria-selected'), 'true')
+  await assertSelectedFill(selectedProject, true)
+  if (screenshots) await page.screenshot({ path: screenshots + '/project-selected.png' })
   assert.equal(await selectedProject.getByText('Project', { exact: true }).count(), 1)
   assert.equal(await selectedProject.getByTestId('Selected project icon').count(), 1)
   await selectedProject.click()
@@ -1467,6 +1496,8 @@ try {
   await general.click()
   await page.waitForFunction(() => !window.currentTask.autoProject)
   assert.equal(await general.getAttribute('aria-selected'), 'true')
+  await assertSelectedFill(general)
+  if (screenshots) await page.screenshot({ path: screenshots + '/no-project-selected.png' })
   assert.equal(
     await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
     'Keep this draft',
@@ -1493,6 +1524,8 @@ try {
   await page.getByRole('button', { name: 'Project', exact: true }).click()
   await page.waitForFunction(() => window.currentTask.repositoryId === 'repo')
   assert.equal(await projects.getByText('Project', { exact: true }).count(), 1)
+  assert.equal(await projects.getAttribute('aria-selected'), 'true')
+  await assertSelectedFill(projects)
   assert.equal(await projects.isDisabled(), false)
   await general.click()
   await page.waitForFunction(() => window.currentTask.repositoryId === 'scratch')

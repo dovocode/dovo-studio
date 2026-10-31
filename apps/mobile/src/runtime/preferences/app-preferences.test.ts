@@ -560,7 +560,7 @@ it.each(['showContextUsage', 'minimalComposer'] as const)(
   },
 )
 
-it.each(['showPlanButton', 'showSendOptions'] as const)(
+it.each(['showPlanButton'] as const)(
   'defaults %s off and saves opting in on this phone',
   async (key) => {
     storage.getItem = async () => null
@@ -577,10 +577,5 @@ it.each(['showPlanButton', 'showSendOptions'] as const)(
     const reopened = await loadPreferences()
     await reopened.preferencesReady
     expect(reopened.readMobilePreferences()[key]).toBe(true)
-    expect(
-      reopened.readMobilePreferences()[
-        key === 'showPlanButton' ? 'showSendOptions' : 'showPlanButton'
-      ],
-    ).toBe(false)
   },
 )
