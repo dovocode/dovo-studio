@@ -171,7 +171,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     path: '../../runtime/preferences/app-preferences',
     importer: mobile,
     contents:
-      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
+      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showPlanButton:window.showPlanButton===true,showSendOptions:window.showSendOptions!==false,showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
   },
   { path: './harness-icon', importer: mobile, contents: 'export const HarnessIcon=()=>null;' },
   {
@@ -233,13 +233,14 @@ import {TaskEmptyState} from './src/tasks/creation/task-empty-state';import {Com
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',activeRunId:'active-run',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
+  const [plan,setPlan]=useState(false);window.plan=plan;
   const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;window.setTurnSettings=setTurnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={promptQueueStagingSupported:window.stageSupported===true,queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{plan,planSupported:true,setPlan,editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
   window.conversation.actions.stageSupported=snapshot.promptQueueStagingSupported;
   window.conversation.actions.defaultSendMode=snapshot.promptQueueStagingSupported && task.queue?.length && (task.queuePaused || task.queue[0]?.paused) ? 'stage' : 'queue';
   window.conversation.actions.attachmentPicker.pasteImage=()=>window.calls.push({mode:'paste-image'});
@@ -275,6 +276,23 @@ try {
     '<style>body{margin:0;background:#101010;color:#eee;font-family:system-ui}button,textarea,select{font:inherit}#app{display:flex;flex-direction:column}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  assert.equal(await page.getByRole('switch', { name: 'Plan', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Plan', exact: true }).click()
+  await page.waitForFunction(() => window.plan === true)
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Plan', exact: true }).click()
+  await page.waitForFunction(() => window.plan === false)
+  await page.evaluate(() => {
+    window.showPlanButton = true
+    window.setTask({})
+  })
+  await page.getByRole('switch', { name: 'Plan', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.showPlanButton = false
+    window.setTask({})
+  })
+  await page.getByRole('switch', { name: 'Plan', exact: true }).waitFor({ state: 'hidden' })
   if (process.env.DOVO_COMPOSER_MESSAGE_ACTIONS_ONLY === '1') {
     await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor()
     await page.evaluate(() => {

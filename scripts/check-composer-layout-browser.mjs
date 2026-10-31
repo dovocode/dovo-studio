@@ -17,9 +17,10 @@ const mocks = {
     export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
-    const preferences={threadInfoSections:{},sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};
+    const preferences={showSendOptions:true,threadInfoSections:{},sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};
     window.setFollowUp=value=>{preferences.followUp=value};
     window.setContextVisible=value=>{preferences.showContextUsage=value};
+    window.setSendOptions=value=>{preferences.showSendOptions=value};
     window.setMinimalComposer=value=>{preferences.minimalComposer=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
@@ -668,6 +669,26 @@ try {
       .getByRole('region', { name: 'Composer activity', exact: true })
       .boundingBox()
     const composer = await page.locator('.studio-composer').boundingBox()
+    const alignment = await page.locator('[role="log"]').evaluate((log) => {
+      const content = log.querySelector('.max-w-\\[var\\(--chat-max\\)\\]')
+      if (!content) throw Error('Missing conversation content')
+      const bounds = content.getBoundingClientRect()
+      const style = getComputedStyle(content)
+      const viewport = log.getBoundingClientRect()
+      return {
+        textCenter:
+          (bounds.left +
+            parseFloat(style.paddingLeft) +
+            bounds.right -
+            parseFloat(style.paddingRight)) /
+          2,
+        viewportCenter: (viewport.left + viewport.right) / 2,
+      }
+    })
+    assert.ok(
+      Math.abs(alignment.textCenter - alignment.viewportCenter) < 1,
+      JSON.stringify(alignment),
+    )
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
@@ -769,6 +790,13 @@ try {
   await page.getByRole('menuitem', { name: 'Queue follow-up' }).waitFor()
   assert.equal(await page.getByRole('menuitem', { name: 'Steer agent' }).count(), 0)
   await page.keyboard.press('Escape')
+  await page.evaluate(() => {
+    window.setSendOptions(false)
+    window.setTask({})
+  })
+  await page
+    .getByRole('button', { name: 'More message actions', exact: true })
+    .waitFor({ state: 'hidden' })
   // Alt previews and submits the alternative for either saved default, without
   // changing the preference or inverting Alt+Enter a second time.
   const followUpInput = page.getByRole('textbox', { name: 'Message task', exact: true })

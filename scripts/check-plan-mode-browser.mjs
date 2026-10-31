@@ -5,7 +5,7 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const extension = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
   './harness-catalog': `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[],reasoning:[]}});`,
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:()=>{}});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:window.provider,model:'model',permission:'full-access',instructions:'',args:[],endpoint:''});const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
+  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:()=>{}});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:window.provider,model:'model',permission:'full-access',instructions:'',args:[],endpoint:''});const preferences={showPlanButton:false,showSendOptions:false,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export * as Popover from '@radix-ui/react-popover';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '../studio-ui/src/components/ui/dialog';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
@@ -143,6 +143,21 @@ try {
   // Older runtimes would drop the flag, so the control is hidden instead of sending it.
   assert.equal(await toggle.count(), 0)
   await page.evaluate(() => window.setSupported(true))
+  assert.equal(await toggle.count(), 0)
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  await toggle.click()
+  await toggle.waitFor({ state: 'hidden' })
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'More composer actions', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+  await page.evaluate(() => {
+    window.setComposerPreferences({ showPlanButton: true })
+    window.setTask((task) => ({ ...task }))
+  })
+  await toggle.click()
   await toggle.click()
   assert.equal(await toggle.getAttribute('aria-pressed'), 'true')
   assert.equal(await page.evaluate(() => window.current.draftPlan), true)
@@ -182,6 +197,14 @@ try {
   )
   await toggle.click()
   await input.fill('Plan the follow-up')
+  assert.equal(
+    await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
+    0,
+  )
+  await page.evaluate(() => {
+    window.setComposerPreferences({ showSendOptions: true })
+    window.setTask((task) => ({ ...task }))
+  })
   await page.getByRole('button', { name: 'More message actions', exact: true }).click()
   assert.equal(
     await page.getByRole('menuitem', { name: /Steer agent/ }).getAttribute('data-disabled'),
@@ -225,7 +248,9 @@ try {
     window.provider = 'hermes'
     window.setTask((task) => ({ ...task, status: 'review', queue: [], activeRunId: undefined }))
   })
-  await page.waitForFunction(() => document.querySelector('[aria-pressed]')?.disabled === true)
+  await page.waitForFunction(
+    () => document.querySelector('.composer-plan-toggle')?.disabled === true,
+  )
   assert.match((await toggle.getAttribute('title')) ?? '', /no read-only mode/)
   const phone = await browser.newPage()
   phone.on('pageerror', (error) => errors.push(error.message))

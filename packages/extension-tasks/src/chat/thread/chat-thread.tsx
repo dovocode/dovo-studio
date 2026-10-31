@@ -499,7 +499,7 @@ export function ChatThread({
               className={
                 emptyDraft
                   ? 'mx-auto h-full w-full max-w-[var(--chat-max)] gap-0 p-0'
-                  : 'mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5'
+                  : 'mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:px-5'
               }
             >
               {liveTask.autoProjectFallback && (

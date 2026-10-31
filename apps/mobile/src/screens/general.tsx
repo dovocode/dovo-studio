@@ -325,6 +325,16 @@ export function ConversationSettingsScreen() {
           onValueChange={(minimalComposer) => updateMobilePreferences({ minimalComposer })}
         />
         <SettingsSwitchRow
+          label="Show Plan button"
+          value={preferences.showPlanButton}
+          onValueChange={(showPlanButton) => updateMobilePreferences({ showPlanButton })}
+        />
+        <SettingsSwitchRow
+          label="Show send options"
+          value={preferences.showSendOptions}
+          onValueChange={(showSendOptions) => updateMobilePreferences({ showSendOptions })}
+        />
+        <SettingsSwitchRow
           label="Show context usage"
           value={preferences.showContextUsage}
           onValueChange={(showContextUsage) => updateMobilePreferences({ showContextUsage })}

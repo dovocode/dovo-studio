@@ -11,8 +11,8 @@ const setup = source
   )
   .replaceAll('import.meta.url', JSON.stringify(fixtureUrl.href))
   .replace(
-    "const preferences={followUp:'queue',confirmStop:false};",
-    "const preferences={followUp:'queue',confirmStop:false};window.composerPreferences=preferences;",
+    "const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};",
+    "const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.composerPreferences=preferences;",
   )
   .replace(
     'controller,submitBusy,submittedText,disabled})',

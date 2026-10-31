@@ -55,6 +55,16 @@ export default function ConversationSettings() {
               'Use one line when empty and unfocused. Turn off to always show the full composer.',
             ],
             [
+              'showPlanButton',
+              'Show Plan button',
+              'Show a dedicated Plan button. Otherwise, Plan is available in the + menu.',
+            ],
+            [
+              'showSendOptions',
+              'Show send options',
+              'Show alternate actions within the send control. Keyboard shortcuts always remain available.',
+            ],
+            [
               'showSkillsInSlashMenu',
               'Show skills in the / menu',
               'Include skills in the / menu. Skills always appear when you type $.',

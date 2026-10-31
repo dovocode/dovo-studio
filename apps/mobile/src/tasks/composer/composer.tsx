@@ -106,7 +106,8 @@ export function Composer({
   ) => Promise<void>
 }) {
   const { colors, styles, reduceMotion } = useTheme()
-  const { showContextUsage, minimalComposer } = useMobilePreferences()
+  const { showContextUsage, minimalComposer, showPlanButton, showSendOptions } =
+    useMobilePreferences()
   const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
   const transition = LinearTransition.duration(280)
     .easing(Easing.bezier(0.22, 1, 0.36, 1))
@@ -511,6 +512,17 @@ export function Composer({
           },
         ]
   const draftMenuActions: MenuAction[] = [
+    ...(planSupported && !showPlanButton
+      ? [
+          {
+            title: plan ? 'Turn off Plan' : 'Plan',
+            label: 'Plan',
+            icon: 'checklist' as const,
+            disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
+            onPress: () => setPlan(!plan),
+          },
+        ]
+      : []),
     ...(
       [
         { source: 'camera', title: 'Camera', icon: 'camera' },
@@ -1110,6 +1122,7 @@ export function Composer({
                 <IconButton
                   icon="add"
                   label="Add to draft"
+                  color={!showPlanButton && plan ? colors.accent : undefined}
                   disabled={
                     busy ||
                     dictation.active ||
@@ -1161,7 +1174,11 @@ export function Composer({
                             : 1,
                     })}
                   >
-                    <Icon name="add" size={20} color={colors.text} />
+                    <Icon
+                      name="add"
+                      size={20}
+                      color={!showPlanButton && plan ? colors.accent : colors.text}
+                    />
                   </Pressable>
                 </View>
               )}
@@ -1274,7 +1291,7 @@ export function Composer({
                     </Pressable>
                   </Animated.View>
                 )}
-                {showOptions && !dictation.active && planSupported && (
+                {showOptions && !dictation.active && planSupported && showPlanButton && (
                   <Animated.View entering={reveal} exiting={conceal}>
                     <Pressable
                       accessibilityRole="switch"
@@ -1352,7 +1369,7 @@ export function Composer({
                       }
                 }
               />
-              {!editing && stageSupported && task.status !== 'running' && (
+              {showSendOptions && !editing && stageSupported && task.status !== 'running' && (
                 <QueueMenu
                   label="More message actions"
                   actions={messageMenuActions.filter(

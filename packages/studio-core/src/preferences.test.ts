@@ -413,3 +413,21 @@ it('defaults to activity sorting and remembers manual sorting across reloads', a
   const reopened = await import('./preferences')
   expect(reopened.readAppPreferences().browserSortByActivity).toBe(false)
 })
+
+it.each(['showPlanButton', 'showSendOptions'] as const)(
+  'keeps %s opt-in and persists it independently',
+  async (key) => {
+    vi.stubGlobal('localStorage', storage())
+    const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+    expect(readAppPreferences()[key]).toBe(false)
+    updateAppPreferences({ [key]: true })
+    vi.resetModules()
+    const reopened = await import('./preferences')
+    expect(reopened.readAppPreferences()[key]).toBe(true)
+    expect(
+      reopened.readAppPreferences()[
+        key === 'showPlanButton' ? 'showSendOptions' : 'showPlanButton'
+      ],
+    ).toBe(false)
+  },
+)
