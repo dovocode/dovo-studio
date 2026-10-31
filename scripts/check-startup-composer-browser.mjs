@@ -5,7 +5,6 @@ import { chromium } from 'playwright'
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
   // Session import has its own browser regression; this fixture exercises startup continuity.
-  './import-codex-session': 'export const ImportCodexSession=()=>null;',
   // Sharing is verified separately from draft, selection and route continuity.
   '@dovo/extension-scm/repository-dialog': 'export const RepositoryDialog=()=>null;',
   '../chat/thread-sharing':

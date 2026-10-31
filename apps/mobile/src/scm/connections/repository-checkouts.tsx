@@ -5,6 +5,7 @@ import type { Repository } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Choice } from '../../ui/controls/choice'
 import { RepositoryCard } from './repository-card'
+import { ImportCodexSession } from './import-codex-session'
 import { ProjectTransferSettings } from './project-transfer'
 export function RepositoryCheckouts({ repository }: { repository: Repository }) {
   const { snapshot } = useRuntime()
@@ -38,6 +39,7 @@ export function RepositoryCheckouts({ repository }: { repository: Repository }) 
       {repository.kind !== 'scratch' && (
         <ProjectTransferSettings key={repository.id} repository={repository} />
       )}
+      {repository.kind !== 'scratch' && <ImportCodexSession repositoryId={repository.id} />}
       {!repository.kind && (
         <RepositoryCard key={taskId} repository={repository} taskId={taskId || undefined} />
       )}

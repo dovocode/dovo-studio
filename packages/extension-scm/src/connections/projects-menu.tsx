@@ -32,6 +32,7 @@ import { RepositoryCheckouts } from './repository-checkouts'
 import { ProjectForgeBinding } from './forge-repository'
 import { ProjectIconSettings } from './project-icon-settings'
 import { ProjectTransferSettings } from './project-transfer'
+import { ImportCodexSession } from './import-codex-session'
 import { ProjectDeletion } from './project-deletion'
 export function ProjectsMenu({
   value,
@@ -419,6 +420,7 @@ export function ProjectsMenu({
           {managed && (
             <ProjectSettings
               repository={managed}
+              onNavigate={() => setManaging(null)}
               onDeleted={(refreshError) => {
                 if (refreshError)
                   setError(
@@ -443,10 +445,12 @@ export function ProjectSettings({
   repository,
   onDeleted,
   allowDelete = true,
+  onNavigate,
 }: {
   repository: import('@dovo/protocol').Repository
   onDeleted?: (refreshError?: string) => void
   allowDelete?: boolean
+  onNavigate?: () => void
 }) {
   const { activeRuntimeId, connection } = useWorkspace()
   return (
@@ -467,6 +471,13 @@ export function ProjectSettings({
         <ProjectForgeBinding
           key={`forge-${connection?.address}-${repository.id}`}
           repo={repository}
+        />
+      )}
+      {repository.kind !== 'scratch' && (
+        <ImportCodexSession
+          key={`import-${activeRuntimeId}:${repository.id}`}
+          repositoryId={repository.id}
+          onNavigate={onNavigate}
         />
       )}
       {allowDelete && <ProjectDeletion repository={repository} onDeleted={onDeleted} />}

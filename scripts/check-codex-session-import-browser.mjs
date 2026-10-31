@@ -5,8 +5,9 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
-  '@dovo/studio-core': `export {useCodexSessionImport} from '${root}/packages/studio-core/src/use-codex-session-import';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>window.navigation=target});`,
-  '@dovo/studio-ui': `export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Dialog=({open,children})=>open?<section role="dialog">{children}</section>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
+  '@dovo/studio-core': `export {useCodexSessionImport} from '${root}/packages/studio-core/src/use-codex-session-import';export const useAppPreferences=()=>({});export const projectActivity=()=>0;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>window.navigation=target});`,
+  '@dovo/studio-ui': `export const DialogHeader=({children})=><div>{children}</div>;export const DropdownMenu=()=>null;export const Popover=()=>null;export const Input=()=>null;export const ProjectIcon=()=>null;export const TaskDefaultSettings=()=>null;export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Dialog=({open,children})=>open?<section role="dialog">{children}</section>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
+  '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   'react-native': `const flat=s=>Object.assign({},...(Array.isArray(s)?s.flat(Infinity):[s]));export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={flat(style)}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;export const Image=()=>null;`,
   'expo-router': `export const router={push:target=>window.navigation=target};`,
   '../chat/composer/composer-project': `export const ComposerProject=()=> <button>Selected project</button>;`,
@@ -19,8 +20,16 @@ const mocks = {
   '../../ui/controls/field': `export const SearchField=()=>null;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;`,
   '../../ui/controls/choice': `export const Choice=({label,value,disabled,onChange,items})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
-  '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,title,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section role="dialog"><h2>{title}</h2>{children}</section>};`,
+  '../../ui/layout/sheet': `export const useSheetNavigation=()=>navigate=>{window.settingsDismissals++;navigate()};import {useImperativeHandle} from 'react';export const Sheet=({children,title,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section role="dialog"><h2>{title}</h2>{children}</section>};`,
   '../../scm/connections/project-transfer': `export const ProjectTransferDialog=()=>null;`,
+  './repository-dialog': `export const RepositoryDialog=()=>null;`,
+  './repository-checkouts': `export const RepositoryCheckouts=()=>null;`,
+  './forge-repository': `export const ProjectForgeBinding=()=>null;`,
+  './project-icon-settings': `export const ProjectIconSettings=()=>null;`,
+  './project-transfer': `export const ProjectTransferSettings=()=>null;`,
+  './project-deletion': `export const ProjectDeletion=()=>null;`,
+  './repository-card': `export const RepositoryCard=()=>null;`,
+  '../../runtime/preferences/task-default-settings': `export const TaskDefaultSettings=()=>null;`,
   '../../screens/repositories': `export const AddProject=()=>null;`,
 }
 const bundle = await build({
@@ -31,8 +40,10 @@ const bundle = await build({
 import {createRoot} from 'react-dom/client';
 import {TaskEmptyState} from '${root}/packages/extension-tasks/src/task-creation/task-empty-state';
 import {FolderPicker} from '${root}/apps/mobile/src/tasks/creation/folder-picker';
+import {ProjectSettings} from '${root}/packages/extension-scm/src/connections/projects-menu';
+import {RepositoryCheckouts} from '${root}/apps/mobile/src/scm/connections/repository-checkouts';
 window.calls=[];window.navigation=null;window.activeSession=false;
-const repository={id:'repo',name:'Project',path:'/project',branch:'main'};
+const repository={id:'repo',name:'Project',path:'/project',branch:'main'};window.repository=repository;
 const agents=[{id:'custom',name:'Custom home',provider:'codex'}];
 const workspace={repositories:[repository],agents,tasks:[]};
 const session={key:'session-key',sessionId:'native-session',title:'Terminal task',cwd:'/project',updatedAt:'2026-10-01T10:00:00Z',model:'gpt-6-sol'};
@@ -45,7 +56,7 @@ const profile={id:'computer',name:'Computer',connection:{address:'http://compute
 window.runtime={profile,profiles:[profile],activeId:'computer',snapshot,connected:true,overviews:[{profile,snapshot,connected:true}],call:request};
 const task={id:'draft',repositoryId:'repo',status:'draft',messages:[]};
 const app=createRoot(document.getElementById('app'));
-window.show=mode=>{window.calls=[];window.navigation=null;app.render(mode==='none'?null:mode==='desktop'?<TaskEmptyState key='desktop' task={task}/>:<FolderPicker key='mobile' repositories={[repository]} value='repo' prominent onChange={()=>{}}/>)};
+window.show=mode=>{window.calls=[];window.navigation=null;window.settingsDismissals=0;app.render(mode==='none'?null:mode==='desktop-startup'?<TaskEmptyState task={task}/>:mode==='mobile-startup'?<FolderPicker repositories={[repository]} value='repo' prominent onChange={()=>{}}/>:mode==='desktop'?<ProjectSettings key='desktop' repository={repository} onNavigate={()=>window.settingsDismissals++}/>:<RepositoryCheckouts key='mobile' repository={repository}/>)};
 window.show('desktop');`,
   },
   bundle: true,
@@ -88,7 +99,31 @@ try {
     '<style>body{font:16px system-ui}button,select{min-height:44px;margin:6px}section[role=dialog]{padding:20px;border:1px solid #888}pre{white-space:pre-wrap}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
+  for (const mode of ['desktop-startup', 'mobile-startup']) {
+    await page.evaluate((mode) => window.show(mode), mode)
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Import Codex terminal session', exact: true })
+        .count(),
+      0,
+    )
+    assert.deepEqual(await page.evaluate(() => window.calls), [])
+  }
   for (const mode of ['desktop', 'mobile']) {
+    await page.evaluate((mode) => {
+      window.repository.kind = 'scratch'
+      window.show(mode)
+    }, mode)
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Import Codex terminal session', exact: true })
+        .count(),
+      0,
+    )
+    await page.evaluate(() => {
+      delete window.repository.kind
+      window.show('none')
+    })
     console.log(`Checking ${mode} Codex import flow`)
     await page.setViewportSize(
       mode === 'desktop' ? { width: 800, height: 900 } : { width: 390, height: 844 },
@@ -142,6 +177,11 @@ try {
     assert.equal(
       await page.evaluate(() => window.navigation.entityId || window.navigation.params.taskId),
       'imported-thread',
+    )
+    assert.equal(
+      await page.evaluate(() => window.settingsDismissals),
+      1,
+      'Close project settings before opening the imported thread',
     )
     // Existing ownership navigates without creating another thread.
     await page.evaluate(() => {
