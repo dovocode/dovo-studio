@@ -156,7 +156,15 @@ try {
     false,
     'Closed PR tabs must not hydrate unused sections from disk',
   )
-  await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
+  assert.equal(await detail.getByTestId('PR title').textContent(), 'Improve pull request reviews')
+  await detail.getByRole('button', { name: 'View pull request files', exact: true }).click()
+  assert.equal(
+    await detail
+      .getByRole('tab', { name: 'Changes (2)', exact: true })
+      .getAttribute('aria-selected'),
+    'true',
+  )
+  assert.equal(await detail.getByTestId('PR title').isVisible(), true)
   await detail.getByText('Loading files…', { exact: true }).waitFor()
   await page.evaluate(() => window.releaseSection('changes'))
   await detail.getByRole('button', { name: '2 files changed', exact: true }).click()

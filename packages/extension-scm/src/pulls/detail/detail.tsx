@@ -279,7 +279,13 @@ function PullDetailContent({
         )}
         {detail && (
           <>
-            <header className="shrink-0 space-y-2 border-b bg-sidebar px-4 py-3 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]">
+            <header className="shrink-0 space-y-3 border-b border-border/60 px-4 py-4">
+              <h2
+                className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]"
+                data-testid="PR title"
+              >
+                {detail.pull.title}
+              </h2>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="outline">
                   <Signal signal={pullState(detail.pull)} />
@@ -289,10 +295,15 @@ function PullDetailContent({
                   title={detail.pull.author}
                 >
                   <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
-                  <span className="truncate">
-                    #{number} · {detail.pull.author}
-                  </span>
+                  <span className="truncate">{detail.pull.author}</span>
                 </span>
+                <span>#{number}</span>
+                <time
+                  dateTime={detail.pull.updatedAt}
+                  title={formatDateTime(detail.pull.updatedAt)}
+                >
+                  Updated {formatDateTime(detail.pull.updatedAt, { dateStyle: 'medium' })}
+                </time>
                 <a
                   data-dovo-external="true"
                   href={detail.pull.url}
@@ -322,7 +333,16 @@ function PullDetailContent({
                 <span className="font-mono" title={detail.pull.headSha}>
                   {detail.pull.headSha.slice(0, 8)}
                 </span>
-                <span className="ml-auto inline-flex shrink-0 gap-2 font-mono tabular-nums">
+                <span className="ml-auto inline-flex flex-wrap items-center gap-3 tabular-nums">
+                  <button
+                    type="button"
+                    onClick={() => selectTab('changes')}
+                    className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+                    aria-label="View pull request files"
+                  >
+                    <FileDiff className="size-3.5" aria-hidden />
+                    {detail.pull.changedFiles?.toLocaleString() ?? '—'} files
+                  </button>
                   <span className="text-status-success">
                     +{detail.pull.additions?.toLocaleString() ?? '—'}
                   </span>
@@ -335,7 +355,7 @@ function PullDetailContent({
             <div
               role="tablist"
               aria-label="PR detail sections"
-              className="flex shrink-0 gap-1 overflow-x-auto border-b bg-sidebar px-3 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]"
+              className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 px-4 py-2"
             >
               {(
                 [
@@ -394,7 +414,7 @@ function PullDetailContent({
                     tabs[next]?.focus()
                   }}
                   onClick={() => selectTab(item.id)}
-                  className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'border-primary/30 bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                  className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'border-border/70 bg-muted text-foreground shadow-sm forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                 >
                   <item.icon aria-hidden className="size-3.5" />
                   {item.label}

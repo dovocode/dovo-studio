@@ -476,19 +476,10 @@ export default function PullsScreen() {
                 <PullRequestIcon state={p.state} draft={p.draft} size={14} />
                 <Signal signal={pullState(p)} emphasis />
               </View>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.muted,
-                  {
-                    flex: 1,
-                    minWidth: 0,
-                  },
-                ]}
-              >
+              <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
+              <Text numberOfLines={1} style={[styles.muted, { flex: 1, minWidth: 0 }]}>
                 {p.repositoryName}
               </Text>
-              <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
               <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
             </View>
             <View
@@ -590,10 +581,25 @@ export default function PullsScreen() {
               </View>
             )}
             {!!p.labels.length && (
-              <Text numberOfLines={2} style={styles.muted}>
-                {p.labels.slice(0, 3).join(' · ')}
-                {p.labels.length > 3 ? ` · +${p.labels.length - 3} labels` : ''}
-              </Text>
+              <View accessibilityLabel="Labels" style={[styles.row, { flexWrap: 'wrap', gap: 6 }]}>
+                {p.labels.slice(0, 2).map((label) => (
+                  <View
+                    key={label}
+                    style={{
+                      maxWidth: 160,
+                      borderRadius: 6,
+                      backgroundColor: colors.surface,
+                      paddingHorizontal: 7,
+                      paddingVertical: 3,
+                    }}
+                  >
+                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                      {label}
+                    </Text>
+                  </View>
+                ))}
+                {p.labels.length > 2 && <Text style={styles.muted}>+{p.labels.length - 2}</Text>}
+              </View>
             )}
             {p.state === 'open' && !p.draft && <Signal signal={pullNextStep(p)} />}
           </Pressable>
