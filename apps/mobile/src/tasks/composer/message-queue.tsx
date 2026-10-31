@@ -19,7 +19,6 @@ import { Text } from '../../ui/content/text'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { QueueMenu } from './queue-menu'
-import { Action } from '../../ui/controls/action'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { useTheme } from '../../ui/theme'
@@ -261,7 +260,9 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
         }}
       >
         <Text style={styles.muted}>{queuePaused ? 'Paused' : 'Runs after this turn'}</Text>
-        <Action
+        <IconButton
+          icon={queuePaused ? 'play' : 'pause'}
+          variant={queuePaused ? 'filled' : 'plain'}
           label={
             head?.paused ? 'Resume first prompt' : task.queuePaused ? 'Run queue' : 'Pause queue'
           }
@@ -467,7 +468,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                       <Text
                         numberOfLines={1}
                         ellipsizeMode="tail"
-                        style={[styles.text, { fontSize: 14, flex: 1, minWidth: 0 }]}
+                        style={[styles.text, { fontSize: 14, lineHeight: 20, minWidth: 0 }]}
                       >
                         {preview.replace(/\s+/g, ' ')}
                         {!!message.text &&

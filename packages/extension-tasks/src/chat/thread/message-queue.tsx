@@ -280,9 +280,12 @@ export function MessageQueue({
             Stop waiting
           </button>
         )}
-        <button
-          type="button"
-          className="shrink-0 rounded-md px-2 py-1.5 font-medium hover:bg-accent disabled:opacity-40"
+        <IconButton
+          label={
+            pausedHead ? 'Resume first prompt' : task.queuePaused ? 'Run queue' : 'Pause queue'
+          }
+          variant={pausedHead || task.queuePaused ? 'secondary' : 'ghost'}
+          className="size-7 shrink-0 rounded-full"
           disabled={
             !connected ||
             busy ||
@@ -303,8 +306,8 @@ export function MessageQueue({
             )
           }
         >
-          {pausedHead ? 'Resume first prompt' : task.queuePaused ? 'Run queue' : 'Pause queue'}
-        </button>
+          {pausedHead || task.queuePaused ? <Play size={14} /> : <Pause size={14} />}
+        </IconButton>
       </div>
       <Queue
         embedded={embedded}

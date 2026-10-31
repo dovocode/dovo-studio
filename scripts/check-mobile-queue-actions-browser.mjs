@@ -62,10 +62,6 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       contents: `export const IconButton=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
     },
     {
-      path: '../../ui/controls/action',
-      contents: `export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
-    },
-    {
       path: '../../ui/layout/sheet',
       contents: `export const Sheet=({children})=><div>{children}</div>;`,
     },
