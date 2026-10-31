@@ -123,9 +123,16 @@ try {
     'pair',
     `appId: com.dovo.studio
 ---
-- tapOn:
-    text: Add a new computer
-    optional: true
+- runFlow:
+    when:
+      visible: 'Use this code.*'
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: Add a new computer
+          direction: DOWN
+          centerElement: true
+      - tapOn: Add a new computer
 - tapOn:
     id: Connect
 - extendedWaitUntil:
