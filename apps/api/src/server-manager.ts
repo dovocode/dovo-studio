@@ -6,6 +6,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { readConnection, type LocalConnection } from './connection.js'
 import { discoverNetworks, networkUrls } from './network.js'
 import { readServerConfig, writePrivateJson } from './server-config.js'
+// Cold databases may need to rebuild derived search indexes before publishing a connection.
+export const runtimeStartupTimeoutMs = 5 * 60_000
 export class ServerShutdownUnconfirmedError extends Error {}
 // An admitted launch waits here, before the runtime loads, until its owner has recorded the PID.
 // If the owner dies first, stdin closes and the process exits without opening the database.
@@ -178,7 +180,7 @@ export async function startServer(
       admit(pid)
       child.stdin?.end('admitted')
     }
-    const deadline = Date.now() + 30000
+    const deadline = Date.now() + runtimeStartupTimeoutMs
     while (Date.now() < deadline && child.exitCode === null) {
       try {
         const connection = readConnection(join(directory, 'runtime-connection.json'))

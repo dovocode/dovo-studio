@@ -902,7 +902,9 @@ recovery journal (`server-update-transaction.json`). Service restart/update and 
 boot resolve an interrupted activation before opening the database. A failed candidate restores the
 old release and database only after the candidate is confirmed stopped. If stopping or recovery
 fails, the error names the retained backup; Dovo does not overwrite a database beneath a live
-process.
+process. Startup waits up to five minutes for authenticated runtime readiness, allowing cold
+databases to rebuild derived indexes before activation is judged unsuccessful. The same startup
+budget applies to standalone server launches.
 
 Homebrew activation keeps the previous Cellar installation by disabling automatic install cleanup
 during the upgrade. Recovery pins the service to that previous launcher; keep it until the updated
