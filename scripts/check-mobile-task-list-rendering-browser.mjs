@@ -174,7 +174,7 @@ for (const [path, importer] of [
   ['../../ui/controls/action', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/layout/sheet', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/content/text', 'tasks/list/'],
-  ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
+  ['../../ui/controls/icon', 'tasks/list/'],
   ['../../ui/theme', 'tasks/list/'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
   ['../theme', 'ui/content/empty-state.tsx'],
