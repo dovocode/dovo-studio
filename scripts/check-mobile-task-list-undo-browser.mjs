@@ -47,7 +47,7 @@ const stubs = [
   },
   {
     path: '../../ui/controls/icon',
-    importer: mobile + 'tasks/list/task-list-row.tsx',
+    importer: mobile + 'tasks/list/',
     contents: controls,
   },
   { path: '../../ui/content/text', importer: mobile + 'tasks/list/', contents: controls },
@@ -187,6 +187,18 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Undo snooze' }).count(), 0)
   await page.evaluate(() => window.reset(true))
   await page.getByTestId('Thread row').waitFor()
+
+  for (const action of ['settle', 'snooze']) {
+    await page.getByRole('button', { name: `Menu ${action} thread` }).click()
+    await page.getByRole('button', { name: `Undo ${action}` }).waitFor()
+    const beforeDismiss = await page.evaluate(() => window.requests.length)
+    await page.getByRole('button', { name: 'Dismiss undo notification' }).click()
+    assert.equal(await page.getByTestId('Task list undo').count(), 0)
+    assert.equal(await page.getByTestId('Thread row').count(), 0)
+    assert.equal(await page.evaluate(() => window.requests.length), beforeDismiss)
+    await page.evaluate(() => window.reset(true))
+    await page.getByTestId('Thread row').waitFor()
+  }
 
   await page.getByRole('button', { name: 'Menu settle thread' }).click()
   await page.getByRole('button', { name: 'Undo settle' }).waitFor()

@@ -13,6 +13,7 @@ import { Schema } from 'effect'
 import type { RuntimeProfile, Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/context'
 import { Text } from '../../ui/content/text'
+import { Icon } from '../../ui/controls/icon'
 import { useTheme } from '../../ui/theme'
 import { taskListActionInput, type TaskListAction } from './task-list-action'
 
@@ -145,6 +146,14 @@ export function TaskListUndoProvider({ children }: { children: ReactNode }) {
             style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
           >
             <Text style={{ color: colors.accent, fontWeight: '700' }}>Undo</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss undo notification"
+            onPress={() => setNotice(null)}
+            style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Icon name="close" size={18} color={colors.muted} />
           </Pressable>
         </View>
       )}

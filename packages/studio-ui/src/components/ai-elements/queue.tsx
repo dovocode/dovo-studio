@@ -36,7 +36,7 @@ export function QueueSectionTrigger({ className, children, ...props }: Component
   )
 }
 export function QueueList({ className, ...props }: ComponentProps<'ol'>) {
-  return <ol className={cn('mt-1 max-h-36 overflow-auto', className)} {...props} />
+  return <ol tabIndex={0} className={cn('mt-1 max-h-36 overflow-auto', className)} {...props} />
 }
 export function QueueItem({ className, ...props }: ComponentProps<'li'>) {
   return (

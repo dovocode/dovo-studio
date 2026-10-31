@@ -24,6 +24,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   const runtime = useRuntime()
   const account = useOptionalMobileAccount()
   const { busy, error, act } = useAction()
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null)
   const [visibleFor, setVisibleFor] = useState<string | null>(null)
   const [attempted, setAttempted] = useApplicationState(false)
   const [details, setDetails] = useApplicationState(false)
@@ -62,6 +63,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   const renewing = unavailable.some((entry) => account?.recovery?.[entry.profile.id]?.pending)
   useEffect(() => {
     if (!offline) {
+      setDismissedFor(null)
       setVisibleFor(null)
       setAttempted(false)
       setDetails(false)
@@ -71,7 +73,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
     const timer = setTimeout(() => setVisibleFor(noticeKey), urgent ? 2500 : 15_000)
     return () => clearTimeout(timer)
   }, [offline, noticeKey, urgent])
-  if (!offline || (visibleFor !== noticeKey && !busy)) return null
+  if (!offline || dismissedFor === noticeKey || (visibleFor !== noticeKey && !busy)) return null
   const subject =
     unavailable.length === 1 && scoped.length === 1 ? 'Offline' : `${unavailable.length} offline`
   // Reconnecting cannot fix a revoked pairing; say what will.
@@ -111,6 +113,10 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
             ? setDetails(true)
             : reconnect()
         }
+        onDismiss={() => {
+          setDismissedFor(noticeKey)
+          setDetails(false)
+        }}
         onLongPress={() => setDetails(true)}
       />
       {details && (

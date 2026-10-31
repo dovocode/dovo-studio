@@ -201,7 +201,7 @@ try {
   await page.getByText('Please add a test', { exact: true }).waitFor()
   const detail = page.locator('[aria-label="Pull request details"]')
   const content = detail.locator('[aria-label="Pull request content"]')
-  const heading = detail.getByRole('heading', { name: /Improve pull request reviews/ })
+  const heading = detail.getByRole('heading', { level: 1, name: /Improve pull request reviews/ })
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
     .locator('[aria-label="Pull request status"]')
