@@ -1,16 +1,17 @@
 appId: com.dovo.studio
 ---
-# A cold checkout/provider startup took 27s on the hosted Mac. Give startup its
-# own budget, then verify the fixture's five-second streamed reply separately.
+# Maestro measures these timeouts from the last interaction (Send), including
+# earlier waits. Allow 60s for cold startup, 20s for output, then 30s to settle.
 - extendedWaitUntil:
     visible: .*Working on this request.*
     timeout: 60000
 - extendedWaitUntil:
     visible: .*Verified fixture response.*
-    timeout: 20000
+    timeout: 80000
 # Final output precedes checkpoint capture. Wait for the turn to settle before
 # navigating or submitting the next prompt; neither run may pass on old output.
+# The primary control changes from Stop to Send only after the turn settles.
 - extendedWaitUntil:
-    notVisible:
-      id: Stop
-    timeout: 30000
+    visible:
+      id: Send
+    timeout: 110000

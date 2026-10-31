@@ -52,6 +52,9 @@ appId: com.dovo.studio
     id: Message
 - inputText: Installed app smoke request
 - tapOn: Dismiss keyboard
+# The keyboard moves Send; wait before Maestro resolves its tap coordinates.
+- waitForAnimationToEnd:
+    timeout: 10000
 - tapOn:
     id: Send
 - runFlow: fixture-response.yaml
@@ -75,6 +78,8 @@ appId: com.dovo.studio
     id: Message
 - inputText: Installed app first send
 - tapOn: Dismiss keyboard
+- waitForAnimationToEnd:
+    timeout: 10000
 - tapOn:
     id: Send
 - runFlow: fixture-response.yaml
