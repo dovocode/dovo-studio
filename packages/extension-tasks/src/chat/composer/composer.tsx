@@ -1569,17 +1569,15 @@ export function Composer({
               ? 'Edit queued message…'
               : task.archivedAt
                 ? 'Restore this archived thread to continue'
-                : task.archived
-                  ? 'Send a message to reopen this thread…'
-                  : task.status === 'running'
-                    ? steerFirst
-                      ? 'Steer the agent while it works…'
-                      : 'Queue a follow-up while the agent works…'
-                    : firstMessage
-                      ? startup
-                        ? 'Ask anything, build or fix...'
-                        : 'What would you like to build or fix?'
-                      : 'Ask a follow-up or describe a change…'
+                : task.status === 'running'
+                  ? steerFirst
+                    ? 'Steer the agent while it works…'
+                    : 'Queue a follow-up while the agent works…'
+                  : firstMessage
+                    ? startup
+                      ? 'Ask anything, build or fix...'
+                      : 'What would you like to build or fix?'
+                    : 'Ask a follow-up or describe a change…'
           }
         />
       </ComposerSurface>

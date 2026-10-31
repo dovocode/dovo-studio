@@ -543,6 +543,19 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                       onPress: () => change('steer', message.id),
                     },
                     {
+                      title: 'Remove',
+                      label: `Remove queued message ${index + 1}`,
+                      icon: 'close',
+                      disabled:
+                        !connected ||
+                        busy ||
+                        task.archived ||
+                        !!task.archivedAt ||
+                        !!pendingMessage ||
+                        !!message.steering,
+                      onPress: () => change('remove', message.id),
+                    },
+                    {
                       title: 'Return to composer',
                       label: `Return message ${index + 1} to composer`,
                       icon: 'restore',

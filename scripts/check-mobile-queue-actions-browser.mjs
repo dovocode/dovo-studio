@@ -99,6 +99,7 @@ try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('about:blank')
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.menus['Actions for queued message 1'])
@@ -399,6 +400,17 @@ try {
   })
   await runQueue.waitFor()
   assert.equal(await runQueue.isEnabled(), true)
+  await page.goto('about:blank')
+  await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.waitForFunction(() => !!window.menus?.['Actions for queued message 1'])
+  await page.evaluate(() =>
+    window.menus['Actions for queued message 1'].find((item) => item.title === 'Remove').onPress(),
+  )
+  await page.waitForFunction(() => window.requests.length === 1)
+  assert.equal(await page.evaluate(() => window.requests[0].input.action), 'remove')
+  assert.equal(await page.evaluate(() => window.requests[0].input.messageId), 'a')
+  await page.evaluate(() => window.finish({ ok: true }))
   assert.deepEqual(errors, [])
   console.log(
     'Mobile queue actions: capability-gated full-order CAS, synchronous admission, optimistic presentation and rollback, snapshot handoff lock, confirmed duplicate reveal, fresh duplicate IDs and steering anchor guards passed.',

@@ -261,6 +261,14 @@ try {
     true,
   )
   await page.evaluate(() => window.setPending([]))
+  await page.reload()
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.getByRole('button', { name: 'Remove queued message 1', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.calls[0].action), 'remove')
+  assert.equal(await page.evaluate(() => window.calls[0].messageId), 'one')
+  await page.evaluate(() => window.reject())
+  await page.getByRole('alert').waitFor()
+  assert.equal(await page.getByText('one', { exact: true }).isVisible(), true)
   console.log('Desktop queue handoff checks passed')
 } finally {
   await browser.close()

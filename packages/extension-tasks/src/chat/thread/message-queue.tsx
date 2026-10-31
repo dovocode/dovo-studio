@@ -12,6 +12,7 @@ import { useQueueEdit } from '../composer/queue-edit'
 import { useEffect, useRef, type DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  Trash2,
   Eye,
   Clock3,
   SlidersHorizontal,
@@ -630,6 +631,22 @@ export function MessageQueue({
                     onClick={() => void act('duplicate', message.id)}
                   >
                     <Copy size={12} />
+                  </IconButton>
+
+                  <IconButton
+                    label={`Remove queued message ${index + 1}`}
+                    className="size-6"
+                    disabled={
+                      !connected ||
+                      busy ||
+                      task.archived ||
+                      !!task.archivedAt ||
+                      !!message.steering ||
+                      pendingIds.has(message.id)
+                    }
+                    onClick={() => void act('remove', message.id)}
+                  >
+                    <Trash2 size={12} />
                   </IconButton>
 
                   <IconButton
