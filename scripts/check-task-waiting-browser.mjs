@@ -14,7 +14,8 @@ try {
         'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
       '../../ui/layout/sheet': 'export const useSheetNavigation=()=>action=>action();',
       'expo-router': 'export const router={push:href=>{window.opened=href}};',
-      '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
+      '../../runtime/connection/provider':
+        'export const useRuntime=()=>window.store;export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));',
       '../../ui/content/open-link':
         'export const openAppLink=async url=>{window.opened=url};export const useOpenAppLink=()=>openAppLink;',
       '../../ui/controls/icon': 'export const Icon=()=> <span>×</span>;',

@@ -27,7 +27,7 @@ const root=createRoot(document.getElementById('app'));root.render(<App/>);window
   [
     {
       path: '@dovo/protocol',
-      contents: `export {conversationPagesSize,trimConversationPages} from '${root}packages/protocol/src/conversation/history-retention.ts';export const conversationPageSchema={};export const compactConversationPages=pages=>pages;export const mergeConversationHistory=(live,pages)=>({...live,messages:[...new Map([...pages.flatMap(page=>page.messages),...live.messages].map(message=>[message.id,message])).values()]});`,
+      contents: `export {conversationPageMessages} from '${root}packages/protocol/src/conversation/history.ts';export {conversationPagesSize,trimConversationPages} from '${root}packages/protocol/src/conversation/history-retention.ts';export const conversationPageSchema={};export const compactConversationPages=pages=>pages;export const mergeConversationHistory=(live,pages)=>({...live,messages:[...new Map([...pages.flatMap(page=>page.messages),...live.messages].map(message=>[message.id,message])).values()]});`,
     },
     {
       path: 'react-native',
@@ -40,7 +40,7 @@ const root=createRoot(document.getElementById('app'));root.render(<App/>);window
 const profile={connection:{address:'http://localhost',token:'device'}};
 const readCache={read:()=>new Promise((resolve,reject)=>{window.finishRestore=reject}),write:async()=>{window.writes++}};
 const read=async()=>{window.reads++;return {messages:[{id:'old'}],turns:[],historyRevision:1}};
-export const useRuntime=()=>({profile,connected:true,readCache,read});
+export const useRuntime=()=>({profile,connected:true,readCache,read});export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));
 `,
     },
   ],

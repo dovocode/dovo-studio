@@ -166,15 +166,32 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       window.connected = false
       window.refresh()
     })
-    await page
-      .getByText(/Reconnect to (?:load|the image)/)
-      .first()
-      .waitFor()
+    if (mobile) {
+      await page.locator('[data-revision="1"]').waitFor()
+      assert.equal(await page.locator('img').count(), 3, 'Loaded tool images stay visible offline')
+      assert.equal(await page.getByText(/Reconnect to (?:load|the image)/).count(), 0)
+    } else {
+      await page
+        .getByText(/Reconnect to (?:load|the image)/)
+        .first()
+        .waitFor()
+    }
     await page.evaluate(() => {
       window.connected = true
       window.refresh()
     })
     await page.waitForFunction(() => document.querySelectorAll('img').length === 3)
+    if (mobile) {
+      await page.locator('[data-revision="2"]').waitFor()
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      assert.equal(
+        await page.evaluate(() => window.requests.length),
+        requests.length,
+        'Reconnect must reuse loaded mobile tool images without downloading them again',
+      )
+    }
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile (browser adapters)' : 'Desktop'}: native generated/viewed/saved images, retry, large preview, pairing-aware requests and reconnect passed.`,

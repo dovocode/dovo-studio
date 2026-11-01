@@ -37,7 +37,7 @@ const mocks = {
   '@dovo/protocol': `export {parsePdfViewerMessage} from '${root}/packages/protocol/src/conversation/pdf-view-state.ts';export const createRuntimeClient=c=>({url:p=>new URL(p,c.address).href});export const taskFileShareSchema={},taskImageReadSchema={};export const randomUUID=()=>crypto.randomUUID();export const localMarkdownPath=p=>p,markdownFileName=p=>p.split('/').pop(),artifactTemplatePrompt=()=>'',richMarkdown=()=>[],cachedMarkdownParts=()=>()=>[];`,
   '@dovo/studio-core/repository-open': 'export const useRepositoryOpen=()=>()=>{};',
   '@dovo/studio-core':
-    'export const useWorkspace=()=>window.runtime;export const useStudioHost=()=>({});',
+    'export const useWorkspace=()=>window.runtime;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});',
   '@dovo/studio-ui': `export const MessageResponse=()=>null,FileTypeIcon=()=>null,RepositoryOpenItems=()=>null,DropdownMenu={};export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Dialog=({children})=><div>{children}</div>,DialogContent=({children})=><div>{children}</div>,DialogTitle=({children})=><h1>{children}</h1>;`,
   './task-visualization': 'export const TaskVisualization=()=>null;',
   '../composer/chat-image-edit-context': 'export const EditChatImage=()=>null;',
