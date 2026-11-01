@@ -87,7 +87,12 @@ export function useFileMentions({
       ? [
           ...(onCommand ? commandSuggestions(mention.query) : []),
           ...(onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())
-            ? [{ id: 'sidechat', description: 'Open a side chat or ask about the current draft' }]
+            ? [
+                {
+                  id: 'sidechat',
+                  description: 'Open side chats or start an agent side chat from the draft',
+                },
+              ]
             : []),
         ].map((command) => ({
           kind: 'command' as const,

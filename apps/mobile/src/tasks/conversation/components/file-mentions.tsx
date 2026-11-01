@@ -100,7 +100,7 @@ export function FileMentions({
         }))
       : []),
     ...(mention.trigger === '/' && onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())
-      ? [{ kind: 'command' as const, value: 'sidechat', detail: 'Ask a side question' }]
+      ? [{ kind: 'command' as const, value: 'sidechat', detail: 'Start an agent side chat' }]
       : []),
     ...(mention.trigger === '/' && onCommand
       ? commandSuggestions(mention.query).map((command) => ({

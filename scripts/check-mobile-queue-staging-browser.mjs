@@ -48,7 +48,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../../runtime/connection/provider',
       importer: actions,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queuePausePreservationSupported:true,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
+      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queuePausePreservationSupported:true,directMessageSupported:window.directSupported!==false,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
     },
     {
       path: '../../../runtime/preferences/app-preferences',
@@ -281,6 +281,51 @@ try {
   assert.equal(automaticRetry.queueOnly, undefined)
   await page.evaluate(() => window.finish())
   await page.waitForFunction(() => !window.actions.busy)
+  // Send now bypasses a paused head and retains its request identity after a failed transport.
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      status: 'review',
+      queuePaused: true,
+      queue: [{ id: 'held', role: 'user', text: 'Wait', paused: true }],
+    })),
+  )
+  await input.fill('Send only this now')
+  const directIndex = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() => {
+    window.fail = true
+    void window.actions.run(() => window.actions.submit('direct'))
+  })
+  await page.waitForFunction((index) => window.requests.length === index + 1, directIndex)
+  const direct = await page.evaluate((index) => window.requests[index].input, directIndex)
+  assert.equal(direct.sendNow, true)
+  assert.equal(direct.queueOnly, undefined)
+  assert.equal(direct.preserveQueuePause, undefined)
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  await page.evaluate(() => {
+    window.fail = false
+    void window.actions.run(() => window.actions.submit('direct'))
+  })
+  await page.waitForFunction((index) => window.requests.length === index + 2, directIndex)
+  assert.equal(
+    await page.evaluate((index) => window.requests[index + 1].input.messageId, directIndex),
+    direct.messageId,
+  )
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await page.evaluate(() => window.task.queuePaused), true)
+  assert.deepEqual(await page.evaluate(() => window.task.queue.map((message) => message.id)), [
+    'held',
+  ])
+  await input.fill('Old runtime must not receive a direct send')
+  await page.evaluate(() => {
+    window.directSupported = false
+    window.setTask((task) => ({ ...task }))
+  })
+  await page.evaluate(() => void window.actions.run(() => window.actions.submit('direct')))
+  await page.waitForFunction(() => window.actions.error.includes('send without resuming'))
+  assert.equal(await page.evaluate(() => window.requests.length), directIndex + 2)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile queue staging: capability gate, atomic queue-only payload, synchronous admission, retry identity, editable focused input, newer draft preservation, paused default and explicit Send passed.',

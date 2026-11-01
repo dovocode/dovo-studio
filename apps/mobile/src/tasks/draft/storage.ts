@@ -13,6 +13,10 @@ const recordSchema = mutableStruct({
   text: Schema.String,
   restored: Schema.optional(Schema.String),
   forked: Schema.optional(Schema.String),
+  handoffReceipts: Schema.optional(mutableArray(Schema.String)),
+  sideThreadCreation: Schema.optional(
+    mutableStruct({ id: Schema.String, objective: Schema.String }),
+  ),
   fork: Schema.optional(
     mutableStruct({
       id: Schema.String,
@@ -41,7 +45,7 @@ const recordSchema = mutableStruct({
         id: Schema.String,
         text: Schema.String,
         attachmentIds: mutableArray(Schema.String),
-        mode: Schema.Literals(['queue', 'steer', 'stage']),
+        mode: Schema.Literals(['queue', 'steer', 'stage', 'direct']),
         title: Schema.optional(Schema.String),
         runId: Schema.optional(Schema.String),
         turnSettings: Schema.optional(turnSettingsSchema),
@@ -62,7 +66,13 @@ function decodeRecord(raw: string | null): DraftRecord | null {
     : { text: raw }
 }
 const encodeRecord = (record: DraftRecord) =>
-  record.submission || record.restore || record.restored || record.fork || record.forked
+  record.submission ||
+  record.restore ||
+  record.restored ||
+  record.fork ||
+  record.forked ||
+  record.handoffReceipts?.length ||
+  record.sideThreadCreation
     ? prefix + JSON.stringify(record)
     : record.text
 
@@ -170,19 +180,36 @@ export function createDraftStorage(storage: Storage) {
         }),
       )
     })
-  const appendEffect = (key: string, text: string, initial: string) =>
+  const appendEffect = (
+    key: string,
+    text: string,
+    initial: string,
+    receiptId?: string,
+    legacyKey?: string,
+  ) =>
     serialize(
       key,
       Effect.gen(function* () {
-        const previous = yield* load(key)
+        const previous = yield* load(key, legacyKey)
         const current = publishedText.get(key) ?? previous?.text ?? initial
-        const value = [current, text].filter(Boolean).join('\n\n')
+        if (receiptId && previous?.handoffReceipts?.includes(receiptId)) {
+          if (dirty.has(key)) yield* save(key, previous)
+          return
+        }
+        // A fresh device can hydrate the server draft after this handoff was persisted there.
+        const value =
+          receiptId && !previous && !publishedText.has(key) && current.includes(text)
+            ? current
+            : [current, text].filter(Boolean).join('\n\n')
         appendedAt.set(key, ++revision)
         publishedText.set(key, value)
         listeners.get(key)?.forEach((listener) => listener(value))
         yield* save(key, {
           ...previous,
           text: value,
+          ...(receiptId
+            ? { handoffReceipts: [...(previous?.handoffReceipts ?? []), receiptId] }
+            : {}),
           submission: previous?.submission?.accepted ? undefined : previous?.submission,
         })
       }),
@@ -351,6 +378,47 @@ export function createDraftStorage(storage: Storage) {
       { discard: true },
     )
   return {
+    prepareSideThreadEffect: (
+      key: string,
+      id: string,
+      objective: string,
+      initial: string,
+      legacyKey?: string,
+    ) =>
+      serialize(
+        key,
+        Effect.gen(function* () {
+          const previous = yield* load(key, legacyKey)
+          if (previous?.sideThreadCreation?.objective === objective) {
+            if (dirty.has(key)) yield* save(key, previous)
+            return previous.sideThreadCreation.id
+          }
+          yield* save(key, {
+            ...previous,
+            text: publishedText.get(key) ?? previous?.text ?? initial,
+            sideThreadCreation: { id, objective },
+          })
+          return id
+        }),
+      ),
+    finishSideThreadEffect: (key: string, id: string) =>
+      serialize(
+        key,
+        Effect.gen(function* () {
+          const previous = yield* load(key)
+          if (previous?.sideThreadCreation?.id !== id) return
+          yield* save(key, {
+            ...previous,
+            text: publishedText.get(key) ?? previous.text,
+            sideThreadCreation: undefined,
+          }).pipe(
+            Effect.catch((error) => {
+              records.set(key, previous)
+              return Effect.fail(error)
+            }),
+          )
+        }),
+      ),
     subscribe(key: string, listener: (value: string) => void) {
       const subscribers = listeners.get(key) ?? new Set<(value: string) => void>()
       subscribers.add(listener)

@@ -1,6 +1,12 @@
 import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
-import { pullChangesSnapshot } from '@dovo/protocol'
+import {
+  buildPullReviewObjective,
+  pullChangesSnapshot,
+  pullLinkedTasks,
+  type PullReviewSelection,
+  type Task,
+} from '@dovo/protocol'
 import { PullSectionStatus } from './section-status'
 import { PullStack } from './stack'
 import { CreatePull } from '../list/create'
@@ -21,10 +27,12 @@ import { HeaderContent, Button, Badge, MessageResponse, ProjectIcon } from '@dov
 import {
   ArrowLeft,
   ArrowUpRight,
+  Bot,
   FileDiff,
   GitBranch,
   ListChecks,
   MessageSquare,
+  MessageSquareShare,
   RefreshCw,
 } from 'lucide-react'
 import { PullComments } from './comments'
@@ -33,6 +41,7 @@ import { PullStatus, Signal } from './status'
 import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
+import { PullAskAgent } from './ask-agent'
 import { PullPipelineRuns } from './pipeline-runs'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 type PullTab = 'overview' | 'changes' | 'checks'
@@ -49,6 +58,14 @@ type PullDetailProps = {
   onTabChange?: (tab: PullTab) => void
   initialTab?: PullTab
   initialFragment?: string
+  /**
+   * The thread showing this PR. Agent feedback goes to it only when it explicitly links this PR;
+   * otherwise feedback starts a new task as usual.
+   */
+  linkedThread?: {
+    task: Pick<Task, 'title' | 'pullRequest' | 'linkedPullRequests' | 'example'>
+    onAsk: (objective: string) => void
+  }
 }
 export function PullDetail(props: PullDetailProps) {
   const { activeRuntimeId } = useWorkspace()
@@ -82,6 +99,7 @@ function PullDetailContent({
   embedded = false,
   initialTab,
   initialFragment = '',
+  linkedThread,
 }: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
@@ -123,6 +141,12 @@ function PullDetailContent({
   const [discussionFilter, setDiscussionFilter] = useApplicationState<'all' | 'review' | 'comment'>(
     'all',
   )
+  const thread =
+    linkedThread && detail && pullLinkedTasks([linkedThread.task], detail.pull.url).length
+      ? { title: linkedThread.task.title, onAsk: linkedThread.onAsk }
+      : undefined
+  // Without a hosting thread that links this PR, agent questions go through an explicit chooser.
+  const [asking, setAsking] = useApplicationState<{ selection?: PullReviewSelection } | null>(null)
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const reviews = latestPullReviews(discussion)
   const selectTab = (value: typeof tab) => {
@@ -224,6 +248,31 @@ function PullDetailContent({
           >
             <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
           </Button>
+          {detail && thread && (
+            <Button
+              size="sm"
+              variant="outline"
+              title={`Add this PR’s review context to the “${thread.title}” draft`}
+              aria-label={`Ask in linked thread ${thread.title}`}
+              onClick={() => thread.onAsk(buildPullReviewObjective(detail))}
+            >
+              <MessageSquareShare className="size-3.5" />
+              <span className="hidden @lg/pr-detail:inline">Ask in thread</span>
+            </Button>
+          )}
+          {detail && repository && !thread && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Ask an agent in a linked thread’s side chat or a new review task"
+              aria-label="Ask agent about this PR"
+              disabled={!connected}
+              onClick={() => setAsking({})}
+            >
+              <Bot className="size-3.5" />
+              <span className="hidden @lg/pr-detail:inline">Ask agent</span>
+            </Button>
+          )}
           {detail && repository && (
             <StartPullTask
               repositoryId={repositoryId}
@@ -480,21 +529,16 @@ function PullDetailContent({
                 {error}
               </p>
             )}
-            {(detail.stale || detail.refreshError || !connected) && (
+            {(!connected || (detail.refreshError && !error)) && (
               <p
                 role="status"
-                className="mb-4 text-xs text-status-warning [overflow-wrap:anywhere]"
+                className="mb-2 text-xs text-muted-foreground [overflow-wrap:anywhere]"
               >
                 {!connected
                   ? readConnected
-                    ? 'Original computer offline · reading through an available source. Changes remain unavailable.'
-                    : 'Offline · showing last loaded details.'
-                  : detail.refreshError
-                    ? `Refresh failed: ${detail.refreshError}`
-                    : 'Showing cached details · refreshing in background.'}
-                {detail.cachedAt
-                  ? ` Last fetched ${formatDateTime(detail.cachedAt, { timeStyle: 'medium' })}.`
-                  : ''}
+                    ? 'Original computer offline · viewing latest available details.'
+                    : 'Offline · reconnect to refresh.'
+                  : `Unable to refresh: ${detail.refreshError}`}
               </p>
             )}
             {detail.warnings.map((warning) => (
@@ -716,6 +760,8 @@ function PullDetailContent({
                   initialFragment={initialFragment}
                   repositoryId={repositoryId}
                   onPosted={changed}
+                  thread={thread}
+                  onAskAgent={repository ? (selection) => setAsking({ selection }) : undefined}
                   onSteer={(value, baseline) => {
                     if (!repository)
                       throw new Error('Connect this project before starting an agent task.')
@@ -727,6 +773,14 @@ function PullDetailContent({
               )}
             </section>
           </div>
+          {asking && repository && (
+            <PullAskAgent
+              repositoryId={repositoryId}
+              detail={detail}
+              selection={asking.selection}
+              onClose={() => setAsking(null)}
+            />
+          )}
           {creatingStack && repository && (
             <CreatePull
               initialRepositoryId={repositoryId}

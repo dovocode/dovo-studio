@@ -50,6 +50,7 @@ import {
   nativeTodos,
   supportsAccess,
   permissionPolicyIssue,
+  permissionPolicyWithinCeiling,
   effectivePermissionPolicy,
   resolveTaskAgent,
   applyTurnSettings,
@@ -255,6 +256,18 @@ export class TaskTurnRunner {
           )
         const selectedAgent = defaultAgent && applyTurnSettings(defaultAgent, settings)
         if (!selectedAgent) throw new HttpError(400, 'Choose a harness or agent first')
+        if (task.sideThread) {
+          const parent = this.store
+            .get()
+            .tasks.find((item) => item.id === task.sideThread?.parentTaskId)
+          const parentAgent = parent && resolveTaskAgent(parent, this.store.get().agents)
+          if (
+            !permissionPolicyWithinCeiling(task.sideThread.permissionCeiling, selectedAgent) ||
+            !parentAgent ||
+            !permissionPolicyWithinCeiling(parentAgent, selectedAgent)
+          )
+            throw new HttpError(403, 'Side-thread permissions cannot exceed their parent.')
+        }
         const policyIssue = permissionPolicyIssue(selectedAgent)
         if (policyIssue) throw new HttpError(400, policyIssue)
         // A plan request narrows only the turn answering it; the next prompt restores the thread's

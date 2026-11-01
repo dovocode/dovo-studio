@@ -744,6 +744,26 @@ export const taskSchema = mutableStruct({
       snapshot: Schema.optional(Schema.String),
     }),
   ),
+  sideThread: Schema.optional(
+    mutableStruct({
+      parentTaskId: Schema.String,
+      objective: maxValue(Schema.String, 120000),
+      contextMessageCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      parentHistoryRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      contextLastMessageId: Schema.optional(Schema.String),
+      contextHash: Schema.String,
+      source: Schema.Literals(['snapshot', 'checkpoint', 'head', 'scratch']),
+      reviewBaseline: Schema.optional(Schema.String),
+      broughtBackThrough: Schema.optional(Schema.String),
+      broughtBackText: Schema.optional(Schema.String),
+      permissionCeiling: mutableStruct({
+        provider: providerSchema,
+        permission: agentSchema.fields.permission,
+        approvalPolicy: Schema.optional(approvalPolicySchema),
+        sandboxMode: Schema.optional(sandboxModeSchema),
+      }),
+    }),
+  ),
   // Runtime-owned: the shared agent checklist, from native events or the regular task tool.
   nativeTodos: Schema.optional(agentTodosSchema),
   // Runtime-owned: how full the agent's context window is, from its latest usage report.

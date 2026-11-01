@@ -9,10 +9,10 @@ const built = await bundleBrowser(
       resolveDir: root,
       loader: 'tsx',
       contents: `
-import {createRoot} from 'react-dom/client';
+import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {useConversationHistory} from '${root}apps/mobile/src/tasks/conversation/state/use-conversation-history.ts';
 const live={id:'thread',messages:[{id:'m650',role:'assistant',text:'latest'}],turns:[],historyBefore:'m650',historyRevision:1};
-function App(){const history=useConversationHistory(live,false);window.historyState=history;return <div>{history.task.messages.length}</div>}
+function App(){const[current,setLive]=useState(live);const[mode,setMode]=useState(false);const[connected,setConnected]=useState(true);window.setLive=setLive;window.setHistoryMode=setMode;window.connected=connected;window.setConnected=setConnected;const history=useConversationHistory(current,mode);window.historyState=history;return <div>{history.task.messages.length}</div>}
 const app=createRoot(document.getElementById('app'));app.render(<App/>);window.unmount=()=>app.unmount();`,
     },
     bundle: true,
@@ -37,7 +37,7 @@ const app=createRoot(document.getElementById('app'));app.render(<App/>);window.u
       contents: `
 const profile={connection:{address:'http://localhost',token:'memory-fixture-device-token'}};
 const read=async(_path,{before})=>{window.requests.push(before);const end=Number(before.slice(1));const start=Math.max(0,end-50);return {messages:Array.from({length:end-start},(_,index)=>({id:'m'+(start+index),role:(start+index)%2?'assistant':'user',text:'x'.repeat(6000),bookmarked:start+index===1||start+index===649})),turns:[],before:start?'m'+start:undefined,historyRevision:1}};
-export const useRuntime=()=>({profile,connected:true,readCache:null,read});`,
+const readCache={read:()=>new Promise(resolve=>{window.restoreHistory=()=>resolve(window.cachedHistory?{value:window.cachedHistory}:null)}),write:async()=>{}};export const useRuntime=()=>({profile,connected:window.connected,readCache:window.enableCache?readCache:null,read});`,
     },
   ],
 )
@@ -92,10 +92,93 @@ try {
   )
   assert.equal(new Set(messages).size, messages.length)
   assert.equal(messages.at(-1), 'm650')
+  // Opening fills nearest older pages automatically after the latest reply lays out.
+  await page.evaluate(() => {
+    window.setHistoryMode(false)
+    window.setLive({
+      id: 'opening',
+      messages: [{ id: 'm650', role: 'assistant', text: 'Latest' }],
+      turns: [],
+      historyBefore: 'm650',
+      historyRevision: 1,
+    })
+  })
+  await page.waitForFunction(() => window.historyState.task.id === 'opening')
+  const openingRequests = await page.evaluate(() => window.requests.length)
+  assert.equal(await page.evaluate(() => window.historyState.task.messages.length), 1)
+  await page.evaluate(() => window.setHistoryMode(true))
+  await page.waitForFunction(
+    () => !window.historyState.busy && window.historyState.task.messages.length >= 500,
+  )
+  assert.equal(await page.evaluate(() => window.requests.length), openingRequests + 10)
+  assert.equal(await page.evaluate(() => window.historyState.task.messages.at(-1).text), 'Latest')
+  assert.deepEqual(
+    await page.evaluate(() => window.requests.slice(-10)),
+    Array.from({ length: 10 }, (_, index) => 'm' + (650 - index * 50)),
+  )
+  // Delayed cache hydration also fills automatically; live text wins on overlap.
+  await page.evaluate(() => {
+    window.enableCache = true
+    window.cachedHistory = {
+      messages: Array.from({ length: 51 }, (_, i) => ({
+        id: 'm' + (600 + i),
+        role: 'assistant',
+        text: 'Cached ' + i,
+      })),
+      turns: [],
+      historyRevision: 1,
+    }
+    window.restoreHistory = undefined
+    window.setLive({
+      id: 'cached-opening',
+      messages: [{ id: 'm650', role: 'assistant', text: 'Live latest' }],
+      turns: [],
+      historyBefore: 'm650',
+      historyRevision: 1,
+    })
+  })
+  await page.waitForFunction(
+    () =>
+      window.historyState.task.id === 'cached-opening' &&
+      typeof window.restoreHistory === 'function',
+  )
+  const cachedRequests = await page.evaluate(() => window.requests.length)
+  assert.equal(await page.evaluate(() => window.historyState.task.messages.length), 1)
+  await page.evaluate(() => window.restoreHistory())
+  await page.waitForFunction(() => window.historyState.task.messages.length === 51)
+  assert.equal(
+    await page.evaluate(() => window.historyState.task.messages.at(-1).text),
+    'Live latest',
+  )
+  assert.equal(await page.evaluate(() => window.requests.length), cachedRequests)
+  assert.equal(await page.evaluate(() => window.historyState.hasMore), false)
+  // Offline opening and reconnect keep the restored window without manual loading.
+  await page.evaluate(() => {
+    window.setConnected(false)
+    window.setLive({ id: 'offline-opening', messages: [], turns: [], historyRevision: 1 })
+    window.restoreHistory = undefined
+  })
+  await page.waitForFunction(() => typeof window.restoreHistory === 'function')
+  await page.evaluate(() => window.restoreHistory())
+  await page.waitForFunction(() => window.historyState.task.messages.length === 51)
+  const offlineRequests = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() => {
+    window.setConnected(true)
+    window.setLive({
+      id: 'offline-opening',
+      messages: [{ id: 'm650', role: 'assistant', text: 'Live again' }],
+      turns: [],
+      historyBefore: 'm650',
+      historyRevision: 1,
+    })
+  })
+  await page.waitForFunction(() => window.historyState.task.messages.at(-1)?.text === 'Live again')
+  assert.equal(await page.evaluate(() => window.historyState.task.messages.length), 51)
+  assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
   assert.deepEqual(errors, [])
   await page.evaluate(() => window.unmount())
   console.log(
-    'Mobile history memory: active reading range protected; old pages released after moving forward; evicted pages reload without gaps or duplicates.',
+    'Mobile history: automatic newest-first history fill, delayed cache restoration and offline/reconnect restoration; reading ranges protected and evicted pages reload without gaps or duplicates.',
   )
 } finally {
   await browser.close()

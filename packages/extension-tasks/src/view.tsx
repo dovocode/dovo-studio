@@ -79,12 +79,36 @@ import { TaskSearchDialog, type TaskSearchMode } from './dialogs/task-search-dia
 import { StartupDraft } from './task-creation/startup-draft'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 import { SideQuestion } from './chat/thread/side-question'
+import {
+  BringBackButton,
+  DiscardSideDraft,
+  SideThreadAttentionBadge,
+  SideThreadAttentionBanner,
+  SideThreadBar,
+  SideThreadProvenance,
+  SideThreadsPanel,
+  focusSideThreadAttention,
+  useSideThreadAttention,
+} from './chat/thread/side-threads-panel'
+import {
+  forgetSideChatBeside,
+  handoffApplied,
+  recordHandoff,
+  recordSideChatBeside,
+  sideChatBeside,
+  sideThreadOf,
+  unusedSideDraft,
+  type SideThreadHandoff,
+} from './detail/side-threads'
+import { ReviewSideThreadChangesButton } from './detail/side-thread-changes'
+import { sideThreadAttention, type SideThreadAttention } from '@dovo/protocol'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 export default function TasksView({
   entityId,
   threadParent,
   nativeAgentKey,
   navigationKey,
+  pullTarget,
 }: StudioViewProps) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
@@ -170,19 +194,67 @@ export default function TasksView({
       .map((id) => watchRuntimeTask(connection, id))
     return () => stops.forEach((stop) => stop())
   }, [store.connection, deselected, selectedId, entityId, splitId])
+  // A side chat shown beside its parent returns with that parent, and only with it. Other
+  // side-by-side threads keep their usual behavior.
+  const runtimeIdentity = snapshot?.runtimeId
+  const besideScope = (parentId: string) => taskCollectionKey(activeRuntimeId, parentId)
+  const pairedChild =
+    !compact && task ? sideChatBeside(besideScope(task.id), runtimeIdentity) : undefined
+  const restorableChild = localTasks.some(
+    (item) =>
+      item.id === pairedChild && !item.archivedAt && sideThreadOf(item)?.parentTaskId === task?.id,
+  )
+    ? pairedChild!
+    : ''
+  // Restores once per parent selection; a side chat opened explicitly with the parent wins.
+  const restoredFor = useRef('')
+  useEffect(() => {
+    if (compact || !task) return
+    const parentKey = besideScope(task.id)
+    if (restoredFor.current === parentKey) return
+    const shown = localTasks.find((item) => item.id === splitId)
+    const link = shown && sideThreadOf(shown)
+    if (link?.parentTaskId === task.id) {
+      restoredFor.current = parentKey
+      return
+    }
+    if (restorableChild) {
+      restoredFor.current = parentKey
+      setSplitId(restorableChild)
+      return
+    }
+    // A side chat paired with another parent does not follow the selection.
+    if (link) setSplitId('')
+    // Wait for a paired side chat that has not loaded yet.
+    if (!pairedChild) restoredFor.current = parentKey
+  }, [task?.id, restorableChild, compact, activeRuntimeId])
+  useEffect(() => {
+    if (task && splitSummary && sideThreadOf(splitSummary)?.parentTaskId === task.id)
+      recordSideChatBeside(besideScope(task.id), runtimeIdentity, splitSummary.id)
+  }, [task?.id, splitSummary?.id, runtimeIdentity, activeRuntimeId])
+  /** Closing, or explicitly replacing, a side-by-side side chat ends its pairing. */
+  const closeSplit = (next = '') => {
+    if (task && splitSummary && sideThreadOf(splitSummary)?.parentTaskId === task.id)
+      forgetSideChatBeside(besideScope(task.id))
+    setSplitId(next)
+  }
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
   const navigationSidebar = useNavigationSidebar()
   useEffect(() => {
     if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
-  const [selectedSideChats, setSelectedSideChats] = useState<Record<string, string>>({})
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
     threadKey: string
     id: string
     text: string
+    replaceKey?: string
   } | null>(null)
+  // Side chat results wait for their parent's composer, which appends each receipt once.
+  const [handoffs, setHandoffs] = useState<
+    { threadKey: string; id: string; text: string; once: true }[]
+  >([])
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
   const [artifactSelection, setArtifactSelection] = useState<{
@@ -347,6 +419,26 @@ export default function TasksView({
       }
     >
   >({})
+  // A PR handoff opens its task with that PR beside the full chat, once per navigation.
+  const openedPullTarget = useRef('')
+  useEffect(() => {
+    if (!entityId || !pullTarget?.repositoryId || pullTarget.runtimeId !== activeRuntimeId) return
+    const route = JSON.stringify([entityId, navigationKey, pullTarget])
+    if (openedPullTarget.current === route || !workspace.tasks.some((item) => item.id === entityId))
+      return
+    openedPullTarget.current = route
+    const key = taskCollectionKey(activeRuntimeId, entityId)
+    setPullPreviews((current) => ({
+      ...current,
+      [key]: {
+        repositoryId: pullTarget.repositoryId!,
+        number: pullTarget.number,
+        tab: pullTarget.tab,
+        fragment: pullTarget.fragment,
+      },
+    }))
+    setThreadSurfaces((current) => ({ ...current, [key]: 'pull-preview' }))
+  }, [entityId, navigationKey, pullTarget, activeRuntimeId, workspace.tasks])
   const openArtifact = (reference: ArtifactReference) => {
     const key = taskCollectionKey(activeRuntimeId, reference.taskId)
     setArtifactSelection({ threadKey: key, id: reference.id, openId: randomUUID() })
@@ -692,15 +784,78 @@ export default function TasksView({
     selectedKey: '',
     stop: () => {},
     split: false,
+    closeSplit: () => {},
   })
   const { request } = store
   const [stopError, setStopError] = useApplicationState('')
   const [transcriptNotice, setTranscriptNotice] = useApplicationState('')
-  const openSideChat = useCommittedCallback((key: string, chatId?: string) => {
-    if (chatId) setSelectedSideChats((current) => ({ ...current, [key]: chatId }))
-    setThreadSurfaces((current) => ({ ...current, [key]: 'side-chats' }))
-    // Saving a question can finish after the user has switched threads or runtimes.
-    if (key === threadKey) selectSurface('side-chats', true)
+  const openThread = useCommittedCallback((id: string, beside: string = '') => {
+    setSelectedId(id)
+    setDeselected(false)
+    setSplitId(compact ? '' : beside)
+    host.navigate({ viewId: 'tasks', entityId: id })
+  })
+  // Side chats open beside their parent where there is room, and as a normal thread otherwise.
+  // The current tool, such as a PR preview, stays open next to both threads.
+  const openSideThread = useCommittedCallback((key: string, childId?: string) => {
+    if (!childId) {
+      setThreadSurfaces((current) => ({ ...current, [key]: 'side-chats' }))
+      if (key === threadKey) selectSurface('side-chats', true)
+      return
+    }
+    // Creating a side chat can finish after the user has switched threads or runtimes.
+    if (key !== threadKey) return
+    if (compact) openThread(childId)
+    else setSplitId(childId)
+  })
+  const [handoffNotice, setHandoffNotice] = useState<{ threadKey: string; text: string } | null>(
+    null,
+  )
+  useEffect(() => {
+    if (!handoffNotice) return
+    const timer = setTimeout(() => setHandoffNotice(null), 8000)
+    return () => clearTimeout(timer)
+  }, [handoffNotice])
+  const deliverHandoff = useCommittedCallback((handoff: SideThreadHandoff, title: string) => {
+    const key = taskCollectionKey(activeRuntimeId, handoff.id)
+    // A repeated receipt, or text the saved draft already holds, is not added again.
+    const repeat =
+      handoffApplied(key, handoff.receiptId) ||
+      !!workspace.tasks.find((item) => item.id === handoff.id)?.draft?.includes(handoff.text)
+    setHandoffNotice({
+      threadKey: key,
+      text: repeat
+        ? `Results from “${title}” were already brought back to this draft.`
+        : `Added results from “${title}” to this draft. Review them before sending.`,
+    })
+    if (handoffApplied(key, handoff.receiptId)) return
+    setHandoffs((current) => [
+      ...current.filter((item) => item.threadKey !== key || item.id !== handoff.receiptId),
+      { threadKey: key, id: handoff.receiptId, text: handoff.text, once: true },
+    ])
+  })
+  const sideAttention = useSideThreadAttention()
+  // Approvals and questions use the side chat's normal controls, opened where it is shown.
+  const attendSideThread = useCommittedCallback((childId: string, kind: SideThreadAttention) => {
+    if (compact) openThread(childId)
+    else setSplitId(childId)
+    focusSideThreadAttention(childId, kind)
+  })
+  const sideThreadDiscarded = useCommittedCallback((childId: string) => {
+    const parentId = sideThreadOf(
+      workspace.tasks.find((item) => item.id === childId) ?? { id: '' },
+    )?.parentTaskId
+    if (parentId && sideChatBeside(besideScope(parentId), runtimeIdentity) === childId)
+      forgetSideChatBeside(besideScope(parentId))
+    if (splitId === childId) setSplitId('')
+    if (task?.id === childId && parentId) openThread(parentId)
+  })
+  const returnToParent = useCommittedCallback((parentId: string, childId: string) => {
+    setThreadSurfaces((current) => ({
+      ...current,
+      [taskCollectionKey(activeRuntimeId, parentId)]: 'chat',
+    }))
+    openThread(parentId, childId)
   })
   const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
   // After opening a search result, scroll its message into view once the thread renders.
@@ -721,6 +876,7 @@ export default function TasksView({
     task,
     selectedKey: task ? taskCollectionKey(activeRuntimeId, task.id) : '',
     split: !!splitTask,
+    closeSplit: () => closeSplit(),
     stop: () => {
       if (task?.status !== 'running' || !connected) return
       setStopError('')
@@ -764,7 +920,7 @@ export default function TasksView({
         })
       // ⌘\ (Ctrl+\ elsewhere) closes the side-by-side task.
       if (mod && !e.altKey && !e.shiftKey && e.key === '\\' && current.split)
-        return run(() => setSplitId(''))
+        return run(() => current.closeSplit())
       // ⌘; (Ctrl+; elsewhere) asks a side question about the open task.
       if (mod && !e.altKey && !e.shiftKey && e.key === ';' && current.task)
         return run(() => {
@@ -875,6 +1031,10 @@ export default function TasksView({
         ) ??
         native.agent)
     const projectPanelOpen = preferences.projectPanelOpen
+    const pendingInsert =
+      (composerInsert?.threadKey === threadKey ? composerInsert : null) ??
+      handoffs.find((item) => item.threadKey === threadKey) ??
+      null
     const setProjectPanelOpen = (open: boolean) => {
       if (open && (compact || (fileViewer && viewerExpanded))) {
         setViewerExpanded(false)
@@ -1019,6 +1179,36 @@ export default function TasksView({
                 Could not stop the agent. {stopError}
               </p>
             )}
+            {!temporary && sideThreadOf(task) && (
+              <SideThreadBar
+                task={task}
+                link={sideThreadOf(task)!}
+                onReturn={(parentId) => returnToParent(parentId, task.id)}
+                onBroughtBack={(handoff) => {
+                  deliverHandoff(handoff, task.title)
+                  returnToParent(handoff.id, task.id)
+                }}
+                onDiscarded={sideThreadDiscarded}
+              />
+            )}
+            {!temporary && !sideThreadOf(task) && (
+              <SideThreadAttentionBanner task={task} onAttend={attendSideThread} />
+            )}
+            {handoffNotice?.threadKey === threadKey && (
+              <div
+                role="status"
+                className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5 text-xs text-muted-foreground"
+              >
+                <span className="min-w-0 flex-1">{handoffNotice.text}</span>
+                <IconButton
+                  label="Dismiss"
+                  className="size-6"
+                  onClick={() => setHandoffNotice(null)}
+                >
+                  <X className="size-3.5" />
+                </IconButton>
+              </div>
+            )}
             <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
               <ResizablePanel
                 id="thread"
@@ -1050,13 +1240,21 @@ export default function TasksView({
                       setBrowserLink({ taskId: task.id, id: randomUUID(), url })
                       selectSurface('browser')
                     }}
-                    onAside={(chatId) => openSideChat(threadKey, chatId)}
-                    composerInsert={composerInsert?.threadKey === threadKey ? composerInsert : null}
-                    onComposerInsertApplied={() =>
-                      setComposerInsert((current) =>
-                        current?.id === composerInsert?.id ? null : current,
-                      )
+                    onAside={
+                      sideThreadOf(task)
+                        ? undefined
+                        : (childId) => openSideThread(threadKey, childId)
                     }
+                    composerInsert={pendingInsert}
+                    onComposerInsertApplied={() => {
+                      if (pendingInsert && 'once' in pendingInsert) {
+                        recordHandoff(threadKey, pendingInsert.id)
+                        setHandoffs((current) => current.filter((item) => item !== pendingInsert))
+                      } else
+                        setComposerInsert((current) =>
+                          current?.id === composerInsert?.id ? null : current,
+                        )
+                    }}
                   />
                 </div>
               </ResizablePanel>
@@ -1216,6 +1414,29 @@ export default function TasksView({
                     )
                   }
                   onChanged={() => {}}
+                  linkedThread={{
+                    task,
+                    // The draft stays reviewable beside the PR; nothing is sent automatically.
+                    onAsk: (text) => {
+                      const preview = pullPreviews[threadKey]
+                      setComposerInsert({
+                        threadKey,
+                        id: randomUUID(),
+                        text,
+                        // A newer ask about the same PR replaces its untouched earlier context.
+                        ...(preview
+                          ? {
+                              replaceKey: JSON.stringify([
+                                'pull',
+                                preview.repositoryId,
+                                preview.number,
+                              ]),
+                            }
+                          : {}),
+                      })
+                      if (compact) selectSurface('chat', true)
+                    },
+                  }}
                 />
               </div>
             )}
@@ -1227,19 +1448,33 @@ export default function TasksView({
                 }}
                 tabIndex={-1}
               >
-                <SideQuestion
+                <SideThreadsPanel
                   key={task.id}
                   task={task}
-                  selectedChatId={selectedSideChats[threadKey]}
-                  drafts={sideChatDrafts[threadKey] ?? {}}
-                  setDrafts={(update) =>
-                    setSideChatDrafts((current) => {
-                      const previous = current[threadKey] ?? {}
-                      const next = typeof update === 'function' ? update(previous) : update
-                      return next === previous ? current : { ...current, [threadKey]: next }
-                    })
+                  openId={splitTask?.id}
+                  onOpen={(childId) => openSideThread(threadKey, childId)}
+                  onOpenThread={(childId) => openThread(childId, compact ? '' : task.id)}
+                  onAttend={attendSideThread}
+                  onDiscarded={sideThreadDiscarded}
+                  onBroughtBack={(handoff, child) => {
+                    deliverHandoff(handoff, child.title)
+                    selectSurface('chat', true)
+                  }}
+                  previousQuestions={
+                    <SideQuestion
+                      key={task.id}
+                      task={task}
+                      drafts={sideChatDrafts[threadKey] ?? {}}
+                      setDrafts={(update) =>
+                        setSideChatDrafts((current) => {
+                          const previous = current[threadKey] ?? {}
+                          const next = typeof update === 'function' ? update(previous) : update
+                          return next === previous ? current : { ...current, [threadKey]: next }
+                        })
+                      }
+                      onAddToComposer={(text) => addCodeReference(task.id, text)}
+                    />
                   }
-                  onAddToComposer={(text) => addCodeReference(task.id, text)}
                 />
               </div>
             )}
@@ -1444,7 +1679,7 @@ export default function TasksView({
                 onDeselect={deselectTask}
                 onOrderChange={reportOrder}
                 onSplit={(entry) => {
-                  if (entry.source.runtimeId === activeRuntimeId) setSplitId(entry.task.id)
+                  if (entry.source.runtimeId === activeRuntimeId) closeSplit(entry.task.id)
                 }}
                 onTemplate={(entry, templateId) =>
                   void startTask(entry.projectKey, true, templateId)
@@ -1492,8 +1727,36 @@ export default function TasksView({
                       className="size-4"
                     />
                     <span className="min-w-0 flex-1 truncate font-medium" title={splitTask.title}>
+                      {sideThreadOf(splitTask)?.parentTaskId === task?.id && (
+                        <span className="mr-1.5 font-normal text-muted-foreground">
+                          Side chat ·
+                        </span>
+                      )}
                       {splitTask.title}
                     </span>
+                    {sideThreadOf(splitTask) &&
+                      (() => {
+                        const kind = sideThreadAttention(sideAttention, splitTask.id)
+                        return kind && <SideThreadAttentionBadge kind={kind} />
+                      })()}
+                    {task && sideThreadOf(splitTask)?.parentTaskId === task.id && (
+                      <>
+                        <DiscardSideDraft child={splitTask} onDiscarded={sideThreadDiscarded} />
+                        {!unusedSideDraft(splitTask) && (
+                          <>
+                            <ReviewSideThreadChangesButton task={splitTask} />
+                            <BringBackButton
+                              child={splitTask}
+                              parent={task}
+                              onDone={(handoff) => {
+                                deliverHandoff(handoff, splitTask.title)
+                                selectSurface('chat', true)
+                              }}
+                            />
+                          </>
+                        )}
+                      </>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -1511,11 +1774,17 @@ export default function TasksView({
                     <IconButton
                       label="Close side-by-side task (⌘/Ctrl+\)"
                       className="size-6"
-                      onClick={() => setSplitId('')}
+                      onClick={() => closeSplit()}
                     >
                       <X className="size-3.5" />
                     </IconButton>
                   </header>
+                  {sideThreadOf(splitTask) && (
+                    <SideThreadProvenance
+                      link={sideThreadOf(splitTask)!}
+                      className="shrink-0 border-b px-4 py-1.5"
+                    />
+                  )}
                   <div className="min-h-0 flex-1">
                     <TaskConversation
                       historyLoaded={splitHistoryLoaded}
@@ -1524,13 +1793,21 @@ export default function TasksView({
                       onArtifact={openArtifact}
                       key={`split:${splitTask.id}`}
                       task={splitTask}
-                      onAside={(chatId) => {
-                        const key = taskCollectionKey(activeRuntimeId, splitTask.id)
-                        openSideChat(key, chatId)
-                        if (shortcuts.current.selectedKey !== threadKey) return
-                        setSelectedId(splitTask.id)
-                        setSplitId(task?.id ?? '')
-                      }}
+                      onAside={
+                        sideThreadOf(splitTask)
+                          ? undefined
+                          : (childId) => {
+                              const key = taskCollectionKey(activeRuntimeId, splitTask.id)
+                              if (!childId)
+                                setThreadSurfaces((current) => ({
+                                  ...current,
+                                  [key]: 'side-chats',
+                                }))
+                              if (shortcuts.current.selectedKey !== threadKey) return
+                              // The asking thread moves to the main pane, its side chat beside it.
+                              openThread(splitTask.id, childId ?? task?.id ?? '')
+                            }
+                      }
                       visible
                       onBrowser={(url) => {
                         setBrowserLink({ taskId: splitTask.id, id: randomUUID(), url })

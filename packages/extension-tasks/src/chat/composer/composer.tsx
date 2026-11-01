@@ -1,3 +1,8 @@
+import {
+  prepareSideThread,
+  finishSideThread,
+  useSideThreadSource,
+} from '@dovo/studio-core/side-thread-creation'
 import { createPortal } from 'react-dom'
 import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
@@ -32,7 +37,7 @@ import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
 import { useEffect, useLayoutEffect, useRef, useState, useMemo, type ReactNode } from 'react'
 import { Schema } from 'effect'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, replacePullReviewHandoff } from '@dovo/protocol'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
 import { useComposerDraft } from './use-composer-draft'
 import { ComposerCommandDialog } from './composer-command-dialog'
@@ -67,6 +72,9 @@ import {
 import { ComposerHarnessControls } from './composer-harness-controls'
 import { ComposerWorkspace, type WorkspaceControls } from './composer-workspace'
 import type { SelectRemoteProject } from './composer-project'
+// Generated context last inserted per runtime, thread and key, so a remount still replaces it.
+const generatedInserts = new Map<string, string>()
+
 export function Composer({
   task,
   collapsed = false,
@@ -94,9 +102,13 @@ export function Composer({
   queuedMessages?: ReactNode
   collapsed?: boolean
   onPending: (pending: PendingMessage | null) => void
-  /** Opens side chats, selecting a newly sent question when provided. */
-  onAside?: (chatId?: string) => void
-  composerInsert?: { id: string; text: string } | null
+  /** Opens side chats, showing a newly created draft agent side chat when provided. */
+  onAside?: (childId?: string) => void
+  /**
+   * `once` appends an exact handoff to the saved draft unless it is already there. `replaceKey`
+   * replaces the previous text inserted with that key while it is still untouched.
+   */
+  composerInsert?: { id: string; text: string; once?: boolean; replaceKey?: string } | null
   onComposerInsertApplied?: () => void
 }) {
   const {
@@ -162,7 +174,8 @@ export function Composer({
   const [asideCreating, setAsideCreating] = useState(false)
   const [asideBusy, setAsideBusy] = useState(false)
   const [editorFocused, setEditorFocused] = useState(false)
-  const asideRequest = useRef<'saving' | 'asking' | null>(null)
+  const asideRequest = useRef<'saving' | null>(null)
+  const asideAttempt = useRef<{ text: string; childId: string } | null>(null)
   const [dictating, setDictating] = useState(false)
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
@@ -201,6 +214,8 @@ export function Composer({
   )
   const sending = submitBusy || machineMoving || asideCreating || dictating || editingChatImage
   const composerDraft = useComposerDraft(task, temporary, editing?.controller)
+  const asideScope = JSON.stringify([activeRuntimeId, task.id])
+  const asideCurrent = useSideThreadSource(asideScope)
   const askAside = useCommittedCallback(async () => {
     if (
       !onAside ||
@@ -209,7 +224,6 @@ export function Composer({
       sendingRequest.current ||
       asideRequest.current ||
       sending ||
-      task.archived ||
       task.archivedAt
     )
       return
@@ -219,30 +233,26 @@ export function Composer({
       onAside()
       return
     }
-    if (text.length > 4000) {
-      setError('Side questions can contain up to 4,000 characters.')
-      return
-    }
+    // A retry after an uncertain response must not create a second side chat.
+    if (asideAttempt.current?.text !== text) asideAttempt.current = { text, childId: randomUUID() }
     asideRequest.current = 'saving'
     setAsideBusy(true)
     setAsideCreating(true)
     setError('')
     try {
-      // Persist the question before consuming the main draft. A failed ask stays retryable here.
-      const chat = await request(
-        '/api/tasks/side-chat/save',
-        { id: task.id, draft: text },
+      // The draft becomes a full agent side chat's draft, inheriting this thread's model and
+      // permissions. It is not sent until the user reviews it there.
+      const childId = prepareSideThread(asideScope, asideAttempt.current.childId, text)
+      const child = await request(
+        '/api/tasks/side-thread/create',
+        { id: task.id, childId, objective: text },
         mutableStruct({ id: Schema.String }),
       )
+      finishSideThread(asideScope, childId)
+      asideAttempt.current = null
+      if (!asideCurrent()) return
       composerDraft.accept(text, draftRevision)
-      asideRequest.current = 'asking'
-      setAsideCreating(false)
-      onAside(chat.id)
-      await request(
-        '/api/tasks/side-chat/ask',
-        { id: task.id, chatId: chat.id, question: text },
-        mutableStruct({ answer: Schema.String }),
-      )
+      onAside(child.id)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -322,11 +332,29 @@ export function Composer({
   const appliedInsert = useRef<string | null>(null)
   useEffect(() => {
     if (!composerInsert || appliedInsert.current === composerInsert.id) return
+    if (composerInsert.once) {
+      if (!composerDraft.appendOnce(composerInsert.text)) return
+    } else if (composerInsert.replaceKey) {
+      const key = JSON.stringify([activeRuntimeId, task.id, composerInsert.replaceKey])
+      const previous = generatedInserts.get(key)
+      setDraft((current) => replacePullReviewHandoff(current, previous, composerInsert.text))
+      generatedInserts.delete(key)
+      generatedInserts.set(key, composerInsert.text)
+      if (generatedInserts.size > 200)
+        generatedInserts.delete(generatedInserts.keys().next().value!)
+    } else
+      setDraft((current) => [current.trimEnd(), composerInsert.text].filter(Boolean).join('\n\n'))
     appliedInsert.current = composerInsert.id
-    setDraft((current) => [current.trimEnd(), composerInsert.text].filter(Boolean).join('\n\n'))
     input.current?.focus()
     onComposerInsertApplied?.()
-  }, [composerInsert, setDraft, onComposerInsertApplied])
+  }, [
+    composerInsert,
+    setDraft,
+    composerDraft.appendOnce,
+    onComposerInsertApplied,
+    activeRuntimeId,
+    task.id,
+  ])
   const [command, setCommand] = useState<'new-session' | 'undo' | null>(null)
   const [commandBusy, setCommandBusy] = useState(false)
   const [commandError, setCommandError] = useState('')
@@ -416,7 +444,7 @@ export function Composer({
     id: string
     text: string
     attachmentIds: string[]
-    mode: 'queue' | 'steer' | 'stage'
+    mode: 'queue' | 'steer' | 'stage' | 'direct'
     turnSettings?: TurnSettings
     plan?: boolean
     title?: string
@@ -634,9 +662,13 @@ export function Composer({
       setSending(false)
     }
   }
-  const send = async (mode: 'queue' | 'steer' | 'stage' = 'queue', background = false) => {
+  const send = async (
+    mode: 'queue' | 'steer' | 'stage' | 'direct' = 'queue',
+    background = false,
+  ) => {
     if (editing) return saveEdit()
     if (mode === 'stage' && (!connected || snapshot?.promptQueueStagingSupported !== true)) return
+    if (mode === 'direct' && (!connected || snapshot?.directMessageSupported !== true)) return
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
       setError('Update the task computer to choose a model for this turn.')
       return
@@ -786,6 +818,7 @@ export function Composer({
             text,
             attachmentIds,
             ...(mode === 'stage' ? { queueOnly: true } : {}),
+            ...(mode === 'direct' ? { sendNow: true } : {}),
             ...(attempt.current.preserveQueuePause ? { preserveQueuePause: true } : {}),
           },
           responses.ok,
@@ -1170,13 +1203,13 @@ export function Composer({
               agent={agent}
               value={turnSettings}
               onChange={changeTurnSettings}
-              disabled={sending || !!task.archived}
+              disabled={sending || !!task.archivedAt}
               renderControls={renderControls}
             />
           ) : (
             <ComposerHarnessControls
               task={task}
-              disabled={!!editing || sending || !!task.archived}
+              disabled={!!editing || sending || !!task.archivedAt}
               renderControls={renderControls}
             />
           )
@@ -1351,6 +1384,20 @@ export function Composer({
                             {stageFirst ? 'Add and run queue' : 'Add to queue'}
                           </DropdownMenu.Item>
                         )}
+                        {snapshot?.directMessageSupported === true &&
+                          task.status !== 'running' &&
+                          (task.queuePaused || task.queue?.[0]?.paused) && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                              disabled={
+                                !!policyIssue || !!planIssue || !!task.archived || !hasInput
+                              }
+                              onSelect={() => void send('direct')}
+                            >
+                              <ArrowUp className="size-3.5" />
+                              Send now
+                            </DropdownMenu.Item>
+                          )}
                         {snapshot?.promptQueueStagingSupported === true && !stageFirst && (
                           <DropdownMenu.Item
                             className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"

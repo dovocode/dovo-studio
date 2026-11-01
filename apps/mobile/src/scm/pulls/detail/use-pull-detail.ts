@@ -56,7 +56,7 @@ function usePullSection(
     refreshing: false,
     revision: 0,
   })
-  const forceNext = useRef(false)
+  const requestedRefresh = useRef(false)
   const setError = (error: string) => setState((current) => ({ ...current, error }))
   useEffect(() => {
     setState((current) => ({ ...current, scope: cacheKey, detail: null, error: '' }))
@@ -92,17 +92,22 @@ function usePullSection(
       ),
     )
     let changesLoaded = false
-    let force = forceNext.current
-    forceNext.current = false
+    let force = true
     const load = Effect.gen(function* () {
       yield* hydrated
       if (!enabled || !readConnected || !focused || AppState.currentState !== 'active') return
       const refresh = force
       force = false
+      const showRefresh = requestedRefresh.current
+      requestedRefresh.current = false
       // A successful diff pinned to both commit hashes cannot change. Overview polling
       // discovers pushes; explicit refresh, reconnection and scope changes still revalidate.
       if (section === 'changes' && changesLoaded && !refresh) return
-      setState((current) => ({ ...current, busy: true, refreshing: refresh }))
+      setState((current) => ({
+        ...current,
+        busy: !current.detail || showRefresh,
+        refreshing: refresh && showRefresh,
+      }))
       yield* request(
         '/api/scm/pulls/detail',
         { repositoryId, number, connectionId, refresh, section, revision },
@@ -149,7 +154,7 @@ function usePullSection(
       )
     })
     const polling = startPolling(load, {
-      interval: 10000,
+      interval: section === 'status' || section === 'checks' ? 5000 : 10000,
       onError: (error) => {
         if (!stopped)
           setState((current) => ({
@@ -159,8 +164,15 @@ function usePullSection(
           }))
       },
     })
+    const resumed = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        force = true
+        polling.refresh()
+      }
+    })
     return () => {
       stopped = true
+      resumed.remove()
       void polling.stop()
     }
   }, [
@@ -179,7 +191,7 @@ function usePullSection(
   ])
   const refresh = () => {
     if (!readConnected || !focused) return
-    forceNext.current = true
+    requestedRefresh.current = true
     setState((current) => ({ ...current, refreshing: true, revision: current.revision + 1 }))
   }
   const invalidate = () => {

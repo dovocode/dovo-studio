@@ -4,6 +4,8 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   // Session import has its own browser regression; this fixture exercises startup continuity.
   // Sharing is verified separately from draft, selection and route continuity.
   '@dovo/extension-scm/repository-dialog': 'export const RepositoryDialog=()=>null;',
@@ -147,8 +149,7 @@ const built = await build({
           window.requests.push({path,input});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
           if(path==='/api/tasks/title')return {title:'New task'};
-          if(path==='/api/tasks/side-chat/save'){if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve({id:'side-'+input.id})});return {id:'side-'+input.id}};
-          if(path==='/api/tasks/side-chat/ask')return {answer:'Side answer'};
+          if(path==='/api/tasks/side-thread/create'){const create=()=>{const child={...createTask({title:'Side chat '+input.childId.slice(0,4),objective:input.objective,agentId:'',repositoryId:'scratch'}),id:'side-'+input.childId,draft:input.objective,sideThread:{parentTaskId:input.id,objective:input.objective,contextMessageCount:0,source:'head',permissionCeiling:{permission:'workspace-write'}}};setWorkspace(current=>({...current,tasks:[...current.tasks,child]}));return {id:child.id}};if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve(create())});return create()};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
@@ -378,18 +379,32 @@ try {
   await editor.fill('Shortcut from the current thread')
   await page.keyboard.press('ControlOrMeta+;')
   await page.waitForFunction(() =>
-    window.requests.some((request) => request.path === '/api/tasks/side-chat/ask'),
+    window.requests.some((request) => request.path === '/api/tasks/side-thread/create'),
   )
   const sideRequest = await page.evaluate(() =>
-    window.requests.findLast((request) => request.path === '/api/tasks/side-chat/ask'),
+    window.requests.findLast((request) => request.path === '/api/tasks/side-thread/create'),
   )
-  assert.deepEqual(sideRequest.input, {
-    id: sideTask,
-    chatId: 'side-' + sideTask,
-    question: 'Shortcut from the current thread',
-  })
-  await page.locator('[data-side-chat="side-' + sideTask + '"]').waitFor()
-  assert.equal(await editor.inputValue(), '')
+  assert.equal(sideRequest.input.id, sideTask)
+  assert.equal(sideRequest.input.objective, 'Shortcut from the current thread')
+  // The draft side chat opens beside its parent as a normal, unsent thread.
+  const besideParent = page.locator('section[aria-label^="Side by side: Side chat"]')
+  await besideParent.waitFor()
+  assert.equal(await besideParent.getByText('Side chat ·', { exact: true }).count(), 1)
+  // Its own composer holds the question for review; the parent composer is cleared.
+  assert.equal(
+    await besideParent.getByLabel('Message task', { exact: true }).inputValue(),
+    'Shortcut from the current thread',
+  )
+  assert.equal(await page.locator(`textarea[data-task-id="${sideTask}"]`).inputValue(), '')
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some(
+        (request) => request.path === '/api/tasks/message' && request.input.id.startsWith('side-'),
+      ),
+    ),
+    false,
+  )
+  await besideParent.getByRole('button', { name: /Close side-by-side task/ }).click()
   // A late save must not open the panel for a different thread after navigation.
   await editor.fill('Question before switching threads')
   await page.evaluate(() => {
@@ -402,10 +417,13 @@ try {
     document.querySelector('[data-thread-header]')?.textContent.startsWith('Existing'),
   )
   await page.evaluate(() => window.finishSideSave())
-  await page.waitForFunction(
-    () =>
-      window.requests.filter((request) => request.path === '/api/tasks/side-chat/ask').length === 2,
+  await page.waitForFunction(() =>
+    window.saved.some(
+      (task) => task.sideThread && task.draft === 'Question before switching threads',
+    ),
   )
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  assert.equal(await page.locator('section[aria-label^="Side by side"]').count(), 0)
   assert.equal(await page.locator('[data-side-task]').count(), 0)
   assert.ok((await page.locator('[data-thread-header]').textContent()).startsWith('Existing'))
   // Leaving an untouched new thread discards it without creating another persisted task.
@@ -471,7 +489,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; side-chat shortcuts target the current thread and late saves respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',
+    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; agent side-chat shortcuts create an unsent draft beside the current thread and late creations respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',
   )
 } finally {
   await browser.close()

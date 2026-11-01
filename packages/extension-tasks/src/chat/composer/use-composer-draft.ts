@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { createComposerDraft } from './composer-draft'
+import { appendHandoff } from '../../detail/side-threads'
 
 /** The parent keys the composer by task; cleanup always writes to that same task. */
 export function useComposerDraft(
@@ -85,12 +86,30 @@ export function useComposerDraft(
     },
     [savedController, report],
   )
+  // Handoffs always target the saved draft, even while a queued message is being edited, and
+  // persist immediately on top of any local edits the runtime has not seen yet.
+  const appendOnce = useCallback(
+    (text: string) => {
+      const next = appendHandoff(savedController.text, text)
+      try {
+        if (next !== savedController.text) savedController.update(next)
+        savedController.flush()
+        setError('')
+        return true
+      } catch (cause) {
+        report(cause)
+        return false
+      }
+    },
+    [savedController, report],
+  )
   return {
     controller,
     hasText,
     error,
     update,
     accept,
+    appendOnce,
     flush,
   }
 }

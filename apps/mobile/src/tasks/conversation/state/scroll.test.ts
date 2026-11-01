@@ -120,11 +120,11 @@ it('does not repeat scroll commands for unchanged native measurements', () => {
   expect(scroll.latest()).toBe(440)
 })
 
-it('anchors newest-first messages at zero despite changes in older cell heights', () => {
+it('leaves incremental older-cell measurements to the native bottom anchor', () => {
   const scroll = createConversationScroll({ inverted: true })
   scroll.content(1000)
   expect(scroll.viewport(600)).toBe(0)
-  expect(scroll.content(12000)).toBe(0)
+  expect(scroll.content(12000)).toBeUndefined()
   scroll.beginInteraction()
   scroll.endInteraction(500)
   expect(scroll.following).toBe(false)
@@ -133,5 +133,5 @@ it('anchors newest-first messages at zero despite changes in older cell heights'
   expect(scroll.latest()).toBe(0)
   scroll.beginInteraction()
   scroll.endInteraction(30)
-  expect(scroll.content(16000)).toBe(0)
+  expect(scroll.content(16000)).toBeUndefined()
 })

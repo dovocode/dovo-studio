@@ -1,3 +1,4 @@
+import { PullAgentChat } from './agent-chat'
 import { PullLinkedThreads } from './linked-threads'
 import { PullSectionStatus } from './section-status'
 import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
@@ -14,7 +15,6 @@ import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
 import { pullHref } from '../../../shell/source-route'
 import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { openAppLink } from '../../../ui/content/open-link'
-import { formatTime } from '../../../runtime/preferences/app-preferences'
 import { nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -86,6 +86,10 @@ export function PullDetail({
   const origin = useLinkOrigin(undefined, repositoryId)
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const [account, setAccount] = useApplicationState(connectionId)
+  const [agentContext, setAgentContext] = useState<{
+    detail: import('@dovo/protocol').PullDetail
+    path?: string
+  } | null>(null)
   const [accounts, setAccounts] = useApplicationState<ForgeConnection[]>([])
   const urlTarget = forgePullTarget(repositoryId)
   useEffect(() => {
@@ -487,6 +491,12 @@ export function PullDetail({
                 </View>
               </View>
               <PullLinkedThreads pull={detail.pull} />
+              <Action
+                secondary
+                label="Ask agent about this PR"
+                disabled={actionDisabled}
+                onPress={() => setAgentContext({ detail })}
+              />
               {!!fragment && !destination?.comment && (
                 <Text style={styles.muted}>
                   This linked section is not available in the loaded PR. Use the server action to
@@ -498,16 +508,13 @@ export function PullDetail({
                   {error}
                 </Text>
               )}
-              {(detail.stale || detail.refreshError || !connected) && (
+              {(!connected || (detail.refreshError && !error)) && (
                 <Text style={styles.muted}>
-                  {!connected && readConnected
-                    ? 'Reading from another runtime · actions require the original runtime.'
-                    : !connected
-                      ? 'Offline · showing last loaded details.'
-                      : detail.refreshError
-                        ? `Refresh failed: ${detail.refreshError}`
-                        : 'Showing cached details · refreshing.'}
-                  {detail.cachedAt ? ` Last fetched ${formatTime(new Date(detail.cachedAt))}.` : ''}
+                  {!connected
+                    ? readConnected
+                      ? 'Original computer offline · viewing latest available details.'
+                      : 'Offline · reconnect to refresh.'
+                    : `Unable to refresh: ${detail.refreshError}`}
                 </Text>
               )}
               {detail.warnings.map((warning) => (
@@ -735,6 +742,11 @@ export function PullDetail({
                     key={`${repositoryId}:${detail.pull.number}`}
                     repositoryId={repositoryId}
                     detail={changesDetail}
+                    onAskAgent={
+                      !sections.changes.ready || actionDisabled
+                        ? undefined
+                        : (path) => setAgentContext({ detail: changesDetail, path })
+                    }
                     viewportHeight={bodyHeight}
                     initialPath={destination?.path}
                     fragment={fragment}
@@ -780,6 +792,21 @@ export function PullDetail({
           target={action}
           onClose={() => setAction(null)}
           onDone={onPosted}
+        />
+      )}
+      {agentContext && (
+        <PullAgentChat
+          repositoryId={repositoryId}
+          detail={agentContext.detail}
+          latestDetail={detail ?? agentContext.detail}
+          sourceIdentity={JSON.stringify([
+            account,
+            detail?.destination,
+            detail?.pull.destination,
+            detail?.pull.connectionId,
+          ])}
+          path={agentContext.path}
+          onClose={() => setAgentContext(null)}
         />
       )}
       {lineComment && detail && (

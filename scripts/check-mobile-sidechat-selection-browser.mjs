@@ -4,6 +4,7 @@ import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
+  './agent-side-chats': 'export const AgentSideChats=()=>null;',
   'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(){}};`,
   '../../../runtime/connection/provider': `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,call:async(path,input)=>{window.calls.push({path,input});return {answer:'ok'}},callEffect:()=>Effect.succeed({id:'created'})});`,
   '../../../ui/controls/use-action': `import {Effect} from 'effect';export const useAction=()=>({act:effect=>Effect.runPromise(effect()),busy:false,error:''});`,
@@ -76,7 +77,7 @@ try {
   assert.equal(await page.getByLabel('Question').inputValue(), 'another draft')
   await page.evaluate(() => window.update(['old', 'future'], 'another'))
   assert.equal(await page.getByLabel('Question').inputValue(), 'old draft')
-  await page.getByRole('button', { name: 'New side chat', exact: true }).click()
+  await page.getByRole('button', { name: 'New Q&A chat', exact: true }).click()
   await pending()
   await page.evaluate(() => window.update(['old', 'future', 'created'], 'another'))
   assert.equal(await page.getByLabel('Question').inputValue(), 'created draft')

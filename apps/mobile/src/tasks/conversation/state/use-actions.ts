@@ -33,6 +33,7 @@ import { useAction } from '../../../ui/controls/use-action'
 import { useDraft } from '../../draft/use-draft'
 import { useAttachmentPicker } from '../../composer/attachment-picker'
 import { useComposerDictation } from '../../composer/use-composer-dictation'
+import { useComposerHistory } from '../../composer/use-composer-history'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
 const sendAttempts = createSendAttempts(randomUUID)
 export type BackgroundStart = {
@@ -171,6 +172,22 @@ export function useConversationActions(task: Task) {
     runtimeId: activeId ?? '',
     taskId: task.id,
   }
+  const composerHistory = useComposerHistory({
+    scope: storedDraft.key,
+    text: storedDraft.text,
+    revision: storedDraft.revision,
+    messages: task.messages,
+    enabled:
+      storedDraft.ready &&
+      !editing &&
+      !busy &&
+      !submitting &&
+      !storedDraft.pendingFork &&
+      !storedDraft.pendingRestore &&
+      (!storedDraft.submission || storedDraft.submission.accepted) &&
+      !task.archivedAt &&
+      !task.example,
+  })
   const updateDraft = (text: string, source?: 'keyboard') => {
     if (backgroundLocked.current) return
     if (editing) {
@@ -185,13 +202,14 @@ export function useConversationActions(task: Task) {
       )
       return
     }
+    composerHistory.cancel()
     sendAttempts.textChanged(scope, text)
     storedDraft.update(text, source)
   }
   const dictation = useComposerDictation({
     draft: {
       ...storedDraft,
-      text: editing?.text ?? storedDraft.text,
+      text: editing?.text ?? composerHistory.text,
       update: updateDraft,
     },
     connected,
@@ -213,13 +231,17 @@ export function useConversationActions(task: Task) {
       editing?.message.id,
       editing?.revision,
       storedDraft.revision,
+      composerHistory.index,
       pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
         ? pendingMessage.message.id
         : null,
     ]),
     text: editing
       ? editing.text
-      : sendingDraft(storedDraft.text, pendingMessage?.taskId === task.id ? pendingMessage : null),
+      : sendingDraft(
+          composerHistory.text,
+          pendingMessage?.taskId === task.id ? pendingMessage : null,
+        ),
     update: dictation.update,
   }
   const attachmentPicker = useAttachmentPicker(
@@ -425,7 +447,7 @@ export function useConversationActions(task: Task) {
   const canStartInBackground =
     firstMessage && defaultSendMode === 'queue' && (!retryAttempt || retryAttempt.mode === 'queue')
   const submit = (
-    mode: 'queue' | 'steer' | 'stage' = defaultSendMode,
+    mode: 'queue' | 'steer' | 'stage' | 'direct' = defaultSendMode,
     input = draft.text,
     startInBackground?: (attemptId: string) => BackgroundStart,
   ) => {
@@ -436,6 +458,10 @@ export function useConversationActions(task: Task) {
       if (startInBackground && (!canStartInBackground || mode !== 'queue'))
         return yield* Effect.fail(
           new Error('Resolve the earlier send before starting in background.'),
+        )
+      if (mode === 'direct' && snapshot?.directMessageSupported !== true)
+        return yield* Effect.fail(
+          new Error('Update the task computer to send without resuming the queue.'),
         )
       if (mode === 'stage' && !stageSupported)
         return yield* Effect.fail(new Error('Update the task computer to stage queued messages.'))
@@ -502,6 +528,11 @@ export function useConversationActions(task: Task) {
         editSession.current = null
         setEditing(null)
         return
+      }
+      if (composerHistory.active) {
+        // Commit only after validation; cancelled browsing never overwrites the durable draft.
+        updateDraft(input)
+        latestDraftText.current = input
       }
       setSubmitting(true)
       dictation.reset()
@@ -574,6 +605,7 @@ export function useConversationActions(task: Task) {
             id: task.id,
             messageId: attempt.id,
             ...(mode === 'stage' ? { queueOnly: true } : {}),
+            ...(mode === 'direct' ? { sendNow: true } : {}),
             ...(attempt.preserveQueuePause ? { preserveQueuePause: true } : {}),
             runId: attempt.runId,
             turnSettings: attempt.turnSettings,
@@ -888,6 +920,7 @@ export function useConversationActions(task: Task) {
     connected,
     snapshot,
     draft,
+    composerHistory,
     dictation,
     busy,
     // A later snapshot may also acknowledge a request after its HTTP error was displayed.

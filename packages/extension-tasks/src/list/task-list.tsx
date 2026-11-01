@@ -42,6 +42,7 @@ import { TaskListRow, type TaskListRowActions, type TaskListWindow } from './tas
 import {
   collectTasks,
   retainTaskOwner,
+  hiddenSideDraft,
   type TaskEntry,
   type TaskOwner,
   type TaskSource,
@@ -304,6 +305,8 @@ export function TaskList({
     const needle = deferredQuery.toLowerCase()
     return (
       entries
+        // Never-started side chat drafts live in their parent's side chats; search still finds them.
+        .filter((entry) => !!needle || entry.key === selectedId || !hiddenSideDraft(entry))
         .filter(
           ({ task: t, source, key, projectKey, projectName }) =>
             key === temporaryEntry?.key ||

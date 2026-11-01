@@ -74,10 +74,10 @@ export function TaskConversation({
   onArtifact?: (reference: ArtifactReference) => void
   revealMessage?: string
   onRevealHandled?: () => void
-  /** Opens the side question dialog. */
-  onAside?: (chatId?: string) => void
+  /** Opens side chats, showing a newly created draft agent side chat when provided. */
+  onAside?: (childId?: string) => void
   visible: boolean
-  composerInsert?: { id: string; text: string } | null
+  composerInsert?: { id: string; text: string; once?: boolean; replaceKey?: string } | null
   onComposerInsertApplied?: () => void
 }) {
   const { collapseComposerOnScroll, minimalComposer } = useAppPreferences()
@@ -215,7 +215,7 @@ export function TaskConversation({
         {historyError ||
           (connected
             ? 'Loading conversation…'
-            : 'This conversation is not cached. Connect its computer to load it.')}
+            : 'Connect this thread’s computer to load the conversation.')}
       </div>
     )
   return (

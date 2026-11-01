@@ -109,6 +109,78 @@ it.each(['cancelled', 'failed', 'review'] as const)(
     expect(s.store.task(s.task.id).restartRecovery).toBeUndefined()
   },
 )
+it.each(['queue', 'head', 'empty'] as const)(
+  'Send now runs only the composer message with a paused %s and deduplicates retries',
+  async (pause) => {
+    const s = await setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      await gate
+      input.onText('Done')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    if (pause !== 'empty') {
+      s.tasks.queue.add(s.task.id, 'held-first', 'Held first request')
+      s.tasks.queue.add(s.task.id, 'held-second', 'Held second request')
+      if (pause === 'head') s.tasks.queue.setPaused(s.task.id, 'held-first', true)
+    }
+    s.store.updateTask(s.task.id, (task) => ({
+      ...task,
+      status: 'review',
+      queuePaused: pause !== 'head',
+    }))
+    const held = s.store.task(s.task.id).queue ?? []
+    const input = {
+      id: s.task.id,
+      messageId: 'direct',
+      text: 'Do this now',
+      sendNow: true,
+      turnSettings: { provider: 'codex', model: 'large', reasoning: 'high' },
+    }
+    try {
+      expect((await s.post('message', input)).status).toBe(200)
+      await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(1))
+      expect(run.mock.calls[0]?.[0].prompt).toContain('Do this now')
+      expect(run.mock.calls[0]?.[0].prompt).not.toContain('Held first request')
+      expect(run.mock.calls[0]?.[0].prompt).not.toContain('Held second request')
+      expect(run.mock.calls[0]?.[0].agent.model).toBe('large')
+      expect(s.store.task(s.task.id).queue).toEqual(held)
+      expect(s.store.task(s.task.id).queuePaused).toBe(true)
+      // A lost-response replay is acknowledged even while that turn is active.
+      expect((await s.post('message', input)).status).toBe(200)
+      // A different direct send cannot join or start another active turn.
+      expect((await s.post('message', { ...input, messageId: 'other-direct' })).status).toBe(409)
+      expect(s.store.task(s.task.id).queue).toEqual(held)
+      release()
+      await waitForRuntime(() => {
+        expect(s.store.task(s.task.id).activeRunId).toBeUndefined()
+        expect(s.store.task(s.task.id).status).toBe('review')
+      })
+      expect(s.store.task(s.task.id).queue).toEqual(held)
+      expect(s.store.task(s.task.id).queuePaused).toBe(true)
+      expect((await s.post('message', input)).status).toBe(200)
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(
+        s.store.task(s.task.id).messages.filter((message) => message.id === 'direct'),
+      ).toHaveLength(1)
+    } finally {
+      release()
+    }
+  },
+)
+it.each([{ queueOnly: true }, { preserveQueuePause: true }])(
+  'rejects incompatible Send now options: %s',
+  async (options) => {
+    const s = await setup()
+    const input = { id: s.task.id, messageId: 'invalid', text: 'Now', sendNow: true, ...options }
+    expect((await s.post('message', input)).status).toBe(400)
+    expect(s.store.task(s.task.id).queue ?? []).toEqual([])
+  },
+)
+
 it('sending while a turn is active does not resume a deliberately paused queue', async () => {
   const s = await setup()
   let release = () => {}

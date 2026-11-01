@@ -18,6 +18,8 @@ export type TaskState = {
   needsInput: boolean
   inputIds?: readonly string[]
   failed: boolean
+  /** Delegated agents report successful completion to their parent conversation. */
+  delegated?: boolean
   /** Automation runs notify under their own setting; cancelled runs never notify. */
   automation?: boolean
   cancelled?: boolean
@@ -80,6 +82,7 @@ export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
         needsInput: inputIds.length > 0,
         inputIds,
         failed: task.status === 'failed',
+        delegated: !!(task.delegation || task.spawnParent),
         checks: task.pullStatus?.state === 'open' ? task.pullStatus.checks : undefined,
         pullNumber: task.pullStatus?.number,
       })
@@ -128,7 +131,12 @@ export function taskNotificationEvents(
           automation,
           target: state.target,
         })
-    } else if (before.running && !state.running && !state.cancelled)
+    } else if (
+      before.running &&
+      !state.running &&
+      !state.cancelled &&
+      (state.failed || !state.delegated)
+    )
       events.push({
         key,
         kind: state.failed ? 'failed' : 'done',

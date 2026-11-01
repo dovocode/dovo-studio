@@ -33,6 +33,7 @@ export * from './tasks/harness-availability.js'
 export * from './shared/commands.js'
 
 export * from './scm/pulls/pulls.js'
+export * from './scm/pulls/review-handoff.js'
 export * from './scm/pulls/pull-stack.js'
 
 export * from './automation/activity.js'
@@ -207,6 +208,7 @@ export * from './tasks/agent-configuration.js'
 export * from './runtime/connection/scoped-settings.js'
 
 export * from './tasks/delegation.js'
+export * from './tasks/side-thread-attention.js'
 
 export * from './random-uuid.js'
 

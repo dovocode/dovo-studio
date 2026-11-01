@@ -43,7 +43,7 @@ import {
 } from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
 import { attachmentIdsSchema } from '@dovo/protocol'
-import { startForkSchema } from '@dovo/protocol'
+import { startForkSchema, createSideThreadSchema, bringBackSideThreadSchema } from '@dovo/protocol'
 import {
   agentDiscoverySchema,
   modelDiscoveryInput,
@@ -369,6 +369,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.task.draftAttachments?.length ||
           input.task.draftTurnSettings ||
           input.task.workItem ||
+          input.task.sideThread ||
           input.task.archivedAt ||
           input.task.worktreeSetupComplete !== undefined ||
           input.task.worktreeBase !== undefined ||
@@ -378,6 +379,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         s.tasks.requireCheckoutReferencesAvailable(input.task)
         const existing = s.store.get().tasks.find((task) => task.id === input.task.id)
         if (existing) {
+          if (existing.sideThread)
+            throw new HttpError(409, 'Side threads stay on their original runtime.')
           if (!canChangeTaskCheckout(existing))
             throw new HttpError(409, 'This task already started on the destination machine')
           if (!existing.archivedAt) {
@@ -638,12 +641,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             plan: Schema.optional(Schema.Boolean),
             queueOnly: Schema.optional(Schema.Boolean),
             preserveQueuePause: Schema.optional(Schema.Boolean),
+            sendNow: Schema.optional(Schema.Boolean),
             runId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
         if (!input.text && !input.attachmentIds.length)
           throw new HttpError(400, 'Add a message or attachment')
+        if (
+          input.sendNow &&
+          (input.queueOnly || input.preserveQueuePause || path === '/api/tasks/steer')
+        )
+          throw new HttpError(400, 'Send now cannot be combined with queueing or steering')
         if (path === '/api/tasks/steer') {
           if (input.queueOnly) throw new HttpError(400, 'A staged message cannot steer the agent')
           if (input.plan)
@@ -678,6 +687,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.plan,
           input.queueOnly,
           input.preserveQueuePause,
+          input.sendNow,
         )
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
@@ -1050,6 +1060,47 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const input = decode(startForkSchema, yield* serviceResult(body(request)))
         return yield* serviceResult(
           s.tasks.startFork(input.id, input.forkId, input.text, input.attachmentIds),
+        )
+      }
+      if (method === 'POST' && path === '/api/tasks/side-thread/create') {
+        const input = decode(createSideThreadSchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(
+          s.tasks.createSideThread(input.id, input.childId, input.objective),
+        )
+      }
+      if (method === 'POST' && path === '/api/tasks/side-thread/bring-back') {
+        const input = decode(bringBackSideThreadSchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(s.tasks.bringBackSideThread(input.id, input.expectedDraft))
+      }
+      if (method === 'POST' && path === '/api/tasks/side-thread/discard') {
+        const { id } = decode(strictStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        if (!s.store.get().tasks.some((task) => task.id === id) && s.store.wasTaskDeleted(id))
+          return { ok: true }
+        const reservation = s.tasks.reserveDeletion([id])
+        return yield* Effect.gen(function* () {
+          s.tasks.requireUnusedSideThread(id)
+          return yield* taskLifecycle(s, id, 'delete', true, reservation, () =>
+            s.tasks.requireUnusedSideThread(id),
+          )
+        }).pipe(Effect.ensuring(Effect.sync(() => s.tasks.releaseDeletion([id], reservation))))
+      }
+      if (method === 'POST' && path === '/api/tasks/side-thread/changes') {
+        const { id } = decode(strictStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        return yield* serviceResult(s.tasks.sideThreadChanges(id))
+      }
+      if (method === 'POST' && path === '/api/tasks/side-thread/file-preview') {
+        const input = decode(
+          strictStruct({
+            id: idSchema,
+            before: Schema.String,
+            after: Schema.String,
+            path: maxValue(minValue(Schema.String, 1), 4000),
+            full: Schema.optional(Schema.Boolean),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* serviceResult(
+          s.tasks.sideThreadFile(input.id, input.before, input.after, input.path, input.full),
         )
       }
       if (method === 'POST' && path === '/api/tasks/handoff') {
@@ -1432,6 +1483,7 @@ export function taskLifecycle(
   action: 'archive' | 'restore' | 'delete',
   removeWorktrees?: boolean,
   deletionReservation?: symbol,
+  beforeDelete?: () => void,
 ) {
   return routeProgram(
     Effect.gen(function* () {
@@ -1488,6 +1540,7 @@ export function taskLifecycle(
         requireIdle()
         for (const terminal of s.terminals.list())
           if (ids.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
+        beforeDelete?.()
         s.store.transaction(() => {
           for (const taskId of ids) {
             s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)

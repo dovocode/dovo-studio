@@ -42,6 +42,7 @@ export function PullPatch({
   onComment,
   provider = 'github',
   allowAgent = true,
+  agentAction,
   allowInlineComment = true,
   allowInlineRange = true,
   headSha = '',
@@ -61,10 +62,21 @@ export function PullPatch({
       side: 'additions' | 'deletions'
     },
     destination: 'github' | 'agent',
-    baseline: { headSha: string; path: string; patch: string; expectedDestination?: string },
+    baseline: {
+      headSha: string
+      path: string
+      patch: string
+      expectedDestination?: string
+      code?: string
+    },
   ) => Promise<void>
   provider?: ForgeProvider
   allowAgent?: boolean
+  /**
+   * Where agent feedback goes instead of a new task, such as the explicitly linked thread showing
+   * this PR or a conversation chooser. `clears` drops the selection once handed off.
+   */
+  agentAction?: { option: string; submit: string; clears: boolean }
   allowInlineComment?: boolean
   allowInlineRange?: boolean
   headSha?: string
@@ -244,7 +256,9 @@ export function PullPatch({
                 onDraft={(value) => onDraft?.((current) => ({ ...current, ...value }))}
                 disabled={commentDisabled || !onComment}
                 submitLabel={
-                  destination === 'github' ? `Post to ${forgeLabels[provider]}` : 'Start agent task'
+                  destination === 'github'
+                    ? `Post to ${forgeLabels[provider]}`
+                    : (agentAction?.submit ?? 'Start agent task')
                 }
                 onCancel={() => setSelection(null)}
                 onSubmit={async (body) => {
@@ -266,9 +280,13 @@ export function PullPatch({
                       expectedDestination: selection.expectedDestination,
                       path: selection.file.path,
                       patch: selection.file.patch ?? '',
+                      code:
+                        selection.side === 'additions'
+                          ? selectedPatchCode(parsed.diff, selection.start, selection.end)
+                          : undefined,
                     },
                   )
-                  if (destination === 'github') setSelection(null)
+                  if (destination === 'github' || agentAction?.clears) setSelection(null)
                 }}
               >
                 <ChoicePicker
@@ -279,7 +297,9 @@ export function PullPatch({
                     setDestination(selection === 'github' ? 'github' : 'agent')
                   }
                 >
-                  {allowAgent && <option value="agent">Agent task</option>}
+                  {allowAgent && (
+                    <option value="agent">{agentAction?.option ?? 'Agent task'}</option>
+                  )}
                   {allowInlineComment && <option value="github">{forgeLabels[provider]} PR</option>}
                 </ChoicePicker>
               </LineCommentForm>

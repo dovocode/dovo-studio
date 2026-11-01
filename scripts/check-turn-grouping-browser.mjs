@@ -18,7 +18,7 @@ const initial={id:'thread',title:'Thread',status:'done',messages:[
 {id:'steer',turnId:'attempt',role:'user',text:'Clarification',createdAt:'2026-10-03T10:00:10Z'},
 {id:'after',turnId:'attempt',role:'assistant',text:'Linking works on right-click or long-press.Final answer.',textBreaks:[43,56],createdAt:'2026-10-03T10:00:11Z'}],turns:[turn],files:[],draft:''};
 const events=[{id:'last',time:'2026-10-03T10:00:50Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'last',status:'completed',textOffset:56,event:{item:{type:'commandExecution',command:'git diff'}}})},{id:'command',time:'2026-10-03T10:00:20Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'command',status:'completed',textOffset:35,event:{item:{type:'commandExecution',command:'git status'}}})},{id:'prior',time:'2026-10-03T10:00:05Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'before',toolId:'prior',status:'completed',textOffset:13,event:{item:{type:'commandExecution',command:'pnpm test'}}})}];
-window.events=events;export function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[historyBusy,setHistoryBusy]=useState(false);window.setHistoryBusy=setHistoryBusy;const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,messageSources:new Map(task.messages.filter(message=>message.source).map(message=>[message.id,message.source])),childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected,request:async()=>({ok:true}),history:{hasMore:false,busy:historyBusy,error:'',bookmarks:[],setBookmark:()=>{},trim:()=>{}},visible:active,legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
+window.events=events;export function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[hasMore,setHasMore]=useState(false);window.setHasMore=setHasMore;const[historyBusy,setHistoryBusy]=useState(false);window.setHistoryBusy=setHistoryBusy;const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.fixtureVisible=active;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,messageSources:new Map(task.messages.filter(message=>message.source).map(message=>[message.id,message.source])),childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected,request:async()=>({ok:true}),history:{load:()=>{window.historyLoads=(window.historyLoads??0)+1},hasMore,busy:historyBusy,error:'',bookmarks:[],setBookmark:()=>{},trim:()=>{}},visible:active,legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
 `
 const ui = `export {cn} from './src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';
 export {FileTypeIcon} from './src/file-tree';export {RepositoryOpenItems} from './src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -57,7 +57,7 @@ async function bundle(mobile) {
     '../../../ui/content/server-image': `export const ServerImage=({label})=><div data-image>{label}</div>;`,
     '../../ui/content/text': `export {Text} from 'react-native';`,
     '../../ui/controls/icon': `export const Icon=()=>null;`,
-    '../../ui/controls/icon-button': `export const IconButton=()=>null;`,
+    '../../ui/controls/icon-button': `export const IconButton=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress}>{label}</button>;`,
     '../../ui/controls/pill': `export const Pill=()=>null;`,
     '../../ui/controls/action': `export const Action=()=>null;`,
     '../../runtime/connection/connection-status': `export const ConnectionPill=()=>null;`,
@@ -80,12 +80,12 @@ const message=useFixture().messages.find(message=>message.id===messageId);if(!me
 const Component=components.Message;return <MessageContext.Provider value={message}><Component/></MessageContext.Provider>;
 }};`,
     'react-native': `
-import {useEffect} from 'react';
+import {useEffect,useImperativeHandle} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.flat(Infinity)):style;
 export const View=({children,style,pointerEvents,accessibilityRole,accessibilityLabel})=><div style={{position:'relative',...flat(style),pointerEvents}} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={flat(style)}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
 export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style,testID})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} style={{position:'relative',...flat(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>:<div data-testid={testID} style={Array.isArray(style)?Object.assign({},...style):typeof style==='function'?style({pressed:false}):style} onClick={onPress}>{children}</div>;
 export const Alert={alert:message=>{throw Error(message)}};export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
-export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag})=>{window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
+export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag,onEndReached,maintainVisibleContentPosition,inverted,onContentSizeChange,ref})=>{useImperativeHandle(ref,()=>({scrollToOffset:()=>{window.nativeScrollResets=(window.nativeScrollResets??0)+1},scrollToIndex:()=>{}}),[]);window.listAnchor=maintainVisibleContentPosition;window.listInverted=inverted;window.measureOlder=height=>onContentSizeChange(390,height);window.reachEarlier=onEndReached;window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
   mocks['../state/provider'] =
     `import {useFixture} from 'fixture';export const useConversationSelector=select=>select(useFixture());export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
@@ -214,6 +214,65 @@ try {
       )
     }
     if (mobile) {
+      assert.equal(await page.evaluate(() => window.listInverted), true)
+      assert.deepEqual(await page.evaluate(() => window.listAnchor), {
+        minIndexForVisible: 0,
+        autoscrollToTopThreshold: 0,
+      })
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      await page.evaluate(() => {
+        window.nativeScrollResets = 0
+        for (const height of [800, 1600, 3200, 12000]) window.measureOlder(height)
+        window.setHistoryBusy(true)
+      })
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      assert.equal(
+        await page.evaluate(() => window.nativeScrollResets),
+        0,
+        'Older row measurements do not issue competing JS scroll resets',
+      )
+      assert.equal(
+        await page.locator('[data-loading-history]').count(),
+        0,
+        'Background fill is quiet at the latest reply',
+      )
+      await page.evaluate(() => window.setHistoryBusy(false))
+      await page.evaluate(() => window.setHasMore(true))
+      await page.evaluate(() => {
+        window.historyLoads = 0
+        window.reachEarlier()
+        window.reachEarlier()
+      })
+      assert.equal(
+        await page.evaluate(() => window.historyLoads),
+        0,
+        'Opening measurements cannot load old rows',
+      )
+      await page.evaluate(() => {
+        window.readEarlier()
+        window.reachEarlier()
+      })
+      assert.equal(
+        await page.evaluate(() => window.historyLoads),
+        1,
+        'Scrolling back can load earlier rows',
+      )
+      assert.deepEqual(await page.evaluate(() => window.listAnchor), { minIndexForVisible: 0 })
+      await page.evaluate(() => window.setActive(false))
+      await page.waitForFunction(() => window.fixtureVisible === false)
+      await page.evaluate(() => window.setActive(true))
+      await page.waitForFunction(() => window.fixtureVisible === true)
+      await page.evaluate(() => window.reachEarlier())
+      assert.equal(
+        await page.evaluate(() => window.historyLoads),
+        1,
+        'Reopening resets automatic end loading',
+      )
+      await page.evaluate(() => window.setHasMore(false))
       const list = page.locator('[data-conversation-list]')
       const before = await list.boundingBox()
       await page.evaluate(() => window.setConnected(false))

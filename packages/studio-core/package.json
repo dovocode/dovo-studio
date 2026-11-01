@@ -16,7 +16,8 @@
     "./pierre-theme": "./src/pierre-theme.ts",
     "./browser-json": "./src/browser-json.ts",
     "./browser-json-format": "./src/browser-json-format.ts",
-    "./repository-open": "./src/repository-open.ts"
+    "./repository-open": "./src/repository-open.ts",
+    "./side-thread-creation": "./src/side-thread-creation.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

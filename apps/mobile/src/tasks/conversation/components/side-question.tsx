@@ -1,3 +1,4 @@
+import { AgentSideChats } from './agent-side-chats'
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Alert, View } from 'react-native'
 import { Effect, Schema } from 'effect'
@@ -14,18 +15,38 @@ import { useTheme } from '../../../ui/theme'
 import { useTaskConversation } from '../state/provider'
 const savedSchema = mutableStruct({ id: Schema.String })
 const answerSchema = mutableStruct({ answer: Schema.String })
-export function SideQuestion({
+type SideQuestionProps = {
+  task: Task
+  selectedChatId?: string
+  onClose: () => void
+  drafts: Record<string, string>
+  setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+}
+export function SideQuestion(props: SideQuestionProps) {
+  const [legacy, setLegacy] = useState(!!props.selectedChatId)
+  useEffect(() => {
+    if (props.selectedChatId) setLegacy(true)
+  }, [props.selectedChatId])
+  return legacy ? (
+    <LegacySideQuestion {...props} onAgents={() => setLegacy(false)} />
+  ) : (
+    <AgentSideChats task={props.task} onClose={props.onClose} onLegacy={() => setLegacy(true)} />
+  )
+}
+function LegacySideQuestion({
   task,
   onClose,
   drafts,
   setDrafts,
   selectedChatId,
+  onAgents,
 }: {
   task: Task
   selectedChatId?: string
   onClose: () => void
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  onAgents: () => void
 }) {
   const { styles } = useTheme()
 
@@ -72,7 +93,7 @@ export function SideQuestion({
   }
   return (
     <Sheet
-      title="Side chats"
+      title="Previous Q&A chats"
       onClose={onClose}
       busy={busy}
       footer={
@@ -138,7 +159,10 @@ export function SideQuestion({
         </>
       }
     >
-      <Text style={styles.muted}>Saved with this thread. Ask without interrupting its agent.</Text>
+      <Action secondary label="Agent side chats" onPress={onAgents} />
+      <Text style={styles.muted}>
+        Previous Q&A chats · read-only questions saved with this thread.
+      </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {!!chats.length && (
           <Choice
@@ -151,7 +175,7 @@ export function SideQuestion({
           />
         )}
         <Action
-          label="New side chat"
+          label="New Q&A chat"
           disabled={disabled}
           onPress={() =>
             act(() =>

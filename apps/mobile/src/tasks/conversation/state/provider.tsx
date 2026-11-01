@@ -43,7 +43,7 @@ type Conversation = {
   messageSources: ReadonlyMap<string, MessageSource>
   actions: ReturnType<typeof useConversationActions>
   send: (
-    mode?: 'queue' | 'steer' | 'stage',
+    mode?: 'queue' | 'steer' | 'stage' | 'direct',
     startInBackground?: Parameters<ReturnType<typeof useConversationActions>['submit']>[2],
   ) => void
   stop: () => void

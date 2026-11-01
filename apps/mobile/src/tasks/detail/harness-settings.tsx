@@ -111,7 +111,7 @@ export function HarnessSettings({
     (choice) => choice.id === selection && choice.provider === agent.provider,
   )
   const controlsDisabled =
-    busy || (!turn && task.status === 'running') || !!task.archived || !connected
+    busy || (!turn && task.status === 'running') || !!task.archivedAt || !connected
   const save = (next: Agent, nextSelection = selection) => {
     if (controlsDisabled) return
     if (turn) {

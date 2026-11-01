@@ -16,7 +16,7 @@ function checkSelection(
   acpInstallationId?: string,
 ) {
   if (task.status === 'running') throw new Error('Stop the current turn before changing its model.')
-  if (task.archived) throw new Error('Reopen this task before changing its agent.')
+  if (task.archivedAt) throw new Error('Restore this archived thread before changing its agent.')
   const locked = lockedTaskProvider(task, agents)
   if (locked && locked !== provider)
     throw new Error(

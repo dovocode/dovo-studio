@@ -1,5 +1,6 @@
 import { runtimeComputerName, taskFamilyInputIds } from '@dovo/protocol'
 import type { RuntimeOverview, RuntimeSnapshot, Task, Workspace } from '@dovo/studio-core'
+import { unusedSideDraft } from '../detail/side-threads'
 
 export type TaskSource = {
   runtimeId: string | null
@@ -108,9 +109,21 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
   })
 }
 
+/**
+ * Never-started side chat drafts stay in their parent's side chats, search and attention until
+ * someone needs to act on them.
+ */
+export function hiddenSideDraft(entry: Pick<TaskEntry, 'task' | 'needsInput' | 'source'>) {
+  return (
+    !entry.needsInput &&
+    unusedSideDraft(entry.task) &&
+    entry.source.workspace.tasks.some((task) => task.id === entry.task.sideThread?.parentTaskId)
+  )
+}
+
 /** Delegated threads remain navigable, but belong to their parent in list views. */
 export function mainTaskEntries(entries: readonly TaskEntry[]): TaskEntry[] {
-  return entries.filter(({ task }) => !task.delegation)
+  return entries.filter((entry) => !entry.task.delegation && !hiddenSideDraft(entry))
 }
 
 /** Reuse the previous owner while every row-facing fact is unchanged. */

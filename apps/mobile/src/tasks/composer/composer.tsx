@@ -1,3 +1,7 @@
+import { useOperationGuard } from '../../runtime/state/use-operation-guard'
+import { prepareRuntimeSideThread, finishRuntimeSideThread } from '../draft/runtime-drafts'
+import { router } from 'expo-router'
+import { taskHref } from '../../shell/task-route'
 import { ActionMenu, type MenuAction, type MenuAnchor } from '../../ui/controls/action-menu'
 import { blockAccessibleNotificationInputs } from '../../notifications/visibility'
 import { randomUUID } from 'expo-crypto'
@@ -38,6 +42,7 @@ import { MessageAttachments } from '../conversation/components/message-attachmen
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Keyboard,
   Linking,
   Platform,
@@ -70,6 +75,8 @@ import type { BackgroundStart } from '../conversation/state/use-actions'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
+import { ComposerActivity } from './composer-activity'
+import { ComposerHistoryGesture } from './composer-history-gesture'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
@@ -89,12 +96,12 @@ export function Composer({
   onSelectRemote,
   onStartInBackground,
   renderAbove,
-  queuedMessages,
+  onHistoryBrowsingChange,
 }: {
   task: Task
   onStartInBackground?: (configuration: Task, attemptId: string) => BackgroundStart
-  queuedMessages?: ReactNode
   renderAbove?: (setup: ReactNode, startModes?: ReactNode) => ReactNode
+  onHistoryBrowsingChange?: (browsing: boolean) => void
   onAsk?: (chatId?: string) => void
   onSelectRemote?: (
     runtimeId: string,
@@ -119,6 +126,7 @@ export function Composer({
     connected,
     snapshot,
     draft,
+    composerHistory,
     dictation,
     busy: actionBusy,
     stopping,
@@ -144,6 +152,18 @@ export function Composer({
     planSupported,
     setPlan,
   } = actions
+  useLayoutEffect(() => {
+    onHistoryBrowsingChange?.(composerHistory.active)
+  }, [composerHistory.active, onHistoryBrowsingChange])
+  useLayoutEffect(() => () => onHistoryBrowsingChange?.(false), [onHistoryBrowsingChange])
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !composerHistory.active) return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      composerHistory.cancel()
+      return true
+    })
+    return () => back.remove()
+  }, [composerHistory.active, composerHistory.cancel])
   const nextTurnControls =
     !!snapshot?.queuedTurnSettingsSupported &&
     !!agent &&
@@ -195,6 +215,7 @@ export function Composer({
   const [asideCreating, setAsideCreating] = useState(false)
   const [asideBusy, setAsideBusy] = useState(false)
   const asideRequest = useRef(false)
+  const asideAttempt = useRef<{ id: string; text: string } | undefined>(undefined)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
   const fork = useForkDraft({
@@ -249,7 +270,8 @@ export function Composer({
   )
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
-  const { call, callEffect: commandCall } = useRuntime()
+  const { call, callEffect: commandCall, activeId, legacyDraftRuntimeId } = useRuntime()
+  const asideCurrent = useOperationGuard(JSON.stringify([activeId, task.id, draft.key]))
   const askAside = async (text: string) => {
     if (
       !!editing ||
@@ -261,7 +283,6 @@ export function Composer({
       busy ||
       asideRequest.current ||
       dictation.active ||
-      task.archived ||
       task.archivedAt
     )
       return
@@ -269,31 +290,44 @@ export function Composer({
       onAsk()
       return
     }
-    if (text.length > 4000) {
-      Alert.alert('Side question too long', 'Side questions can contain up to 4,000 characters.')
+    if (text.length > 20000) {
+      Alert.alert(
+        'Side chat message too long',
+        'Side chat drafts can contain up to 20,000 characters.',
+      )
       return
     }
     asideRequest.current = true
     setAsideBusy(true)
     setAsideCreating(true)
     try {
+      if (!activeId) throw new Error('Choose the thread’s computer first.')
+      if (!asideAttempt.current || asideAttempt.current.text !== text)
+        asideAttempt.current = { id: randomUUID(), text }
+      const id = await prepareRuntimeSideThread(
+        activeId,
+        task.id,
+        asideAttempt.current.id,
+        text,
+        text,
+        legacyDraftRuntimeId,
+      )
+      if (!asideCurrent()) return
       const chat = await call(
-        '/api/tasks/side-chat/save',
-        { id: task.id, draft: text },
+        '/api/tasks/side-thread/create',
+        { id: task.id, childId: id, objective: text },
         mutableStruct({ id: Schema.String }),
       )
+      await finishRuntimeSideThread(activeId, task.id, id)
+      if (!asideCurrent() || latestDraft.current.key !== draft.key) return
       if (latestDraft.current.key === draft.key && latestDraft.current.text === text)
         draft.update('')
-      setAsideCreating(false)
-      onAsk(chat.id)
-      await call(
-        '/api/tasks/side-chat/ask',
-        { id: task.id, chatId: chat.id, question: text },
-        mutableStruct({ answer: Schema.String }),
-      )
+      asideAttempt.current = undefined
+      Keyboard.dismiss()
+      router.push(taskHref(activeId, chat.id))
     } catch (cause) {
       Alert.alert(
-        'Could not ask side question',
+        'Could not start side chat',
         cause instanceof Error ? cause.message : String(cause),
       )
     } finally {
@@ -404,8 +438,11 @@ export function Composer({
   const car = useCarMode()
   // Car mode starts with speech; the regular composer is one tap away for a passenger.
   const [typing, setTyping] = useApplicationState(false)
-  const showOptions = !minimalComposer || focused || hasInput || dictation.active
+  const showOptions =
+    !minimalComposer || focused || hasInput || dictation.active || composerHistory.active
+  const canBrowseHistory = composerHistory.available && !busy && !attaching && !dictation.active
   const canAskAside =
+    !task.sideThread &&
     !editing &&
     !!onAsk &&
     task.messages.length > 0 &&
@@ -414,7 +451,6 @@ export function Composer({
     !asideBusy &&
     draft.ready &&
     !dictation.active &&
-    !task.archived &&
     !task.archivedAt &&
     !draft.pendingFork &&
     !draft.pendingRestore
@@ -470,6 +506,19 @@ export function Composer({
                 },
               ]
             : []),
+          ...(snapshot?.directMessageSupported === true &&
+          task.status !== 'running' &&
+          (task.queuePaused || task.queue?.[0]?.paused)
+            ? [
+                {
+                  title: 'Send now',
+                  label: 'Send now',
+                  icon: 'send' as const,
+                  disabled: !canSend || busy,
+                  onPress: () => send('direct'),
+                },
+              ]
+            : []),
           ...(showFork
             ? [
                 {
@@ -510,6 +559,13 @@ export function Composer({
           },
         ]
   const draftMenuActions: MenuAction[] = [
+    {
+      title: 'Message history',
+      label: 'Message history',
+      icon: 'history',
+      disabled: !canBrowseHistory,
+      onPress: composerHistory.begin,
+    },
     ...(planSupported && !showPlanButton
       ? [
           {
@@ -857,7 +913,7 @@ export function Composer({
     return (
       <>
         {renderAbove?.(null)}
-        {queuedMessages}
+        <ComposerActivity task={task} />
         <View
           style={[
             styles.content,
@@ -875,7 +931,7 @@ export function Composer({
     return (
       <>
         {renderAbove?.(null)}
-        {queuedMessages}
+        <ComposerActivity task={task} />
         <CarComposer task={task} onType={() => setTyping(true)} />
       </>
     )
@@ -943,7 +999,7 @@ export function Composer({
         </Pressable>
       )}
       {!renderAbove && setup}
-      {queuedMessages}
+      <ComposerActivity task={task} inComposer />
       {editing && (
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
           <Text style={[styles.muted, { flex: 1 }]}>
@@ -959,7 +1015,7 @@ export function Composer({
           />
         </View>
       )}
-      <Animated.View layout={transition}>
+      <Animated.View layout={transition} testID="Composer surface">
         <Glass
           style={{
             borderRadius: 26,
@@ -984,7 +1040,7 @@ export function Composer({
             }
             onBusy={setAttaching}
           />
-          {focused && (
+          {focused && !composerHistory.active && (
             <FileMentions
               taskId={task.id}
               text={draft.text}
@@ -1018,7 +1074,55 @@ export function Composer({
             />
           )}
           {/* Keep the input mounted in the same position while its toolbar expands. */}
-          <View>
+          <ComposerHistoryGesture
+            enabled={canBrowseHistory}
+            browsing={composerHistory.active}
+            begin={composerHistory.begin}
+            older={composerHistory.older}
+            newer={composerHistory.newer}
+          >
+            {composerHistory.active && (
+              <View
+                testID="Composer history browser"
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingLeft: 12,
+                  paddingRight: 8,
+                  gap: 8,
+                }}
+              >
+                <View
+                  accessible
+                  accessibilityRole="adjustable"
+                  accessibilityLabel="Message history"
+                  accessibilityHint="Swipe right for older messages and left for newer messages. Typing or sending uses this text. Cancel restores your draft."
+                  accessibilityValue={{
+                    min: 0,
+                    max: composerHistory.count,
+                    now: (composerHistory.index ?? -1) + 1,
+                    text:
+                      composerHistory.index === -1
+                        ? 'Current draft'
+                        : `Message ${(composerHistory.index ?? 0) + 1} of ${composerHistory.count}, newest first`,
+                  }}
+                  accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+                  onAccessibilityAction={({ nativeEvent }) => {
+                    if (nativeEvent.actionName === 'increment') composerHistory.older()
+                    if (nativeEvent.actionName === 'decrement') composerHistory.newer()
+                  }}
+                  style={{ flex: 1, minWidth: 0, gap: 2 }}
+                >
+                  <Text style={[styles.muted, { fontSize: 12 }]}>
+                    {composerHistory.index === -1
+                      ? 'Current draft'
+                      : `History · ${(composerHistory.index ?? 0) + 1} of ${composerHistory.count}`}
+                  </Text>
+                  <Text style={[styles.muted, { fontSize: 11 }]}>← Newer · Older →</Text>
+                </View>
+                <Action secondary label="Cancel" onPress={composerHistory.cancel} />
+              </View>
+            )}
             <Animated.View
               layout={transition}
               testID="Composer input row"
@@ -1207,7 +1311,7 @@ export function Composer({
                         agent={agent}
                         value={turnSettings}
                         onChange={setTurnSettings}
-                        disabled={busy || !!task.archived}
+                        disabled={busy || !!task.archivedAt}
                       />
                     )}
                   </Sheet>
@@ -1228,12 +1332,12 @@ export function Composer({
                         disabled:
                           busy ||
                           ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                          !!task.archived,
+                          !!task.archivedAt,
                       }}
                       disabled={
                         busy ||
                         ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                        task.archived
+                        !!task.archivedAt
                       }
                       onPress={() => {
                         if (dictation.active) dictation.stop()
@@ -1252,7 +1356,7 @@ export function Composer({
                           pressed ||
                           busy ||
                           ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                          task.archived
+                          task.archivedAt
                             ? 0.5
                             : 1,
                       })}
@@ -1459,7 +1563,7 @@ export function Composer({
               }
               upload={attachmentPicker.uploadContext}
             />
-          </View>
+          </ComposerHistoryGesture>
           {!!dictationStatus && (
             <View
               style={[
