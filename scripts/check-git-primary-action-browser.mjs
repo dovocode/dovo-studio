@@ -46,6 +46,7 @@ const built = await build({
           './task-branch-menu': 'export const TaskBranchMenu=()=>null;',
           './task-pull-status': 'export const TaskPullStatus=()=>null;',
           './task-project-actions': 'export const TaskProjectActions=()=>null;',
+          '../chat/thread-sharing': 'export const ThreadSharing=()=>null;',
           '../dialogs/task-pull-link-dialog': 'export const TaskPullLinkDialog=()=>null;',
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
