@@ -435,7 +435,12 @@ it('omits an incomplete turn without losing the newest completed result', async 
   await waitForRuntime(() => expect(s.store.task(childId).status).toBe('review'))
   cleanups.push(() => rm(childCwd, { recursive: true, force: true }))
   await s.tasks.send(childId, randomUUID(), 'Failed private prompt')
-  await waitForRuntime(() => expect(s.store.task(childId).status).toBe('failed'))
+  // Failure is published before the worker releases ownership and its paused queue.
+  await waitForRuntime(() => {
+    const task = s.store.task(childId)
+    expect(task.status).toBe('failed')
+    expect(task.activeRunId).toBeUndefined()
+  })
   const failed = s.store.task(childId).turns?.at(-1)
   expect(failed?.status).toBe('failed')
   s.store.updateTaskHistory(childId, (task) => ({
