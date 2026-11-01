@@ -124,9 +124,10 @@ try {
   assert.deepEqual(await names(), ['Working', 'Waiting'])
   const lastSection = await page.locator('details').last().boundingBox()
   const activeRow = await page.getByText('Active thread', { exact: true }).boundingBox()
-  const sidebar = await page.getByRole('complementary', { name: 'Task sidebar' }).boundingBox()
+  // Sections anchor to the inset overview pane, inside the sidebar's outer spacing.
+  const pane = await page.locator('.studio-overview-pane').boundingBox()
   assert.ok(
-    Math.abs(lastSection.y + lastSection.height - sidebar.y - sidebar.height) < 10,
+    Math.abs(lastSection.y + lastSection.height - pane.y - pane.height) < 10,
     'Trailing collapsed sections stay at the bottom',
   )
   const waitingSummary = page.locator('summary').filter({ hasText: 'Waiting' })
@@ -160,7 +161,7 @@ try {
   )
   const waitingSection = await waitingSummary.locator('..').boundingBox()
   assert.ok(
-    Math.abs(waitingSection.y + waitingSection.height - sidebar.y - sidebar.height) < 10,
+    Math.abs(waitingSection.y + waitingSection.height - pane.y - pane.height) < 10,
     'Trailing collapsed sections stay at the bottom while an earlier section is open',
   )
   assert.deepEqual(
