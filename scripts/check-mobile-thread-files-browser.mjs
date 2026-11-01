@@ -223,7 +223,23 @@ try {
   await reconnectResponse
   assert.equal(listRequests.length, beforeReconnect + 1)
   assert.equal(listRequests.at(-1).directory, '', 'Reconnect reloads the visible directory')
-  await page.getByRole('button', { name: 'Open folder src', exact: true }).click()
+  await page.getByRole('button', { name: 'Folder src', exact: true }).click()
+  await page.getByRole('button', { name: 'src/hello.ts', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'latest-file.txt', exact: true }).isVisible(),
+    true,
+    'Expanding a folder keeps root files visible',
+  )
+  const beforeReopen = listRequests.length
+  await page.getByRole('button', { name: 'Folder src', exact: true }).click()
+  await page.getByRole('button', { name: 'src/hello.ts', exact: true }).waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Folder src', exact: true }).click()
+  await page.getByRole('button', { name: 'src/hello.ts', exact: true }).waitFor()
+  assert.equal(
+    listRequests.length,
+    beforeReopen,
+    'Reopening a loaded folder requires no network request',
+  )
   await page
     .getByRole('button', { name: 'src/hello.ts', exact: true })
     .click({ timeout: 5000 })

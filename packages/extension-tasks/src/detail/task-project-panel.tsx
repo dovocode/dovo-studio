@@ -1,4 +1,5 @@
 import { ThreadInfoUsage } from './thread-info-usage'
+import { ThreadSharing } from '../chat/thread-sharing'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
@@ -469,6 +470,7 @@ export function TaskProjectPanel({
   return (
     <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
       <div className="studio-project-card">
+        {!task.example && <ThreadSharing key={task.id} taskId={task.id} title={task.title} />}
         {(show('project') || show('openIn') || show('scripts')) && (
           <div className="studio-project-section">
             {show('project') && (

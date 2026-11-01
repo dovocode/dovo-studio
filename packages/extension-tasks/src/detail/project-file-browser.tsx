@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Effect } from 'effect'
 import { responses, useWorkspace } from '@dovo/studio-core'
-import type { ProjectDirectory, ProjectContentSearch, ChangedFile } from '@dovo/protocol'
+import type { ProjectContentSearch, ChangedFile } from '@dovo/protocol'
 import { Button, SearchField, FileTypeIcon, FileChangeCounts } from '@dovo/studio-ui'
-import { Folder, ArrowUp } from 'lucide-react'
+import { ProjectDirectoryTree } from './project-directory-tree'
 import { fileStats } from '../files/presentation'
 
 export function ProjectFileBrowser({
@@ -32,14 +32,11 @@ export function ProjectFileBrowser({
     const file = changed.get(path)
     return file ? fileStats(file) : undefined
   }
-  const [directory, setDirectory] = useState('')
   const [mode, setMode] = useState<'files' | 'content'>('files')
   const [query, setQuery] = useState('')
-  const [cursor, setCursor] = useState<string>()
   const [retry, setRetry] = useState(0)
   const [result, setResult] = useState<{
     identity: string
-    directory?: ProjectDirectory
     paths?: string[]
     content?: ProjectContentSearch
     truncated?: boolean
@@ -51,45 +48,35 @@ export function ProjectFileBrowser({
     connection?.token,
     taskId,
     checkoutId,
-    directory,
-    cursor,
     mode,
     query,
   ])
   const current = result?.identity === identity ? result : undefined
   useEffect(() => {
-    if (!connected || (mode === 'content' && !query)) return
+    if (!connected || !query) return
     let active = true
     const controller = new AbortController()
     const timeout = setTimeout(
       () => {
         const run = (): Effect.Effect<
           {
-            directory?: ProjectDirectory
             paths?: string[]
             content?: ProjectContentSearch
             truncated?: boolean
           },
           Error
         > => {
-          if (query) {
-            if (mode === 'content')
-              return requestEffect(
-                '/api/tasks/files/search-content',
-                { id: taskId, checkoutId, query },
-                responses.projectContentSearch,
-              ).pipe(Effect.map((content) => ({ content })))
+          if (mode === 'content')
             return requestEffect(
-              '/api/tasks/files/search-paths',
+              '/api/tasks/files/search-content',
               { id: taskId, checkoutId, query },
-              responses.projectFileList,
-            ).pipe(Effect.map((paths) => ({ paths: paths.files, truncated: paths.truncated })))
-          }
+              responses.projectContentSearch,
+            ).pipe(Effect.map((content) => ({ content })))
           return requestEffect(
-            '/api/tasks/files/directory',
-            { id: taskId, checkoutId, directory, cursor },
-            responses.projectDirectory,
-          ).pipe(Effect.map((directory) => ({ directory })))
+            '/api/tasks/files/search-paths',
+            { id: taskId, checkoutId, query },
+            responses.projectFileList,
+          ).pipe(Effect.map((paths) => ({ paths: paths.files, truncated: paths.truncated })))
         }
         const failed = (error: unknown) => {
           if (active)
@@ -118,7 +105,7 @@ export function ProjectFileBrowser({
       clearTimeout(timeout)
       controller.abort()
     }
-  }, [requestEffect, connected, taskId, directory, cursor, mode, query, revision, retry, identity])
+  }, [requestEffect, connected, taskId, mode, query, revision, retry, identity])
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState !== 'hidden') setRetry((value) => value + 1)
@@ -126,7 +113,6 @@ export function ProjectFileBrowser({
     document.addEventListener('visibilitychange', refresh)
     return () => document.removeEventListener('visibilitychange', refresh)
   }, [])
-  const parent = directory.split('/').slice(0, -1).join('/')
   return (
     <>
       <div className="space-y-2 border-b p-2">
@@ -155,7 +141,6 @@ export function ProjectFileBrowser({
           value={query}
           onValueChange={(value) => {
             setQuery(value.slice(0, 256))
-            setCursor(undefined)
           }}
           clearLabel="Clear file search"
           className="text-xs"
@@ -165,31 +150,32 @@ export function ProjectFileBrowser({
             Case-sensitive literal search · up to 200 matching lines.
           </p>
         )}
-        {!query && mode === 'files' && (
-          <div className="flex min-w-0 items-center gap-1 text-xs">
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Parent folder"
-              disabled={!directory || disabled}
-              onClick={() => {
-                setDirectory(parent)
-                setCursor(undefined)
-              }}
-            >
-              <ArrowUp size={12} />
-            </Button>
-            <span className="truncate font-mono" title={directory || '/'}>
-              {directory || 'Project root'}
-            </span>
-          </div>
-        )}
       </div>
       <div
         className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5"
         aria-label="Project file entries"
       >
-        {!connected ? (
+        <div hidden={!!query || mode !== 'files'}>
+          <ProjectDirectoryTree
+            key={JSON.stringify([
+              activeRuntimeId,
+              connection?.address,
+              connection?.token,
+              taskId,
+              checkoutId,
+            ])}
+            taskId={taskId}
+            checkoutId={checkoutId}
+            revision={revision}
+            refresh={retry}
+            active={!query && mode === 'files'}
+            selected={selected}
+            disabled={disabled}
+            changed={changed}
+            onSelect={onSelect}
+          />
+        </div>
+        {!query && mode === 'files' ? null : !connected ? (
           <p className="p-2 text-xs text-muted-foreground">Reconnect to browse files.</p>
         ) : mode === 'content' && !query ? (
           <p className="p-2 text-xs text-muted-foreground">
@@ -209,7 +195,6 @@ export function ProjectFileBrowser({
                 <Button
                   size="sm"
                   onClick={() => {
-                    setCursor(undefined)
                     setRetry((value) => value + 1)
                   }}
                 >
@@ -217,30 +202,6 @@ export function ProjectFileBrowser({
                 </Button>
               </div>
             )}
-            {current.directory?.entries.map((entry) => (
-              <button
-                key={entry.path}
-                type="button"
-                aria-current={entry.kind === 'file' && selected === entry.path ? 'true' : undefined}
-                data-selected={selected === entry.path}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent data-[selected=true]:bg-accent disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => {
-                  if (entry.kind === 'directory') {
-                    setDirectory(entry.path)
-                    setCursor(undefined)
-                  } else onSelect(entry.path)
-                }}
-              >
-                {entry.kind === 'directory' ? (
-                  <Folder size={14} className="shrink-0" />
-                ) : (
-                  <FileTypeIcon path={entry.path} />
-                )}
-                <span className="min-w-0 flex-1 truncate">{entry.path.split('/').at(-1)}</span>
-                {entry.kind === 'file' && <FileChangeCounts {...stats(entry.path)} />}
-              </button>
-            ))}
             {current.paths?.map((path) => (
               <button
                 key={path}
@@ -274,7 +235,7 @@ export function ProjectFileBrowser({
                 </span>
               </button>
             ))}
-            {(current.truncated || current.content?.truncated || current.directory?.truncated) && (
+            {(current.truncated || current.content?.truncated) && (
               <p className="p-2 text-xs text-muted-foreground">
                 Some files are omitted. Narrow the search or open a smaller folder.
               </p>
@@ -291,9 +252,7 @@ export function ProjectFileBrowser({
                 or exceeded read limits.
               </p>
             )}
-            {(current.directory?.entries.length === 0 ||
-              current.paths?.length === 0 ||
-              current.content?.matches.length === 0) && (
+            {(current.paths?.length === 0 || current.content?.matches.length === 0) && (
               <p className="p-2 text-xs text-muted-foreground">
                 {query
                   ? current.paths
@@ -301,25 +260,8 @@ export function ProjectFileBrowser({
                       ? 'No matching files.'
                       : 'No matching files in this listing.'
                     : 'No matches in the searched files.'
-                  : current.directory?.nextCursor || current.directory?.truncated || cursor
-                    ? 'No visible entries on this page.'
-                    : 'This folder has no visible files.'}
+                  : 'No matching files.'}
               </p>
-            )}
-            {current.directory?.nextCursor && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={disabled}
-                onClick={() => setCursor(current.directory?.nextCursor)}
-              >
-                More entries
-              </Button>
-            )}
-            {cursor && current.directory && (
-              <Button size="sm" variant="ghost" onClick={() => setCursor(undefined)}>
-                First entries
-              </Button>
             )}
           </>
         )}

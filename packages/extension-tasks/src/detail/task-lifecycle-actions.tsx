@@ -1,6 +1,6 @@
-import { taskSnoozeOptions } from '@dovo/protocol'
+import { taskSnoozeChoices } from '@dovo/protocol'
 import { AlarmClock, Check, Undo2 } from 'lucide-react'
-import { updateTask, type Task } from '@dovo/studio-core'
+import { useAppPreferences, updateTask, type Task } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { useRef, useState } from 'react'
 import { taskActionClient, useTaskActionStore, type TaskRowChanges } from '../list/task-row-actions'
@@ -13,6 +13,7 @@ export function TaskLifecycleActions({
   task: Task
   owner?: Pick<TaskSource, 'runtimeId' | 'name' | 'online'>
 }) {
+  const { taskSnoozeMinutes } = useAppPreferences()
   const store = useTaskActionStore()
   const pendingRef = useRef(false)
   const [pending, setPending] = useState(false)
@@ -55,7 +56,7 @@ export function TaskLifecycleActions({
               sideOffset={4}
               className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             >
-              {taskSnoozeOptions.map(({ hours, label }) => (
+              {taskSnoozeChoices(taskSnoozeMinutes).map(({ hours, label }) => (
                 <DropdownMenu.Item
                   key={hours}
                   className="rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[highlighted]:bg-accent/55 motion-reduce:transition-none"

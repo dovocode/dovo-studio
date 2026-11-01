@@ -418,9 +418,8 @@ export function ArtifactBrowser({
                 aria-pressed={source === value}
                 disabled={!artifact}
                 className={cn(
-                  'h-7 gap-1.5 px-2 text-xs text-muted-foreground',
-                  source === value &&
-                    'bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)]',
+                  'h-7 gap-1.5 rounded-xl border border-transparent px-2 text-xs text-muted-foreground',
+                  source === value && 'studio-selected-surface',
                 )}
                 onClick={() => setSource(value)}
               >

@@ -1,6 +1,6 @@
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
-  taskSnoozeOptions,
+  taskSnoozeChoices,
   taskIsWorking,
   watchRuntimeSettled,
   settledSummaryPageSize,
@@ -769,7 +769,7 @@ export function TaskList({
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                  {taskSnoozeOptions.map((option) => (
+                  {taskSnoozeChoices(preferences.taskSnoozeMinutes).map((option) => (
                     <ContextMenu.Item
                       key={option.hours}
                       className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"

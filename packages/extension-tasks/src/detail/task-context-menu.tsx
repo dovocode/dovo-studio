@@ -1,4 +1,4 @@
-import { taskSnoozeOptions } from '@dovo/protocol'
+import { taskSnoozeChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
 import { Schema } from 'effect'
@@ -20,6 +20,7 @@ import {
   responses,
   readAppPreferences,
   useStudioHost,
+  useAppPreferences,
   WorkspaceScope,
   type Task,
 } from '@dovo/studio-core'
@@ -108,6 +109,7 @@ export function TaskContextMenu({
   /** Reports an open menu, dialog or action, so a windowed list keeps this row mounted. */
   onActiveChange?: (active: boolean) => void
 }) {
+  const { taskSnoozeMinutes } = useAppPreferences()
   const Menu = dropdown ? DropdownMenu : ContextMenu
   const host = useStudioHost()
   const store = useTaskActionStore()
@@ -305,7 +307,7 @@ export function TaskContextMenu({
                 </Menu.SubTrigger>
                 <Menu.Portal>
                   <Menu.SubContent className={menuClass} collisionPadding={8}>
-                    {taskSnoozeOptions.map(({ hours, label }) => (
+                    {taskSnoozeChoices(taskSnoozeMinutes).map(({ hours, label }) => (
                       <Menu.Item
                         key={hours}
                         className={itemClass}

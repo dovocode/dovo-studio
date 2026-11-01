@@ -82,6 +82,7 @@ export function TaskProjectSheet({
   onAgents,
   onClose,
   onBrowser,
+  onShare,
 }: {
   task: Task
   inline?: boolean
@@ -93,6 +94,7 @@ export function TaskProjectSheet({
   onAgents?: () => void
   onClose: () => void
   onBrowser?: (url: string) => void
+  onShare?: () => void
 }) {
   const { snapshot, profile, connected, callEffect } = useRuntime()
   const { colors, styles } = useTheme()
@@ -123,6 +125,9 @@ export function TaskProjectSheet({
           <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>Thread info</Text>
         )}
         <ThreadInfoCustomization />
+        {!task.example && onShare && (
+          <ProjectRow label="Share thread" icon="share" onPress={() => dismissThen(onShare)} />
+        )}
         {show('settings') && (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

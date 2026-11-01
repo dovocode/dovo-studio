@@ -465,7 +465,7 @@ export function Composer({
         {
           title: actions.backgroundSubmitting ? 'Starting in background…' : 'Start in background',
           label: 'Start in background',
-          icon: 'send' as const,
+          icon: 'sendBackground' as const,
           disabled: machineMoving || !canSend || !actions.canStartInBackground || fork.busy,
           onPress: () => {
             if (!onStartInBackground) return
@@ -1472,16 +1472,19 @@ export function Composer({
               <View ref={messageTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
                 <IconButton
                   variant="filled"
+                  destructive={!editing && task.status === 'running' && !hasInput}
                   icon={
                     editing
                       ? 'send'
-                      : defaultSendMode === 'stage' && hasInput
-                        ? 'queue'
-                        : task.status === 'running'
-                          ? hasInput
-                            ? 'queue'
-                            : 'stop'
-                          : 'send'
+                      : actions.backgroundSubmitting
+                        ? 'sendBackground'
+                        : defaultSendMode === 'stage' && hasInput
+                          ? 'queue'
+                          : task.status === 'running'
+                            ? hasInput
+                              ? 'queue'
+                              : 'stop'
+                            : 'send'
                   }
                   label={
                     editing

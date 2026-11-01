@@ -33,7 +33,13 @@ import { cn } from './lib/utils'
 import { HarnessIcon } from './harness-icon'
 import { useHarnessCatalog } from './harness-catalog'
 import { useHarnessAvailability } from './use-harness-availability'
-import { harnessChoiceId, acpHarnessChoiceId, isNamedModelId } from '@dovo/protocol'
+import {
+  harnessChoiceId,
+  acpHarnessChoiceId,
+  isNamedModelId,
+  modelCatalogChoices,
+  modelDisplayName,
+} from '@dovo/protocol'
 import { modelPreferenceKey, runtimeDefaultsSchema, type RuntimeDefaults } from '@dovo/protocol'
 const modelModeIcons = { inherit: Layers, auto: SlidersHorizontal, smart: WandSparkles }
 const favoritesKey = 'dovo:model-favorites'
@@ -248,8 +254,10 @@ export function ComposerModelPicker({
                       installation ? `acp:${installation.id}:`.length : provider.length + 1,
                     ),
                     name:
-                      key.slice(
-                        installation ? `acp:${installation.id}:`.length : provider.length + 1,
+                      modelDisplayName(
+                        key.slice(
+                          installation ? `acp:${installation.id}:`.length : provider.length + 1,
+                        ),
                       ) || 'Provider default',
                     provider,
                     installationId: installation?.id,
@@ -259,7 +267,7 @@ export function ComposerModelPicker({
               : []
           })
         : [
-            ...(catalog?.models ?? []).map((model) => ({
+            ...modelCatalogChoices(catalog?.models ?? []).map((model) => ({
               ...model,
               provider: activeProvider,
               installationId: selectedHarness.acpInstallationId,
@@ -772,7 +780,7 @@ export function ComposerModelPicker({
                           {item.agent && (
                             <span className="mt-1 block truncate text-xs text-muted-foreground">
                               {providers[item.provider].short} ·{' '}
-                              {item.agent.model || 'Default model'}
+                              {modelDisplayName(item.agent.model) || 'Default model'}
                             </span>
                           )}
                         </button>

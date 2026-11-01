@@ -95,7 +95,7 @@ window.reads=[];window.changesAfter='after-one';window.runtime.read=async(path,i
 const detail={pull:{number:7,title:'Review PR',url:'https://github.com/team/project/pull/7',repositoryUrl:'https://github.com/team/project',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),head:'feature',base:'main',destination:'account-A'},files:[{path:'src/main.ts',status:'modified',patch:'@@ -1 +1 @@\\n-old\\n+new',additions:1,deletions:1}],comments:[],warnings:[],checks:[]};
 window.prLatestDetail=detail;
 const root=createRoot(document.getElementById('app'));
-let revision=0;window.show=(mode,patch={},remount=true)=>flushSync(()=>{if(remount)revision++;Object.assign(window.runtime,patch);root.render(mode==='changes'?<SideThreadChanges key={revision} taskId='child' onClose={()=>{}}/>:mode==='attention'?<SideChatAttention key={revision} task={parent}/>:mode==='actions'?<SideThreadActions key={revision} task={child}/>:mode==='pr'?<PullAgentChat key={revision} repositoryId='repo' sourceIdentity={window.prSource??'revision-one'} detail={detail} latestDetail={window.prLatestDetail} path='src/main.ts' onClose={()=>{}}/>:<AgentSideChats key={revision} task={parent} onClose={()=>{}} onLegacy={()=>{window.legacy=true}}/>)});
+let revision=0;window.show=(mode,patch={},remount=true)=>flushSync(()=>{if(remount)revision++;Object.assign(window.runtime,patch);root.render(mode==='changes'?<SideThreadChanges key={revision} taskId='child' onClose={()=>{}}/>:mode==='attention'?<SideChatAttention key={revision} task={parent}/>:mode==='actions'?<SideThreadActions key={revision} task={child}/>:mode==='pr'?<PullAgentChat key={revision} repositoryId='repo' sourceIdentity={window.prSource??'revision-one'} detail={detail} latestDetail={window.prLatestDetail} path='src/main.ts' onClose={()=>{}}/>:<AgentSideChats key={revision} task={parent} onClose={()=>{}} onReadOnly={()=>{window.readOnly=true}}/>)});
 window.changeParent=patch=>Object.assign(parent,patch);window.changeChild=patch=>Object.assign(child,patch);
 window.show('list');
 `,
@@ -120,6 +120,13 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<main id="app"></main>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.getByRole('button', { name: 'Read-only chat', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.readOnly), true)
+  assert.deepEqual(
+    await page.evaluate(() => window.calls),
+    [],
+    'Opening read-only chat creates no agent or worktree',
+  )
   await page.getByRole('button', { name: 'Review side chat · review' }).click()
   assert.equal(await page.evaluate(() => window.routes.at(-1).params.taskId), 'child')
   // A failed create keeps the same request ID and does not run a coding turn.

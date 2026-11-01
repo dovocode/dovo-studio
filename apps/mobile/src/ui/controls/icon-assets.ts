@@ -38,6 +38,7 @@ export const iconAssets = {
   jobs: require('../../../assets/icons/jobs.png'),
   settings: require('../../../assets/icons/settings.png'),
   send: require('../../../assets/icons/send.png'),
+  sendBackground: require('../../../assets/icons/sendBackground.png'),
   queue: require('../../../assets/icons/queue.png'),
   steer: require('../../../assets/icons/steer.png'),
   stop: require('../../../assets/icons/stop.png'),

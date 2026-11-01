@@ -150,7 +150,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           group: 'On this device',
           local: true,
           keywords:
-            'sort group working section organization archive stop confirm pull requests draft squash rebase merge',
+            'sort group working section organization archive stop confirm pull requests draft squash rebase merge snooze snoozing durations minutes hours days weeks',
         },
       ],
     },

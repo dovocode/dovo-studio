@@ -390,9 +390,9 @@ export function SettingsNav({
                   return (
                     <div key={view.id}>
                       <div
-                        className={`group flex min-h-8 w-full items-center gap-1 rounded-lg border border-transparent pr-1 text-[0.8125rem] transition-colors ${
+                        className={`group flex min-h-8 w-full items-center gap-1 rounded-xl border border-transparent pr-1 text-[0.8125rem] transition-colors ${
                           active
-                            ? 'border-primary/30 bg-[var(--studio-selected-fill)] font-medium text-foreground [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]'
+                            ? 'studio-selected-surface font-medium'
                             : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                         }`}
                       >
@@ -402,7 +402,7 @@ export function SettingsNav({
                           aria-current={active ? 'page' : undefined}
                           aria-label={view.title}
                           onClick={() => select(view.id)}
-                          className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg py-1 pl-2 text-left"
+                          className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-xl py-1 pl-2 text-left"
                         >
                           <Icon
                             size={16}

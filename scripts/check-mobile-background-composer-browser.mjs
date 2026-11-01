@@ -14,7 +14,7 @@ const setup = source
   )
   .replace(
     'canSend:connected&&!!draft.text,',
-    'canSend:connected&&!!draft.text,canStartInBackground:window.backgroundAllowed!==false,backgroundSubmitting:false,',
+    'canSend:connected&&!!draft.text,canStartInBackground:window.backgroundAllowed!==false,backgroundSubmitting:!!window.backgroundSubmitting,',
   )
   .replace(
     'send:mode=>{if(editing)',
@@ -48,12 +48,19 @@ try {
     const before=await page.evaluate(()=>window.calls.length);
     await hold();
     await background.waitFor();
+    assert.equal(await background.locator('svg.lucide-arrow-up-right').count(),1,'Background send uses the 45-degree Send arrow');
     const bounds=await menu.boundingBox();
     assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width,'Menu stays within viewport');
     assert.equal(await page.evaluate(()=>window.calls.length),before,'Holding and releasing must not send');
     await page.getByRole('button',{name:'Dismiss Message actions',exact:true}).click({position:{x:5,y:5}});
     await menu.waitFor({state:'hidden'});
   }
+  await page.evaluate(()=>{window.backgroundSubmitting=true;window.setTask({})});
+  await send.locator('svg.lucide-arrow-up-right').waitFor();
+  assert.equal(await send.locator('svg.lucide-arrow-up-right').count(),1,'Pending background send uses the diagonal arrow');
+  await page.evaluate(()=>{window.backgroundSubmitting=false;window.setTask({})});
+  await send.locator('svg.lucide-arrow-up').waitFor();
+  assert.equal(await send.locator('svg.lucide-arrow-up').count(),1,'Normal Send stays upright');
   await send.click();
   assert.deepEqual(await page.evaluate(()=>window.calls.at(-1)),{mode:'queue'});
   assert.equal(await page.evaluate(()=>window.backgroundStarts?.length??0),0,'Normal tap starts in the foreground');

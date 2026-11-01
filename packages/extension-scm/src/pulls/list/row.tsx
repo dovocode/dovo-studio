@@ -97,7 +97,7 @@ export function PullRow({
   return (
     <div className="relative">
       <div
-        className={`group flex min-w-0 items-center rounded-md border motion-safe:transition-colors ${selected ? 'border-primary/30 bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
+        className={`group flex min-w-0 items-center rounded-xl border motion-safe:transition-colors ${selected ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
       >
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
@@ -118,7 +118,7 @@ export function PullRow({
               }}
               aria-current={selected ? 'true' : undefined}
               onClick={onClick ?? onSelect}
-              className="min-w-0 flex-1 rounded-md px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-primary"
+              className="min-w-0 flex-1 rounded-xl px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-primary"
             >
               <div className="flex gap-3">
                 <div

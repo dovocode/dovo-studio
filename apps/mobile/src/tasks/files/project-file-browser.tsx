@@ -1,37 +1,38 @@
 import { useEffect, useState } from 'react'
 import { Effect } from 'effect'
 import { Pressable, ScrollView, View } from 'react-native'
-import { responses, type ProjectDirectory, type ProjectContentSearch } from '@dovo/protocol'
+import { responses, type ProjectContentSearch } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { SearchField } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
 import { MobileFileTypeIcon } from '../../ui/content/file-tree'
-import { Icon } from '../../ui/controls/icon'
+import { ProjectDirectoryTree } from './project-directory-tree'
 import { useTheme } from '../../ui/theme'
 
 export function ProjectFileBrowser({
   taskId,
   checkoutId,
   revision,
+  selected,
+  active = true,
   onSelect,
 }: {
   taskId: string
   checkoutId: string
   revision: number
+  selected?: string
+  active?: boolean
   onSelect: (path: string, line?: number) => void
 }) {
   const { readEffect, connected, connection } = useRuntime()
   const { styles, colors } = useTheme()
-  const [directory, setDirectory] = useState('')
   const [mode, setMode] = useState('files')
   const [query, setQuery] = useState('')
-  const [cursor, setCursor] = useState<string>()
   const [retry, setRetry] = useState(0)
   const [result, setResult] = useState<{
     identity: string
-    directory?: ProjectDirectory
     paths?: string[]
     content?: ProjectContentSearch
     truncated?: boolean
@@ -42,21 +43,18 @@ export function ProjectFileBrowser({
     connection?.token,
     taskId,
     checkoutId,
-    directory,
-    cursor,
     mode,
     query,
   ])
   const current = result?.identity === identity ? result : undefined
   useEffect(() => {
-    if (!connected || (mode === 'content' && !query)) return
-    let active = true
+    if (!active || !connected || !query) return
+    let currentRequest = true
     const controller = new AbortController()
     const timeout = setTimeout(
       () => {
         const run = (): Effect.Effect<
           {
-            directory?: ProjectDirectory
             paths?: string[]
             content?: ProjectContentSearch
             truncated?: boolean
@@ -64,27 +62,20 @@ export function ProjectFileBrowser({
           Error
         > => {
           const input = { id: taskId, checkoutId: checkoutId || undefined }
-          if (query) {
-            if (mode === 'content')
-              return readEffect(
-                '/api/tasks/files/search-content',
-                { ...input, query },
-                responses.projectContentSearch,
-              ).pipe(Effect.map((content) => ({ content })))
+          if (mode === 'content')
             return readEffect(
-              '/api/tasks/files/search-paths',
+              '/api/tasks/files/search-content',
               { ...input, query },
-              responses.projectFileList,
-            ).pipe(Effect.map((paths) => ({ paths: paths.files, truncated: paths.truncated })))
-          }
+              responses.projectContentSearch,
+            ).pipe(Effect.map((content) => ({ content })))
           return readEffect(
-            '/api/tasks/files/directory',
-            { ...input, directory, cursor },
-            responses.projectDirectory,
-          ).pipe(Effect.map((directory) => ({ directory })))
+            '/api/tasks/files/search-paths',
+            { ...input, query },
+            responses.projectFileList,
+          ).pipe(Effect.map((paths) => ({ paths: paths.files, truncated: paths.truncated })))
         }
         const failed = (error: unknown) => {
-          if (active)
+          if (currentRequest)
             setResult((previous) => ({
               ...(previous?.identity === identity ? previous : {}),
               identity,
@@ -95,7 +86,7 @@ export function ProjectFileBrowser({
           run().pipe(
             Effect.match({
               onSuccess: (value) => {
-                if (active) setResult({ identity, ...value })
+                if (currentRequest) setResult({ identity, ...value })
               },
               onFailure: failed,
             }),
@@ -106,23 +97,11 @@ export function ProjectFileBrowser({
       query ? 200 : 0,
     )
     return () => {
-      active = false
+      currentRequest = false
       clearTimeout(timeout)
       controller.abort()
     }
-  }, [
-    readEffect,
-    connected,
-    taskId,
-    checkoutId,
-    directory,
-    cursor,
-    mode,
-    query,
-    revision,
-    retry,
-    identity,
-  ])
+  }, [active, readEffect, connected, taskId, checkoutId, mode, query, revision, retry, identity])
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
       <View style={{ paddingHorizontal: 12, gap: 6 }}>
@@ -141,7 +120,6 @@ export function ProjectFileBrowser({
           value={query}
           onChangeText={(value) => {
             setQuery(value.slice(0, 256))
-            setCursor(undefined)
           }}
         />
         {mode === 'content' && (
@@ -149,26 +127,23 @@ export function ProjectFileBrowser({
             Case-sensitive literal search · up to 200 matching lines.
           </Text>
         )}
-        {!query && mode === 'files' && (
-          <View style={styles.row}>
-            <Action
-              secondary
-              label="Parent folder"
-              disabled={!directory}
-              onPress={() => {
-                setDirectory(directory.split('/').slice(0, -1).join('/'))
-                setCursor(undefined)
-              }}
-            />
-            <Text style={[styles.muted, { flexShrink: 1 }]}>{directory || 'Project root'}</Text>
-          </View>
-        )}
       </View>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 12, gap: 4 }}
       >
-        {!connected ? (
+        <View style={!query && mode === 'files' ? undefined : { display: 'none' }}>
+          <ProjectDirectoryTree
+            key={JSON.stringify([connection?.address, connection?.token, taskId, checkoutId])}
+            taskId={taskId}
+            checkoutId={checkoutId}
+            revision={revision}
+            active={active && !query && mode === 'files'}
+            selected={selected}
+            onSelect={onSelect}
+          />
+        </View>
+        {!query && mode === 'files' ? null : !connected ? (
           <Text style={styles.muted}>Reconnect to browse files.</Text>
         ) : mode === 'content' && !query ? (
           <Text style={styles.muted}>Enter text to search this checkout’s code.</Text>
@@ -185,35 +160,11 @@ export function ProjectFileBrowser({
                   secondary
                   label="Retry file search"
                   onPress={() => {
-                    setCursor(undefined)
                     setRetry((value) => value + 1)
                   }}
                 />
               </View>
             )}
-            {current.directory?.entries.map((entry) => (
-              <Pressable
-                key={entry.path}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  entry.kind === 'directory' ? `Open folder ${entry.path}` : entry.path
-                }
-                onPress={() => {
-                  if (entry.kind === 'directory') {
-                    setDirectory(entry.path)
-                    setCursor(undefined)
-                  } else onSelect(entry.path)
-                }}
-                style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-              >
-                {entry.kind === 'directory' ? (
-                  <Icon name="folder" size={16} color={colors.muted} />
-                ) : (
-                  <MobileFileTypeIcon path={entry.path} />
-                )}
-                <Text style={{ flexShrink: 1 }}>{entry.path.split('/').at(-1)}</Text>
-              </Pressable>
-            ))}
             {current.paths?.map((path) => (
               <Pressable
                 key={path}
@@ -246,7 +197,7 @@ export function ProjectFileBrowser({
                 </Text>
               </Pressable>
             ))}
-            {(current.truncated || current.content?.truncated || current.directory?.truncated) && (
+            {(current.truncated || current.content?.truncated) && (
               <Text style={styles.muted}>
                 Some files are omitted. Narrow the search or open a smaller folder.
               </Text>
@@ -263,9 +214,7 @@ export function ProjectFileBrowser({
                 or exceeded read limits.
               </Text>
             )}
-            {(current.directory?.entries.length === 0 ||
-              current.paths?.length === 0 ||
-              current.content?.matches.length === 0) && (
+            {(current.paths?.length === 0 || current.content?.matches.length === 0) && (
               <Text style={styles.muted}>
                 {query
                   ? current.paths
@@ -273,20 +222,8 @@ export function ProjectFileBrowser({
                       ? 'No matching files.'
                       : 'No matching files in this listing.'
                     : 'No matches in the searched files.'
-                  : current.directory?.nextCursor || current.directory?.truncated || cursor
-                    ? 'No visible entries on this page.'
-                    : 'This folder has no visible files.'}
+                  : 'No matching files.'}
               </Text>
-            )}
-            {current.directory?.nextCursor && (
-              <Action
-                secondary
-                label="More entries"
-                onPress={() => setCursor(current.directory?.nextCursor)}
-              />
-            )}
-            {cursor && current.directory && (
-              <Action secondary label="First entries" onPress={() => setCursor(undefined)} />
             )}
           </>
         )}

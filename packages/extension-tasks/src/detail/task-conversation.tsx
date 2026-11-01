@@ -1,5 +1,5 @@
 import type { WorkspaceControls } from '../chat/composer/composer-workspace'
-import { ThreadSharing, InlineThreadSuggestions } from '../chat/thread-sharing'
+import { InlineThreadSuggestions } from '../chat/thread-sharing'
 import { CodeReviewCard } from '../review/code-review-card'
 import type { CodeFinding } from '@dovo/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -230,11 +230,6 @@ export function TaskConversation({
           data-startup-draft={welcome ? '' : undefined}
           className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
         >
-          {!welcome && !task.example && (
-            <div className="flex justify-end px-4 py-1">
-              <ThreadSharing taskId={task.id} title={task.title} />
-            </div>
-          )}
           {temporary ? (
             <TaskEmptyState
               task={task}

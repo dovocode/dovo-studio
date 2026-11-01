@@ -6,7 +6,8 @@ import {
 import { createPortal } from 'react-dom'
 import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
-import { draftStashScope } from '@dovo/protocol'
+import { conversationPageSchema, draftStashScope } from '@dovo/protocol'
+import { Effect } from 'effect'
 import { QueueEditContext } from './queue-edit'
 import { useThreadInfoContext } from '../../detail/thread-info-context'
 import { useChatImageUploader } from './chat-image-edit-context'
@@ -115,12 +116,20 @@ export function Composer({
     workspace,
     setWorkspace,
     request,
+    requestEffect,
     connected,
     connection,
     flush,
     snapshot,
     activeRuntimeId,
   } = useWorkspace()
+  const loadComposerHistory = useCommittedCallback((before: string, signal: AbortSignal) => {
+    if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
+    return Effect.runPromise(
+      requestEffect('/api/tasks/history', { id: task.id, before }, conversationPageSchema),
+      { signal },
+    )
+  })
   const stashRuntimeId = activeRuntimeId ?? connection?.address
   const [draftTurnSettings, setDraftTurnSettings] = useApplicationState<TurnSettings | null>(
     task.draftTurnSettings ?? null,
@@ -1343,6 +1352,7 @@ export function Composer({
                             }
                             onSelect={() => void send('queue', true)}
                           >
+                            <ArrowUp className="size-4 rotate-45" />
                             Start in background
                             <span className="ml-auto text-[0.625rem] text-muted-foreground">
                               Alt+Enter
@@ -1434,11 +1444,10 @@ export function Composer({
               </div>
             )}
             {task.status === 'running' && (
-              <Button
+              <ComposerSubmit
                 type="button"
-                size="icon"
                 variant="destructive"
-                className="size-8 shrink-0 rounded-full"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 aria-label="Stop"
                 title="Stop the agent and pause queued messages"
                 disabled={!connected || stopping || task.archived}
@@ -1449,7 +1458,7 @@ export function Composer({
                 ) : (
                   <Square className="size-3.5 fill-current" />
                 )}
-              </Button>
+              </ComposerSubmit>
             )}
           </>
         }
@@ -1584,6 +1593,10 @@ export function Composer({
           }
           controller={editorController}
           messages={task.messages}
+          historyBefore={task.historyBefore}
+          historyRevision={task.historyRevision}
+          historyScope={JSON.stringify([activeRuntimeId, connection?.address, connection?.token])}
+          loadHistory={loadComposerHistory}
           taskId={task.id}
           input={input}
           resources={resources}

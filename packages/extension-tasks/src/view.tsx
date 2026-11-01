@@ -1460,7 +1460,7 @@ export default function TasksView({
                     deliverHandoff(handoff, child.title)
                     selectSurface('chat', true)
                   }}
-                  previousQuestions={
+                  readOnlyQuestions={
                     <SideQuestion
                       key={task.id}
                       task={task}

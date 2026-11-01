@@ -6,6 +6,8 @@ import { useEffect, type ReactNode } from 'react'
 import {
   agentSchema,
   modelPreferenceKey,
+  modelCatalogChoices,
+  modelDisplayName,
   type RuntimeDefaults,
   daybreakChoices,
   modelServiceTiers,
@@ -85,7 +87,7 @@ export function ModelSettings({
   }, [key, canDiscover, loadModels, refresh])
   const preferenceKey = (model: string) =>
     modelPreferenceKey(agent.provider, model, agent.acpInstallationId)
-  const allModels = catalog?.models ?? []
+  const allModels = modelCatalogChoices(catalog?.models ?? [])
   const models = allModels
       .filter(
         (model) => !preferences[preferenceKey(model.id)]?.disabled || model.id === agent.model,
@@ -124,7 +126,7 @@ export function ModelSettings({
         >
           <option value="">Provider default</option>
           {agent.model && !selected && (
-            <option value={agent.model}>{agent.model} (saved/custom)</option>
+            <option value={agent.model}>{modelDisplayName(agent.model)} (saved/custom)</option>
           )}
           {models.map((model) => (
             <option key={model.id} value={model.id}>

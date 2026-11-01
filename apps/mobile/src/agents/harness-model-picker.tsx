@@ -621,11 +621,12 @@ function ProviderModels({
                     >
                       {model.name}
                     </Text>
-                    {plain(model.id) !== plain(model.name) && !('typed' in model) && (
-                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
-                        {model.id}
-                      </Text>
-                    )}
+                    {plain(modelDisplayName(model.id)) !== plain(model.name) &&
+                      !('typed' in model) && (
+                        <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
+                          {model.id}
+                        </Text>
+                      )}
                   </View>
                   {selected && model.id === candidate.model && (
                     <Icon name="check" size={16} color={colors.accent} />

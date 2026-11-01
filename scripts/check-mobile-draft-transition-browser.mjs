@@ -142,7 +142,7 @@ const mocks = {
     };
   `,
   './use-task-lifecycle': `export const useTaskLifecycle=()=>({enabled:true,error:'',busy:false});export const chooseSnoozeDuration=async()=>3600000;`,
-  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose,inline})=>{window.projectInfoInline=inline;return <section><TaskWaitingPanel task={task}/><button onClick={onClose}>Close project information</button></section>};`,
+  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose,inline,onShare})=>{window.projectInfoInline=inline;return <section><TaskWaitingPanel task={task}/>{onShare&&<button onClick={onShare}>Share thread</button>}<button onClick={onClose}>Close project information</button></section>};`,
   './use-task-viewed': `export const useTaskViewed=()=>({error:false});`,
 }
 for (const [path, names] of Object.entries({
@@ -383,7 +383,14 @@ try {
   assert.deepEqual(menuGroups, ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete'])
   assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
   assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
+  assert.equal(
+    await page.evaluate(() =>
+      window.headerActions.some((action) => action.label === 'Share thread'),
+    ),
+    false,
+  )
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
   await page.getByRole('button', { name: 'Share thread', exact: true }).click()
   await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
   await page.evaluate(() => window.setSharingAccount(null))
@@ -392,7 +399,7 @@ try {
   await page.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: true }))
   assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
   await page.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: false }))
-  await page.getByRole('button', { name: 'Share thread', exact: true }).waitFor()
+  await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
   await page.getByRole('button', { name: 'Close sharing', exact: true }).click()
   assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
   assert.deepEqual(await page.evaluate(() => window.headerCollapsedMenuGroups), [

@@ -429,6 +429,31 @@ try {
   assert.equal(await page.getByLabel('Inherited settings target').count(), 0)
   await settingsSidebar.getByRole('button', { name: 'Task list & projects', exact: true }).click()
   await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  const snooze = page.getByRole('textbox', { name: 'Snooze durations', exact: true })
+  await snooze.fill('15m, 90m, 2d')
+  await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeMinutes,
+    ),
+    [15, 90, 2880],
+  )
+  await snooze.fill('1h, 60m')
+  await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'different durations' }).waitFor()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeMinutes,
+    ),
+    [15, 90, 2880],
+  )
+  await page.getByRole('button', { name: 'Reset snooze durations', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeMinutes,
+    ),
+    [60, 240, 1440, 2880, 4320, 10080],
+  )
   await choose('Project order', 'Last user message')
   await page.getByRole('textbox', { name: 'Add project starts in', exact: true }).fill('~/Code')
   await page.getByRole('switch', { name: 'Confirm before deleting a task', exact: true }).click()

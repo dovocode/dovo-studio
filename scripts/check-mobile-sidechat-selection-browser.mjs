@@ -4,9 +4,10 @@ import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
-  './agent-side-chats': 'export const AgentSideChats=()=>null;',
+  './agent-side-chats':
+    'export const AgentSideChats=({onReadOnly})=><button onClick={onReadOnly}>Read-only chat</button>;',
   'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(){}};`,
-  '../../../runtime/connection/provider': `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,call:async(path,input)=>{window.calls.push({path,input});return {answer:'ok'}},callEffect:()=>Effect.succeed({id:'created'})});`,
+  '../../../runtime/connection/provider': `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,call:async(path,input)=>{window.calls.push({path,input});return {answer:'ok'}},callEffect:()=>Effect.succeed({id:'created-'+(++window.chatIds)})});`,
   '../../../ui/controls/use-action': `import {Effect} from 'effect';export const useAction=()=>({act:effect=>Effect.runPromise(effect()),busy:false,error:''});`,
   '../../../ui/controls/action': `export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}><option value=""/>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
@@ -19,7 +20,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {useState} from 'react';import {flushSync} from 'react-dom';import {createRoot} from 'react-dom/client';import {SideQuestion} from '${root}apps/mobile/src/tasks/conversation/components/side-question.tsx';window.calls=[];window.chat=id=>({id,title:id,draft:id+' draft',messages:[]});function App(){const [chats,setChats]=useState([window.chat('old')]);const [requested,setRequested]=useState('future');const [drafts,setDrafts]=useState({});window.update=(ids,request)=>flushSync(()=>{setChats(ids.map(window.chat));setRequested(request)});return <SideQuestion task={{id:'task',sideChats:chats}} selectedChatId={requested} drafts={drafts} setDrafts={setDrafts} onClose={()=>{}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {useState} from 'react';import {flushSync} from 'react-dom';import {createRoot} from 'react-dom/client';import {SideQuestion} from '${root}apps/mobile/src/tasks/conversation/components/side-question.tsx';window.calls=[];window.chatIds=0;window.chat=id=>({id,title:id,draft:id+' draft',messages:[]});function App(){const [chats,setChats]=useState([]);const [requested,setRequested]=useState(undefined);const [drafts,setDrafts]=useState({});window.update=(ids,request)=>flushSync(()=>{setChats(ids.map(window.chat));setRequested(request)});return <SideQuestion task={{id:'task',sideChats:chats}} selectedChatId={requested} drafts={drafts} setDrafts={setDrafts} onClose={()=>{}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -65,6 +66,18 @@ try {
       0,
     )
   }
+  await page.getByRole('button', { name: 'Read-only chat', exact: true }).click()
+  await page.getByRole('button', { name: 'New read-only chat', exact: true }).click()
+  await pending()
+  await page.evaluate(() => window.update(['created-1'], undefined))
+  assert.equal(await page.getByLabel('Question').inputValue(), 'created-1 draft')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await page.waitForFunction(() => window.calls.length === 1)
+  assert.equal(await page.evaluate(() => window.calls[0].path), '/api/tasks/side-chat/ask')
+  await page.evaluate(() => {
+    window.calls = []
+    window.update(['old'], 'future')
+  })
   await pending()
   await page.evaluate(() => window.update(['old', 'future'], 'future'))
   assert.equal(await page.getByLabel('Question').inputValue(), 'future draft')
@@ -77,10 +90,10 @@ try {
   assert.equal(await page.getByLabel('Question').inputValue(), 'another draft')
   await page.evaluate(() => window.update(['old', 'future'], 'another'))
   assert.equal(await page.getByLabel('Question').inputValue(), 'old draft')
-  await page.getByRole('button', { name: 'New Q&A chat', exact: true }).click()
+  await page.getByRole('button', { name: 'New read-only chat', exact: true }).click()
   await pending()
-  await page.evaluate(() => window.update(['old', 'future', 'created'], 'another'))
-  assert.equal(await page.getByLabel('Question').inputValue(), 'created draft')
+  await page.evaluate(() => window.update(['old', 'future', 'created-2'], 'another'))
+  assert.equal(await page.getByLabel('Question').inputValue(), 'created-2 draft')
   await page.getByLabel('Side chat', { exact: true }).selectOption('old')
   assert.equal(await page.getByLabel('Question').inputValue(), 'old draft')
   assert.deepEqual(errors, [])

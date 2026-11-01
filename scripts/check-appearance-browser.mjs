@@ -18,6 +18,7 @@ import {Button,Message,MessageContent,MessageResponse,TooltipProvider,PullReques
 import {preloadStudioHighlighter,useDiffOptions} from '@dovo/studio-ui/code-themes';
 import {FileDiff} from '@pierre/diffs/react';
 import {parseDiffFromFile} from '@pierre/diffs';
+import {Segmented} from '${root}/packages/studio-ui/src/settings-layout.tsx';
 import {TerminalSession} from '${root}/packages/extension-tasks/src/terminal/terminal-session.tsx';
 const sample='export function greet(name: string) { return "Hello " + name }';
 const diff=parseDiffFromFile({name:'hello.ts',contents:'const count = 1;'}, {name:'hello.ts',contents:sample});
@@ -40,8 +41,11 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <Button>Start task</Button>
 <div data-testid="effects" className="flex flex-col gap-2">
 <nav className="studio-navigation" aria-label="Main navigation"><button className="studio-navigation-item" aria-current="page">T</button></nav>
-<div className="studio-browser-sidebar"><button className="studio-browser-tab" data-active>Selected browser tab</button></div>
-<div className="studio-task-sidebar"><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div></div>
+<div className="studio-browser-sidebar"><button className="studio-browser-tab" data-active>Selected browser tab</button><details open className="studio-list-section"><summary className="studio-list-section-header">Browser section</summary></details></div>
+<div className="studio-task-sidebar"><details open className="studio-list-section"><summary className="studio-list-section-header">Thread section</summary></details><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div></div>
+<button className="studio-selected-surface rounded-lg border" aria-current="true">Selected artifact</button>
+<div className="studio-selected-surface rounded-lg border">Selected settings page</div>
+<Segmented label="Effects settings choice" value="selected" options={[["selected","Selected option"],["other","Other option"]]} onChange={()=>{}}/>
 <div className="task-composer"><div className="studio-composer"><textarea aria-label="Effects composer"/><button type="submit">Send</button></div></div>
 <div className="dovo-dialog-content p-3"><Button>Dialog action</Button></div>
 </div>
@@ -203,6 +207,22 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
+      await page.waitForFunction(() => {
+        const root = document.querySelector('[data-testid=effects]')
+        const thread = getComputedStyle(root.querySelector('.studio-thread-card'))
+        return [
+          ...root.querySelectorAll('.studio-selected-surface, .studio-navigation-item'),
+        ].every((el) => {
+          const selected = getComputedStyle(el)
+          return [
+            'backgroundColor',
+            'backgroundImage',
+            'boxShadow',
+            'borderColor',
+            'borderRadius',
+          ].every((key) => selected[key] === thread[key])
+        })
+      })
       const effects = await page.evaluate((primary) => {
         const probe = document.createElement('span')
         probe.style.color = 'color-mix(in srgb, ' + primary + ' 8%, transparent)'
@@ -217,6 +237,33 @@ try {
           primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
           tab: style('.studio-browser-tab').backgroundImage,
           tabShadow: style('.studio-browser-tab').boxShadow,
+          selections: [
+            ...document.querySelectorAll(
+              '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item',
+            ),
+          ].map((el) => {
+            const selected = getComputedStyle(el)
+            const thread = style('.studio-thread-card')
+            return Object.fromEntries(
+              ['backgroundColor', 'backgroundImage', 'boxShadow', 'borderColor', 'borderRadius']
+                .filter((key) => selected[key] !== thread[key])
+                .map((key) => [key, { selected: selected[key], thread: thread[key] }]),
+            )
+          }),
+          sectionsMatch: [
+            'backgroundImage',
+            'borderColor',
+            'borderRadius',
+            'padding',
+            'gap',
+            'fontSize',
+            'fontWeight',
+            'marginBlock',
+          ].every(
+            (key) =>
+              style('.studio-browser-sidebar .studio-list-section-header')[key] ===
+              style('.studio-task-sidebar .studio-list-section-header')[key],
+          ),
           dialog: style('.dovo-dialog-content').backgroundImage,
           dialogAction: style('.dovo-dialog-content button').color,
           glow,
@@ -230,6 +277,16 @@ try {
         effects.tabShadow.includes(effects.glow),
         id + ' ' + scheme + ' glow uses the theme accent',
       )
+      assert.ok(
+        effects.selections.length >= 4 &&
+          effects.selections.every((diff) => Object.keys(diff).length === 0),
+        id +
+          ' ' +
+          scheme +
+          ' selected navigation, artifacts and settings match threads: ' +
+          JSON.stringify(effects.selections),
+      )
+      assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
       assert.match(effects.dialog, /linear-gradient/)
       const actual = await page.evaluate(() => {
         const color = (value) => {
@@ -324,6 +381,31 @@ try {
         })
     }
   }
+  for (const scheme of ['light', 'dark']) {
+    await mode(scheme === 'dark' ? 'Dark' : 'Light')
+    await page.emulateMedia({ forcedColors: 'active' })
+    const selections = await page
+      .locator(
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item',
+      )
+      .evaluateAll((elements) =>
+        elements.map((el) => ({
+          shadow: getComputedStyle(el).boxShadow,
+          background: getComputedStyle(el).backgroundImage,
+          border: getComputedStyle(el).borderColor,
+        })),
+      )
+    assert.ok(
+      selections.every(
+        (style) =>
+          style.shadow === 'none' &&
+          style.background === 'none' &&
+          style.border !== 'rgba(0, 0, 0, 0)',
+      ),
+      scheme + ' selections stay visible without decorative effects in forced colors',
+    )
+    await page.emulateMedia({ forcedColors: 'none' })
+  }
   await choose('Claude')
   await mode('System')
   await page.emulateMedia({ colorScheme: 'dark' })
@@ -373,7 +455,7 @@ try {
     const surfaces = await page.locator('[data-testid=effects]').evaluate((preview) =>
       [
         ...preview.querySelectorAll(
-          '.studio-navigation-item, .studio-browser-tab, .studio-thread-card, .studio-composer, .studio-composer button, .dovo-dialog-content, .dovo-dialog-content button',
+          '.studio-navigation-item, .studio-browser-tab, .studio-thread-card, .studio-selected-surface, .studio-composer, .studio-composer button, .dovo-dialog-content, .dovo-dialog-content button',
         ),
       ].map((el) => ({
         element: el.className,
@@ -423,6 +505,31 @@ try {
         document.querySelector('[data-testid=effects] .studio-browser-tab'),
       ).backgroundImage.includes('linear-gradient'),
   )
+  for (const scheme of ['light', 'dark']) {
+    await mode(scheme === 'dark' ? 'Dark' : 'Light')
+    await page.emulateMedia({ forcedColors: 'active' })
+    const selections = await page
+      .locator(
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item',
+      )
+      .evaluateAll((elements) =>
+        elements.map((el) => ({
+          shadow: getComputedStyle(el).boxShadow,
+          background: getComputedStyle(el).backgroundImage,
+          border: getComputedStyle(el).borderColor,
+        })),
+      )
+    assert.ok(
+      selections.every(
+        (style) =>
+          style.shadow === 'none' &&
+          style.background === 'none' &&
+          style.border !== 'rgba(0, 0, 0, 0)',
+      ),
+      scheme + ' selections stay visible without decorative effects in forced colors',
+    )
+    await page.emulateMedia({ forcedColors: 'none' })
+  }
   await choose('Claude')
   await mode('System')
   await page.reload()

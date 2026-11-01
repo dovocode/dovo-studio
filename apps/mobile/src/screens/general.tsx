@@ -18,6 +18,64 @@ import { Text } from '../ui/content/text'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup, SettingsRow, SettingsSwitchRow } from './settings-group'
 import { Field } from '../ui/controls/field'
+import { SettingsAction as Action } from './settings-controls'
+import {
+  defaultTaskSnoozeMinutes,
+  formatTaskSnoozeMinutes,
+  parseTaskSnoozeMinutes,
+} from '@dovo/protocol'
+
+function SnoozeDurations({ minutes }: { minutes: number[] }) {
+  const saved = formatTaskSnoozeMinutes(minutes)
+  const [text, setText] = useState(saved)
+  const [error, setError] = useState('')
+  const { styles } = useTheme()
+  useEffect(() => {
+    setText(saved)
+    setError('')
+  }, [saved])
+  return (
+    <View style={{ gap: 8, padding: 12 }}>
+      <Field
+        label="Snooze durations"
+        value={text}
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={(value) => {
+          setText(value)
+          setError('')
+        }}
+        placeholder="15m, 1h, 4h, 1d"
+      />
+      <Action
+        label="Save snooze durations"
+        disabled={text === saved}
+        onPress={() => {
+          try {
+            updateMobilePreferences({ taskSnoozeMinutes: parseTaskSnoozeMinutes(text) })
+            setError('')
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause))
+          }
+        }}
+      />
+      <Action
+        secondary
+        label="Reset snooze durations"
+        onPress={() => {
+          updateMobilePreferences({ taskSnoozeMinutes: [...defaultTaskSnoozeMinutes] })
+          setText(formatTaskSnoozeMinutes(defaultTaskSnoozeMinutes))
+          setError('')
+        }}
+      />
+      {error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      )}
+    </View>
+  )
+}
 
 function BrowserCleanupMinutes({
   label,
@@ -237,6 +295,12 @@ export function TaskPreferencesScreen() {
           value={preferences.workingSection}
           onValueChange={(workingSection) => updateMobilePreferences({ workingSection })}
         />
+      </SettingsGroup>
+      <SettingsGroup
+        title="Snoozing"
+        footer="Enter 1–12 durations separated by commas, in menu order: m for minutes, h for hours, d for days or w for weeks. Existing snoozed threads keep their wake-up time."
+      >
+        <SnoozeDurations minutes={preferences.taskSnoozeMinutes} />
       </SettingsGroup>
       <SettingsGroup
         title="Confirmations"

@@ -854,20 +854,11 @@ textarea {
   height: 36px;
   min-height: 36px;
   border: 1px solid transparent;
-  border-radius: 11px;
-}
-.studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'] {
-  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 14%, var(--card));
-  box-shadow: inset 1px 0 color-mix(in srgb, var(--primary) 65%, transparent);
+  border-radius: 12px;
 }
 .dark .startup-draft .startup-project-selector[data-selected],
 .dark .startup-draft .startup-no-project[aria-pressed='true'],
-.dark .task-composer button[type='submit']:not([data-labeled]):not(:disabled),
-.dark
-  .studio-navigation[aria-label='Main navigation']
-  .studio-navigation-item[aria-current='page'] {
+.dark .task-composer button[type='submit']:not([data-labeled]):not(:disabled) {
   color: color-mix(in srgb, var(--foreground) 70%, var(--primary));
   border-color: color-mix(in srgb, var(--primary) 30%, transparent);
   background-color: var(--studio-selected-fill);
@@ -1144,9 +1135,12 @@ textarea {
   border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
   background-color: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
+.studio-selected-surface,
+.studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
 .studio-browser-sidebar .studio-browser-tab[data-active],
 .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
 .studio-task-sidebar .studio-thread-child[aria-current='true'] {
+  border-radius: 12px;
   border-color: color-mix(in srgb, var(--primary) 26%, transparent);
   background-color: var(--studio-selected-fill);
   background-image: var(--studio-selected-gradient);
@@ -1967,6 +1961,8 @@ select:focus-visible,
   background: transparent;
   box-shadow: none;
 }
+.dark .studio-selected-surface,
+.dark .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
 .dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card {
   border-color: var(--primary);
   background-color: var(--studio-selected-fill);
@@ -1976,7 +1972,8 @@ select:focus-visible,
     0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent),
     var(--studio-glow);
 }
-.studio-task-sidebar .studio-list-section-header {
+.studio-task-sidebar .studio-list-section-header,
+.studio-browser-sidebar .studio-list-section-header {
   gap: 7px;
   margin-block: 3px;
   padding-block: 5px;
@@ -2002,7 +1999,8 @@ select:focus-visible,
   .studio-thread-section-dot {
   background: var(--status-warning);
 }
-.studio-task-sidebar [data-section='settled'] .studio-thread-section-dot {
+.studio-task-sidebar [data-section='settled'] .studio-thread-section-dot,
+.studio-browser-sidebar [data-section='settled'] .studio-thread-section-dot {
   background: var(--status-success);
 }
 .studio-task-sidebar .studio-thread-row:not([data-highlighted]) .studio-thread-card[data-draft] {
@@ -2041,7 +2039,11 @@ select:focus-visible,
   .studio-task-sidebar
   .studio-thread-row[data-highlighted]
   .studio-thread-card,
-[data-high-contrast='true'] .studio-task-sidebar .studio-thread-child[aria-current='true'] {
+[data-high-contrast='true'] .studio-task-sidebar .studio-thread-child[aria-current='true'],
+:root[data-high-contrast='true'] .studio-selected-surface,
+:root[data-high-contrast='true']
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page'] {
   border-color: var(--primary);
 }
 
@@ -2238,6 +2240,7 @@ a.studio-project-row:hover {
     .studio-browser-settings-icon,
     .studio-thread-card,
     .studio-thread-child,
+    .studio-selected-surface,
     .project-transfer-icon,
     .dovo-dialog-content,
     .dovo-dialog-content [data-slot='button'][data-variant='default']
@@ -2265,13 +2268,18 @@ a.studio-project-row:hover {
     .studio-thread-toolbar > button,
     .studio-list-section-header,
     .studio-thread-card,
-    .studio-thread-child
+    .studio-thread-child,
+    .studio-selected-surface
   ) {
   background-image: none;
 }
 
 /* Keep keyboard focus visible when the OS supplies its own high-contrast palette. */
 @media (forced-colors: active) {
+  :root .studio-selected-surface,
+  :root
+    .studio-navigation[aria-label='Main navigation']
+    .studio-navigation-item[aria-current='page'],
   .studio-browser-sidebar .studio-browser-tab[data-active],
   .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
   .studio-task-sidebar .studio-thread-child[aria-current='true'] {

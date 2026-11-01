@@ -30,11 +30,11 @@ const resultSchema = mutableStruct({ id: Schema.String })
 export function AgentSideChats({
   task,
   onClose,
-  onLegacy,
+  onReadOnly,
 }: {
   task: Task
   onClose: () => void
-  onLegacy: () => void
+  onReadOnly: () => void
 }) {
   const { snapshot, profile, connected, call, legacyDraftRuntimeId } = useRuntime()
   const current = useOperationGuard(
@@ -94,6 +94,7 @@ export function AgentSideChats({
           })
         }
       />
+      <Action secondary label="Read-only chat" onPress={onReadOnly} />
       {!!task.sideThread && (
         <Text style={styles.muted}>Start another side chat from the main thread.</Text>
       )}
@@ -144,9 +145,6 @@ export function AgentSideChats({
           </View>
         )
       })}
-      {!!task.sideChats?.length && (
-        <Action secondary label="Previous Q&A chats" onPress={onLegacy} />
-      )}
       {!!action.error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {action.error}

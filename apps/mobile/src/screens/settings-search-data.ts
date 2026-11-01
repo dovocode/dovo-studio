@@ -36,6 +36,7 @@ export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> =
   ],
   '/settings/battery': ['Other computer refresh', 'Update widgets'],
   '/settings/task-preferences': [
+    'Snooze durations',
     'Default sort',
     'Group by',
     'Working section',

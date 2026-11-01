@@ -88,11 +88,7 @@ export function InlineArtifact({
             <ArtifactSharedBadge artifact={reference} />
             <IconButton
               label={source ? 'Show rendered artifact' : 'View artifact source'}
-              className={cn(
-                'size-7 shrink-0',
-                source &&
-                  'bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)]',
-              )}
+              className={cn('size-7 shrink-0', source && 'studio-selected-surface')}
               aria-pressed={source}
               onClick={() => setSource((value) => !value)}
             >

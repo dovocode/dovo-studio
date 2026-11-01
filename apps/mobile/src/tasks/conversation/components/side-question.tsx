@@ -23,17 +23,21 @@ type SideQuestionProps = {
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
 }
 export function SideQuestion(props: SideQuestionProps) {
-  const [legacy, setLegacy] = useState(!!props.selectedChatId)
+  const [readOnly, setReadOnly] = useState(!!props.selectedChatId)
   useEffect(() => {
-    if (props.selectedChatId) setLegacy(true)
+    if (props.selectedChatId) setReadOnly(true)
   }, [props.selectedChatId])
-  return legacy ? (
-    <LegacySideQuestion {...props} onAgents={() => setLegacy(false)} />
+  return readOnly ? (
+    <ReadOnlySideQuestion {...props} onAgents={() => setReadOnly(false)} />
   ) : (
-    <AgentSideChats task={props.task} onClose={props.onClose} onLegacy={() => setLegacy(true)} />
+    <AgentSideChats
+      task={props.task}
+      onClose={props.onClose}
+      onReadOnly={() => setReadOnly(true)}
+    />
   )
 }
-function LegacySideQuestion({
+function ReadOnlySideQuestion({
   task,
   onClose,
   drafts,
@@ -93,7 +97,7 @@ function LegacySideQuestion({
   }
   return (
     <Sheet
-      title="Previous Q&A chats"
+      title="Read-only chat"
       onClose={onClose}
       busy={busy}
       footer={
@@ -161,7 +165,8 @@ function LegacySideQuestion({
     >
       <Action secondary label="Agent side chats" onPress={onAgents} />
       <Text style={styles.muted}>
-        Previous Q&A chats · read-only questions saved with this thread.
+        Ask about this thread and its checkout without changing files. Your coding agent keeps
+        working.
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {!!chats.length && (
@@ -175,7 +180,7 @@ function LegacySideQuestion({
           />
         )}
         <Action
-          label="New Q&A chat"
+          label="New read-only chat"
           disabled={disabled}
           onPress={() =>
             act(() =>

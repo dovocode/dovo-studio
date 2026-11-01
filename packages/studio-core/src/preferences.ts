@@ -1,3 +1,4 @@
+import { defaultTaskSnoozeMinutes, taskSnoozeMinutesSchema } from '@dovo/protocol'
 import { accessibleThemeColors, statusColors } from './accessibility'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { serviceUrlsSchema } from '@dovo/protocol'
@@ -34,6 +35,7 @@ const schema = mutableStruct({
   workingSection: Schema.Boolean,
   collapsedThreadSections: mutableArray(Schema.String),
   threadSectionOrder: threadSectionOrderSchema,
+  taskSnoozeMinutes: taskSnoozeMinutesSchema,
   threadInfoSections: Schema.Record(Schema.String, Schema.Boolean),
   projectOrder: Schema.Literals(['name', 'activity', 'user-message']),
   inAppNotifications: Schema.Boolean,
@@ -151,6 +153,7 @@ export const defaultAppPreferences: AppPreferences = {
   workingSection: false,
   collapsedThreadSections: ['working', 'waiting', 'snoozed', 'settled'],
   threadSectionOrder: [...defaultThreadSectionOrder],
+  taskSnoozeMinutes: [...defaultTaskSnoozeMinutes],
   threadInfoSections: {},
   projectOrder: 'name',
   inAppNotifications: true,

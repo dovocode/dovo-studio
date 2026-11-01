@@ -228,6 +228,80 @@ try {
       await page.getByText('No matching files in this listing.', { exact: true }).waitFor()
     }
   }
+  await page.evaluate(() => {
+    const request = window.runtime.request
+    window.folderCalls = []
+    window.runtime.request = async (path, input, ...rest) => {
+      if (!path.endsWith('/directory')) return request(path, input, ...rest)
+      window.folderCalls.push(input)
+      if (input.directory === 'src')
+        return input.cursor
+          ? { entries: [{ path: 'src/second.ts', kind: 'file' }], truncated: false }
+          : {
+              entries: [
+                { path: 'src/first.ts', kind: 'file' },
+                { path: 'src/nested', kind: 'directory' },
+              ],
+              nextCursor: 'second',
+              truncated: true,
+            }
+      if (input.directory === 'src/nested')
+        return { entries: [{ path: 'src/nested/deep.ts', kind: 'file' }], truncated: false }
+      if (input.directory === 'docs')
+        return { entries: [{ path: 'docs/guide.md', kind: 'file' }], truncated: false }
+      return {
+        entries: [
+          { path: 'src', kind: 'directory' },
+          { path: 'docs', kind: 'directory' },
+          { path: 'root.txt', kind: 'file' },
+        ],
+        truncated: false,
+      }
+    }
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await search.fill('')
+  const folder = (path) => page.locator('summary').filter({ hasText: path })
+  await page.getByRole('button', { name: 'root.txt', exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.folderCalls.map((input) => input.directory)), [
+    '',
+  ])
+  await folder('src').click()
+  await page.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'root.txt', exact: true }).isVisible(), true)
+  await page.getByRole('button', { name: 'More entries', exact: true }).click()
+  await page.getByRole('button', { name: 'src/second.ts', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'src/first.ts', exact: true }).isVisible(),
+    true,
+    'Pagination appends children',
+  )
+  await folder('nested').click()
+  await page.getByRole('button', { name: 'src/nested/deep.ts', exact: true }).waitFor()
+  await folder('docs').click()
+  await page.getByRole('button', { name: 'docs/guide.md', exact: true }).waitFor()
+  const beforeReopen = await page.evaluate(() => window.folderCalls.length)
+  await folder('src').click()
+  await page.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor({ state: 'hidden' })
+  await folder('src').click()
+  await page.getByRole('button', { name: 'src/nested/deep.ts', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.folderCalls.length),
+    beforeReopen,
+    'Reopening a loaded subtree avoids network reads',
+  )
+  await page.evaluate(() => {
+    window.runtime.connected = false
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await folder('src').click()
+  await folder('src').click()
+  assert.equal(
+    await page.getByRole('button', { name: 'src/nested/deep.ts', exact: true }).isVisible(),
+    true,
+    'Loaded folders remain browsable offline',
+  )
+  assert.equal(await page.evaluate(() => window.folderCalls.length), beforeReopen)
   assert.deepEqual(errors, [])
   console.log(
     'Project text/image previews, retry, format switching, external opening and read-only checks passed.',

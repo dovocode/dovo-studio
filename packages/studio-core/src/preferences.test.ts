@@ -431,3 +431,21 @@ it.each(['showPlanButton', 'showSendOptions'] as const)(
     ).toBe(false)
   },
 )
+
+it('persists custom snooze durations and falls back only that field for invalid saved lists', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  preferences.updateAppPreferences({ taskSnoozeMinutes: [15, 90, 2880], theme: 'light' })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().taskSnoozeMinutes).toEqual([15, 90, 2880])
+  local.setItem(
+    'dovo.app-preferences.v1',
+    JSON.stringify({ taskSnoozeMinutes: [0], theme: 'light' }),
+  )
+  vi.resetModules()
+  const invalid = await import('./preferences')
+  expect(invalid.readAppPreferences().taskSnoozeMinutes).toEqual([60, 240, 1440, 2880, 4320, 10080])
+  expect(invalid.readAppPreferences().theme).toBe('light')
+})

@@ -9,7 +9,7 @@ const mobile = root + 'apps/mobile/'
 const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
 if (screenshots) mkdirSync(screenshots, { recursive: true })
 const controls = `
-import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';import {Layers,ListChecks,ChevronDown,ArrowUpRight,Ellipsis,Plus,Mic,Keyboard as KeyboardIcon,ArrowUp,ListPlus,Pause,Play,SlidersHorizontal} from '${root}packages/studio-ui/node_modules/lucide-react';
+import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';import {Layers,ListChecks,ChevronDown,ArrowUpRight,Ellipsis,Plus,Mic,Keyboard as KeyboardIcon,ArrowUp,ListPlus,Pause,Play,SlidersHorizontal,Square} from '${root}packages/studio-ui/node_modules/lucide-react';
 const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));for(const kind of ['padding','margin']){for(const [axis,edges] of [['Horizontal',['Left','Right']],['Vertical',['Top','Bottom']]]){const key=kind+axis;if(s[key]!==undefined){for(const edge of edges)s[kind+edge]??=s[key];delete s[key]}}}if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>t.rotate?'rotate('+t.rotate+')':'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
@@ -26,7 +26,7 @@ export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({widt
 export const BackHandler={addEventListener(_event,listener){(window.backHandlers??=new Set()).add(listener);return {remove:()=>window.backHandlers.delete(listener)}}};export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
 export const Keyboard={dismiss(){window.keyboardDismissals=(window.keyboardDismissals??0)+1;document.activeElement?.blur()},addListener(name,callback){(window.keyboardListeners??={})[name]??=new Set();window.keyboardListeners[name].add(callback);return {remove(){window.keyboardListeners[name].delete(callback)}}},metrics(){return window.keyboardMetrics}};export const Linking={openSettings:async()=>{}};
-export const Icon=({name,size=20,color})=>{const Glyph={stack:Layers,checklist:ListChecks,down:ChevronDown,steer:ArrowUpRight,more:Ellipsis,add:Plus,microphone:Mic,keyboard:KeyboardIcon,send:ArrowUp,queue:ListPlus,pause:Pause,play:Play,tune:SlidersHorizontal}[name];return Glyph?<Glyph size={size} color={color} style={{flexShrink:0}}/>:null};
+export const Icon=({name,size=20,color,filled})=>{const Glyph={stack:Layers,checklist:ListChecks,down:ChevronDown,steer:ArrowUpRight,more:Ellipsis,add:Plus,microphone:Mic,keyboard:KeyboardIcon,send:ArrowUp,sendBackground:ArrowUpRight,stop:Square,queue:ListPlus,pause:Pause,play:Play,tune:SlidersHorizontal}[name];return Glyph?<Glyph size={size} color={color} fill={filled?color:undefined} style={{flexShrink:0}}/>:null};
 export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
 export const Action=({label,onPress,disabled})=><button onPointerDown={event=>event.preventDefault()} disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
 export const Image=({source,style})=><img src={source?.uri} style={style}/>;
@@ -35,7 +35,7 @@ export const Choice=({label,value,items,onChange,disabled})=><select aria-label=
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
 export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return createPortal(<div role="dialog" aria-label={title} style={{position:"fixed",inset:0,zIndex:1000,overflowY:"auto",background:"#202020",padding:12}}>{children}<button onClick={onClose}>Close</button></div>,document.body)};
-export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff',selection:'#24354c',action:'#eee',onAccent:'#111',background:'#101010',warning:'#e5ad55',success:'#6cbd82'},styles:{content:{},muted:{color:'#999'}}});
+export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff',selection:'#24354c',action:'#eee',onAccent:'#111',background:'#101010',warning:'#e5ad55',success:'#6cbd82',error:'#d93036',onError:'#fff'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
   {
@@ -617,10 +617,25 @@ try {
     window.setTask({ title: 'Review' })
   })
   await contextUsage.waitFor()
-  await page
+  const stopButton = page
     .getByTestId('Composer toolbar')
     .getByRole('button', { name: 'Stop', exact: true })
-    .click()
+  assert.deepEqual(
+    await stopButton.evaluate((button) => {
+      const circle = button.firstElementChild
+      const icon = button.querySelector('svg')
+      const style = getComputedStyle(circle)
+      return {
+        width: style.width,
+        height: style.height,
+        background: style.backgroundColor,
+        fill: icon.getAttribute('fill'),
+        stopIcon: icon.classList.contains('lucide-square'),
+      }
+    }),
+    { width: '32px', height: '32px', background: 'rgb(217, 48, 54)', fill: '#fff', stopIcon: true },
+  )
+  await stopButton.click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stop' })
   await page.evaluate(() => window.setDraftText('Continue the review'))
   await page.waitForFunction(

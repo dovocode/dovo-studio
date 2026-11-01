@@ -1,6 +1,13 @@
 import { decode } from '../shared/schema.js'
 import { describe, expect, it } from 'vite-plus/test'
-import { compareTasks, taskSortOptions, isSnoozed } from './task-priority'
+import {
+  compareTasks,
+  taskSortOptions,
+  isSnoozed,
+  taskSnoozeChoices,
+  parseTaskSnoozeMinutes,
+  formatTaskSnoozeMinutes,
+} from './task-priority'
 import { taskSchema } from '../workspace'
 const task = (id: string, createdAt: string) =>
   decode(taskSchema, {
@@ -167,4 +174,37 @@ it('preserves numeric, case-insensitive name sorting and activity ties', () => {
       expected,
     )
   }
+})
+
+describe('Configurable snooze durations', () => {
+  it('preserves existing defaults and menu order, including minute-sized durations', () => {
+    expect(taskSnoozeChoices()).toEqual([
+      { hours: 1, label: 'For 1 hour' },
+      { hours: 4, label: 'For 4 hours' },
+      { hours: 24, label: 'For 24 hours' },
+      { hours: 48, label: 'For 2 days' },
+      { hours: 72, label: 'For 3 days' },
+      { hours: 168, label: 'For 7 days' },
+    ])
+    const custom = parseTaskSnoozeMinutes('2d, 15m, 1.5H, 1w')
+    expect(custom).toEqual([2880, 15, 90, 10080])
+    expect(parseTaskSnoozeMinutes(formatTaskSnoozeMinutes(custom))).toEqual(custom)
+    expect(taskSnoozeChoices(custom)[1]).toEqual({ hours: 0.25, label: 'For 15 minutes' })
+  })
+
+  it.each([
+    '',
+    '0m',
+    '-1h',
+    'tomorrow',
+    '1',
+    '1h, 60m',
+    '0.1m',
+    '366d',
+    'Infinityh',
+    '1h,',
+    Array.from({ length: 13 }, (_, i) => `${i + 1}m`).join(','),
+  ])('rejects invalid duration lists: %s', (text) => {
+    expect(() => parseTaskSnoozeMinutes(text)).toThrow(/durations/)
+  })
 })

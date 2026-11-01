@@ -34,6 +34,7 @@ export const appSettingsExtension = defineStudioExtension(
         'Add project starts in',
         'Group running tasks',
         'Default task sort',
+        'Snooze durations',
         'Confirm before archiving a task',
         'Confirm before stopping a running task',
         'Confirm before deleting a task',
@@ -46,7 +47,7 @@ export const appSettingsExtension = defineStudioExtension(
       order: 2.9,
       settingsSection: 'coding',
       keywords:
-        'organization grouping sort order project picker folder add project starts directory confirmation archive stop unpin delete',
+        'organization grouping sort order project picker folder add project starts directory confirmation archive stop unpin delete snooze snoozing durations minutes hours days weeks',
       load: () => import('./app-settings/task-list'),
     },
     {

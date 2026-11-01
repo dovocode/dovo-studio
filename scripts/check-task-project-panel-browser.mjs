@@ -6,6 +6,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const resolveDir = root + 'packages/studio-ui/'
 const mocks = {
+  '../chat/thread-sharing':
+    'export const ThreadSharing=({taskId})=><button data-share-task={taskId}>Share thread</button>;',
   // Snapshot previews have their own browser suite; this fixture exercises thread navigation.
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@dovo/studio-core/state': `import {useState} from 'react';export const useApplicationState=useState;`,
@@ -255,6 +257,7 @@ try {
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
     const info = page.getByRole('dialog', { name: 'Thread info', exact: true })
+    await info.getByRole('button', { name: 'Share thread', exact: true }).waitFor()
     await info.getByText('Not reported', { exact: true }).waitFor()
     await page.evaluate(() =>
       window.setContextUsage({ used: 170000, limit: 200000, updatedAt: new Date().toISOString() }),

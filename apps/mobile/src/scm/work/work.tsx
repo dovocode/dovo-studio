@@ -539,8 +539,12 @@ export function WorkScreen({
               style={({ pressed }) => ({
                 gap: 5,
                 paddingVertical: 12,
-                borderBottomWidth: 0.5,
-                borderBottomColor: colors.border,
+                paddingHorizontal: 10,
+                marginVertical: 3,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: 'transparent',
+                backgroundColor: pressed ? colors.selection : 'transparent',
                 opacity: pressed ? 0.55 : 1,
               })}
             >

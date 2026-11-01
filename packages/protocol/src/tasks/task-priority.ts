@@ -1,14 +1,65 @@
 import { taskIsWorking } from './task-working.js'
 import type { Task } from '../workspace.js'
+import { Schema } from 'effect'
+import { mutableArray, decodeResult } from '../shared/schema.js'
 
-export const taskSnoozeOptions = [
-  { hours: 1, label: 'For 1 hour' },
-  { hours: 4, label: 'For 4 hours' },
-  { hours: 24, label: 'For 24 hours' },
-  { hours: 48, label: 'For 2 days' },
-  { hours: 72, label: 'For 3 days' },
-  { hours: 168, label: 'For 7 days' },
-] as const
+export const defaultTaskSnoozeMinutes = [60, 240, 1440, 2880, 4320, 10080]
+export const taskSnoozeMinutesSchema = mutableArray(
+  Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 1, maximum: 525600 })),
+  ),
+).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (values) =>
+        values.length >= 1 && values.length <= 12 && new Set(values).size === values.length,
+      { message: 'Choose 1–12 different durations between 1 minute and 365 days.' },
+    ),
+  ),
+)
+
+export function taskSnoozeChoices(minutes: readonly number[] = defaultTaskSnoozeMinutes) {
+  return minutes.map((value) => {
+    const [amount, unit] =
+      value >= 2880 && value % 1440 === 0
+        ? ([value / 1440, 'day'] as const)
+        : value % 60 === 0
+          ? ([value / 60, 'hour'] as const)
+          : ([value, 'minute'] as const)
+    return { hours: value / 60, label: `For ${amount} ${unit}${amount === 1 ? '' : 's'}` }
+  })
+}
+export const taskSnoozeOptions = taskSnoozeChoices()
+
+export function formatTaskSnoozeMinutes(minutes: readonly number[]) {
+  return minutes
+    .map((value) => {
+      for (const [unit, multiplier] of [
+        ['w', 10080],
+        ['d', 1440],
+        ['h', 60],
+      ] as const)
+        if (value % multiplier === 0) return `${value / multiplier}${unit}`
+      return `${value}m`
+    })
+    .join(', ')
+}
+
+export function parseTaskSnoozeMinutes(text: string): number[] {
+  const minutes = text.split(',').map((part) => {
+    const match = /^(\d+(?:\.\d+)?)\s*([mhdw])$/i.exec(part.trim())
+    if (!match) throw new Error('Use comma-separated durations such as 15m, 1h, 4h, 1d or 1w.')
+    const multiplier = { m: 1, h: 60, d: 1440, w: 10080 }[match[2]!.toLowerCase()]
+    return Number(match[1]) * (multiplier ?? 0)
+  })
+  const result = decodeResult(taskSnoozeMinutesSchema, minutes)
+  if (!result.success)
+    throw new Error(
+      'Choose 1–12 different durations between 1 minute and 365 days, in whole minutes.',
+    )
+  return result.data
+}
 
 export function isSnoozed(task: Task, now: number) {
   return !!task.snoozedUntil && Date.parse(task.snoozedUntil) > now

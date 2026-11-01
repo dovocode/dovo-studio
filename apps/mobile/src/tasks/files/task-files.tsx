@@ -249,6 +249,8 @@ export function TaskFiles({
           taskId={task.id}
           checkoutId={checkoutId}
           revision={revision}
+          selected={selected}
+          active={!selected}
           onSelect={(path, line) => {
             setSelected(path)
             setFocusedLine(line)

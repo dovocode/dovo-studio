@@ -3371,9 +3371,13 @@ function BrowserTabGroup({
       </div>
     )
   return (
-    <details className="studio-browser-tab-group studio-list-section mb-1 shrink-0">
+    <details
+      className="studio-browser-tab-group studio-list-section mb-1 shrink-0"
+      data-section={category}
+    >
       <summary className="studio-list-section-header">
         <ChevronDown size={11} className="studio-list-section-chevron" aria-hidden="true" />
+        <span className="studio-thread-section-dot" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">
           {category === 'snoozed' ? 'Snoozed tabs' : 'Settled tabs'}
         </span>

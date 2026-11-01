@@ -7,7 +7,7 @@ const mocks = {
   '@dovo/extension-scm/pull-detail': `export const PullDetail=({number,initialTab,linkedThread})=>{window.askInThread=linkedThread?.onAsk;return <aside aria-label="Pull request details" data-pull-preview={number} data-tab={initialTab}>PR {number} {linkedThread?.task.title}</aside>};`,
   './detail/side-thread-changes': `export const ReviewSideThreadChangesButton=({task})=><button data-review-side-changes={task.id}>Review changes</button>;`,
   '../../detail/side-thread-changes': `export const ReviewSideThreadChangesButton=({task})=><button data-review-side-changes={task.id}>Review changes</button>;`,
-  './chat/thread/side-question': `export const SideQuestion=({task})=><div data-legacy-side-chats={task.id}>{task.sideChats.map(chat=><p key={chat.id}>{chat.messages[0]?.answer}</p>)}</div>;`,
+  './chat/thread/side-question': `export const SideQuestion=({task})=><div data-read-only-side-chats={task.id}>{(task.sideChats??[]).map(chat=><p key={chat.id}>{chat.messages[0]?.answer}</p>)}</div>;`,
   // The real TasksView, side chat panel, split view and composers with lightweight shells.
   '@dovo/extension-scm/repository-dialog': 'export const RepositoryDialog=()=>null;',
   '../chat/thread-sharing':
@@ -200,8 +200,15 @@ try {
   const panel = page.getByRole('region', { name: 'Agent side chats' })
   await panel.getByRole('button', { name: 'Investigate cache', exact: true }).waitFor()
   await panel.getByText('Ready', { exact: true }).waitFor()
-  await panel.getByRole('tab', { name: 'Previous questions (1)', exact: true }).click()
-  await page.locator('[data-legacy-side-chats="parent"]').getByText('Legacy answer').waitFor()
+  await panel.getByRole('tab', { name: 'Read-only (1)', exact: true }).click()
+  await page.locator('[data-read-only-side-chats="parent"]').getByText('Legacy answer').waitFor()
+  await panel.getByRole('tab', { name: 'Agents (1)', exact: true }).click()
+
+  // A thread with no saved questions must still expose read-only chat.
+  await page.evaluate(() => window.setTask('parent', (task) => ({ ...task, sideChats: [] })))
+  await panel.getByRole('tab', { name: 'Read-only (0)', exact: true }).click()
+  await page.locator('[data-read-only-side-chats="parent"]').waitFor({ state: 'attached' })
+  assert.equal(await panel.getByRole('button', { name: 'New side chat', exact: true }).count(), 0)
   await panel.getByRole('tab', { name: 'Agents (1)', exact: true }).click()
 
   // A side chat embeds the normal thread UI beside its parent.

@@ -31,6 +31,7 @@ type IconButtonProps = {
   selected?: boolean
   size?: 44 | 48
   variant?: 'glass' | 'plain' | 'filled'
+  destructive?: boolean
   color?: string
 }
 
@@ -44,6 +45,7 @@ function NativeIconButton({
   selected = false,
   size = 44,
   variant = 'plain',
+  destructive = false,
   color,
 }: IconButtonProps) {
   const { colors } = useTheme()
@@ -69,7 +71,9 @@ function NativeIconButton({
         controlSize('large'),
         tint(
           variant === 'filled'
-            ? colors.action
+            ? destructive
+              ? colors.error
+              : colors.action
             : (color ?? (prominent ? colors.action : selected ? colors.accent : colors.text)),
         ),
         frame({ width: size, height: size }),
@@ -86,14 +90,16 @@ function NativeIconButton({
         size={icon === 'stop' ? 18 : 20}
         color={
           variant === 'filled'
-            ? colors.onAccent
+            ? destructive
+              ? colors.onError
+              : colors.onAccent
             : (color ?? (selected ? colors.accent : colors.text))
         }
         modifiers={[
           ...(variant === 'filled'
             ? [
                 frame({ width: size - 12, height: size - 12 }),
-                background(colors.action, shapes.circle()),
+                background(destructive ? colors.error : colors.action, shapes.circle()),
               ]
             : []),
           frame({
@@ -115,6 +121,7 @@ export function NativeActionMenu({
   disabled,
   size = 44,
   variant = 'plain',
+  destructive = false,
   color,
 }: {
   label: string
@@ -124,6 +131,7 @@ export function NativeActionMenu({
   disabled?: boolean
   size?: 44 | 48
   variant?: 'glass' | 'plain' | 'filled'
+  destructive?: boolean
   color?: string
 }) {
   const { colors, mode: appearanceMode } = useTheme()
@@ -139,12 +147,18 @@ export function NativeActionMenu({
           <NativeIcon
             name={icon}
             size={icon === 'stop' ? 18 : 20}
-            color={variant === 'filled' ? colors.onAccent : (color ?? colors.text)}
+            color={
+              variant === 'filled'
+                ? destructive
+                  ? colors.onError
+                  : colors.onAccent
+                : (color ?? colors.text)
+            }
             modifiers={[
               ...(variant === 'filled'
                 ? [
                     frame({ width: size - 12, height: size - 12 }),
-                    background(colors.action, shapes.circle()),
+                    background(destructive ? colors.error : colors.action, shapes.circle()),
                   ]
                 : []),
               frame({ width: size, height: size }),
@@ -198,6 +212,7 @@ export function IconButton(props: IconButtonProps) {
     selected,
     size = 44,
     variant = 'plain',
+    destructive = false,
     color,
   } = props
   if (Platform.OS === 'ios' && menuActions) {
@@ -210,6 +225,7 @@ export function IconButton(props: IconButtonProps) {
         disabled={disabled}
         size={size}
         variant={variant}
+        destructive={destructive}
         color={color}
       />
     )
@@ -285,7 +301,7 @@ export function IconButton(props: IconButtonProps) {
                 borderRadius: size,
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: colors.action,
+                backgroundColor: destructive ? colors.error : colors.action,
               }
             : undefined
         }
@@ -293,9 +309,12 @@ export function IconButton(props: IconButtonProps) {
         <Icon
           name={icon}
           size={icon === 'stop' ? 18 : 20}
+          filled={icon === 'stop'}
           color={
             variant === 'filled'
-              ? colors.onAccent
+              ? destructive
+                ? colors.onError
+                : colors.onAccent
               : (color ?? (prominent ? colors.onAccent : selected ? colors.accent : colors.text))
           }
         />

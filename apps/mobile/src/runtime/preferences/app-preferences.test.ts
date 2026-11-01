@@ -579,3 +579,22 @@ it.each(['showPlanButton'] as const)(
     expect(reopened.readMobilePreferences()[key]).toBe(true)
   },
 )
+
+it('persists custom snooze durations and restores defaults for invalid saved lists', async () => {
+  let saved = JSON.stringify({ taskSnoozeMinutes: [0], theme: 'light' })
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().taskSnoozeMinutes).toEqual([
+    60, 240, 1440, 2880, 4320, 10080,
+  ])
+  expect(preferences.readMobilePreferences().theme).toBe('light')
+  preferences.updateMobilePreferences({ taskSnoozeMinutes: [15, 90, 2880] })
+  await vi.waitFor(() => expect(JSON.parse(saved).taskSnoozeMinutes).toEqual([15, 90, 2880]))
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences().taskSnoozeMinutes).toEqual([15, 90, 2880])
+})

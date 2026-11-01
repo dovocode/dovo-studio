@@ -119,6 +119,7 @@ const icons = {
   jobs: Workflow,
   settings: Settings,
   send: ArrowUp,
+  sendBackground: ArrowUpRight,
   queue: ListPlus,
   steer: ArrowUpRight,
   stop: Square,

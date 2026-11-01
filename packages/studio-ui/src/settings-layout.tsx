@@ -370,9 +370,9 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={value === id}
           onClick={() => onChange(id)}
-          className={`min-h-7 rounded-md border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
+          className={`min-h-7 rounded-xl border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
             value === id
-              ? 'border-primary/40 bg-[var(--studio-selected-fill)] font-medium text-foreground [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]'
+              ? 'studio-selected-surface font-medium'
               : 'border-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground'
           }`}
         >

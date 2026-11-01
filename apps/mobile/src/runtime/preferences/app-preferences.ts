@@ -1,3 +1,4 @@
+import { defaultTaskSnoozeMinutes, taskSnoozeMinutesSchema } from '@dovo/protocol'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { serviceUrlsSchema } from '@dovo/protocol'
 import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
@@ -41,6 +42,7 @@ const schema = mutableStruct({
   workingSection: Schema.Boolean,
   collapsedThreadSections: mutableArray(Schema.String),
   threadSectionOrder: threadSectionOrderSchema,
+  taskSnoozeMinutes: taskSnoozeMinutesSchema,
   threadInfoSections: Schema.Record(Schema.String, Schema.Boolean),
   confirmArchive: Schema.Boolean,
   confirmStop: Schema.Boolean,
@@ -92,6 +94,7 @@ const defaults: MobilePreferences = {
   workingSection: false,
   collapsedThreadSections: ['working', 'snoozed', 'settled'],
   threadSectionOrder: [...defaultThreadSectionOrder],
+  taskSnoozeMinutes: [...defaultTaskSnoozeMinutes],
   threadInfoSections: {},
   confirmArchive: false,
   confirmStop: false,

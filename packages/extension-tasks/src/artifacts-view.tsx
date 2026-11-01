@@ -453,8 +453,8 @@ export default function ArtifactsView() {
                           aria-pressed={layout === 'preview'}
                           onClick={() => setLayout('preview')}
                           className={cn(
-                            'size-8 rounded-md',
-                            layout === 'preview' && 'bg-card shadow-sm',
+                            'size-8 rounded-xl border border-transparent',
+                            layout === 'preview' && 'studio-selected-surface',
                           )}
                         >
                           <LayoutGrid className="size-4" />
@@ -464,8 +464,8 @@ export default function ArtifactsView() {
                           aria-pressed={layout === 'list'}
                           onClick={() => setLayout('list')}
                           className={cn(
-                            'size-8 rounded-md',
-                            layout === 'list' && 'bg-card shadow-sm',
+                            'size-8 rounded-xl border border-transparent',
+                            layout === 'list' && 'studio-selected-surface',
                           )}
                         >
                           <List className="size-4" />
@@ -493,8 +493,8 @@ export default function ArtifactsView() {
                         aria-current={current ? 'true' : undefined}
                         onClick={() => open(entry)}
                         className={cn(
-                          'flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          current && 'bg-accent',
+                          'flex w-full min-w-0 items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          current && 'studio-selected-surface',
                         )}
                       >
                         <ArtifactIcon

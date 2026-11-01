@@ -811,20 +811,6 @@ function TaskDetailContent({
                       disabled: !lifecycle.enabled || lifecycle.busy,
                       onPress: lifecycle.togglePinned,
                     },
-                    ...(!task.example && canShare
-                      ? [
-                          {
-                            label: 'Share thread',
-                            group: 'Thread',
-                            icon: 'share' as const,
-                            overflow: true,
-                            onPress: () => {
-                              Keyboard.dismiss()
-                              setSharingTaskId(task.id)
-                            },
-                          },
-                        ]
-                      : []),
                     {
                       label: 'Regenerate title',
                       group: 'Advanced',
@@ -974,6 +960,15 @@ function TaskDetailContent({
           inline={!car}
           task={task}
           scripts={projectActions}
+          onShare={
+            !task.example && !startup?.temporary && canShare
+              ? () => {
+                  Keyboard.dismiss()
+                  setProjectInfo(false)
+                  setSharingTaskId(task.id)
+                }
+              : undefined
+          }
           onBrowser={(url) => {
             setServerLink({ runtimeId: activeId, taskId: task.id, id: randomUUID(), url })
             setProjectInfo(false)

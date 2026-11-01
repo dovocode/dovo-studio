@@ -5,7 +5,7 @@ const built = await build({
   stdin: {
     contents: `
 import { createRoot } from 'react-dom/client';
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
 const frame = window.requestAnimationFrame.bind(window);
@@ -21,7 +21,8 @@ function Composer() {
   const input = useRef(null);
   const [submitBusy,setSubmitBusy]=useState(false);window.setSubmitBusy=setSubmitBusy;
   const [composingNextDraft,setComposingNextDraft]=useState(false);window.setComposingNextDraft=setComposingNextDraft;
-  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
+  const [paged,setPaged]=useState(false);window.setPagedHistory=setPaged;useEffect(()=>{window.pagedHistoryCommitted=paged},[paged]);
+  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" historyScope={paged?"paged":"recent"} historyBefore={paged?"recent":undefined} loadHistory={async(before,signal)=>window.loadHistory(before,signal)} messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
     <button type="submit" disabled={!hasText||submitBusy}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
@@ -202,6 +203,98 @@ try {
   await page.evaluate(() => window.setSubmitBusy(false))
   if ((await input.inputValue()) !== 'Second queued prompt')
     throw new Error('Completing the send replaced the newer draft')
+  await page.evaluate(() => {
+    window.historyCalls = []
+    window.loadHistory = async (before) => {
+      window.historyCalls.push(before)
+      if (window.holdHistory) await new Promise((resolve) => (window.releaseHistory = resolve))
+      return {
+        turns: [],
+        historyRevision: 0,
+        ...(before === 'recent'
+          ? { messages: [{ role: 'assistant', text: 'A long assistant page' }], before: 'earlier' }
+          : before === 'earlier'
+            ? {
+                messages: [
+                  { role: 'user', text: 'Earlier 1' },
+                  { role: 'user', text: 'Earlier 2' },
+                ],
+                before: 'oldest',
+              }
+            : { messages: [{ role: 'user', text: 'Oldest' }] }),
+      }
+    }
+    window.setPagedHistory(true)
+  })
+  await input.fill('')
+  for (const expected of ['Second message', 'First message', 'Earlier 2', 'Earlier 1', 'Oldest']) {
+    await input.press('ArrowUp')
+    await page.waitForFunction((expected) => window.controller.text === expected, expected)
+  }
+  if (
+    JSON.stringify(await page.evaluate(() => window.historyCalls)) !==
+    JSON.stringify(['recent', 'earlier', 'oldest'])
+  )
+    throw new Error('History did not load pages on demand')
+  for (const expected of ['Earlier 1', 'Earlier 2', 'First message', 'Second message', '']) {
+    await input.press('ArrowDown')
+    await page.waitForFunction((expected) => window.controller.text === expected, expected)
+  }
+  for (const expected of ['Second message', 'First message', 'Earlier 2', 'Earlier 1', 'Oldest']) {
+    await input.press('ArrowUp')
+    await page.waitForFunction((expected) => window.controller.text === expected, expected)
+  }
+  if ((await page.evaluate(() => window.historyCalls.length)) !== 3)
+    throw new Error('Repeated recall downloaded cached history')
+  await page.evaluate(() => window.setPagedHistory(false))
+  await page.waitForFunction(() => window.pagedHistoryCommitted === false)
+  await input.fill('')
+  await page.evaluate(() => {
+    window.setPagedHistory(true)
+    window.holdHistory = true
+  })
+  await page.waitForFunction(() => window.pagedHistoryCommitted === true)
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await page.getByRole('status').filter({ hasText: 'Loading earlier messages' }).waitFor()
+  await input.fill('Keep edits made while history loads')
+  await page.evaluate(() => {
+    window.holdHistory = false
+    window.releaseHistory()
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  if ((await input.inputValue()) !== 'Keep edits made while history loads')
+    throw new Error('A delayed page overwrote edited text')
+  await page.evaluate(() => window.setPagedHistory(false))
+  await page.waitForFunction(() => window.pagedHistoryCommitted === false)
+  await input.fill('')
+  await page.evaluate(() => {
+    window.setPagedHistory(true)
+    window.holdHistory = true
+  })
+  await page.waitForFunction(() => window.pagedHistoryCommitted === true)
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await input.press('ArrowUp')
+  await page.getByRole('status').filter({ hasText: 'Loading earlier messages' }).waitFor()
+  await input.press('ArrowDown')
+  await page.waitForFunction(() => window.controller.text === 'Second message')
+  await page.evaluate(() => {
+    window.holdHistory = false
+    window.releaseHistory()
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  if ((await input.inputValue()) !== 'Second message')
+    throw new Error('A delayed page overwrote newer history navigation')
+  if (errors.length) throw new Error(JSON.stringify(errors))
+  console.log(
+    'Paged recall crosses the live window, skips assistant-only pages, reuses cached history and preserves edits during delayed loads.',
+  )
   console.log(
     'Enter submits the default and Alt+Enter submits the alternative without a duplicate submission.',
   )

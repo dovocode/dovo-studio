@@ -1,11 +1,17 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
-import { parseDiffFromFile, getFiletypeFromFileName } from '@pierre/diffs'
+import {
+  parseDiffFromFile,
+  getFiletypeFromFileName,
+  VirtualizedFileDiff,
+  DEFAULT_VIRTUAL_FILE_METRICS,
+} from '@pierre/diffs'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
 import {
   EditProvider,
   FileDiff,
+  Virtualizer,
   type EditorFactory,
   type FileDiffOptions,
 } from '@pierre/diffs/react'
@@ -15,6 +21,8 @@ import type { ChangedFile, Task } from '@dovo/studio-core'
 import { formatCodeReference } from '../detail/code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
   new Editor(type, options, key)
+// Match .studio-code so unrendered rows have the same height as measured rows.
+const diffMetrics = { ...DEFAULT_VIRTUAL_FILE_METRICS, lineHeight: 22 }
 export function PierreEditor({
   file,
   taskId,
@@ -71,6 +79,14 @@ export function PierreEditor({
   const [editing, setEditing] = useApplicationState(false)
   const cancelEdit = useRef(false)
   const scrolledTarget = useRef('')
+  const positionedTarget = useRef('')
+  const navigationFrame = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (navigationFrame.current !== null) cancelAnimationFrame(navigationFrame.current)
+    },
+    [],
+  )
   const diffs = useDiffOptions()
   const [split, setSplit] = useApplicationState(diffs.defaultSplit)
   const [dirty, setDirty] = useApplicationState(false)
@@ -103,19 +119,46 @@ export function PierreEditor({
       disableFileHeader: true,
       enableLineSelection: !editing,
       enableGutterUtility: !editing,
-      onPostRender: (node, instance) => {
-        if (!focusedLine) return
-        const target = `${file.path}:${focusedLine}`
-        if (scrolledTarget.current === target) return
-        if (!instance.isLineRenderable(focusedLine)) {
-          instance.revealLine(focusedLine)
+      onPostRender: (node, instance, phase) => {
+        if (navigationFrame.current !== null) cancelAnimationFrame(navigationFrame.current)
+        navigationFrame.current = null
+        if (phase === 'unmount') return
+        if (!focusedLine) {
+          scrolledTarget.current = ''
+          positionedTarget.current = ''
           return
         }
-        const line = (node.shadowRoot ?? node).querySelector('[data-line][data-selected-line]')
-        if (line) {
-          scrolledTarget.current = target
-          line.scrollIntoView({ block: 'center' })
-        }
+        const target = `${file.path}:${focusedLine}`
+        if (scrolledTarget.current === target) return
+        // Selection and virtual row measurements finish after the render callback. Navigating
+        // inside it can re-enter layout with stale rows; coalesce navigation into the next frame.
+        navigationFrame.current = requestAnimationFrame(() => {
+          navigationFrame.current = null
+          if (!node.isConnected) return
+          if (!instance.isLineRenderable(focusedLine)) {
+            instance.revealLine(focusedLine)
+            return
+          }
+          const line = (node.shadowRoot ?? node).querySelector('[data-line][data-selected-line]')
+          if (line) {
+            scrolledTarget.current = target
+            line.scrollIntoView({ block: 'center' })
+          } else if (
+            instance instanceof VirtualizedFileDiff &&
+            positionedTarget.current !== target
+          ) {
+            // Mount a distant finding using its logical position, then align its measured row.
+            const position = instance.getLinePosition(focusedLine, 'additions')
+            const viewport = instance.getEditorViewport()
+            if (position && viewport instanceof HTMLElement) {
+              positionedTarget.current = target
+              viewport.scrollTop = Math.max(
+                0,
+                (instance.top ?? 0) + position.top - viewport.clientHeight / 2,
+              )
+            }
+          }
+        })
       },
       onLineSelectionEnd: (range) => {
         if (range && (!range.endSide || range.endSide === range.side))
@@ -243,11 +286,12 @@ export function PierreEditor({
           </Button>
         )}
       </div>
-      <div className="studio-code min-h-0 flex-1 overflow-auto">
+      <Virtualizer className="studio-code min-h-0 min-w-0 flex-1 overflow-auto [overflow-anchor:none]">
         <EditProvider createEditor={createEditor}>
           {ready ? (
             <FileDiff
               fileDiff={diff}
+              metrics={diffMetrics}
               lineAnnotations={anchors}
               selectedLines={
                 focusedLine
@@ -337,7 +381,7 @@ export function PierreEditor({
             <p className="p-4 text-xs text-muted-foreground">Loading diff…</p>
           )}
         </EditProvider>
-      </div>
+      </Virtualizer>
       {comments
         .filter((m) => m.file === file.path && m.diffComment && !anchored.includes(m))
         .map((m) => (

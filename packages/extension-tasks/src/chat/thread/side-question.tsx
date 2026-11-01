@@ -138,7 +138,7 @@ export function SideQuestion({
       onAddToComposer(text)
     })
   return (
-    <section aria-label="Side chats" className="flex min-h-0 flex-1 flex-col">
+    <section aria-label="Read-only side chats" className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           {chat ? (
@@ -155,15 +155,15 @@ export function SideQuestion({
               </SelectContent>
             </Select>
           ) : (
-            <h2 className="text-sm font-medium">Side chats</h2>
+            <h2 className="text-sm font-medium">Read-only chat</h2>
           )}
         </div>
         <Button
           size="icon"
           variant="ghost"
           disabled={disabled || chats.length >= 20}
-          aria-label="New side chat"
-          title="New side chat"
+          aria-label="New read-only chat"
+          title="New read-only chat"
           onClick={create}
         >
           <Plus className="size-4" />
@@ -206,7 +206,7 @@ export function SideQuestion({
         )}
       </div>
       <p className="px-4 py-2 text-xs text-muted-foreground">
-        Uses this thread and reads its checkout. Your coding agent keeps working.
+        Reads this thread and its checkout without changing files. Your coding agent keeps working.
       </p>
       <Conversation
         key={chat?.id ?? 'empty'}
@@ -223,7 +223,7 @@ export function SideQuestion({
               </p>
               <Button variant="outline" size="sm" disabled={disabled} onClick={create}>
                 <Plus className="size-4" />
-                New side chat
+                New read-only chat
               </Button>
             </div>
           )}

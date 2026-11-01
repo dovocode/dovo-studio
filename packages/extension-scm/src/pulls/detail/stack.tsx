@@ -62,7 +62,7 @@ export function PullStack({
                   aria-current={pull.number === detail.pull.number ? 'true' : undefined}
                   disabled={pull.number === detail.pull.number}
                   onClick={() => onSelect(pull.number)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/50 aria-[current=true]:bg-accent/50"
+                  className={`flex w-full items-center gap-2 rounded-xl border border-transparent px-2 py-1.5 text-left hover:bg-accent/50 ${pull.number === detail.pull.number ? 'studio-selected-surface' : ''}`}
                 >
                   <span className="shrink-0 font-mono">#{pull.number}</span>
                   <span className="min-w-0 flex-1 truncate">{pull.title}</span>

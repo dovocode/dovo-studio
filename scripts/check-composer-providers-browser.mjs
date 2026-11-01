@@ -48,7 +48,7 @@ const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
 const snapshot={workspace:{agents,repositories:[repository],tasks:[]},defaults:{},acpInstallations:installations};
 window.deferModels=false;window.pendingModels=[];window.modelRequests=[];window.pending=[];window.changes=[];window.mode='desktop';
 function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;
-const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
+const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(input.provider==='codex'?[{id:'gpt-6.1-sol',name:'GPT-6.1 Sol'}]:[]),...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
 const profile={id:host,connection:{address:'http://'+host,token:'token-'+host}};
 const change=async next=>{window.changes.push(next);setValue(next);return true};
 return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={change}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
@@ -94,7 +94,7 @@ try {
   await page.evaluate(() =>
     localStorage.setItem(
       'dovo:model-favorites',
-      'cursor:missing-model\ncodex:favorite-model\ncodex:\ncodex:default',
+      'cursor:missing-model\ncodex:favorite-model\ncodex:gpt-6.1-sol\ncodex:\ncodex:default',
     ),
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
@@ -123,8 +123,16 @@ try {
   await page.getByRole('button', { name: 'Vibe models', exact: true }).waitFor()
   await absent(page.getByRole('button', { name: 'Cursor models', exact: true }))
   await absent(page.getByRole('button', { name: 'ACP models', exact: true }))
+  await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
+  if (
+    (await page
+      .getByRole('option', { name: '6.1 Sol', exact: true })
+      .getAttribute('data-value')) !== 'gpt-6.1-sol'
+  )
+    throw new Error('Compact Codex label changed the model ID')
   await page.getByRole('button', { name: 'Favorite models', exact: true }).click()
   await page.getByRole('option', { name: 'favorite-model' }).waitFor()
+  await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
   await absent(page.getByRole('option', { name: 'missing-model' }))
   await absent(page.getByRole('option', { name: 'Provider default' }))
   await absent(page.getByRole('option', { name: 'default', exact: true }))
@@ -188,13 +196,22 @@ try {
     throw new Error('New-thread picker was expanded before opening')
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await waitRequests(7)
-  await finish(6, ['harness:claude', 'harness:vibe', 'agent:custom', 'acp:installed'])
+  await finish(6, [
+    'harness:codex',
+    'harness:claude',
+    'harness:vibe',
+    'agent:custom',
+    'acp:installed',
+  ])
   await page.getByRole('button', { name: 'More settings', exact: true }).click()
   if (await page.getByRole('textbox', { name: 'Search harnesses and models' }).count())
     throw new Error('New-thread settings were appended below the picker')
   await page.getByRole('button', { name: 'Back to models', exact: true }).click()
   const harness = (name) => page.getByRole('button', { name, exact: true })
   await harness('Claude models').waitFor()
+  await harness('6.1 Sol').waitFor()
+  if ((await harness('6.1 Sol').innerText()).trim() !== '6.1 Sol')
+    throw new Error('Mobile Codex row repeats the GPT-prefixed ID')
   await absent(harness('Cursor models'))
   await page
     .getByRole('textbox', { name: 'Search harnesses and models', exact: true })
@@ -275,7 +292,7 @@ try {
   await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
   await waitRequests(10)
   await finish(9, ['harness:codex', 'harness:claude'])
-  await page.getByRole('option', { name: '6.1 Terra' }).waitFor()
+  await page.getByRole('option', { name: '6.1 Terra', exact: true }).waitFor()
   if (!(await page.evaluate(() => window.modelRequests.at(-1).input.refresh)))
     throw new Error('Picker refresh did not bypass the cached model list')
   if (errors.length) throw new Error(errors.join('\n'))

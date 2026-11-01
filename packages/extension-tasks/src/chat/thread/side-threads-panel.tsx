@@ -411,7 +411,7 @@ export function SideThreadBar({
 
 /**
  * Agent side chats are ordinary threads with their own checkout, model and approvals.
- * Older read-only side questions remain available below them.
+ * Read-only questions share the panel without creating an agent checkout.
  */
 export function SideThreadsPanel({
   task,
@@ -421,7 +421,7 @@ export function SideThreadsPanel({
   onAttend,
   onBroughtBack,
   onDiscarded,
-  previousQuestions,
+  readOnlyQuestions,
 }: {
   task: Task
   /** The side chat currently shown beside this one. */
@@ -431,14 +431,14 @@ export function SideThreadsPanel({
   onAttend: (childId: string, kind: SideThreadAttention) => void
   onBroughtBack: (handoff: SideThreadHandoff, child: Task) => void
   onDiscarded: (childId: string) => void
-  previousQuestions: ReactNode
+  readOnlyQuestions: ReactNode
 }) {
   const { workspace, connected } = useWorkspace()
   const attention = useSideThreadAttention()
   const children = sideThreadsOf(workspace.tasks, task.id)
   const { create, busy, error } = useCreateSideThread(task.id)
-  const previousCount = task.sideChats?.length ?? 0
-  const [view, setView] = useState<'threads' | 'previous'>('threads')
+  const questionCount = task.sideChats?.length ?? 0
+  const [view, setView] = useState<'threads' | 'read-only'>('threads')
   // Side chats do not start their own side chats; bring results back to the parent instead.
   const nested = !!sideThreadOf(task)
   const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
@@ -448,62 +448,62 @@ export function SideThreadsPanel({
     <section aria-label="Agent side chats" className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <h2 className="min-w-0 flex-1 text-sm font-medium">Side chats</h2>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!connected || readOnly || busy}
-          onClick={() =>
-            void create().then((id) => {
-              if (id) onOpen(id)
-            })
-          }
-        >
-          <GitBranchPlus className="size-3.5" />
-          {busy ? 'Creating…' : 'New side chat'}
-        </Button>
+        {view === 'threads' && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || readOnly || busy}
+            onClick={() =>
+              void create().then((id) => {
+                if (id) onOpen(id)
+              })
+            }
+          >
+            <GitBranchPlus className="size-3.5" />
+            {busy ? 'Creating…' : 'New side chat'}
+          </Button>
+        )}
       </div>
-      {!eligible && (
+      {!eligible && view === 'threads' && (
         <p className="px-3 py-2 text-xs text-muted-foreground">
           Agent side chats require a Git project or General workspace.
         </p>
       )}
-      {previousCount > 0 && (
-        <div
-          role="tablist"
-          aria-label="Side conversations"
-          className="flex gap-1 border-b px-3 py-1.5"
-        >
-          {(
-            [
-              ['threads', `Agents (${children.length})`],
-              ['previous', `Previous questions (${previousCount})`],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={view === id}
-              onClick={() => setView(id)}
-              className={cn(
-                'rounded-md px-2 py-1 text-xs',
-                view === id
-                  ? 'bg-muted font-medium text-foreground'
-                  : 'text-muted-foreground hover:bg-accent',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div
+        role="tablist"
+        aria-label="Side conversations"
+        className="flex gap-1 border-b px-3 py-1.5"
+      >
+        {(
+          [
+            ['threads', `Agents (${children.length})`],
+            ['read-only', `Read-only (${questionCount})`],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={view === id}
+            onClick={() => setView(id)}
+            className={cn(
+              'rounded-md px-2 py-1 text-xs',
+              view === id
+                ? 'bg-muted font-medium text-foreground'
+                : 'text-muted-foreground hover:bg-accent',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {error && (
         <p role="alert" className="px-4 py-2 text-xs text-destructive">
           {error}
         </p>
       )}
-      {view === 'previous' && previousCount > 0 ? (
-        previousQuestions
+      {view === 'read-only' ? (
+        readOnlyQuestions
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {nested && (

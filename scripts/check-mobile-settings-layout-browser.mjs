@@ -562,6 +562,28 @@ try {
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     await row('Conversation').waitFor()
+    await page.evaluate(() => window.navigate('/settings/task-preferences'))
+    const snooze = page.getByRole('textbox', { name: 'Snooze durations', exact: true })
+    await snooze.fill('15m, 90m, 2d')
+    await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+    await page.waitForFunction(
+      () => JSON.stringify(window.savedPreferences?.taskSnoozeMinutes) === '[15,90,2880]',
+    )
+    await snooze.fill('0m')
+    await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: 'different durations' }).waitFor()
+    assert.deepEqual(
+      await page.evaluate(() => window.savedPreferences.taskSnoozeMinutes),
+      [15, 90, 2880],
+    )
+    await page.getByRole('button', { name: 'Reset snooze durations', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        JSON.stringify(window.savedPreferences?.taskSnoozeMinutes) ===
+        '[60,240,1440,2880,4320,10080]',
+    )
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     await search.fill('general memory')
     await row('Memory').waitFor()
     await page.getByText('Agents & tools', { exact: true }).waitFor()
@@ -578,6 +600,7 @@ try {
       ['keep screen awake', 'Conversation', 'conversation'],
       ['merge squash', 'Task & PR preferences', 'task-preferences'],
       ['confirm archive', 'Task & PR preferences', 'task-preferences'],
+      ['snooze durations', 'Task & PR preferences', 'task-preferences'],
       ['push alerts', 'Notifications', 'notifications'],
       ['standalone relay', 'Notifications', 'notifications'],
       ['live activities', 'Notifications', 'notifications'],

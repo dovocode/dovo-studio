@@ -94,7 +94,7 @@ export function JiraIssueList({
                 </span>
               )}
             </h2>
-            <div className="divide-y">
+            <div className="space-y-1 py-1">
               {group.map(({ source, item }) => {
                 const key = jiraIssueRowKey(source, item.id)
                 const active = selected?.source.scope === source.scope && selected.id === item.id
@@ -112,7 +112,7 @@ export function JiraIssueList({
                     aria-label={`${issueLabel(item.id)} · ${item.title} · ${item.state} · ${item.priority ? `${item.priority} priority` : 'No priority'} · ${assignee}`}
                     aria-current={active ? 'true' : undefined}
                     disabled={opening}
-                    className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_7rem] items-start gap-3 px-3 py-3 text-left text-xs transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 @xl/jira-list:grid-cols-[minmax(0,1fr)_7rem_5rem_7rem] ${active ? 'bg-accent' : ''}`}
+                    className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_7rem] items-start gap-3 rounded-xl border border-transparent px-3 py-3 text-left text-xs transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 @xl/jira-list:grid-cols-[minmax(0,1fr)_7rem_5rem_7rem] ${active ? 'studio-selected-surface' : ''}`}
                     onClick={() => void onOpen(source, item.id, item.url)}
                     onKeyDown={(event) => {
                       if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return

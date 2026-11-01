@@ -267,6 +267,28 @@ try {
     e.scrollTop = 5000
   })
   await page.waitForTimeout(250)
+  const resizeReads = await page.evaluate(() => window.detailReads)
+  for (const width of [950, 700, 1050, 400, 1440, 650, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.waitForTimeout(100)
+  }
+  await page.waitForTimeout(300)
+  const settledParses = await page.evaluate(() => window.parseCount)
+  await page.waitForTimeout(500)
+  assert.equal(
+    await page.evaluate(() => window.parseCount),
+    settledParses,
+    'PR diffs keep remounting after resizing',
+  )
+  assert.equal(
+    await page.evaluate(() => window.detailReads),
+    resizeReads,
+    'Resizing refetched PR sections',
+  )
+  await content.evaluate((e) => {
+    e.scrollTop = 5000
+  })
+  await page.waitForTimeout(250)
   const changesTop = await content.evaluate((e) => e.scrollTop)
   assert.ok(changesTop > 4000)
   const pinned = detail.getByLabel('Pinned file review controls', { exact: true })
