@@ -289,223 +289,227 @@ export function SettingsNav({
       }}
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col border-b bg-sidebar px-4 py-3 md:w-52 md:gap-3 md:overflow-hidden md:border-b-0 md:border-r md:px-3 md:py-4 lg:w-64"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-64"
     >
       <SidebarHeader />
-      <div className="md:hidden">
-        <Select value={activeId} onValueChange={select}>
-          <SelectTrigger aria-label="Settings section" className="h-9">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {headings.map(([section, label]) => {
-              const items = ordered.filter((view) => sectionFor(view) === section)
-              if (!items.length) return null
-              return (
-                <SelectGroup key={section}>
-                  <SelectLabel className="text-xs text-muted-foreground">{label}</SelectLabel>
-                  {items.map((view) => (
-                    <SelectItem key={view.id} value={view.id}>
-                      {view.title}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )
-            })}
-          </SelectContent>
-        </Select>
-        <p className="mt-2 text-xs text-muted-foreground">{scopeLabel}</p>
-      </div>
-      <div className="shrink-0 px-1">
-        <h1 className="mb-2 hidden px-1 text-base font-semibold tracking-tight md:block">
-          Settings
-        </h1>
-        {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
-        <div className="relative text-[0.8125rem]">
-          <Search
-            aria-hidden="true"
-            className="absolute left-2 top-2 size-3.5 text-muted-foreground"
-          />
-          <Input
-            ref={input}
-            aria-label="Search settings"
-            placeholder="Search settings"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setJump(null)
-              setSearchStatus('')
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                event.preventDefault()
-                moveResult(null, event.key === 'ArrowDown' ? 1 : 0)
-              }
-              if (event.key === 'Enter') {
-                if (firstField) openSetting(firstField.viewId, firstField.label)
-                else if (matches[0]) select(matches[0].id)
-              }
-              if (event.key === 'Escape') clearSearch()
-            }}
-            className="h-9 rounded-lg border-border/60 bg-background/60 pl-8 pr-8"
-          />
-          {query && (
-            <button
-              type="button"
-              aria-label="Clear settings search"
-              onClick={clearSearch}
-              className="absolute right-1 top-1 rounded p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X className="size-3.5" />
-            </button>
+      <div className="studio-overview-pane flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sidebar px-4 py-3 md:px-3 md:py-4">
+        <div className="md:hidden">
+          <Select value={activeId} onValueChange={select}>
+            <SelectTrigger aria-label="Settings section" className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {headings.map(([section, label]) => {
+                const items = ordered.filter((view) => sectionFor(view) === section)
+                if (!items.length) return null
+                return (
+                  <SelectGroup key={section}>
+                    <SelectLabel className="text-xs text-muted-foreground">{label}</SelectLabel>
+                    {items.map((view) => (
+                      <SelectItem key={view.id} value={view.id}>
+                        {view.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )
+              })}
+            </SelectContent>
+          </Select>
+          <p className="mt-2 text-xs text-muted-foreground">{scopeLabel}</p>
+        </div>
+        <div className="shrink-0 px-1">
+          <h1 className="mb-2 hidden px-1 text-base font-semibold tracking-tight md:block">
+            Settings
+          </h1>
+          {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
+          <div className="relative text-[0.8125rem]">
+            <Search
+              aria-hidden="true"
+              className="absolute left-2 top-2 size-3.5 text-muted-foreground"
+            />
+            <Input
+              ref={input}
+              aria-label="Search settings"
+              placeholder="Search settings"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setJump(null)
+                setSearchStatus('')
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  moveResult(null, event.key === 'ArrowDown' ? 1 : 0)
+                }
+                if (event.key === 'Enter') {
+                  if (firstField) openSetting(firstField.viewId, firstField.label)
+                  else if (matches[0]) select(matches[0].id)
+                }
+                if (event.key === 'Escape') clearSearch()
+              }}
+              className="h-9 rounded-lg border-border/60 bg-background/60 pl-8 pr-8"
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear settings search"
+                onClick={clearSearch}
+                className="absolute right-1 top-1 rounded p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        {needle && (
+          <p role="status" className="px-2 text-xs text-muted-foreground">
+            {resultCount} {resultCount === 1 ? 'result' : 'results'}
+          </p>
+        )}
+        <div
+          role="region"
+          aria-label="Settings navigation"
+          tabIndex={0}
+          className={`${needle ? 'flex max-h-64 md:max-h-none' : 'hidden'} min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex`}
+        >
+          {headings.map(([section, label]) => {
+            const items = matches.filter((view) => sectionFor(view) === section)
+            if (!items.length) return null
+            return (
+              <div key={section} className="text-sm">
+                <h2 className="flex min-h-8 items-center px-2 text-[0.8125rem] font-semibold text-foreground/90">
+                  {label}
+                </h2>
+                <div className="space-y-0.5">
+                  {items.map((view) => {
+                    const Icon = icons[view.id] ?? Settings2
+                    const active = activeId === view.id
+                    const placement = pageStorage(view)
+                    const Storage = placement?.icon
+                    const label = placement?.label
+                    return (
+                      <div key={view.id}>
+                        <div
+                          className={`group flex min-h-8 w-full items-center gap-1 rounded-xl border border-transparent pr-1 text-[0.8125rem] transition-colors ${
+                            active
+                              ? 'studio-selected-surface font-medium'
+                              : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            data-search-result
+                            aria-current={active ? 'page' : undefined}
+                            aria-label={view.title}
+                            onClick={() => select(view.id)}
+                            className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-xl py-1 pl-2 text-left"
+                          >
+                            <Icon
+                              size={16}
+                              strokeWidth={1.7}
+                              aria-hidden="true"
+                              className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
+                            />
+                            <span className="min-w-0 flex-1 break-words leading-snug">
+                              {view.title}
+                            </span>
+                            {active && (
+                              <ChevronRight
+                                size={13}
+                                aria-hidden="true"
+                                className="shrink-0 text-muted-foreground"
+                              />
+                            )}
+                          </button>
+                          {Storage && label && (
+                            <Popover.Root>
+                              <Popover.Trigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="size-7 shrink-0 p-0 text-muted-foreground"
+                                  aria-label={`Settings scope for ${view.title}`}
+                                  title={label}
+                                >
+                                  <Storage size={13} aria-hidden="true" />
+                                </Button>
+                              </Popover.Trigger>
+                              <Popover.Portal>
+                                <Popover.Content
+                                  side="right"
+                                  align="start"
+                                  sideOffset={8}
+                                  className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
+                                >
+                                  <p className="font-semibold">
+                                    {view.title} · {label}
+                                  </p>
+                                  {view.settingsScope === 'inherited' && (
+                                    <>
+                                      <p>Current scope: {settingsScopeLabels[scope]}</p>
+                                      <p className="break-words font-medium [overflow-wrap:anywhere]">
+                                        {project} · {computer}
+                                      </p>
+                                    </>
+                                  )}
+                                  <p className="text-muted-foreground">
+                                    {storageDescription(view)}
+                                  </p>
+                                </Popover.Content>
+                              </Popover.Portal>
+                            </Popover.Root>
+                          )}
+                        </div>
+                        {fieldMatches.get(view.id)?.map((label) => (
+                          <button
+                            key={label}
+                            data-search-result
+                            type="button"
+                            onClick={() => openSetting(view.id, label)}
+                            className="ml-3 block min-h-8 w-[calc(100%-0.75rem)] rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {label}
+                            {view.settingsFieldRequirements?.[label] && (
+                              <span className="mt-0.5 block text-[11px]">
+                                {view.settingsFieldRequirements[label]}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+          {!matches.length && (
+            <p role="status" className="px-2 text-xs text-muted-foreground">
+              No settings match “{query}”.
+            </p>
           )}
         </div>
-      </div>
-      {needle && (
-        <p role="status" className="px-2 text-xs text-muted-foreground">
-          {resultCount} {resultCount === 1 ? 'result' : 'results'}
-        </p>
-      )}
-      <div
-        role="region"
-        aria-label="Settings navigation"
-        tabIndex={0}
-        className={`${needle ? 'flex max-h-64 md:max-h-none' : 'hidden'} min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex`}
-      >
-        {headings.map(([section, label]) => {
-          const items = matches.filter((view) => sectionFor(view) === section)
-          if (!items.length) return null
-          return (
-            <div key={section} className="text-sm">
-              <h2 className="flex min-h-8 items-center px-2 text-[0.8125rem] font-semibold text-foreground/90">
-                {label}
-              </h2>
-              <div className="space-y-0.5">
-                {items.map((view) => {
-                  const Icon = icons[view.id] ?? Settings2
-                  const active = activeId === view.id
-                  const placement = pageStorage(view)
-                  const Storage = placement?.icon
-                  const label = placement?.label
-                  return (
-                    <div key={view.id}>
-                      <div
-                        className={`group flex min-h-8 w-full items-center gap-1 rounded-xl border border-transparent pr-1 text-[0.8125rem] transition-colors ${
-                          active
-                            ? 'studio-selected-surface font-medium'
-                            : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          data-search-result
-                          aria-current={active ? 'page' : undefined}
-                          aria-label={view.title}
-                          onClick={() => select(view.id)}
-                          className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-xl py-1 pl-2 text-left"
-                        >
-                          <Icon
-                            size={16}
-                            strokeWidth={1.7}
-                            aria-hidden="true"
-                            className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
-                          />
-                          <span className="min-w-0 flex-1 break-words leading-snug">
-                            {view.title}
-                          </span>
-                          {active && (
-                            <ChevronRight
-                              size={13}
-                              aria-hidden="true"
-                              className="shrink-0 text-muted-foreground"
-                            />
-                          )}
-                        </button>
-                        {Storage && label && (
-                          <Popover.Root>
-                            <Popover.Trigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="size-7 shrink-0 p-0 text-muted-foreground"
-                                aria-label={`Settings scope for ${view.title}`}
-                                title={label}
-                              >
-                                <Storage size={13} aria-hidden="true" />
-                              </Button>
-                            </Popover.Trigger>
-                            <Popover.Portal>
-                              <Popover.Content
-                                side="right"
-                                align="start"
-                                sideOffset={8}
-                                className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
-                              >
-                                <p className="font-semibold">
-                                  {view.title} · {label}
-                                </p>
-                                {view.settingsScope === 'inherited' && (
-                                  <>
-                                    <p>Current scope: {settingsScopeLabels[scope]}</p>
-                                    <p className="break-words font-medium [overflow-wrap:anywhere]">
-                                      {project} · {computer}
-                                    </p>
-                                  </>
-                                )}
-                                <p className="text-muted-foreground">{storageDescription(view)}</p>
-                              </Popover.Content>
-                            </Popover.Portal>
-                          </Popover.Root>
-                        )}
-                      </div>
-                      {fieldMatches.get(view.id)?.map((label) => (
-                        <button
-                          key={label}
-                          data-search-result
-                          type="button"
-                          onClick={() => openSetting(view.id, label)}
-                          className="ml-3 block min-h-8 w-[calc(100%-0.75rem)] rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {label}
-                          {view.settingsFieldRequirements?.[label] && (
-                            <span className="mt-0.5 block text-[11px]">
-                              {view.settingsFieldRequirements[label]}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-        {!matches.length && (
+        {searchStatus && (
           <p role="status" className="px-2 text-xs text-muted-foreground">
-            No settings match “{query}”.
+            {searchStatus}
           </p>
         )}
+        <aside
+          aria-label={inherited ? 'Inherited settings target' : 'Settings storage'}
+          className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
+        >
+          <p className="font-medium">
+            {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : scopeLabel}
+          </p>
+          {inherited && (
+            <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+              {project} · {computer}
+            </p>
+          )}
+        </aside>
       </div>
-      {searchStatus && (
-        <p role="status" className="px-2 text-xs text-muted-foreground">
-          {searchStatus}
-        </p>
-      )}
-      <aside
-        aria-label={inherited ? 'Inherited settings target' : 'Settings storage'}
-        className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
-      >
-        <p className="font-medium">
-          {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : scopeLabel}
-        </p>
-        {inherited && (
-          <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
-            {project} · {computer}
-          </p>
-        )}
-      </aside>
     </nav>
   )
 }

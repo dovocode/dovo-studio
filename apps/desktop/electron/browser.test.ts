@@ -24,6 +24,14 @@ const mocks = vi.hoisted(() => {
       >(),
     endFrameSubscription: vi.fn<() => void>(),
     reload: vi.fn<() => void>(),
+    reloadIgnoringCache: vi.fn<() => void>(),
+    inspectElement: vi.fn<(x: number, y: number) => void>(),
+    print: vi.fn<
+      (
+        options: Electron.WebContentsPrintOptions,
+        callback: (success: boolean, reason: string) => void,
+      ) => void
+    >((_options, callback) => callback(true, '')),
     copyImageAt: vi.fn<(x: number, y: number) => void>(),
     downloadURL: vi.fn<(url: string) => void>(),
     stop: vi.fn<() => void>(),
@@ -120,6 +128,10 @@ const mocks = vi.hoisted(() => {
     },
   }
   return {
+    searchUrl: vi.fn<(profileId: string, text: string) => string>(
+      (_profileId, text) => `http://search.lan/?q=${encodeURIComponent(text)}`,
+    ),
+    openExternal: vi.fn<(url: string) => Promise<void>>(async () => {}),
     menu: vi.fn<(items: import('electron').MenuItemConstructorOptions[]) => { popup: () => void }>(
       () => ({ popup: () => {} }),
     ),
@@ -198,6 +210,7 @@ vi.mock('./browser-extensions.js', async () => {
 })
 vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
 vi.mock('./browser-language.js', () => ({
+  websiteSearchUrl: mocks.searchUrl,
   websiteCustomization: () => '',
   websiteLinkProfile: mocks.linkProfile,
   configureBrowserLanguage: (
@@ -222,7 +235,7 @@ vi.mock('electron', () => ({
     on: mocks.on,
     removeListener: vi.fn<(name: string, listener: unknown) => void>(),
   },
-  shell: { openExternal: vi.fn<(url: string) => Promise<void>>() },
+  shell: { openExternal: mocks.openExternal },
 }))
 import { registerBrowser } from './browser'
 afterEach(async () => {
@@ -2344,7 +2357,10 @@ it('routes workspace context menus to the selected page and keeps password text 
   const passwordItems = mocks.menu.mock.calls.at(-1)?.[0] ?? []
   expect(
     passwordItems.some(
-      (item) => item.label === 'Copy' || item.label === 'Add selection to thread…',
+      (item) =>
+        item.label === 'Copy' ||
+        item.label === 'Add selection to thread…' ||
+        item.label === 'Search selection in new tab',
     ),
   ).toBe(false)
   expect(passwordItems.find((item) => item.role === 'cut')?.enabled).toBe(false)
@@ -2352,6 +2368,94 @@ it('routes workspace context menus to the selected page and keeps password text 
   mocks.menu.mockClear()
   show()
   expect(mocks.menu).not.toHaveBeenCalled()
+})
+
+it('runs page tools against the clicked page and ignores stale menus after navigation or close', async () => {
+  const call = handler()
+  await call(event, { ...workspaceShow, profileId: 'work' })
+  const contextMenu = listener('context-menu')
+  const menu = (linkURL = 'http://files.lan/report.pdf') => {
+    contextMenu?.(
+      {},
+      {
+        linkURL,
+        selectionText: 'react & hooks',
+        formControlType: 'none',
+        isEditable: false,
+        x: 31,
+        y: 67,
+      },
+    )
+    return mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  }
+  const click = (items: Electron.MenuItemConstructorOptions[], label: string) => {
+    const item = items.find((item) => item.label === label)
+    if (!item?.click) throw new Error(`Missing ${label}`)
+    item.click(
+      {} as Electron.MenuItem,
+      mocks.window as unknown as Electron.BrowserWindow,
+      {} as Electron.KeyboardEvent,
+    )
+  }
+  const items = menu()
+  click(items, 'Reload without cache')
+  expect(mocks.contents.reloadIgnoringCache).toHaveBeenCalledOnce()
+  click(items, 'Download linked file')
+  expect(mocks.contents.downloadURL).toHaveBeenLastCalledWith('http://files.lan/report.pdf')
+  click(items, 'Open link in default browser')
+  expect(mocks.openExternal).toHaveBeenLastCalledWith('http://files.lan/report.pdf')
+  click(items, 'Open page in default browser')
+  expect(mocks.openExternal).toHaveBeenLastCalledWith('https://example.com/')
+  click(items, 'Print…')
+  expect(mocks.contents.print).toHaveBeenCalledWith({ printBackground: true }, expect.any(Function))
+  click(items, 'Inspect element')
+  expect(mocks.contents.inspectElement).toHaveBeenLastCalledWith(31, 67)
+  click(items, 'Search selection in new tab')
+  expect(mocks.searchUrl).toHaveBeenLastCalledWith('work', 'react & hooks')
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    openedLinks: ['http://search.lan/?q=react%20%26%20hooks'],
+  })
+  for (const link of [
+    'javascript:alert(1)',
+    'file:///private/file',
+    'https://user:secret@example.com/',
+  ]) {
+    expect(
+      menu(link).some((item) =>
+        ['Open link in new tab', 'Open link in default browser', 'Download linked file'].includes(
+          item.label ?? '',
+        ),
+      ),
+    ).toBe(false)
+  }
+  const actions = [
+    'Reload without cache',
+    'Download linked file',
+    'Open link in default browser',
+    'Open page in default browser',
+    'Print…',
+    'Inspect element',
+    'Search selection in new tab',
+  ]
+  const stale = menu()
+  listener('did-start-navigation')?.({}, 'https://example.com/next', false, true)
+  vi.clearAllMocks()
+  for (const action of actions) click(stale, action)
+  expect(mocks.contents.reloadIgnoringCache).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+  expect(mocks.openExternal).not.toHaveBeenCalled()
+  expect(mocks.contents.print).not.toHaveBeenCalled()
+  expect(mocks.contents.inspectElement).not.toHaveBeenCalled()
+  expect(mocks.searchUrl).not.toHaveBeenCalled()
+  const closed = menu()
+  await call(event, { action: 'close', key: 'shared' })
+  for (const action of actions) click(closed, action)
+  expect(mocks.contents.reloadIgnoringCache).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+  expect(mocks.openExternal).not.toHaveBeenCalled()
+  expect(mocks.contents.print).not.toHaveBeenCalled()
+  expect(mocks.contents.inspectElement).not.toHaveBeenCalled()
+  expect(mocks.searchUrl).not.toHaveBeenCalled()
 })
 
 it('offers native image actions for the clicked image, including linked and generated images', async () => {

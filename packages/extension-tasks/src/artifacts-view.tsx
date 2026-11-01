@@ -275,12 +275,12 @@ export default function ArtifactsView() {
           aria-label="Artifact library"
           style={selection && !sidebarVisible ? { display: 'none' } : undefined}
           className={cn(
-            'studio-side-panel min-h-0 min-w-0 flex-col',
-            selection ? 'hidden w-80 shrink-0 border-r lg:flex' : 'flex flex-1',
+            'studio-side-panel min-h-0 min-w-0 flex-col bg-background',
+            selection ? 'hidden w-80 shrink-0 lg:flex' : 'flex flex-1',
           )}
         >
           <SidebarHeader enabled={!!selection} />
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="studio-overview-pane min-h-0 flex-1 overflow-auto bg-sidebar">
             <div
               className={cn(
                 'flex flex-col',

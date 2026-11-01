@@ -76,6 +76,30 @@ try {
   await page.addStyleTag({ content: await readFile(new URL(css, directory), 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const width = async (name) => (await page.getByTestId(name).boundingBox()).width
+  const expectPane = async (pane) => {
+    const style = await pane.evaluate((element) => {
+      const style = getComputedStyle(element)
+      const content = getComputedStyle(element.firstElementChild)
+      return {
+        radius: style.borderRadius,
+        border: style.borderTopWidth,
+        inset: style.marginTop,
+        clip: content.overflow,
+        contentRadius: content.borderRadius,
+      }
+    })
+    if (
+      style.radius !== '16px' ||
+      style.border !== '1px' ||
+      style.inset !== '8px' ||
+      style.clip !== 'hidden' ||
+      style.contentRadius !== '16px'
+    )
+      throw new Error(
+        'Pane must share the linked-projects frame with clipped rounded content: ' +
+          JSON.stringify(style),
+      )
+  }
   const expectWidth = async (name, value) => {
     await page.waitForFunction(
       ({ name, value }) =>
@@ -178,6 +202,7 @@ try {
     )
   }
   await expectFileWidth(256)
+  await expectPane(filePane)
   await drag('Resize diff files pane', -80)
   await expectFileWidth(336)
   await page.waitForFunction(() => window.saved().diffFilesSidebarWidth === 336)
@@ -225,6 +250,7 @@ try {
   await projectFolder.click()
   await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
   await projectWidth(256)
+  await expectPane(projectPane)
   await drag('Resize project file tree', -80)
   await projectWidth(336)
   await page.waitForFunction(() => window.saved().projectFilesSidebarWidth === 336)

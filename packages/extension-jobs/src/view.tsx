@@ -269,84 +269,88 @@ export default function JobsView({ entityId }: StudioViewProps) {
         <div
           style={selected && !sidebarVisible ? { display: 'none' } : undefined}
           className={cn(
-            'studio-side-panel min-h-0 min-w-0 flex-col',
-            selected ? 'hidden w-72 shrink-0 border-r lg:flex' : 'flex flex-1',
+            'studio-side-panel min-h-0 min-w-0 flex-col bg-background',
+            selected ? 'hidden w-72 shrink-0 lg:flex' : 'flex flex-1',
           )}
         >
           <SidebarHeader enabled={!!selected} />
-          <div className="p-3">
-            <Input
-              aria-label="Search automations"
-              placeholder="Search automations, projects or computers…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-          <nav
-            aria-label="Automations across computers"
-            className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
-          >
-            {visible.map((row) => (
-              <button
-                key={row.key}
-                disabled={busy}
-                aria-current={chosen?.key === row.key ? 'true' : undefined}
-                onClick={() => void open(row)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-accent disabled:opacity-60',
-                  chosen?.key === row.key && 'bg-accent',
-                )}
-              >
-                <Workflow className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{row.flow.name}</span>
-                  <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <Monitor className="size-3 shrink-0" />
-                    <span className="truncate">
-                      {row.runtimeName}
-                      {row.projects.length ? ` · ${row.projects.join(', ')}` : ''}
-                      {!row.runtime.connected ? ' · Offline' : ''}
+          <div className="studio-overview-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
+            <div className="p-3">
+              <Input
+                aria-label="Search automations"
+                placeholder="Search automations, projects or computers…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+            <nav
+              aria-label="Automations across computers"
+              className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+            >
+              {visible.map((row) => (
+                <button
+                  key={row.key}
+                  disabled={busy}
+                  aria-current={chosen?.key === row.key ? 'true' : undefined}
+                  onClick={() => void open(row)}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-accent disabled:opacity-60',
+                    chosen?.key === row.key && 'bg-accent',
+                  )}
+                >
+                  <Workflow className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{row.flow.name}</span>
+                    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <Monitor className="size-3 shrink-0" />
+                      <span className="truncate">
+                        {row.runtimeName}
+                        {row.projects.length ? ` · ${row.projects.join(', ')}` : ''}
+                        {!row.runtime.connected ? ' · Offline' : ''}
+                      </span>
+                    </span>
+                    <span
+                      className={cn(
+                        'mt-1 block text-xs',
+                        row.needsInput || row.latest?.status === 'waiting'
+                          ? 'text-status-warning'
+                          : row.latest?.status === 'failed'
+                            ? 'text-destructive'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      {row.runtime.connected
+                        ? row.status
+                        : `Last seen: ${row.status.toLowerCase()}`}
+                      {row.latest
+                        ? ` · ${new Date(row.latest.updatedAt ?? row.latest.createdAt).toLocaleDateString()}`
+                        : ''}
                     </span>
                   </span>
-                  <span
-                    className={cn(
-                      'mt-1 block text-xs',
-                      row.needsInput || row.latest?.status === 'waiting'
-                        ? 'text-status-warning'
-                        : row.latest?.status === 'failed'
-                          ? 'text-destructive'
-                          : 'text-muted-foreground',
-                    )}
-                  >
-                    {row.runtime.connected ? row.status : `Last seen: ${row.status.toLowerCase()}`}
-                    {row.latest
-                      ? ` · ${new Date(row.latest.updatedAt ?? row.latest.createdAt).toLocaleDateString()}`
-                      : ''}
-                  </span>
-                </span>
-                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
-              </button>
-            ))}
-            {!visible.length && (
-              <EmptyState
-                icon={<Workflow />}
-                title={query ? 'No matching automations' : 'Automate repeatable work'}
-                description={
-                  query
-                    ? 'Search by automation, project or computer.'
-                    : 'Create an automation on one of your computers. Its runs appear here alongside your other work.'
-                }
-              />
-            )}
-            {entries
-              .filter((entry) => !entry.snapshot)
-              .map((entry) => (
-                <p key={entry.profile.id} className="px-3 py-2 text-xs text-muted-foreground">
-                  {entry.profile.name}:{' '}
-                  {entry.error ? 'Could not load saved automations.' : 'Loading automations…'}
-                </p>
+                  <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
               ))}
-          </nav>
+              {!visible.length && (
+                <EmptyState
+                  icon={<Workflow />}
+                  title={query ? 'No matching automations' : 'Automate repeatable work'}
+                  description={
+                    query
+                      ? 'Search by automation, project or computer.'
+                      : 'Create an automation on one of your computers. Its runs appear here alongside your other work.'
+                  }
+                />
+              )}
+              {entries
+                .filter((entry) => !entry.snapshot)
+                .map((entry) => (
+                  <p key={entry.profile.id} className="px-3 py-2 text-xs text-muted-foreground">
+                    {entry.profile.name}:{' '}
+                    {entry.error ? 'Could not load saved automations.' : 'Loading automations…'}
+                  </p>
+                ))}
+            </nav>
+          </div>
         </div>
         {selected && (
           <div className="min-h-0 min-w-0 flex-1">

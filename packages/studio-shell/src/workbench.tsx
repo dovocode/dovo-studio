@@ -44,6 +44,7 @@ import {
   TooltipProvider,
   SidebarHeaderLayout,
   HeaderFallback,
+  HeaderMainSlot,
   useCompactLayout,
 } from '@dovo/studio-ui'
 import { SettingsNav } from './settings-nav'
@@ -855,6 +856,7 @@ function WorkbenchContent({
             {browserWindowId ? (
               <header className="studio-titlebar" data-platform={desktopPlatform}>
                 <span className="studio-titlebar-brand">Browser</span>
+                <HeaderMainSlot />
               </header>
             ) : (
               <TitleBar

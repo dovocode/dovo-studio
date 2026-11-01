@@ -1450,15 +1450,12 @@ export function Composer({
                 data-composer-stop=""
                 className="studio-destructive-accent"
                 aria-label="Stop"
+                aria-busy={stopping}
                 title="Stop the agent and pause queued messages"
                 disabled={!connected || stopping || task.archived}
                 onClick={() => void stop()}
               >
-                {stopping ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <Square className="size-3.5 fill-current" />
-                )}
+                <Square className="size-3.5 fill-current" />
               </ComposerSubmit>
             )}
           </>

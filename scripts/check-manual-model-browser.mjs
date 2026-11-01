@@ -348,34 +348,20 @@ try {
         window.setEntity(window.saved.find((task) => task.title === 'Existing').id),
       )
       await page.locator('[data-thread-header]').filter({ hasText: 'Existing' }).waitFor()
-      await page.evaluate(() => window.setEntity(window.saved.find((task) => task.harness).id))
-      const watchers = page.getByRole('region', { name: 'Related items and watchers' })
-      await watchers.waitFor()
-      // Task switching remounts the workspace observer; wait for its wide-pane
-      // docked layout rather than inspecting the initial floating preview.
-      await page.waitForFunction(() => {
-        const sidebar = document.querySelector('[data-sidebar="tools sidebar"]')
-        return sidebar && getComputedStyle(sidebar).position !== 'absolute'
+      const threadId = await page.evaluate(() => {
+        const task = window.saved.find((task) => task.harness)
+        window.setEntity(task.id)
+        return task.id
       })
-      assert.ok(
-        await sidebar.evaluate((element) => {
-          const watchers = element.parentElement.querySelector(
-            'section[aria-label="Related items and watchers"]',
-          )
-          return (
-            watchers !== null &&
-            !element.contains(watchers) &&
-            element.getBoundingClientRect().top ===
-              element.parentElement.getBoundingClientRect().top
-          )
-        }),
-        'The tools sidebar must share a row with the conversation containing the watches',
+      await page.waitForFunction(
+        (id) => document.querySelector('[data-thread-header]')?.dataset.threadHeader === id,
+        threadId,
       )
       assert.equal(
-        await watchers.evaluate((element) => getComputedStyle(element).flexWrap),
-        'nowrap',
+        await page.getByRole('region', { name: 'Related items and watchers' }).count(),
+        0,
+        'Watchers belong in Thread info, without a duplicate bar above the chat',
       )
-      assert.ok(await watchers.evaluate((element) => element.scrollWidth > element.clientWidth))
     }
     assert.deepEqual(errors, [])
     await page.close()

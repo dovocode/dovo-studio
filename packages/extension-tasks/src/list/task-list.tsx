@@ -810,251 +810,261 @@ export function TaskList({
   })
   return (
     <aside
-      className="studio-task-sidebar flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
+      className="studio-task-sidebar flex h-full w-full min-w-0 flex-col bg-background"
       aria-label="Task sidebar"
     >
       <SidebarHeader />
-      <div className="studio-thread-sidebar-controls shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <SearchField
-            aria-label="Search threads"
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Search threads…"
-            containerClassName="studio-thread-search flex-1"
-            className="h-8 rounded-lg border-border/50 bg-background/40 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            className="studio-thread-new size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
-            aria-label="New thread"
-            title="New thread"
-            onClick={onNewThread}
-            disabled={busy}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </Button>
-        </div>
-        <div
-          className="flex min-w-0 items-center gap-1"
-          role="group"
-          aria-label="Thread filters and organization"
-        >
-          {sources.length > 1 || (sources.length === 0 && environment) ? (
-            <div className="relative min-w-0 flex-1">
-              <Monitor
-                aria-hidden="true"
-                className="pointer-events-none absolute left-2 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
-              />
-              <ChoicePicker
-                aria-label="Filter threads by computer"
-                className="studio-thread-computer h-7 w-full rounded-md border-transparent bg-transparent pl-7 pr-2 text-xs text-muted-foreground shadow-none hover:bg-accent/40 hover:text-foreground"
-                value={environment}
-                onValueChange={(value) => {
-                  setEnvironment(value)
-                  scrollTop.current = 0
-                  if (scroll.current) scroll.current.scrollTop = 0
-                }}
-              >
-                <option value="">All computers</option>
-                {environment &&
-                  !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
-                    <option value={environment}>Unavailable computer</option>
-                  )}
-                {sources.map((source) => (
-                  <option
-                    key={JSON.stringify(source.runtimeId)}
-                    value={JSON.stringify(source.runtimeId)}
-                  >
-                    {source.name}
-                    {source.online ? '' : ' · Offline'}
-                  </option>
-                ))}
-              </ChoicePicker>
-            </div>
-          ) : (
-            <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
-              Threads
-            </span>
-          )}
-          <div className="studio-thread-toolbar flex shrink-0 items-center gap-1.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
-            <SectionOrderDialog />
-            <ProjectsMenu
-              compact
-              allDevices
-              value={projectId}
-              onChange={onProjectChange}
-              disabled={busy}
+      <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+        <div className="studio-thread-sidebar-controls shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <SearchField
+              aria-label="Search threads"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="Search threads…"
+              containerClassName="studio-thread-search flex-1"
+              className="h-8 rounded-lg border-border/50 bg-background/40 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
             />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="studio-thread-new size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+              aria-label="New thread"
+              title="New thread"
+              onClick={onNewThread}
+              disabled={busy}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <div
+            className="flex min-w-0 items-center gap-1"
+            role="group"
+            aria-label="Thread filters and organization"
+          >
+            {sources.length > 1 || (sources.length === 0 && environment) ? (
+              <div className="relative min-w-0 flex-1">
+                <Monitor
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-2 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
+                <ChoicePicker
+                  aria-label="Filter threads by computer"
+                  className="studio-thread-computer h-7 w-full rounded-md border-transparent bg-transparent pl-7 pr-2 text-xs text-muted-foreground shadow-none hover:bg-accent/40 hover:text-foreground"
+                  value={environment}
+                  onValueChange={(value) => {
+                    setEnvironment(value)
+                    scrollTop.current = 0
+                    if (scroll.current) scroll.current.scrollTop = 0
+                  }}
+                >
+                  <option value="">All computers</option>
+                  {environment &&
+                    !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
+                      <option value={environment}>Unavailable computer</option>
+                    )}
+                  {sources.map((source) => (
+                    <option
+                      key={JSON.stringify(source.runtimeId)}
+                      value={JSON.stringify(source.runtimeId)}
+                    >
+                      {source.name}
+                      {source.online ? '' : ' · Offline'}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </div>
+            ) : (
+              <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
+                Threads
+              </span>
+            )}
+            <div className="studio-thread-toolbar flex shrink-0 items-center gap-1.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
+              <SectionOrderDialog />
+              <ProjectsMenu
+                compact
+                allDevices
+                value={projectId}
+                onChange={onProjectChange}
+                disabled={busy}
+              />
+            </div>
           </div>
         </div>
-      </div>
-      {(error || actionError || searchError) && (
-        <p role="alert" className="px-3 pb-2 text-xs text-destructive">
-          {error || actionError || searchError}
-        </p>
-      )}
-      <div
-        ref={attachScroll}
-        onScroll={(event) => {
-          scrollTop.current = event.currentTarget.scrollTop
-        }}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
-        aria-busy={busy || search.loading}
-      >
-        {search.loading && (
-          <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-            Searching conversation history…
+        {(error || actionError || searchError) && (
+          <p role="alert" className="px-3 pb-2 text-xs text-destructive">
+            {error || actionError || searchError}
           </p>
         )}
-        {groups.map((group, index) => {
-          // Collapsed sections do not build rows; opening one renders its rows on demand.
-          const rows =
-            group.open &&
-            group.tasks.map((entry) => {
-              const facts = rowFacts.get(entry.source.runtimeId)
-              const temporary = entry.key === temporaryEntry?.key
-              return (
-                <TaskListRow
-                  key={entry.key}
-                  entryKey={entry.key}
-                  task={entry.task}
-                  owner={
-                    owners.get(entry.source.runtimeId) ?? retainTaskOwner(undefined, entry.source)
-                  }
-                  subagents={subagentsByKey.get(entry.key) ?? noSubagents}
-                  needsInput={!!facts?.input.has(entry.task.id)}
-                  terminals={facts?.terminals.get(entry.task.id) ?? 0}
-                  selected={entry.key === selectedId}
-                  selectedMain={entry.key === selectedMainKey}
-                  selectedChildId={
-                    entry.key === selectedMainKey &&
-                    selectedEntry &&
-                    selectedEntry.task.id !== entry.task.id
-                      ? selectedEntry.task.id
-                      : undefined
-                  }
-                  multiSelected={selected.has(entry.key)}
-                  editable={!temporary && entry.source.online && !busy}
-                  disabled={
-                    busy ||
-                    bulkBusy ||
-                    (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
-                  }
-                  hideStatusLabel={group.id === 'working' || group.id === 'waiting'}
-                  menuBusy={busy || temporary}
-                  selectionMenu={selecting && !temporary ? selectionMenu : undefined}
-                  canSplit={!!onSplit}
-                  canTemplate={!!onTemplate}
-                  actions={rowActions}
-                  rowWindow={rowCount > windowedRowCount ? rowWindow : null}
-                  thread={threadTree.nodes.get(entry.key)}
-                  selectedThreadKey={entry.key === selectedMainKey ? selectedId : undefined}
-                  searching={!!deferredQuery.trim()}
-                />
-              )
-            })
-          if (groups[0]?.id === 'active' && group.id === 'active' && group.open)
-            return (
-              <div key={group.id} className="shrink-0 pt-1">
-                {rows}
-              </div>
-            )
-          return (
-            <details
-              key={group.id}
-              data-section={group.id}
-              open={group.open}
-              className={`group studio-list-section mb-1 shrink-0 ${index === bottomSectionIndex ? 'mt-auto' : ''}`}
-            >
-              <summary
-                onClick={(event) => {
-                  // Native toggle events also fire for programmatic reveals. Only save user clicks
-                  // (including keyboard activation), leaving temporary expansion out of preferences.
-                  event.preventDefault()
-                  const open = !group.open
-                  const collapsed = new Set(readAppPreferences().collapsedThreadSections)
-                  if (open) collapsed.delete(group.id)
-                  else {
-                    collapsed.add(group.id)
-                    if (group.id === 'settled') {
-                      setShowAllSettled(false)
-                      setSettledLimit(settledSummaryPageSize)
+        <div
+          ref={attachScroll}
+          onScroll={(event) => {
+            scrollTop.current = event.currentTarget.scrollTop
+          }}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5"
+          aria-busy={busy || search.loading}
+        >
+          {search.loading && (
+            <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
+              Searching conversation history…
+            </p>
+          )}
+          {groups.map((group, index) => {
+            // Collapsed sections do not build rows; opening one renders its rows on demand.
+            const rows =
+              group.open &&
+              group.tasks.map((entry) => {
+                const facts = rowFacts.get(entry.source.runtimeId)
+                const temporary = entry.key === temporaryEntry?.key
+                return (
+                  <TaskListRow
+                    key={entry.key}
+                    entryKey={entry.key}
+                    task={entry.task}
+                    owner={
+                      owners.get(entry.source.runtimeId) ?? retainTaskOwner(undefined, entry.source)
                     }
-                  }
-                  updateAppPreferences({ collapsedThreadSections: [...collapsed] })
-                }}
-                className="studio-list-section-header"
+                    subagents={subagentsByKey.get(entry.key) ?? noSubagents}
+                    needsInput={!!facts?.input.has(entry.task.id)}
+                    terminals={facts?.terminals.get(entry.task.id) ?? 0}
+                    selected={entry.key === selectedId}
+                    selectedMain={entry.key === selectedMainKey}
+                    selectedChildId={
+                      entry.key === selectedMainKey &&
+                      selectedEntry &&
+                      selectedEntry.task.id !== entry.task.id
+                        ? selectedEntry.task.id
+                        : undefined
+                    }
+                    multiSelected={selected.has(entry.key)}
+                    editable={!temporary && entry.source.online && !busy}
+                    disabled={
+                      busy ||
+                      bulkBusy ||
+                      (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
+                    }
+                    hideStatusLabel={group.id === 'working' || group.id === 'waiting'}
+                    menuBusy={busy || temporary}
+                    selectionMenu={selecting && !temporary ? selectionMenu : undefined}
+                    canSplit={!!onSplit}
+                    canTemplate={!!onTemplate}
+                    actions={rowActions}
+                    rowWindow={rowCount > windowedRowCount ? rowWindow : null}
+                    thread={threadTree.nodes.get(entry.key)}
+                    selectedThreadKey={entry.key === selectedMainKey ? selectedId : undefined}
+                    searching={!!deferredQuery.trim()}
+                  />
+                )
+              })
+            if (groups[0]?.id === 'active' && group.id === 'active' && group.open)
+              return (
+                <div key={group.id} className="shrink-0 pt-1">
+                  {rows}
+                </div>
+              )
+            return (
+              <details
+                key={group.id}
+                data-section={group.id}
+                open={group.open}
+                className={`group studio-list-section mb-1 shrink-0 ${index === bottomSectionIndex ? 'mt-auto' : ''}`}
               >
-                <ChevronDown size={11} className="studio-list-section-chevron" aria-hidden="true" />
-                {['needs-input', 'working', 'waiting', 'snoozed', 'settled'].includes(group.id) && (
-                  <span className="studio-thread-section-dot" aria-hidden="true" />
-                )}
-                <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                <span>{group.total ?? group.tasks.length}</span>
-              </summary>
-              {rows && <div className="pt-1">{rows}</div>}
-              {group.open &&
-                group.id === 'settled' &&
-                (group.total ?? 0) > settledThreadPreviewLimit &&
-                !query.trim() &&
-                !selecting && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mx-2 text-xs text-muted-foreground"
-                    onClick={() => {
-                      if (!showAllSettled) setShowAllSettled(true)
-                      else if (omittedSettled)
-                        setSettledLimit((value) => Math.min(100000, value + settledSummaryPageSize))
-                      else {
+                <summary
+                  onClick={(event) => {
+                    // Native toggle events also fire for programmatic reveals. Only save user clicks
+                    // (including keyboard activation), leaving temporary expansion out of preferences.
+                    event.preventDefault()
+                    const open = !group.open
+                    const collapsed = new Set(readAppPreferences().collapsedThreadSections)
+                    if (open) collapsed.delete(group.id)
+                    else {
+                      collapsed.add(group.id)
+                      if (group.id === 'settled') {
                         setShowAllSettled(false)
                         setSettledLimit(settledSummaryPageSize)
                       }
-                    }}
-                  >
-                    {showAllSettled
-                      ? omittedSettled
-                        ? 'Load more settled threads'
-                        : 'Show fewer settled threads'
-                      : omittedSettled
-                        ? 'Show more settled threads'
-                        : `Show all ${group.total} settled threads`}
-                  </Button>
-                )}
-            </details>
-          )
-        })}
-        {!tasks.length && !search.loading && (
-          <div className="space-y-2 px-3 py-6 text-xs">
-            <p className="font-medium">
-              {query || projectId || environment ? 'No matching tasks' : 'Ready for your next idea'}
-            </p>
-            <p className="leading-5 text-muted-foreground">
-              {query || projectId || environment
-                ? 'Try a different search or clear your filters.'
-                : 'Start with a question, a fix, or something you want to build.'}
-            </p>
-            {query || projectId || environment ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setQuery('')
-                  setEnvironment('')
-                  onProjectChange('')
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : (
-              <Button size="sm" disabled={busy} onClick={onNewThread}>
-                New thread
-              </Button>
-            )}
-          </div>
-        )}
+                    }
+                    updateAppPreferences({ collapsedThreadSections: [...collapsed] })
+                  }}
+                  className="studio-list-section-header"
+                >
+                  <ChevronDown
+                    size={11}
+                    className="studio-list-section-chevron"
+                    aria-hidden="true"
+                  />
+                  {['needs-input', 'working', 'waiting', 'snoozed', 'settled'].includes(
+                    group.id,
+                  ) && <span className="studio-thread-section-dot" aria-hidden="true" />}
+                  <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                  <span>{group.total ?? group.tasks.length}</span>
+                </summary>
+                {rows && <div className="pt-1">{rows}</div>}
+                {group.open &&
+                  group.id === 'settled' &&
+                  (group.total ?? 0) > settledThreadPreviewLimit &&
+                  !query.trim() &&
+                  !selecting && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mx-2 text-xs text-muted-foreground"
+                      onClick={() => {
+                        if (!showAllSettled) setShowAllSettled(true)
+                        else if (omittedSettled)
+                          setSettledLimit((value) =>
+                            Math.min(100000, value + settledSummaryPageSize),
+                          )
+                        else {
+                          setShowAllSettled(false)
+                          setSettledLimit(settledSummaryPageSize)
+                        }
+                      }}
+                    >
+                      {showAllSettled
+                        ? omittedSettled
+                          ? 'Load more settled threads'
+                          : 'Show fewer settled threads'
+                        : omittedSettled
+                          ? 'Show more settled threads'
+                          : `Show all ${group.total} settled threads`}
+                    </Button>
+                  )}
+              </details>
+            )
+          })}
+          {!tasks.length && !search.loading && (
+            <div className="space-y-2 px-3 py-6 text-xs">
+              <p className="font-medium">
+                {query || projectId || environment
+                  ? 'No matching tasks'
+                  : 'Ready for your next idea'}
+              </p>
+              <p className="leading-5 text-muted-foreground">
+                {query || projectId || environment
+                  ? 'Try a different search or clear your filters.'
+                  : 'Start with a question, a fix, or something you want to build.'}
+              </p>
+              {query || projectId || environment ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setQuery('')
+                    setEnvironment('')
+                    onProjectChange('')
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : (
+                <Button size="sm" disabled={busy} onClick={onNewThread}>
+                  New thread
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   )

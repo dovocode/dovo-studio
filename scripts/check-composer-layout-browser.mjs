@@ -179,7 +179,9 @@ try {
         !document
           .querySelector('.studio-composer')
           .getAnimations({ subtree: true })
-          .some((a) => a.playState === 'running'),
+          .some(
+            (a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity,
+          ),
     )
   const checkIdle = async (screenshot) => {
     const input = page.getByRole('textbox', { name: 'Message task', exact: true })
@@ -209,7 +211,9 @@ try {
       return new Promise((resolve) =>
         requestAnimationFrame(() => {
           const surface = element.closest('.studio-composer')
-          const animations = surface.getAnimations({ subtree: true })
+          const animations = surface
+            .getAnimations({ subtree: true })
+            .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
           animations.forEach((animation) => {
             animation.pause()
             animation.currentTime = 0
@@ -259,7 +263,9 @@ try {
       const before = surface.getBoundingClientRect().height
       element.focus()
       await frame()
-      const animations = surface.getAnimations({ subtree: true })
+      const animations = surface
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
       animations.forEach((animation) => {
         animation.pause()
         animation.currentTime = 0
@@ -534,6 +540,40 @@ try {
       assert.equal(stopStyle.icon, true)
       if (device.name === 'desktop' && project === 'dovo-studio') {
         await settleComposer()
+        const glow = () =>
+          stop.evaluate((button) => {
+            const style = getComputedStyle(button, '::before')
+            return {
+              display: style.display,
+              animation: style.animationName,
+              transform: style.transform,
+            }
+          })
+        assert.equal((await glow()).animation, 'studio-stop-glow')
+        assert.notEqual((await glow()).display, 'none')
+        const firstGlow = (await glow()).transform
+        await page.waitForFunction(
+          (first) =>
+            getComputedStyle(document.querySelector('[data-composer-stop]'), '::before')
+              .transform !== first,
+          firstGlow,
+        )
+        for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
+          assert.equal(
+            await page.locator(selector).evaluate((node) => getComputedStyle(node).transform),
+            'none',
+            'Only the glow rotates',
+          )
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        assert.equal((await glow()).display, 'none', 'OS reduced motion keeps the glow still')
+        await page.emulateMedia({ reducedMotion: 'no-preference' })
+        await page.evaluate(() => {
+          document.documentElement.dataset.motion = 'reduce'
+        })
+        assert.equal((await glow()).display, 'none', 'App reduced motion keeps the glow still')
+        await page.evaluate(() => {
+          delete document.documentElement.dataset.motion
+        })
         if (screenshots)
           await page.screenshot({
             path: screenshots + '/desktop-stop-glow.png',
@@ -547,6 +587,7 @@ try {
           () =>
             getComputedStyle(document.querySelector('[data-composer-stop]')).boxShadow === 'none',
         )
+        assert.equal((await glow()).display, 'none', 'Disabled glow has no animated layer')
         assert.equal(
           await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
           'none',
@@ -557,6 +598,7 @@ try {
           document.documentElement.dataset.theme = 'light'
           document.documentElement.classList.remove('dark')
         })
+        assert.notEqual((await glow()).display, 'none', 'Light mode retains the busy glow')
         if (screenshots)
           await page.screenshot({
             path: screenshots + '/desktop-stop-light.png',

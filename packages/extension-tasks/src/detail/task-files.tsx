@@ -702,22 +702,24 @@ export function TaskFiles({
           maxFraction={0.4}
           maxWidth={640}
           aria-label="Project file tree"
-          className="flex min-h-0 flex-col border-l bg-sidebar"
+          className="studio-thread-tools-panel flex min-h-0 flex-col bg-sidebar"
         >
-          <ProjectFileBrowser
-            key={draftScope}
-            taskId={task.id}
-            checkoutId={checkoutId}
-            revision={revision}
-            selected={selected}
-            changedFiles={checkoutId ? [] : task.files}
-            onSelect={(path, line) => {
-              setSelected(path)
-              setFullRead(false)
-              setFocusedLine(line)
-              setFocusRevision((value) => value + 1)
-            }}
-          />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
+            <ProjectFileBrowser
+              key={draftScope}
+              taskId={task.id}
+              checkoutId={checkoutId}
+              revision={revision}
+              selected={selected}
+              changedFiles={checkoutId ? [] : task.files}
+              onSelect={(path, line) => {
+                setSelected(path)
+                setFullRead(false)
+                setFocusedLine(line)
+                setFocusRevision((value) => value + 1)
+              }}
+            />
+          </div>
         </ResizableSidebar>
       </div>
     </section>

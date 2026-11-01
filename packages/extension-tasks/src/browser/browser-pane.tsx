@@ -125,6 +125,8 @@ import {
   DialogTitle,
   DialogDescription,
   Popover,
+  HeaderContent,
+  SidebarHeader,
   useNavigationSidebar,
 } from '@dovo/studio-ui'
 import { useScreenshotAttachment } from './screenshot-attachment'
@@ -233,8 +235,14 @@ function BrowserContent({
 }) {
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
-    { browser, browserFrames, openBrowserWindow, onBrowserContextAction, onBrowserWorkspaceFocus } =
-      useStudioHost()
+    {
+      browser,
+      browserFrames,
+      browserWindowId,
+      openBrowserWindow,
+      onBrowserContextAction,
+      onBrowserWorkspaceFocus,
+    } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
@@ -1776,7 +1784,12 @@ function BrowserContent({
   const newTabMenu = (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <IconButton type="button" label="New browser tab" className="ml-auto size-7 shrink-0">
+        <IconButton
+          type="button"
+          label="New browser tab"
+          variant="ghost"
+          className="studio-browser-library-button ml-auto size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+        >
           <Plus size={14} />
         </IconButton>
       </DropdownMenu.Trigger>
@@ -2778,63 +2791,63 @@ function BrowserContent({
             maxFraction={0.4}
             maxWidth={480}
             aria-label="Recent browser tabs"
-            className="studio-browser-sidebar flex shrink-0 flex-col border-r bg-sidebar"
+            className="flex min-h-0 shrink-0 flex-col bg-background"
           >
-            <div className="studio-browser-sidebar-header flex shrink-0 items-center gap-2.5 px-3 text-[13px] font-medium">
-              <span className="studio-browser-sidebar-icon">
-                <Globe2 size={15} />
-              </span>
-              <span className="min-w-0 truncate">Browser</span>
-              {newTabMenu}
-            </div>
-            <div className="studio-browser-sidebar-library px-2 pb-2">
-              <div className="studio-browser-library flex">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="min-w-0 flex-1 justify-start"
-                  onClick={() => setLibraryView('bookmarks')}
-                >
-                  <BookOpen size={14} className="shrink-0" />
-                  <span className="min-w-0 truncate">Bookmarks</span>
-                </Button>
+            <SidebarHeader enabled={!browserWindowId} />
+            <div className="studio-browser-sidebar studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+              <div className="studio-browser-sidebar-library shrink-0 p-2">
+                <div className="studio-browser-library flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="studio-browser-library-button h-8 min-w-0 flex-1 justify-start rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+                    onClick={() => setLibraryView('bookmarks')}
+                  >
+                    <BookOpen size={14} className="shrink-0" />
+                    <span className="min-w-0 truncate">Bookmarks</span>
+                  </Button>
+                  {newTabMenu}
+                </div>
               </div>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col">
-              {(['active', 'snoozed', 'settled'] as const).map((category) => {
-                const groupTabs = sidebarTabs.filter(
-                  (tab) => !tab.pinned && browserTabCategory(tab, clock) === category,
-                )
-                return (
-                  <BrowserTabGroup key={category} category={category} count={groupTabs.length}>
-                    {category === 'active' && (
-                      <>
-                        {!!pinnedTabs.length && (
-                          <section aria-label="Pinned browser tabs" className="studio-browser-pins">
+              <div className="flex min-h-0 flex-1 flex-col">
+                {(['active', 'snoozed', 'settled'] as const).map((category) => {
+                  const groupTabs = sidebarTabs.filter(
+                    (tab) => !tab.pinned && browserTabCategory(tab, clock) === category,
+                  )
+                  return (
+                    <BrowserTabGroup key={category} category={category} count={groupTabs.length}>
+                      {category === 'active' && (
+                        <>
+                          {!!pinnedTabs.length && (
+                            <section
+                              aria-label="Pinned browser tabs"
+                              className="studio-browser-pins"
+                            >
+                              <div className="studio-browser-group-heading">
+                                <Pin size={11} aria-hidden="true" />
+                                <span>Pinned</span>
+                                <span className="studio-browser-group-count">
+                                  {pinnedTabs.length}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-[repeat(auto-fill,minmax(3rem,1fr))] gap-1.5">
+                                {pinnedTabs.map(renderTab)}
+                              </div>
+                            </section>
+                          )}
+                          {!!groupTabs.length && (
                             <div className="studio-browser-group-heading">
-                              <Pin size={11} aria-hidden="true" />
-                              <span>Pinned</span>
-                              <span className="studio-browser-group-count">
-                                {pinnedTabs.length}
-                              </span>
+                              <span>Tabs</span>
+                              <span className="studio-browser-group-count">{groupTabs.length}</span>
                             </div>
-                            <div className="grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-1.5">
-                              {pinnedTabs.map(renderTab)}
-                            </div>
-                          </section>
-                        )}
-                        {!!groupTabs.length && (
-                          <div className="studio-browser-group-heading">
-                            <span>Tabs</span>
-                            <span className="studio-browser-group-count">{groupTabs.length}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {groupTabs.map(renderTab)}
-                  </BrowserTabGroup>
-                )
-              })}
+                          )}
+                        </>
+                      )}
+                      {groupTabs.map(renderTab)}
+                    </BrowserTabGroup>
+                  )
+                })}
+              </div>
             </div>
           </ResizableSidebar>
         ) : null
@@ -3025,7 +3038,20 @@ function BrowserContent({
           )}
         </div>
       )}
-      {(mode === 'web' || mode === 'remote') && navigation}
+      {(mode === 'web' || mode === 'remote') &&
+        (shared ? (
+          <HeaderContent>
+            <header
+              className="studio-browser-header @container/browser"
+              data-window-edge
+              data-window-right-edge
+            >
+              {navigation}
+            </header>
+          </HeaderContent>
+        ) : (
+          navigation
+        ))}
       {mode === 'web' && browser && url && (
         <BrowserFindBar
           key={browserKey}

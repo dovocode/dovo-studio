@@ -16,7 +16,15 @@ if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useState} from 'react';import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';
+function Fixture(){
+  const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
+  const content=window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>;
+  if(!window.fixtureHeader)return content;
+  const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
+  return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
+}
+window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -109,7 +117,7 @@ export const useSettingsTarget=()=>{
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
-export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -2823,6 +2831,16 @@ try {
         microphone: true,
         screenSharing: true,
       },
+      {
+        key: 'studio:browser:main:compact-4',
+        url: 'https://example.test/4',
+        title: 'Website 4',
+        audible: true,
+        muted: false,
+        camera: true,
+        microphone: true,
+        screenSharing: true,
+      },
     ]
     await window.pollBrowser()
   })
@@ -2837,9 +2855,13 @@ try {
     .getByLabel('This computer · Local Default')
     .boundingBox()
   assert.ok(
-    identityBounds.y >= faviconBounds.y + faviconBounds.height,
-    'Device/profile indicators sit below the favicon',
+    identityBounds.y > faviconBounds.y &&
+      identityBounds.y < faviconBounds.y + faviconBounds.height &&
+      identityBounds.y + identityBounds.height > faviconBounds.y + faviconBounds.height,
+    'Small device/profile badges overlap the bottom of the favicon',
   )
+  assert.equal(faviconBounds.width, 32, 'Tab favicons are larger')
+  assert.equal(identityBounds.height, 14, 'Identity badges remain small')
   const selectedBeforeMute = await controlsPage.evaluate(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
   )
@@ -2857,9 +2879,30 @@ try {
   const tileBounds = await firstTile.boundingBox()
   const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
   assert.ok(
+    activityBounds.height <= 24,
+    'All four pinned activity icons share a row at the default width',
+  )
+  assert.ok(
+    activityBounds.y >= identityBounds.y + identityBounds.height,
+    'Pinned activity sits below the icon and its identity badges',
+  )
+  assert.ok(
     activityBounds.x >= tileBounds.x &&
       activityBounds.x + activityBounds.width <= tileBounds.x + tileBounds.width,
     'All activity controls fit inside a pinned tile',
+  )
+  const regularTab = compactSidebar.locator('[data-browser-tab-id="compact-4"]')
+  const regularTitle = await regularTab.locator('.studio-browser-tab-title').boundingBox()
+  const regularActivity = await regularTab.getByLabel('Tab activity', { exact: true }).boundingBox()
+  assert.ok(
+    regularActivity.y >= regularTitle.y + regularTitle.height &&
+      Math.abs(regularActivity.x - regularTitle.x) < 1,
+    'Regular tab activity sits below and aligns with the title',
+  )
+  assert.equal(
+    await regularTab.locator('button button').count(),
+    0,
+    'Mute remains a separate control',
   )
   await pins.first().hover()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-refined.png' })
@@ -3267,6 +3310,85 @@ try {
     beforeLeave,
   )
   await orderPage.close()
+
+  for (const detached of [false, true]) {
+    const headerPage = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    headerPage.on('pageerror', (error) => errors.push(error.message))
+    await headerPage.route('http://browser-header.test/', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html class="dark"><body style="margin:0"><div id="app"></div></body></html>',
+      }),
+    )
+    await headerPage.goto('http://browser-header.test/')
+    for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+      file.endsWith('.css'),
+    ))
+      await headerPage.addStyleTag({
+        content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      })
+    await headerPage.evaluate((detached) => {
+      window.fixtureHeader = true
+      window.fixtureDetached = detached
+    }, detached)
+    await headerPage.addScriptTag({ content: built.outputFiles[0].text })
+    for (const collapsed of [false, true, false]) {
+      await headerPage.evaluate((collapsed) => window.collapseBrowserSidebar(collapsed), collapsed)
+      await headerPage.waitForFunction(
+        ({ detached, collapsed }) =>
+          document.querySelector('.studio-header-layout')?.dataset.inlineHeader ===
+          String(!detached && !collapsed),
+        { detached, collapsed },
+      )
+      for (const width of [1600, 1280, 1100, 1024]) {
+        await headerPage.setViewportSize({ width, height: 800 })
+        await headerPage.waitForFunction(
+          () => document.querySelector('.studio-header-layout')?.dataset.compact === 'false',
+        )
+        const toolbar = headerPage.getByRole('form', { name: 'Browser navigation' })
+        await toolbar.waitFor()
+        await headerPage.waitForFunction(
+          () =>
+            document.querySelector('[aria-label="Browser navigation"]').getBoundingClientRect().y <
+            10,
+        )
+        assert.equal(
+          await toolbar.count(),
+          1,
+          'One live toolbar across header and sidebar handoffs',
+        )
+        const address = headerPage.getByRole('combobox', { name: 'Preview URL', exact: true })
+        const box = await address.boundingBox()
+        assert.ok(
+          box.width >= 48,
+          'Address remains editable in the desktop header: ' +
+            JSON.stringify({ width, collapsed, detached, box }),
+        )
+        const geometry = await toolbar.evaluate((form) => ({
+          height: form.getBoundingClientRect().height,
+          right: form.getBoundingClientRect().right,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        }))
+        assert.equal(geometry.height, 52, 'Toolbar shares the application header height')
+        assert.ok(
+          geometry.right <= width + 1 && !geometry.overflow,
+          'Header stays within the window',
+        )
+        await address.fill('http://header.lan/test')
+        await address.press('Enter')
+        await headerPage.waitForFunction(() =>
+          window.calls.some(
+            (call) => call.action === 'show' && call.url === 'http://header.lan/test',
+          ),
+        )
+      }
+    }
+    await headerPage.setViewportSize({ width: 1280, height: 800 })
+    await headerPage.screenshot({
+      path: '/tmp/dovo-browser-header-' + (detached ? 'detached' : 'main') + '.png',
+    })
+    await headerPage.close()
+  }
 
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(

@@ -45,6 +45,7 @@ import {
   configureBrowserLanguage,
   websiteCustomization,
   websiteLinkProfile,
+  websiteSearchUrl,
 } from './browser-language.js'
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
@@ -941,6 +942,11 @@ export function registerBrowser(
       )
         return
       const navigation = view.webContents.navigationHistory
+      const revision = navigationRevision
+      const live = () =>
+        !view.webContents.isDestroyed() &&
+        views.get(JSON.stringify([created.windowId, created.key])) === created &&
+        navigationRevision === revision
       const items: Electron.MenuItemConstructorOptions[] = []
       if (
         params.mediaType === 'video' &&
@@ -991,7 +997,18 @@ export function registerBrowser(
           enabled: navigation.canGoForward(),
           click: () => navigation.goForward(),
         },
-        { label: 'Reload', click: () => view.webContents.reload() },
+        {
+          label: 'Reload',
+          click: () => {
+            if (live()) view.webContents.reload()
+          },
+        },
+        {
+          label: 'Reload without cache',
+          click: () => {
+            if (live()) view.webContents.reloadIgnoringCache()
+          },
+        },
         { type: 'separator' },
       )
       if (params.linkURL && openableUrl(params.linkURL))
@@ -999,7 +1016,23 @@ export function registerBrowser(
           {
             label: 'Open link in new tab',
             click: () => {
+              if (!live()) return
               if (!routeProfileLink(created, params.linkURL)) queueLink(created, params.linkURL)
+            },
+          },
+          {
+            label: 'Open link in default browser',
+            click: () => {
+              if (live())
+                void shell.openExternal(params.linkURL).catch((error: unknown) => {
+                  console.error('Could not open link in default browser.', error)
+                })
+            },
+          },
+          {
+            label: 'Download linked file',
+            click: () => {
+              if (live()) view.webContents.downloadURL(params.linkURL)
             },
           },
           { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) },
@@ -1007,12 +1040,7 @@ export function registerBrowser(
         )
       if (params.mediaType === 'image' || params.mediaType === 'canvas') {
         const { srcURL, x, y, hasImageContents } = params
-        const revision = navigationRevision
         const imageUrl = URL.canParse(srcURL) ? new URL(srcURL) : undefined
-        const live = () =>
-          !view.webContents.isDestroyed() &&
-          views.get(JSON.stringify([created.windowId, created.key])) === created &&
-          navigationRevision === revision
         if (openableUrl(srcURL))
           items.push({
             label: 'Open image in new tab',
@@ -1049,6 +1077,17 @@ export function registerBrowser(
         items.push(
           { label: 'Copy', click: () => clipboard.writeText(text) },
           {
+            label: 'Search selection in new tab',
+            click: () => {
+              if (!live()) return
+              try {
+                queueLink(created, websiteSearchUrl(profileId, text))
+              } catch (error) {
+                console.error('Could not search selected text.', error)
+              }
+            },
+          },
+          {
             label: 'Add selection to thread…',
             click: () =>
               created.window.webContents.send('browser:context-action', {
@@ -1079,6 +1118,15 @@ export function registerBrowser(
       )
       const page = openableUrl(view.webContents.getURL())
       if (page) {
+        items.push({
+          label: 'Open page in default browser',
+          click: () => {
+            if (live())
+              void shell.openExternal(page).catch((error: unknown) => {
+                console.error('Could not open page in default browser.', error)
+              })
+          },
+        })
         const origin = new URL(page).origin
         const permissions = browserPermissions(profileId)
         items.push(
@@ -1091,6 +1139,24 @@ export function registerBrowser(
           },
         )
       }
+      items.push(
+        { type: 'separator' },
+        {
+          label: 'Print…',
+          click: () => {
+            if (live())
+              void printPage(created).catch((error: unknown) => {
+                console.error('Could not print page.', error)
+              })
+          },
+        },
+        {
+          label: 'Inspect element',
+          click: () => {
+            if (live()) view.webContents.inspectElement(params.x, params.y)
+          },
+        },
+      )
       Menu.buildFromTemplate(items).popup({ window: created.window })
     })
     view.webContents.setIgnoreMenuShortcuts(workspace)

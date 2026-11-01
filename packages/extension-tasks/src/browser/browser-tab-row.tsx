@@ -163,16 +163,16 @@ export function BrowserTabRow({
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`studio-browser-tab-select flex min-w-0 items-center gap-2 text-left ${tab.pinned ? 'h-12 w-full flex-none justify-center px-2 py-2' : 'h-10 flex-1 px-2 text-xs'}`}
+            className={`studio-browser-tab-select min-w-0 text-left text-xs ${tab.pinned ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
           >
-            <span className="studio-browser-tab-source flex shrink-0 flex-col items-center gap-1">
-              <span className="studio-browser-tab-favicon relative inline-flex items-center">
+            <span className="studio-browser-tab-source relative inline-flex h-10 w-8 shrink-0 items-start justify-center">
+              <span className="studio-browser-tab-favicon relative inline-flex size-8 items-center justify-center">
                 <BrowserFavicon tab={tab} />
                 {badge !== undefined && (
                   <span
                     aria-label={badge === 'unread' ? 'Unread activity' : `${badge} unread`}
                     className={cn(
-                      'studio-browser-tab-badge absolute -right-2 -top-2 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
+                      'studio-browser-tab-badge absolute -right-1 -top-1 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
                       badge === 'unread'
                         ? 'size-2'
                         : 'min-w-3.5 px-1 text-center text-[9px] font-semibold leading-3.5',
@@ -185,21 +185,26 @@ export function BrowserTabRow({
                   <span
                     aria-label="Kept awake"
                     title="Keep awake is on"
-                    className="absolute -right-1 -bottom-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
+                    className="absolute -left-1 top-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
                   />
                 )}
               </span>
               <span
-                className="studio-browser-tab-profile flex h-2.5 shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
+                className="studio-browser-tab-profile absolute inset-x-0 bottom-0 flex shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
                 aria-label={`${computer} · ${profile}`}
               >
-                <RuntimeIcon
-                  icon={tab.kind === 'remote' ? owner?.snapshot?.runtimeIcon : undefined}
-                  className="size-2 shrink-0"
-                  aria-hidden="true"
-                />
+                <span className="studio-browser-tab-identity" title={computer}>
+                  <RuntimeIcon
+                    icon={owner?.snapshot?.runtimeIcon}
+                    className="size-2 shrink-0"
+                    aria-hidden="true"
+                  />
+                </span>
                 <span
-                  className={cn('max-w-5 truncate', emoji && 'text-[9px]')}
+                  className={cn(
+                    'studio-browser-tab-identity overflow-hidden',
+                    emoji && 'text-[9px]',
+                  )}
                   title={`${profile} · ${computer}`}
                 >
                   {emoji ?? initials}
@@ -207,7 +212,7 @@ export function BrowserTabRow({
               </span>
             </span>
             {!tab.pinned && (
-              <span className="studio-browser-tab-title min-w-0 flex-1 truncate">{title}</span>
+              <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
             )}
           </button>
           {(state?.camera ||
@@ -218,15 +223,33 @@ export function BrowserTabRow({
             <div
               aria-label="Tab activity"
               className={cn(
-                'studio-browser-tab-activity flex shrink-0 items-center justify-center text-status-success',
-                tab.pinned ? 'gap-0.5 px-0.5 pb-1.5' : 'gap-1 pr-1',
+                'studio-browser-tab-activity relative flex min-w-0 shrink-0 flex-wrap items-center text-status-success',
+                tab.pinned ? 'max-w-full justify-center gap-0.5 px-0.5 pb-1.5' : 'gap-1',
               )}
             >
-              {state.camera && (
-                <span role="img" aria-label={`Camera on in ${title}`} title="Camera on">
-                  <Camera className={tab.pinned ? 'size-2.5' : 'size-3'} />
-                </span>
-              )}
+              {(state.audible || state.muted) &&
+                (onMute ? (
+                  <IconButton
+                    type="button"
+                    label={`${state.muted ? 'Unmute' : 'Mute'} tab ${title}`}
+                    aria-pressed={state.muted}
+                    className={cn('shrink-0', tab.pinned ? 'size-4' : 'size-5')}
+                    onClick={onMute}
+                  >
+                    {state.muted ? (
+                      <VolumeX className={tab.pinned ? 'size-2.5' : 'size-3'} />
+                    ) : (
+                      <Volume2 className={tab.pinned ? 'size-2.5' : 'size-3'} />
+                    )}
+                  </IconButton>
+                ) : (
+                  <span
+                    role="img"
+                    aria-label={`${state.muted ? 'Audio muted' : 'Audio playing'} in ${title}`}
+                  >
+                    {state.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                  </span>
+                ))}
               {state.microphone && (
                 <span role="img" aria-label={`Microphone on in ${title}`} title="Microphone on">
                   <Mic className={tab.pinned ? 'size-2.5' : 'size-3'} />
@@ -237,16 +260,10 @@ export function BrowserTabRow({
                   <ScreenShare className={tab.pinned ? 'size-2.5' : 'size-3'} />
                 </span>
               )}
-              {(state.audible || state.muted) && onMute && (
-                <IconButton
-                  type="button"
-                  label={`${state.muted ? 'Unmute' : 'Mute'} tab ${title}`}
-                  aria-pressed={state.muted}
-                  className="size-5 shrink-0"
-                  onClick={onMute}
-                >
-                  {state.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-                </IconButton>
+              {state.camera && (
+                <span role="img" aria-label={`Camera on in ${title}`} title="Camera on">
+                  <Camera className={tab.pinned ? 'size-2.5' : 'size-3'} />
+                </span>
               )}
             </div>
           )}

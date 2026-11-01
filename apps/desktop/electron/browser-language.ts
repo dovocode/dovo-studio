@@ -3,6 +3,7 @@ import {
   browserLanguages,
   browserLinkProfile,
   browserProfilesSchema,
+  browserSearchUrl,
   browserWebsiteCustomizationScript,
   decodeResult,
 } from '@dovo/protocol'
@@ -16,6 +17,15 @@ const preferences = Schema.Struct({
   browserProfiles: browserProfilesSchema,
   browserWorkspaceEnabled: Schema.optional(Schema.Boolean),
 })
+export function websiteSearchUrl(profileId: string, text: string) {
+  const result = decodeResult(preferences, readLocalSettingsSection('app'))
+  return browserSearchUrl(
+    text,
+    result.success
+      ? result.data.browserProfiles.find((profile) => profile.id === profileId)?.search
+      : undefined,
+  )
+}
 export function websiteLinkProfile(
   sourceProfileId: string,
   url: string,

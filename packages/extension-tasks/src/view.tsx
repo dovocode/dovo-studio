@@ -1,7 +1,6 @@
 import type { WorkspaceControls } from './chat/composer/composer-workspace'
 import type { SelectRemoteProject } from './chat/composer/composer-project'
 import type { CodeFinding } from '@dovo/protocol'
-import { TaskWaitingPanel } from './detail/task-waiting-panel'
 import { fileStats } from './files/presentation'
 import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
@@ -25,7 +24,7 @@ import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { X, Maximize2, Minimize2, Bot, FolderSymlink } from 'lucide-react'
+import { X, Maximize2, Minimize2, Bot, FolderSymlink, FolderOpen, FileDiff } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
@@ -168,8 +167,6 @@ export default function TasksView({
   }, [entityId, storedTask?.id, deselected])
   const compact = useCompactLayout()
   const [viewerExpanded, setViewerExpanded] = useState(false)
-  const [viewerDocked, setViewerDocked] = useState(false)
-  const workspacePane = useRef<HTMLDivElement | null>(null)
   const editingFile = useRef(false)
   const setFileEditing = useCallback((value: boolean) => {
     editingFile.current = value
@@ -306,15 +303,6 @@ export default function TasksView({
   const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
   const toolsExpanded = surface !== 'chat' && surface !== 'terminal'
   const fileViewer = surface === 'files' || surface === 'changes'
-  useEffect(() => {
-    const element = workspacePane.current
-    if (!element) return
-    const observer = new ResizeObserver(([entry]) =>
-      setViewerDocked(entry.contentRect.width >= 1050),
-    )
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [task?.id])
   const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
   const refreshChanges = useCallback(async () => {
     if (!task || repository?.kind || editingFile.current) return
@@ -1104,7 +1092,6 @@ export default function TasksView({
           />
         )}
         <div
-          ref={workspacePane}
           className={cn('relative flex min-h-0 min-w-0 flex-1 overflow-hidden', native && 'hidden')}
         >
           <div
@@ -1116,7 +1103,7 @@ export default function TasksView({
             className={cn(
               'relative flex min-h-0 min-w-0 flex-1 flex-col',
               ((fileViewer && viewerExpanded) ||
-                (surface !== 'chat' && compact && !fileViewer && !browserDetached)) &&
+                (surface !== 'chat' && compact && !browserDetached)) &&
                 'hidden',
             )}
           >
@@ -1149,16 +1136,6 @@ export default function TasksView({
                 />
               )}
             </TaskProjectPopover>
-            {!temporary && !projectPanelOpen && !native && (
-              <TaskWaitingPanel
-                active={
-                  !listOpen && !(fileViewer && viewerExpanded) && (!compact || surface === 'chat')
-                }
-                onPullLink={(url) => openPullPreview(task, url)}
-                key={`${activeRuntimeId}:${task.id}`}
-                taskId={task.id}
-              />
-            )}
             <p
               role="status"
               aria-live="polite"
@@ -1295,17 +1272,8 @@ export default function TasksView({
             }
             side="right"
             label="tools sidebar"
-            maxFraction={
-              fileViewer && !viewerDocked
-                ? 1
-                : surface === 'artifacts'
-                  ? 0.6
-                  : fileViewer
-                    ? 0.5
-                    : 0.48
-            }
-            maxWidth={fileViewer && !viewerDocked ? 640 : 960}
-            reservedWidth={fileViewer && !viewerDocked ? 72 : 0}
+            maxFraction={surface === 'artifacts' ? 0.6 : fileViewer ? 0.5 : 0.48}
+            maxWidth={960}
             resizable={
               !compact && !browserDetached && surface !== 'chat' && !(fileViewer && viewerExpanded)
             }
@@ -1316,19 +1284,12 @@ export default function TasksView({
                 : cn(
                     'min-h-0 min-w-0 flex-col bg-background',
                     surface === 'chat' ? 'hidden' : 'flex',
-                    fileViewer
-                      ? viewerExpanded
-                        ? 'flex-1 border-l'
-                        : viewerDocked && !compact
-                          ? 'shrink-0 border-l'
-                          : cn(
-                              'absolute inset-y-2 z-30 rounded-lg border shadow-2xl overflow-hidden',
-                              compact ? 'right-2' : 'right-14',
-                              compact && 'w-[min(640px,calc(100%-72px))]',
-                            )
-                      : compact
-                        ? 'flex-1'
-                        : 'studio-thread-tools-panel shrink-0',
+                    compact
+                      ? 'flex-1'
+                      : cn(
+                          'studio-thread-tools-panel',
+                          fileViewer && viewerExpanded ? 'flex-1' : 'shrink-0',
+                        ),
                   )
             }
           >
@@ -1340,10 +1301,15 @@ export default function TasksView({
               }
             >
               {fileViewer && (
-                <div className="studio-thread-tools-header flex h-9 shrink-0 items-center gap-1 border-b px-3 text-xs">
-                  <span className="flex-1 text-muted-foreground">
+                <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+                  {surface === 'files' ? (
+                    <FolderOpen size={16} className="text-muted-foreground" aria-hidden="true" />
+                  ) : (
+                    <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <h2 className="min-w-0 flex-1 truncate font-medium">
                     {surface === 'files' ? 'Project files' : 'Changes'}
-                  </span>
+                  </h2>
                   <IconButton
                     label={viewerExpanded ? 'Restore side panel' : 'Expand viewer'}
                     aria-pressed={viewerExpanded}
@@ -1359,7 +1325,7 @@ export default function TasksView({
                   >
                     <X size={14} />
                   </IconButton>
-                </div>
+                </header>
               )}
               {!compact && (surface === 'projects' || surface === 'agents') && (
                 <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
