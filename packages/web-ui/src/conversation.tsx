@@ -3,7 +3,7 @@
 // Adapted from Vercel AI Elements (MIT). Shared by Studio and hosted thread readers.
 import { ArrowDown } from 'lucide-react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
-import { useEffect, type ComponentProps } from 'react'
+import { useCallback, useLayoutEffect, type ComponentProps } from 'react'
 import { cn } from './utils.js'
 import { Button } from './button.js'
 
@@ -23,17 +23,28 @@ export function ConversationContent({
   className,
   ...props
 }: ComponentProps<typeof StickToBottom.Content>) {
-  const { scrollRef, scrollToBottom } = useStickToBottomContext()
-  // The viewport also resizes when the composer, keyboard or browser window changes.
-  useEffect(() => {
+  const { scrollRef, contentRef, state } = useStickToBottomContext()
+  const followLayout = useCallback(() => {
+    // The asynchronous follow controller otherwise paints one frame at the old offset.
+    // Respect detached readers, text selection and explicit animated navigation.
+    if (!state.isAtBottom || (state.animation && state.animation.behavior !== 'instant')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && scrollRef.current?.contains(selection.anchorNode))
+      return
+    // Use the controller's setter so this correction cannot be mistaken for a reader gesture.
+    state.scrollTop = state.calculatedTargetScrollTop
+  }, [scrollRef, state])
+  useLayoutEffect(followLayout)
+  // Older turn mounts, late Markdown/image measurements and composer resizes settle before paint.
+  useLayoutEffect(() => {
     const root = scrollRef.current
-    if (!root) return
-    const observer = new ResizeObserver(() => {
-      void scrollToBottom({ animation: 'instant', preserveScrollPosition: true })
-    })
+    const content = contentRef.current
+    if (!root || !content) return
+    const observer = new ResizeObserver(followLayout)
     observer.observe(root)
+    observer.observe(content)
     return () => observer.disconnect()
-  }, [scrollRef, scrollToBottom])
+  }, [scrollRef, contentRef, followLayout])
   return <StickToBottom.Content className={cn('flex flex-col gap-4 p-4', className)} {...props} />
 }
 

@@ -7,7 +7,7 @@ import {
   DEFAULT_VIRTUAL_FILE_METRICS,
 } from '@pierre/diffs'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
-import { Editor } from '@pierre/diffs/edit'
+import { Editor, EditStateManager } from '@pierre/diffs/edit'
 import {
   EditProvider,
   FileDiff,
@@ -77,6 +77,7 @@ export function PierreEditor({
     side: 'additions' | 'deletions'
   } | null>(null)
   const [editing, setEditing] = useApplicationState(false)
+  const editStateKey = `${taskId}:${file.path}`
   const cancelEdit = useRef(false)
   const scrolledTarget = useRef('')
   const positionedTarget = useRef('')
@@ -365,11 +366,13 @@ export function PierreEditor({
               )}
               options={options}
               edit={editing && !readOnly}
-              editStateKey={`${taskId}:${file.path}`}
+              editStateKey={editStateKey}
               onEditChange={() => setDirty(true)}
               onEditComplete={(event) => {
                 if (cancelEdit.current) {
                   cancelEdit.current = false
+                  // Reject restores the external diff; discard the library's dormant draft too.
+                  EditStateManager.clear('file-diff', editStateKey)
                   return 'reject'
                 }
                 saveRef.current(event.newFile?.contents ?? '')

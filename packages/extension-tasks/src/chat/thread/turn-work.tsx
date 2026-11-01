@@ -11,12 +11,13 @@ export function TurnWork({
   children,
   reveal = false,
 }: {
-  turn: TaskTurn
+  turn?: TaskTurn
   reveal?: boolean
   children: (open: boolean, header: ReactNode) => ReactNode
 }) {
-  const [expanded, setExpanded] = useTurnDisclosure(`work:${turn.id}`)
-  const open = reveal || (expanded ?? turn.status !== 'completed')
+  const [expanded, setExpanded] = useTurnDisclosure(turn ? `work:${turn.id}` : undefined)
+  const open = reveal || (expanded ?? turn?.status !== 'completed')
+  if (!turn) return children(open, undefined)
   const label =
     turn.status === 'running' || turn.status === 'completed' ? (
       <TurnLabel turn={turn} />

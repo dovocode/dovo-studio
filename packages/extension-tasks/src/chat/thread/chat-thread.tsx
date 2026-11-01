@@ -22,7 +22,11 @@ import { TurnWindow, TurnWindowContext } from './turn-window'
 import { TurnWork } from './turn-work'
 import { PullLinkActions } from './pull-link-actions'
 import { ThreadLinkMenu } from './thread-link-menu'
-import { conversationTurns, conversationTurnLabel } from './conversation-turns'
+import {
+  conversationTurns,
+  conversationTurnLabel,
+  createConversationTurnKeys,
+} from './conversation-turns'
 import { compactionsByMessage } from './compactions-by-message'
 import { useThreadSearch } from './use-thread-search'
 import {
@@ -280,7 +284,11 @@ export function ChatThread({
     () => compactionsByMessage(task),
     [task.compactions, task.turns],
   )
-  const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
+  const retainTurnKeys = useMemo(() => createConversationTurnKeys(), [linkScope])
+  const groups = useMemo(
+    () => retainTurnKeys(conversationTurns(task)),
+    [task.messages, task.turns, retainTurnKeys],
+  )
   const retention = useRef({ groups, seeking: false, trim: history.trim })
   useEffect(() => {
     retention.current = {
@@ -298,7 +306,7 @@ export function ChatThread({
         const { groups, seeking, trim } = retention.current
         // Only at the live end can distant earlier pages leave without moving the reader.
         if (seeking || !root || root.scrollHeight - root.clientHeight - root.scrollTop > 16) return
-        trim(groups.find((group) => turnWindow.mounted.has(group.id))?.messages[0]?.id)
+        trim(groups.find((group) => turnWindow.mounted.has(group.key))?.messages[0]?.id)
       }, 1000)
     })
     return () => {
@@ -571,7 +579,7 @@ export function ChatThread({
               <div className="flex flex-col gap-5">
                 {groups.map((group, groupIndex) => (
                   <section
-                    key={group.id}
+                    key={group.key}
                     id={`turn-${task.id}-${group.id}`}
                     data-conversation-anchor
                     aria-label={`User request · ${conversationTurnLabel(group.status)}`}
@@ -586,7 +594,7 @@ export function ChatThread({
                     }
                   >
                     <DeferredTurn
-                      id={group.id}
+                      id={group.key}
                       pinned={
                         restoreTurn === `turn-${task.id}-${group.id}` ||
                         groupIndex >= groups.length - 2 ||
@@ -655,7 +663,8 @@ export function ChatThread({
                             })}
                           </div>
                         )
-                        return group.turn ? (
+                        // Keep the message tree mounted as an optimistic prompt gains its turn.
+                        return (
                           <TurnWork
                             turn={group.turn}
                             reveal={group.messages.some(
@@ -667,8 +676,6 @@ export function ChatThread({
                           >
                             {render}
                           </TurnWork>
-                        ) : (
-                          render(true)
                         )
                       }}
                     </DeferredTurn>

@@ -53,6 +53,7 @@ const mocks = {
   './safe-modal': `export const SafeModal=({children})=><div>{children}</div>;`,
   '../controls/native-icon': `export const NativeIcon=()=>null;export const NativeMenuButton=({onPress,label})=><button onClick={onPress}>{label}</button>;`,
   '../controls/icon-button': `export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
+  '../../ui/controls/icon-button': `export const IconButton=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../controls/icon': `export const Icon=()=>null;`,
   '../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../../ui/controls/icon': `export const Icon=()=>null;`,

@@ -32,7 +32,7 @@ for (const [path, name] of [
   mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
   },
@@ -89,7 +89,7 @@ try {
   assert.ok(
     (await page
       .locator('[role=log] > div')
-      .evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop)) > 300,
+      .evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop)) < 3,
   )
   assert.equal(await content.evaluate((e) => getComputedStyle(e).padding), '16px')
   await page.evaluate(() => window.releaseInitialFrames())
@@ -149,7 +149,15 @@ try {
     [8500, 700],
     [5000, 1000],
   ]) {
-    await page.evaluate(([older, newest]) => window.resizeHistory(older, newest), [older, newest])
+    const beforePaint = await page.evaluate(
+      ([older, newest]) => {
+        window.flushSync(() => window.resizeHistory(older, newest))
+        const root = document.querySelector('[role=log] > div')
+        return root.scrollHeight - root.clientHeight - root.scrollTop
+      },
+      [older, newest],
+    )
+    assert.ok(beforePaint < 3, `following must settle before paint, left ${beforePaint}px below`)
     await bottom()
   }
   await input.blur()

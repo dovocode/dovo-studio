@@ -9,7 +9,7 @@ const studioUi = fileURLToPath(new URL('../../packages/studio-ui/', import.meta.
 const mocks = {
   '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
   './pull-link-actions': `export const PullLinkActions=()=>null;`,
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';const store={workspace:{tasks:[]},connected:true,connection:{address:'http://lan-host:4317',token:'paired'},request:async()=>({ok:true})};export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>store;export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens',themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export const completedStreamingText=text=>text;`,
+  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';const store={workspace:{tasks:[]},connected:true,connection:{address:'http://lan-host:4317',token:'paired'},request:async()=>({ok:true})};window.threadStore=store;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>store;export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens',themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export const completedStreamingText=text=>text;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export * from '${studioUi}src/components/ai-elements/conversation.tsx';export {cn} from '${studioUi}src/lib/utils';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Dialog,DialogContent,DialogTitle} from '${studioUi}src/components/ui/dialog';export {FileTypeIcon} from '${studioUi}src/file-tree';export {RepositoryOpenItems} from '${studioUi}src/repository-open-items';const Plain=({children,...props})=><div {...props}>{children}</div>;export const Message=({children,id})=><div id={id}>{children}</div>;export const MessageContent=Plain;export const MessageResponse=({children})=>{window.markdownRenders++;return <p style={{whiteSpace:'pre-wrap',margin:0}}>{children}</p>};export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;`,
   './task-activity': `export const useTaskActivity=()=>({tools:[],error:''});export const TaskActivity=()=>null;`,
@@ -38,6 +38,9 @@ for(let index=0;index<300;index++){
 }
 function App(){const [task,setTask]=useState({id:'thread',status:'running',messages,turns});
 window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===old.messages.length-1?{...message,text:message.text+'\\nstreamed line'}:message)}));
+window.replaceTask=setTask;
+window.sendPrompt=()=>setTask(old=>({...old,messages:[...old.messages,{id:'new-prompt',role:'user',text:'New prompt'}]}));
+window.acceptPrompt=()=>setTask(old=>({...old,messages:[...old.messages,{id:'new-response',role:'assistant',text:'New response'}],turns:[...old.turns,{id:'new-turn',assistantId:'new-response',status:'running',startedAt:'2026-11-01T12:00:00Z'}]}));
 return <div style={{height:700,display:'flex',flexDirection:'column'}}><ChatThread task={task}/></div>}
 createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -126,6 +129,28 @@ try {
   await settle()
   const opened = await state()
   assert.ok(opened.messages < 80, `opening mounted ${opened.messages} messages`)
+
+  // Delivery confirmation must update the same prompt, preserving its Markdown and controls.
+  await page.evaluate(() => window.sendPrompt())
+  await page.locator('#message-thread-new-prompt').waitFor()
+  await page.evaluate(() => {
+    window.pendingPrompt = document.getElementById('message-thread-new-prompt')
+    window.previousReply = document.getElementById('message-thread-a299')
+    window.acceptPrompt()
+  })
+  await page.locator('#message-thread-new-response').waitFor()
+  assert.ok(
+    await page.evaluate(
+      () => window.pendingPrompt === document.getElementById('message-thread-new-prompt'),
+    ),
+    'accepting a prompt must preserve its mounted message',
+  )
+  assert.ok(
+    await page.evaluate(
+      () => window.previousReply === document.getElementById('message-thread-a299'),
+    ),
+    'sending must preserve the previous reply',
+  )
 
   // Read the whole thread from the bottom to the top in viewport steps.
   let peakMessages = opened.messages
@@ -321,6 +346,51 @@ try {
   assert.ok(
     Math.abs(manualAfter - manual.top) <= 2,
     `fallback anchoring moved ${manual.top} → ${manualAfter}`,
+  )
+  // A history page can complete the beginning of the very turn already on screen.
+  await page.evaluate(() => {
+    window.threadStore.request = () =>
+      new Promise((resolve) => {
+        window.resolveEarlier = resolve
+      })
+    window.replaceTask({
+      id: 'thread',
+      status: 'review',
+      historyRevision: 1,
+      historyBefore: 'tail',
+      messages: [
+        { id: 'tail', role: 'assistant', turnId: 'long-turn', text: 'The visible final reply' },
+      ],
+      turns: [
+        {
+          id: 'long-turn',
+          assistantId: 'tail',
+          status: 'completed',
+          startedAt: '2026-11-01T12:00:00Z',
+        },
+      ],
+    })
+  })
+  await page.waitForFunction(
+    () => window.resolveEarlier && document.getElementById('message-thread-tail'),
+  )
+  await page.evaluate(() => {
+    window.tailMessage = document.getElementById('message-thread-tail')
+    window.resolveEarlier({
+      historyRevision: 1,
+      messages: [
+        { id: 'earlier-prompt', role: 'user', turnId: 'long-turn', text: 'The earlier request' },
+        { id: 'earlier-update', role: 'assistant', turnId: 'long-turn', text: 'An earlier update' },
+      ],
+      turns: [],
+    })
+  })
+  await page.locator('#message-thread-earlier-prompt').waitFor()
+  assert.ok(
+    await page.evaluate(
+      () => window.tailMessage === document.getElementById('message-thread-tail'),
+    ),
+    'loading the beginning of a turn must preserve its visible reply',
   )
   assert.deepEqual(errors, [])
   console.log(
