@@ -9,6 +9,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
+import { archiveTool } from './archive-tool.mjs'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 if (
   !['darwin', 'linux', 'win32'].includes(process.platform) ||
@@ -92,7 +93,7 @@ exec "$base/libexec/node" "$base/libexec/server/dist/server-cli.js" "$@"
   const output = resolve(root, 'release')
   await mkdir(output, { recursive: true })
   const name = `Dovo-Server${nightly ? '-Nightly' : ''}-${version}-${windows ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'}-${process.arch}.${windows ? 'zip' : 'tar.gz'}`
-  execFileSync('tar', [windows ? '-acf' : '-czf', join(output, name), '-C', archive, '.'], {
+  execFileSync(archiveTool(), [windows ? '-acf' : '-czf', join(output, name), '-C', archive, '.'], {
     stdio: 'inherit',
   })
   console.log(join(output, name))
