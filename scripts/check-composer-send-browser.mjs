@@ -3,6 +3,7 @@ import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
+const assets = fileURLToPath(new URL('../apps/desktop/dist/assets/', import.meta.url))
 const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model',serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
 const mocks = {
   './harness-catalog': catalogMock,
@@ -74,6 +75,12 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   await page.goto('https://dovo.test/')
+  await page.addStyleTag({
+    content: readdirSync(assets)
+      .filter((file) => file.endsWith('.css'))
+      .map((file) => readFileSync(assets + file, 'utf8'))
+      .join('\n'),
+  })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByRole('textbox', { name: 'Message' })
   const dropFiles = async () =>
@@ -357,8 +364,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Custom configurations' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Agent configuration' }).count(), 0)
   await page.locator('[role=option][data-value=large-model]').click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+  await page.getByRole('radio', { name: 'High', exact: true }).click()
   assert.equal(await page.evaluate(() => window.current.harness ?? null), null)
   await submit('Use a larger model')
   const selectedId = await page.evaluate(() => window.pending.message.id)
@@ -402,12 +408,12 @@ try {
       queue: [{ id: 'queued-message', role: 'user', text: 'Original queued input' }],
     })),
   )
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Edited queued input')
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await page.locator('[role=option][data-value=fast-model]').click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'Low', exact: true }).click()
+  await page.getByRole('radio', { name: 'Low', exact: true }).click()
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page
     .getByRole('button', { name: 'Cancel edit', exact: true })
@@ -436,6 +442,7 @@ try {
   await page.evaluate(() => {
     window.failDuplicate = true
   })
+  await duplicateButton.focus()
   await duplicateButton.click()
   await page.getByRole('alert').filter({ hasText: 'Duplicate failed' }).waitFor()
   const duplicateId = await page.evaluate(() => window.requests.at(-1).input.duplicateMessageId)
@@ -443,6 +450,7 @@ try {
   await page.evaluate(() => {
     window.failDuplicate = false
   })
+  await duplicateButton.focus()
   await duplicateButton.click()
   await page.waitForFunction(() => !document.querySelector('[role="alert"]'))
   const retriedCandidateId = await page.evaluate(
@@ -450,6 +458,7 @@ try {
   )
   assert.ok(retriedCandidateId)
   assert.notEqual(retriedCandidateId, duplicateId)
+  await duplicateButton.focus()
   await duplicateButton.click()
   await page.waitForFunction(
     (id) => window.requests.at(-1).input.duplicateMessageId !== id,
@@ -522,6 +531,7 @@ try {
   if ((await moves()).length !== 4) throw Error('Canceled drag sent a mutation')
   assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 1)
   assert.equal(await queued.getByRole('button', { name: /Move queued message/ }).count(), 8)
+  await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).focus()
   await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).click()
   await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).waitFor()
   assert.equal(
@@ -530,6 +540,7 @@ try {
   )
   assert.equal(await page.evaluate(() => window.current.queue[1].paused), true)
   assert.equal(await page.evaluate(() => window.current.queue[0].paused ?? false), false)
+  await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).focus()
   await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).click()
   await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).waitFor()
   assert.equal(await queued.getByRole('img', { name: /Waiting behind paused message/ }).count(), 0)
@@ -809,6 +820,7 @@ try {
     window.setTask((task) => ({ ...task, queuePaused: false, status: 'running' })),
   )
   await queueTab.waitFor()
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   const queuedEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queuedEdit.fill('Unsaved queue edit')
@@ -922,6 +934,7 @@ try {
     })),
   )
   await page.getByRole('tab', { name: 'Queue · 1', exact: true }).click()
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await queuedEdit.fill('Keep edit after clearing checklist')
   await page.getByRole('tab', { name: /Checklist · 0\/1/ }).click()
@@ -936,16 +949,14 @@ try {
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await input.fill('Preserve my draft')
   await page.evaluate(() => window.setFull(true))
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await input.fill('Use the full composer')
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await page.getByRole('button', { name: 'Custom configurations', exact: true }).waitFor()
   await page.locator('[role=option][data-value=large-model]').click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
-  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: /Fast/, exact: false }).click()
-  await page.getByRole('button', { name: 'Thread info', exact: true }).click()
+  await page.getByRole('radio', { name: 'High', exact: true }).click()
+  await page.getByRole('radio', { name: /Fast/, exact: false }).click()
   await page.getByRole('button', { name: 'Configure task permissions', exact: true }).click()
   await page.locator('[role=menuitemradio][data-value=full-access]').click()
   assert.equal(await input.inputValue(), 'Use the full composer')
@@ -1026,6 +1037,7 @@ try {
     exact: true,
   })
   if (await watchExpandActivity.isVisible()) await watchExpandActivity.click()
+  await page.getByRole('button', { name: 'View queued update 1', exact: true }).focus()
   await page.getByRole('button', { name: 'View queued update 1', exact: true }).click()
   const watchDialog = page.getByRole('dialog')
   await watchDialog.getByRole('heading', { name: 'Queued update' }).waitFor()
@@ -1067,13 +1079,7 @@ try {
   })
   await page.getByRole('button', { name: 'Retry', exact: true }).waitFor({ state: 'hidden' })
   // Use production CSS to check action visibility and geometry, beyond queue dispatch behavior.
-  const assets = fileURLToPath(new URL('../apps/desktop/dist/assets/', import.meta.url))
-  await page.addStyleTag({
-    content: readdirSync(assets)
-      .filter((file) => file.endsWith('.css'))
-      .map((file) => readFileSync(assets + file, 'utf8'))
-      .join('\n'),
-  })
+
   await page.evaluate(() => {
     document.documentElement.classList.add('dark')
     window.setTask((task) => ({
@@ -1147,6 +1153,7 @@ try {
   if (screenshotPath) await page.screenshot({ path: screenshotPath + '/desktop-checklist.png' })
   await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
   await queued.getByRole('listitem').first().hover()
+  await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   assert.equal(await input.inputValue(), 'Verify the queue and checklist layout')
   if (errors.length) throw new Error(errors.join('\n'))

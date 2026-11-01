@@ -230,6 +230,7 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Tune', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Maestro', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'Inherit', exact: true }).click()
+    await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
     await page
       .getByRole('button', { name: 'Choose agent and model' })
       .filter({ hasText: 'Inherit' })
@@ -243,6 +244,12 @@ try {
       if (mode === 'Maestro' && !fixture.launcher && fixture.selectBeforeTyping)
         await page.screenshot({ path: '/tmp/dovo-mode-picker-icons.png' })
       await option.click()
+      assert.equal(
+        await page.locator('[data-model-picker]').count(),
+        1,
+        'Selecting a mode dismissed the model picker',
+      )
+      await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
       assert.equal(
         await page
           .getByRole('button', { name: 'Choose agent and model' })
@@ -264,11 +271,12 @@ try {
       assert.match(await selectedMode.getAttribute('class'), /ring-primary/)
       await page.keyboard.press('Escape')
       if (mode === 'Tune' || mode === 'Maestro') {
-        const difficulty = page.getByRole('button', { name: 'Difficulty', exact: true })
+        const difficulty = page.getByRole('button', { name: 'Choose agent and model', exact: true })
         assert.match(await difficulty.textContent(), mode === 'Tune' ? /Auto/ : /High/)
         await difficulty.click()
-        await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+        await page.getByRole('radio', { name: 'High', exact: true }).click()
         assert.match(await difficulty.textContent(), /High/)
+        await page.keyboard.press('Escape')
         assert.match(
           await page.getByRole('button', { name: 'Choose agent and model' }).textContent(),
           new RegExp(mode),
@@ -287,6 +295,7 @@ try {
         .querySelector('button[aria-label="Choose agent and model"]')
         .textContent.includes('Opus 5.5'),
     )
+    await page.keyboard.press('Escape')
     if (fixture.selectBeforeTyping) await editor.fill('Use my chosen Claude model')
     if (!fixture.launcher) await page.waitForFunction(() => window.saved.length === 2)
     if (fixture.selectProject) {
