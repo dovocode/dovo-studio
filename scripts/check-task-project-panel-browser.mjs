@@ -6,6 +6,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const resolveDir = root + 'packages/studio-ui/'
 const mocks = {
+  // Snapshot previews have their own browser suite; this fixture exercises thread navigation.
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@dovo/studio-core/state': `import {useState} from 'react';export const useApplicationState=useState;`,
   '@dovo/studio-core': `
     export * from '@dovo/protocol';
