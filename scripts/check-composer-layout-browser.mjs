@@ -68,11 +68,11 @@ const built = await build({
       const defaults={scopedSettings:{environment:{taskDefaults:{harness}},shared:[{key:'project:github.com/dovo/studio',updatedAt:1,changeId:'fixture',value:{taskDefaults:{defaultServerId:'linux'}}}]},harness};
       const profile={id:'mac',name:'MacBook',nameIsCustom:true,connection:{address:'http://runtime.test',token:'fixture-token'}};
       const remoteProfile={...profile,id:'linux',name:'Linux workstation'};
-      window.requests=[];window.asides=[];
+      window.requests=[];window.asides=[];window.backgroundStarts=[];
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
-      function Thread({task,workspaceControls,temporary,onSelectRemote}){
+      function Thread({task,workspaceControls,temporary,onSelectRemote,onStartBackground}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
@@ -95,6 +95,7 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
           if(path==='/api/tasks/title')return {title:'Unify the composers'};
+          if(path==='/api/tasks/projects/select')return {...workspace.tasks.find(task=>task.id===input.id),repositoryId:'git',autoProject:false};
           if(path==='/api/tasks/side-thread/create')return {id:'side-fixture'};
           if(path==='/api/tasks/message'||path==='/api/tasks/steer'){
             setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===input.id?{...t,status:'running',messages:[{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}));
@@ -103,7 +104,7 @@ const built = await build({
           throw Error('Unexpected request '+path);
         };
         const value={workspace,setWorkspace,snapshot:{workspace,defaults,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
-        const renderThread=(task,workspaceControls,temporary,onSelectRemote)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote}/>;
+        const renderThread=(task,workspaceControls,temporary,onSelectRemote,onStartBackground)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} onStartBackground={onStartBackground??(window.testBackground?()=>{}:undefined)}/>;
         return <WorkspaceValueProvider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
@@ -1214,6 +1215,46 @@ try {
       () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
     ),
     sentBefore,
+  )
+  await page.evaluate(() => {
+    window.testBackground = true
+    window.setTask({})
+  })
+  const foreground = page.getByRole('button', { name: 'Send to agent', exact: true })
+  const background = page.getByRole('button', { name: 'Start in background', exact: true })
+  await page.keyboard.down('Alt')
+  await background.waitFor()
+  assert.equal(
+    await background.locator('svg').evaluate((icon) => getComputedStyle(icon).rotate),
+    '45deg',
+  )
+  assert.match(await background.getAttribute('title'), /Alt\+Enter/)
+  await page.keyboard.up('Alt')
+  await foreground.waitFor()
+  assert.equal(
+    await foreground.locator('svg').evaluate((icon) => getComputedStyle(icon).rotate),
+    'none',
+  )
+  await page.keyboard.down('Control')
+  await page.keyboard.down('Alt')
+  await foreground.waitFor()
+  await page.keyboard.up('Alt')
+  await page.keyboard.up('Control')
+  await page.keyboard.down('Alt')
+  await background.waitFor()
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await foreground.waitFor()
+  await page.keyboard.up('Alt')
+  await page.keyboard.down('Alt')
+  await background.waitFor()
+  await background.click()
+  await page.keyboard.up('Alt')
+  await page.waitForFunction(() => window.backgroundStarts.length === 1)
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((request) => request.path === '/api/tasks/message').length,
+    ),
+    sentBefore + 1,
   )
   await page.evaluate(() => window.setActivityError('Activity fixture unavailable'))
   await page.getByRole('alert').filter({ hasText: 'Activity fixture unavailable' }).waitFor()

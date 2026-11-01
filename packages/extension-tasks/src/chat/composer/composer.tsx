@@ -537,13 +537,14 @@ export function Composer({
     !turnSettings &&
     !plan
   const other = defaultSteerFirst ? 'queue' : 'steer'
+  const hasBackgroundAction = !editing && startup && firstMessage && !!onStartBackground
   const [altPressed, setAltPressed] = useState(false)
   useEffect(() => {
-    if (task.status !== 'running') {
+    if (task.status !== 'running' && !hasBackgroundAction) {
       setAltPressed(false)
       return
     }
-    const update = (event: KeyboardEvent) =>
+    const update = (event: KeyboardEvent | PointerEvent) =>
       setAltPressed(event.altKey && !event.ctrlKey && !event.metaKey)
     const reset = () => setAltPressed(false)
     const visibility = () => {
@@ -551,15 +552,19 @@ export function Composer({
     }
     window.addEventListener('keydown', update, true)
     window.addEventListener('keyup', update, true)
+    window.addEventListener('pointermove', update, true)
+    window.addEventListener('pointerdown', update, true)
     window.addEventListener('blur', reset)
     document.addEventListener('visibilitychange', visibility)
     return () => {
       window.removeEventListener('keydown', update, true)
       window.removeEventListener('keyup', update, true)
+      window.removeEventListener('pointermove', update, true)
+      window.removeEventListener('pointerdown', update, true)
       window.removeEventListener('blur', reset)
       document.removeEventListener('visibilitychange', visibility)
     }
-  }, [task.status])
+  }, [task.status, hasBackgroundAction])
   const alternative = !editing && altPressed && task.status === 'running' && !turnSettings && !plan
   const retryAutomaticAddition =
     attempt.current?.preserveQueuePause === true &&
@@ -574,7 +579,7 @@ export function Composer({
     !retryAutomaticAddition &&
     snapshot?.promptQueueStagingSupported === true &&
     (stagingGapActive || (!!task.queue?.length && !!(task.queuePaused || task.queue[0]?.paused)))
-  const hasBackgroundAction = !editing && startup && firstMessage && !!onStartBackground
+  const backgroundPreview = hasBackgroundAction && altPressed
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
   const stop = async () => {
     const runId = task.activeRunId
@@ -1257,26 +1262,30 @@ export function Composer({
                   title={
                     editing
                       ? 'Save changes (Enter)'
-                      : stageFirst
-                        ? 'Add to queue (Enter)'
-                        : steerFirst
-                          ? `Steer agent (${submitShortcut})`
-                          : task.status === 'running'
-                            ? `Queue follow-up (${submitShortcut})`
-                            : 'Send message (Enter)'
+                      : backgroundPreview
+                        ? 'Start in background (Alt+Enter)'
+                        : stageFirst
+                          ? 'Add to queue (Enter)'
+                          : steerFirst
+                            ? `Steer agent (${submitShortcut})`
+                            : task.status === 'running'
+                              ? `Queue follow-up (${submitShortcut})`
+                              : 'Send message (Enter)'
                   }
                   aria-label={
                     editing
                       ? 'Save changes'
-                      : stageFirst
-                        ? 'Add to queue'
-                        : steerFirst
-                          ? 'Steer agent'
-                          : task.status === 'running'
-                            ? 'Queue follow-up'
-                            : connected
-                              ? 'Send to agent'
-                              : 'Save message to task'
+                      : backgroundPreview
+                        ? 'Start in background'
+                        : stageFirst
+                          ? 'Add to queue'
+                          : steerFirst
+                            ? 'Steer agent'
+                            : task.status === 'running'
+                              ? 'Queue follow-up'
+                              : connected
+                                ? 'Send to agent'
+                                : 'Save message to task'
                   }
                   disabled={
                     (!!editing &&
@@ -1302,7 +1311,7 @@ export function Composer({
                   ) : task.status === 'running' || stageFirst ? (
                     <ListPlus className="size-4" />
                   ) : (
-                    <ArrowUp className="size-4" />
+                    <ArrowUp className={cn('size-4', backgroundPreview && 'rotate-45')} />
                   )}
                   {editing
                     ? 'Save changes'
@@ -1517,7 +1526,7 @@ export function Composer({
         }}
         onSubmit={(e) => {
           e.preventDefault()
-          void send(stageFirst ? 'stage' : steerFirst ? 'steer' : 'queue')
+          void send(stageFirst ? 'stage' : steerFirst ? 'steer' : 'queue', backgroundPreview)
         }}
       >
         {fileDrag && (

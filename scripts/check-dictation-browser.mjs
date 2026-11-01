@@ -88,6 +88,11 @@ try {
   await mic.waitFor()
   assert.equal(await enabled.isChecked(), true)
   await page.getByRole('combobox', { name: 'Dictation language', exact: true }).click()
+  await page.getByRole('option', { name: 'Greek', exact: true }).click()
+  await page.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).dictationLanguage === 'el-GR',
+  )
+  await page.getByRole('combobox', { name: 'Dictation language', exact: true }).click()
   await page.getByRole('option', { name: 'Dutch', exact: true }).waitFor({ state: 'attached' })
   await page.keyboard.type('Dutch')
   await page.waitForFunction(() => document.activeElement?.textContent?.includes('Dutch'))

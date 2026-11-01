@@ -7,7 +7,7 @@ import { View } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
 import { getAvailableVoicesAsync, type Voice } from 'expo-speech'
-import { taskGroupOptions, taskSortOptions } from '@dovo/protocol'
+import { dictationLanguages, taskGroupOptions, taskSortOptions } from '@dovo/protocol'
 import {
   updateMobilePreferences,
   useMobilePreferences,
@@ -475,9 +475,10 @@ export function SpeechSettingsScreen() {
           value={preferences.dictationLanguage}
           items={[
             { id: '', name: 'Automatic' },
-            ...[...recognitionLanguages]
-              .sort()
-              .map((language) => ({ id: language, name: language })),
+            ...[...recognitionLanguages].sort().map((language) => ({
+              id: language,
+              name: dictationLanguages.find(([code]) => code === language)?.[1] ?? language,
+            })),
           ]}
           onChange={(dictationLanguage) => updateMobilePreferences({ dictationLanguage })}
         />

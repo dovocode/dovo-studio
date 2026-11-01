@@ -87,7 +87,7 @@ const mocks = {
   './icon': `import {iconAssets} from './src/ui/controls/icon-assets';export const Icon=({name,size=20,color})=>{const asset=iconAssets[name];const url=typeof asset==='string'?asset:asset?.default;return <span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color,backgroundColor:color||'currentColor',maskImage:'url('+url+')',maskSize:'contain',maskRepeat:'no-repeat'}}/>};`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
   'expo-router': `export const usePreventRemove=()=>{};export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),replace:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId,setting:window.requestedSetting});`,
-  expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE']})});`,
+  expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE','el-GR']})});`,
   'expo-speech': `export const getAvailableVoicesAsync=async()=>[{identifier:'siri',name:'Siri',language:'en-US',quality:'Enhanced'}];`,
   'expo-constants': `export default {expoConfig:{version:'test'}};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async()=>null,setItem:async(key,value)=>{window.savedPreferences=JSON.parse(value)}};`,
@@ -699,6 +699,8 @@ try {
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await search.fill('siri voice')
     await page.getByRole('button', { name: 'Speech & driving', exact: true }).click()
+    await choose('Dictation language', 'Greek')
+    await page.waitForFunction(() => window.savedPreferences?.dictationLanguage === 'el-GR')
     await choose('Voice', 'Siri · Siri · en-US · Enhanced')
     await page.waitForFunction(() => window.savedPreferences?.speechVoice === 'siri')
     await page.getByRole('button', { name: 'Back', exact: true }).click()
