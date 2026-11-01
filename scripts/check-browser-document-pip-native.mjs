@@ -112,6 +112,42 @@ app.whenReady().then(async () => {
     await header.getByRole('toolbar').waitFor({ timeout: 10000 })
     return header
   }
+  const clickClosingControl = async (header, name) => {
+    const button = header.getByRole('button', { name, exact: true })
+    await button.click({ trial: true })
+    const bounds = await button.boundingBox()
+    assert.ok(bounds, 'The PiP control must be visible')
+    const popupWindow = await app.browserWindow(header)
+    try {
+      // The trusted click destroys its own renderer. Send native input from the
+      // surviving main process instead of awaiting a click reply from that renderer.
+      await Promise.all([
+        header.waitForEvent('close'),
+        popupWindow.evaluate(
+          (popup, point) => {
+            popup.webContents.sendInputEvent({
+              type: 'mouseDown',
+              button: 'left',
+              clickCount: 1,
+              ...point,
+            })
+            popup.webContents.sendInputEvent({
+              type: 'mouseUp',
+              button: 'left',
+              clickCount: 1,
+              ...point,
+            })
+          },
+          {
+            x: Math.round(bounds.x + bounds.width / 2),
+            y: Math.round(bounds.y + bounds.height / 2),
+          },
+        ),
+      ])
+    } finally {
+      await popupWindow.dispose()
+    }
+  }
   const owner = await app.firstWindow()
   owner.setDefaultTimeout(15000)
   owner.on('pageerror', (error) => console.error(error.message))
@@ -204,9 +240,7 @@ app.whenReady().then(async () => {
   await popup.waitForFunction(() => innerWidth === 420 && innerHeight === 280)
   await mkdir(join(root, 'work/browser-pip'), { recursive: true })
   await header.screenshot({ path: join(root, 'work/browser-pip/compact-controls.png') })
-  await header
-    .getByRole('button', { name: 'Close picture-in-picture', exact: true })
-    .click({ noWaitAfter: true })
+  await clickClosingControl(header, 'Close picture-in-picture')
   await owner.waitForFunction(
     () => !documentPictureInPicture.window && !!document.getElementById('call'),
   )
@@ -223,9 +257,7 @@ app.whenReady().then(async () => {
   const returned = app.windows().find((page) => page !== owner && page.url() === 'about:blank')
   assert.ok(returned)
   const returnHeader = await headerPage()
-  await returnHeader
-    .getByRole('button', { name: 'Back to tab', exact: true })
-    .click({ noWaitAfter: true })
+  await clickClosingControl(returnHeader, 'Back to tab')
   await owner.waitForFunction(() => !documentPictureInPicture.window)
   assert.equal(await app.evaluate(() => globalThis.pipReturned), true)
   await owner.click('#open')
@@ -338,9 +370,7 @@ app.whenReady().then(async () => {
   )
   for (let cycle = 1; cycle <= 3; cycle++) {
     const automaticHeader = await headerPage()
-    await automaticHeader
-      .getByRole('button', { name: 'Back to tab', exact: true })
-      .click({ noWaitAfter: true })
+    await clickClosingControl(automaticHeader, 'Back to tab')
     await owner.waitForFunction(
       () =>
         !documentPictureInPicture.window &&
