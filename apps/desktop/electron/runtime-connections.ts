@@ -9,6 +9,7 @@ import {
   snapshotSchema,
   getRuntimeSnapshotTag,
   snapshotDelta,
+  scopedTaskSummary,
   type DesktopSyncSubscription,
   type DesktopSyncEvent,
   type RuntimeConnection,
@@ -20,6 +21,7 @@ type Subscriber = {
   input: DesktopSyncSubscription
   publish: (event: DesktopSyncEvent) => void
   sequence?: number
+  snapshot?: RuntimeSnapshot
 }
 type Pool = {
   connection: RuntimeConnection
@@ -116,6 +118,7 @@ export class RuntimeConnections {
       input,
       publish,
       sequence: selectionChanged ? undefined : old?.sequence,
+      snapshot: selectionChanged ? undefined : old?.snapshot,
     }
     pool.subscribers.set(id, subscriber)
     this.subscriptions.set(id, pool)
@@ -162,16 +165,37 @@ export class RuntimeConnections {
   private covers(snapshot: RuntimeSnapshot, tasks: string[]) {
     return !snapshot.detailTaskIds || tasks.every((id) => snapshot.detailTaskIds?.includes(id))
   }
+  private project(snapshot: RuntimeSnapshot, subscriber: Subscriber): RuntimeSnapshot {
+    const details = new Set(subscriber.input.tasks)
+    return {
+      ...snapshot,
+      detailTaskIds: [...details],
+      workspace: {
+        ...snapshot.workspace,
+        tasks: snapshot.workspace.tasks.map((task) =>
+          details.has(task.id) ? task : scopedTaskSummary(task),
+        ),
+      },
+    }
+  }
+  private tag(pool: Pool, subscriber: Subscriber) {
+    const tag = pool.snapshot && getRuntimeSnapshotTag(pool.snapshot)
+    // The source tag describes the union view. Selection must be part of the
+    // renderer tag so selecting a thread at the same revision installs its detail.
+    return tag ? JSON.stringify([tag, [...new Set(subscriber.input.tasks)].sort()]) : undefined
+  }
   private baseline(pool: Pool, subscriber: Subscriber) {
     if (!pool.snapshot || !this.covers(pool.snapshot, subscriber.input.tasks)) return
+    const snapshot = this.project(pool.snapshot, subscriber)
     subscriber.publish({
       type: 'snapshot',
-      snapshot: pool.snapshot,
+      snapshot,
       epoch: pool.epoch,
       sequence: pool.sequence,
-      tag: getRuntimeSnapshotTag(pool.snapshot),
+      tag: this.tag(pool, subscriber),
     })
     subscriber.sequence = pool.sequence
+    subscriber.snapshot = snapshot
   }
   private publishSnapshot(pool: Pool, snapshot: RuntimeSnapshot) {
     const previous = pool.snapshot
@@ -187,19 +211,20 @@ export class RuntimeConnections {
     }
     const base = pool.sequence++
     pool.snapshot = snapshot
-    const delta = previous && !restarted ? snapshotDelta(previous, snapshot, true, true) : undefined
     for (const subscriber of pool.subscribers.values()) {
       if (!this.covers(snapshot, subscriber.input.tasks)) continue
-      if (delta && subscriber.sequence === base) {
+      if (!restarted && subscriber.snapshot && subscriber.sequence === base) {
+        const projected = this.project(snapshot, subscriber)
         subscriber.publish({
           type: 'delta',
-          delta,
+          delta: snapshotDelta(subscriber.snapshot, projected, true, true),
           epoch: pool.epoch,
           base,
           sequence: pool.sequence,
-          tag: getRuntimeSnapshotTag(snapshot),
+          tag: this.tag(pool, subscriber),
         })
         subscriber.sequence = pool.sequence
+        subscriber.snapshot = projected
       } else this.baseline(pool, subscriber)
     }
   }

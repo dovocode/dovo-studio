@@ -449,3 +449,41 @@ it('persists custom snooze durations and falls back only that field for invalid 
   expect(invalid.readAppPreferences().taskSnoozeMinutes).toEqual([60, 240, 1440, 2880, 4320, 10080])
   expect(invalid.readAppPreferences().theme).toBe('light')
 })
+
+it('persists calendar snoozes and info order independently of visibility and older defaults', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const first = await import('./preferences')
+  const schedule = {
+    morningTime: '08:30',
+    eveningTime: '20:15',
+    weekStartsOn: 0,
+    presets: ['next-week', 'tomorrow-morning'] as ('next-week' | 'tomorrow-morning')[],
+  }
+  first.updateAppPreferences({
+    taskSnoozeSchedule: schedule,
+    threadInfoOrder: ['usage', 'project'],
+    threadInfoSections: { scripts: false },
+  })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences()).toMatchObject({
+    taskSnoozeSchedule: schedule,
+    threadInfoOrder: ['usage', 'project'],
+    threadInfoSections: { scripts: false },
+  })
+  local.setItem(
+    'dovo.app-preferences.v1',
+    JSON.stringify({
+      taskSnoozeSchedule: { ...schedule, morningTime: '27:00' },
+      threadInfoOrder: [12],
+      theme: 'light',
+    }),
+  )
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    theme: 'light',
+    threadInfoOrder: [],
+    taskSnoozeSchedule: { morningTime: '09:00', eveningTime: '18:00', weekStartsOn: 1 },
+  })
+})

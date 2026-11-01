@@ -1,7 +1,7 @@
 import { taskIsWorking } from './task-working.js'
 import type { Task } from '../workspace.js'
 import { Schema } from 'effect'
-import { mutableArray, decodeResult } from '../shared/schema.js'
+import { mutableArray, mutableStruct, decodeResult } from '../shared/schema.js'
 
 export const defaultTaskSnoozeMinutes = [60, 240, 1440, 2880, 4320, 10080]
 export const taskSnoozeMinutesSchema = mutableArray(
@@ -59,6 +59,95 @@ export function parseTaskSnoozeMinutes(text: string): number[] {
       'Choose 1–12 different durations between 1 minute and 365 days, in whole minutes.',
     )
   return result.data
+}
+
+export const taskSnoozeCalendarPresets = [
+  ['later-today', 'Later today'],
+  ['tomorrow-morning', 'Tomorrow morning'],
+  ['tomorrow-evening', 'Tomorrow evening'],
+  ['next-week', 'Next week'],
+] as const
+export const taskSnoozeWeekdays = Array.from({ length: 7 }, (_, day) => ({
+  id: String(day),
+  name: new Date(2024, 0, 7 + day).toLocaleDateString(undefined, { weekday: 'long' }),
+}))
+const snoozeClock = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/)),
+)
+export const taskSnoozeScheduleSchema = mutableStruct({
+  morningTime: snoozeClock,
+  eveningTime: snoozeClock,
+  weekStartsOn: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 6 })),
+  ),
+  presets: mutableArray(Schema.Literals(taskSnoozeCalendarPresets.map(([id]) => id))).pipe(
+    Schema.check(Schema.makeFilter((values) => new Set(values).size === values.length)),
+  ),
+})
+export type TaskSnoozeSchedule = typeof taskSnoozeScheduleSchema.Type
+export const defaultTaskSnoozeSchedule: TaskSnoozeSchedule = {
+  morningTime: '09:00',
+  eveningTime: '18:00',
+  weekStartsOn: 1,
+  presets: taskSnoozeCalendarPresets.map(([id]) => id),
+}
+export function parseTaskSnoozeSchedule(value: unknown): TaskSnoozeSchedule {
+  const result = decodeResult(taskSnoozeScheduleSchema, value)
+  if (!result.success)
+    throw new Error(
+      'Use 24-hour times such as 09:00 and 18:00, a valid weekday, and different shortcuts.',
+    )
+  return result.data
+}
+export type TaskSnoozeChoice = { id: string; label: string; until: () => string }
+/** Resolve at selection time, using local calendar days rather than 24-hour increments. */
+export function taskSnoozeMenuChoices(
+  minutes: readonly number[] = defaultTaskSnoozeMinutes,
+  schedule: TaskSnoozeSchedule = defaultTaskSnoozeSchedule,
+): TaskSnoozeChoice[] {
+  const calendar = schedule.presets
+    .filter((preset) => {
+      if (preset !== 'later-today') return true
+      const now = new Date()
+      const cutoff = new Date(now)
+      const [hours, minutes] = schedule.eveningTime.split(':').map(Number)
+      cutoff.setHours(hours!, minutes!, 0, 0)
+      return cutoff > now
+    })
+    .map((preset) => {
+      const evening = preset === 'later-today' || preset === 'tomorrow-evening'
+      const clock = evening ? schedule.eveningTime : schedule.morningTime
+      const label = taskSnoozeCalendarPresets.find(([id]) => id === preset)![1]
+      const name =
+        preset === 'next-week' ? `Next ${taskSnoozeWeekdays[schedule.weekStartsOn]!.name}` : label
+      return {
+        id: preset,
+        label: `${name} · ${clock}`,
+        until: () => {
+          const now = new Date()
+          const target = new Date(now)
+          const [hours, minutes] = clock.split(':').map(Number)
+          if (preset === 'next-week')
+            target.setDate(
+              target.getDate() + ((schedule.weekStartsOn - target.getDay() + 7) % 7 || 7),
+            )
+          else if (preset !== 'later-today') target.setDate(target.getDate() + 1)
+          target.setHours(hours!, minutes!, 0, 0)
+          // A menu left open past the cutoff still schedules a future evening.
+          if (target <= now) target.setDate(target.getDate() + 1)
+          return target.toISOString()
+        },
+      }
+    })
+  return [
+    ...calendar,
+    ...taskSnoozeChoices(minutes).map(({ hours, label }) => ({
+      id: `duration-${hours}`,
+      label,
+      until: () => new Date(Date.now() + hours * 3600000).toISOString(),
+    })),
+  ]
 }
 
 export function isSnoozed(task: Task, now: number) {

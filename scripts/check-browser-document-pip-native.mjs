@@ -61,7 +61,7 @@ app.whenReady().then(async () => {
     const options = pipOptions(details);
     if (!options) return {action:'deny'};
     return {action:'allow',overrideBrowserWindowOptions:options,createWindow: options => {
-      const pip = createDocumentPipWindow(options, owner.webContents.getURL(), details.features.includes('dovo-disallow-return=1') ? undefined : async () => { globalThis.pipReturned = true; owner.show(); owner.focus(); globalThis.reportPipVisibility(true); if (!(await owner.webContents.executeJavaScript('document.visibilityState === "visible"'))) throw Error('Call tab still hidden') });
+      const pip = createDocumentPipWindow(options, owner.webContents.getURL(), async () => { globalThis.pipReturned = true; owner.show(); owner.focus(); globalThis.reportPipVisibility(true); if (!(await owner.webContents.executeJavaScript('document.visibilityState === "visible"'))) throw Error('Call tab still hidden') }, !details.features.includes('dovo-disallow-return=1'));
       const child = pip.window;
       pip.contents.on('will-navigate', event => event.preventDefault());
       owner.webContents.once('did-navigate', () => {if (!child.isDestroyed()) child.close()});
@@ -282,6 +282,22 @@ app.whenReady().then(async () => {
   assert.equal(
     await restrictedHeader.getByRole('button', { name: 'Back to tab', exact: true }).count(),
     0,
+  )
+  await app.evaluate(() => globalThis.reportPipVisibility(false))
+  await owner.waitForFunction(() => document.hidden)
+  await clickClosingControl(restrictedHeader, 'Close picture-in-picture')
+  await owner.waitForFunction(
+    () => !documentPictureInPicture.window && !!document.getElementById('call'),
+  )
+  assert.equal(
+    await owner.evaluate(() => window.callClosedWhileHidden),
+    false,
+    'Closing restricted PiP reveals the call before pagehide',
+  )
+  assert.equal(
+    await owner.evaluate(() => stream.getTracks()[0].readyState),
+    'live',
+    'Closing PiP keeps the call media alive',
   )
   await owner.reload({ waitUntil: 'domcontentloaded' })
   await owner.waitForFunction(() => !!documentPictureInPicture)

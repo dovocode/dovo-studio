@@ -1,3 +1,4 @@
+import { ThreadInfoSettingsSlot } from './task-project-popover'
 import { ThreadInfoUsage } from './thread-info-usage'
 import { ThreadSharing } from '../chat/thread-sharing'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
@@ -5,7 +6,7 @@ import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
 import { NestedThreads } from '../list/nested-threads'
 import { collectTasks, taskSources, taskCollectionKey } from '../list/task-collection'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { Schema } from 'effect'
 import {
   canChangeTaskCheckout,
@@ -16,6 +17,7 @@ import {
   threadChildRows,
   type RepositoryOpenTarget,
   type ThreadInfoSectionId,
+  orderedThreadInfoSections,
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -121,7 +123,7 @@ export function TaskProjectPanel({
   const [linking, setLinking] = useApplicationState(false)
   const [openError, setOpenError] = useApplicationState('')
   const [openBusy, setOpenBusy] = useApplicationState(false)
-  const { preferredRepositoryOpenTarget, threadInfoSections } = useAppPreferences()
+  const { preferredRepositoryOpenTarget, threadInfoSections, threadInfoOrder } = useAppPreferences()
   const show = (id: ThreadInfoSectionId) => threadInfoSections[id] !== false
   const openRepository = useRepositoryOpen()
   const openTarget = (target: RepositoryOpenTarget) => {
@@ -251,89 +253,6 @@ export function TaskProjectPanel({
         { additions: 0, deletions: 0 },
       ),
     [task.files],
-  )
-  const actions = (
-    <div className="studio-project-actions">
-      {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1 px-2 text-[0.6875rem]"
-          title={`Server ${serverUpdate.latest?.version} available. Open Devices & runtime for release notes.`}
-          onClick={() => host.navigate({ viewId: 'runtime' })}
-        >
-          <Download className="size-3.5" /> Server update
-        </Button>
-      )}
-      {show('openIn') && repo && (
-        <div className="studio-project-split-row">
-          {preferredRepositoryOpenTarget && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="studio-project-row min-w-0 flex-1"
-              disabled={!connected || openBusy}
-              onClick={() => openTarget(preferredRepositoryOpenTarget)}
-            >
-              <FolderOpen size={18} />
-              Open in{' '}
-              {repositoryOpenTargets().find(([id]) => id === preferredRepositoryOpenTarget)?.[1] ??
-                preferredRepositoryOpenTarget}
-            </Button>
-          )}
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className={
-                  preferredRepositoryOpenTarget
-                    ? 'studio-project-chevron'
-                    : 'studio-project-row w-full'
-                }
-                aria-label={
-                  preferredRepositoryOpenTarget ? 'Choose editor or file manager' : undefined
-                }
-                disabled={!connected || openBusy}
-                title={openError || 'Open this task checkout on its machine'}
-              >
-                {!preferredRepositoryOpenTarget && (
-                  <>
-                    <FolderOpen className="size-3.5" /> Open in…
-                  </>
-                )}{' '}
-                <ChevronDown className="ml-auto size-3" />
-              </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={6}
-                className="studio-menu-surface z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
-              >
-                <RepositoryOpenItems
-                  itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
-                  disabled={openBusy}
-                  onSelect={openTarget}
-                />
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      )}
-      {show('scripts') && onTerminal && (
-        <TaskProjectActions panel task={task} onTerminal={onTerminal} />
-      )}
-      {openError && (
-        <span
-          role="alert"
-          className="max-w-32 truncate text-[0.625rem] text-destructive"
-          title={openError}
-        >
-          {openError}
-        </span>
-      )}
-    </div>
   )
   const gitActions = (
     <div className="grid gap-2">
@@ -467,77 +386,164 @@ export function TaskProjectPanel({
       )}
     </div>
   )
-  return (
-    <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
-      <div className="studio-project-card">
-        {!task.example && <ThreadSharing key={task.id} taskId={task.id} title={task.title} />}
-        {(show('project') || show('openIn') || show('scripts')) && (
-          <div className="studio-project-section">
-            {show('project') && (
-              <div
-                className="mb-4 flex min-w-0 items-center gap-3"
-                title={[
-                  executionHost ?? 'Selected computer',
-                  snapshot?.releaseVersion,
-                  !connected && 'Offline',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              >
-                {repo?.kind === 'scratch' ? (
-                  <MessageCircleDashed className="size-9 shrink-0 text-muted-foreground" />
-                ) : (
-                  <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-sm font-medium text-foreground">
-                    {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
-                  </h2>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span
-                      className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-status-success' : 'bg-muted-foreground'}`}
-                      aria-hidden="true"
-                    />
-                    {executionHost ?? 'Selected computer'}
-                    {!connected && ' · Offline'}
+  const sections = {
+    sharing: !task.example && <ThreadSharing key={task.id} taskId={task.id} title={task.title} />,
+    settings: (
+      <>
+        <ThreadInfoSettingsSlot visible={show('settings')} />
+      </>
+    ),
+    project: (
+      <>
+        <div className="studio-project-section">
+          {show('project') && (
+            <div
+              className="mb-4 flex min-w-0 items-center gap-3"
+              title={[
+                executionHost ?? 'Selected computer',
+                snapshot?.releaseVersion,
+                !connected && 'Offline',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            >
+              {repo?.kind === 'scratch' ? (
+                <MessageCircleDashed className="size-9 shrink-0 text-muted-foreground" />
+              ) : (
+                <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
+              )}
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-medium text-foreground">
+                  {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
+                </h2>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-status-success' : 'bg-muted-foreground'}`}
+                    aria-hidden="true"
+                  />
+                  {executionHost ?? 'Selected computer'}
+                  {!connected && ' · Offline'}
+                </p>
+                {repo?.kind !== 'scratch' && (
+                  <p
+                    className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
+                    title={task.existingWorktreePath || repo?.path || 'No local checkout'}
+                  >
+                    {task.existingWorktreePath || repo?.path || 'No local checkout'}
                   </p>
-                  {repo?.kind !== 'scratch' && (
-                    <p
-                      className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
-                      title={task.existingWorktreePath || repo?.path || 'No local checkout'}
-                    >
-                      {task.existingWorktreePath || repo?.path || 'No local checkout'}
-                    </p>
-                  )}
-                </div>
+                )}
               </div>
-            )}
-            {show('project') && repo && !repo.kind && (
-              <div className="studio-project-checkout mb-3">
-                <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
-                </p>
-                <TaskBranchMenu
-                  panel
-                  task={task}
-                  label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
-                />
-                <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
-                  {gitError
-                    ? `Git status unavailable: ${gitError}`
-                    : !connected
-                      ? 'Connect to refresh Git status'
-                      : !gitState
-                        ? 'Checking Git status…'
-                        : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
-                </p>
-              </div>
-            )}
-            {actions}
-          </div>
-        )}
-        {show('usage') && <ThreadInfoUsage task={task} />}
-        {show('servers') && onBrowser && <ThreadServers taskId={task.id} onOpen={onBrowser} />}
+            </div>
+          )}
+          {show('project') && repo && !repo.kind && (
+            <div className="studio-project-checkout mb-3">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
+              </p>
+              <TaskBranchMenu
+                panel
+                task={task}
+                label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
+                {gitError
+                  ? `Git status unavailable: ${gitError}`
+                  : !connected
+                    ? 'Connect to refresh Git status'
+                    : !gitState
+                      ? 'Checking Git status…'
+                      : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
+              </p>
+            </div>
+          )}
+        </div>
+      </>
+    ),
+    openIn: (
+      <>
+        <div className="studio-project-section">
+          {show('openIn') && repo && (
+            <div className="studio-project-split-row">
+              {preferredRepositoryOpenTarget && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="studio-project-row min-w-0 flex-1"
+                  disabled={!connected || openBusy}
+                  onClick={() => openTarget(preferredRepositoryOpenTarget)}
+                >
+                  <FolderOpen size={18} />
+                  Open in{' '}
+                  {repositoryOpenTargets().find(
+                    ([id]) => id === preferredRepositoryOpenTarget,
+                  )?.[1] ?? preferredRepositoryOpenTarget}
+                </Button>
+              )}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={
+                      preferredRepositoryOpenTarget
+                        ? 'studio-project-chevron'
+                        : 'studio-project-row w-full'
+                    }
+                    aria-label={
+                      preferredRepositoryOpenTarget ? 'Choose editor or file manager' : undefined
+                    }
+                    disabled={!connected || openBusy}
+                    title={openError || 'Open this task checkout on its machine'}
+                  >
+                    {!preferredRepositoryOpenTarget && (
+                      <>
+                        <FolderOpen className="size-3.5" /> Open in…
+                      </>
+                    )}{' '}
+                    <ChevronDown className="ml-auto size-3" />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    align="end"
+                    sideOffset={6}
+                    className="studio-menu-surface z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
+                  >
+                    <RepositoryOpenItems
+                      itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
+                      disabled={openBusy}
+                      onSelect={openTarget}
+                    />
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            </div>
+          )}
+          {openError && (
+            <span
+              role="alert"
+              className="max-w-32 truncate text-[0.625rem] text-destructive"
+              title={openError}
+            >
+              {openError}
+            </span>
+          )}
+        </div>
+      </>
+    ),
+    scripts: (
+      <>
+        <div className="studio-project-section">
+          {show('scripts') && onTerminal && (
+            <TaskProjectActions panel task={task} onTerminal={onTerminal} />
+          )}
+        </div>
+      </>
+    ),
+    usage: <ThreadInfoUsage task={task} />,
+    servers: onBrowser && <ThreadServers taskId={task.id} onOpen={onBrowser} />,
+    pulls: (
+      <>
         {show('pulls') && (
           <section
             aria-label="Pull requests"
@@ -589,30 +595,10 @@ export function TaskProjectPanel({
             )}
           </section>
         )}
-        {(show('git') || show('changes')) && (
-          <div className="studio-project-section border-t border-border/60">
-            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Version control
-            </h3>
-            {show('git') && gitActions}
-            {show('changes') && (
-              <Button
-                variant="ghost"
-                className="studio-project-row studio-project-changes w-full justify-between"
-                onClick={() => onSurface('changes')}
-              >
-                <span className="flex items-center gap-3">
-                  <FileDiff size={18} /> Changes
-                  {task.files.length > 0 &&
-                    ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
-                </span>
-                <span className="studio-project-diff">
-                  <DiffAmounts stats={stats} />
-                </span>
-              </Button>
-            )}
-          </div>
-        )}
+      </>
+    ),
+    projects: (
+      <>
         {show('projects') && (
           <div className="studio-project-section border-t border-border/60">
             <Button
@@ -630,6 +616,10 @@ export function TaskProjectPanel({
             </p>
           </div>
         )}
+      </>
+    ),
+    activity: (
+      <>
         {show('activity') && (
           <TaskWaitingPanel
             active={active}
@@ -639,20 +629,81 @@ export function TaskProjectPanel({
             taskId={task.id}
           />
         )}
-      </div>
-      {show('lineage') && <TaskAgentLineage task={task} />}
-      {show('lineage') && thread && childRows.length > 0 && (
-        <>
-          <NestedThreads
-            threads={childRows}
-            parent={thread}
-            acknowledgedFailures={task.acknowledgedSubagentFailures}
-          />
-          <Button size="sm" variant="ghost" onClick={() => onSurface('agents')}>
-            Manage agents
+      </>
+    ),
+    git: (
+      <>
+        <div className="studio-project-section border-t border-border/60">
+          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Version control
+          </h3>
+          {gitActions}
+        </div>
+      </>
+    ),
+    changes: (
+      <>
+        <div className="studio-project-section border-t border-border/60">
+          {show('changes') && (
+            <Button
+              variant="ghost"
+              className="studio-project-row studio-project-changes w-full justify-between"
+              onClick={() => onSurface('changes')}
+            >
+              <span className="flex items-center gap-3">
+                <FileDiff size={18} /> Changes
+                {task.files.length > 0 &&
+                  ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
+              </span>
+              <span className="studio-project-diff">
+                <DiffAmounts stats={stats} />
+              </span>
+            </Button>
+          )}
+        </div>
+      </>
+    ),
+    lineage: (
+      <>
+        {show('lineage') && <TaskAgentLineage task={task} />}
+        {show('lineage') && thread && childRows.length > 0 && (
+          <>
+            <NestedThreads
+              threads={childRows}
+              parent={thread}
+              acknowledgedFailures={task.acknowledgedSubagentFailures}
+            />
+            <Button size="sm" variant="ghost" onClick={() => onSurface('agents')}>
+              Manage agents
+            </Button>
+          </>
+        )}
+      </>
+    ),
+  } satisfies Record<ThreadInfoSectionId, ReactNode>
+  return (
+    <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
+      <div className="studio-project-card">
+        {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-[0.6875rem]"
+            title={`Server ${serverUpdate.latest?.version} available. Open Devices & runtime for release notes.`}
+            onClick={() => host.navigate({ viewId: 'runtime' })}
+          >
+            <Download className="size-3.5" /> Server update
           </Button>
-        </>
-      )}
+        )}
+        {orderedThreadInfoSections(threadInfoOrder).map(
+          ({ id }) =>
+            (id === 'settings' || show(id)) && (
+              <div key={id} data-thread-info-section={id}>
+                {sections[id]}
+              </div>
+            ),
+        )}
+      </div>
       {gitOpen && repo && (
         <Dialog open onOpenChange={setGitOpen}>
           <DialogContent className="max-h-[85dvh] overflow-y-auto">

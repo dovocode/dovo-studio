@@ -535,11 +535,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   )
   const bulk = async (
     action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
-    hours?: number,
+    until?: string,
   ) => {
     const chosen = allTasks.filter((item) => selected.has(item.key))
     if (!chosen.length || bulkBusy) return
-    if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
+    if (action === 'snooze' && until === undefined) throw new Error('Choose a snooze duration.')
     setBulkBusy(true)
     try {
       for (const item of chosen) {
@@ -556,8 +556,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           const field = action === 'pin' ? 'pinned' : 'snoozedUntil'
           const before =
             action === 'pin' ? (item.task.pinned ?? null) : (item.task.snoozedUntil ?? null)
-          const after =
-            action === 'pin' ? true : new Date(Date.now() + (hours ?? 0) * 3600000).toISOString()
+          const after = action === 'pin' ? true : until!
           await readRuntime(
             profile,
             '/api/workspace',
@@ -581,7 +580,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   }
   const chooseBulk = (action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete') => {
     if (action === 'snooze')
-      return chooseSnoozeDuration('Snooze selected threads', (hours) => void bulk(action, hours))
+      return chooseSnoozeDuration('Snooze selected threads', (until) => void bulk(action, until))
     if (action === 'delete')
       Alert.alert(
         'Delete selected threads?',

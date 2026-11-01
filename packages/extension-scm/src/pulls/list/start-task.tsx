@@ -91,6 +91,7 @@ export function StartPullTask({
           <Button
             size="sm"
             variant="outline"
+            className="@max-sm/pr-detail:hidden"
             aria-label="New task"
             title="Start a task from this PR"
             disabled={!connected || busy}

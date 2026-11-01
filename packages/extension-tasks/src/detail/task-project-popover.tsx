@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Popover } from '@dovo/studio-ui'
-import { useAppPreferences } from '@dovo/studio-core'
 import { ThreadInfoCustomization } from './thread-info-customization'
 import { ThreadInfoContext, useThreadInfoContext } from './thread-info-context'
 
@@ -14,8 +13,15 @@ export function TaskProjectPanelRoot({
   children: ReactNode
 }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    // Keep one portal target for the lifetime of the thread. Closing or reordering Info
+    // detaches the target, preserving unsaved settings and native control state.
+    const target = document.createElement('div')
+    setContainer(target)
+    return () => target.remove()
+  }, [])
   return (
-    <ThreadInfoContext.Provider value={{ container, setContainer, open }}>
+    <ThreadInfoContext.Provider value={{ container, open }}>
       <Popover.Root open={open} onOpenChange={onOpenChange}>
         <div className="flex h-full min-h-0 flex-col">{children}</div>
       </Popover.Root>
@@ -27,7 +33,6 @@ export function TaskProjectPanelRoot({
 export function TaskProjectPopover({ children }: { children: ReactNode }) {
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null)
   const settings = useThreadInfoContext()
-  const { threadInfoSections } = useAppPreferences()
   return (
     <>
       <Popover.Anchor
@@ -56,15 +61,24 @@ export function TaskProjectPopover({ children }: { children: ReactNode }) {
             <h2 className="text-sm font-semibold">Thread info</h2>
             <ThreadInfoCustomization />
           </header>
-          {settings && (
-            <div
-              ref={settings.setContainer}
-              style={threadInfoSections.settings === false ? { display: 'none' } : undefined}
-            />
-          )}
           {children}
         </Popover.Content>
       </Popover.Portal>
     </>
   )
+}
+
+export function ThreadInfoSettingsSlot({ visible }: { visible: boolean }) {
+  const settings = useThreadInfoContext()
+  const slot = useRef<HTMLDivElement>(null)
+  const container = settings?.container
+  useLayoutEffect(() => {
+    const parent = slot.current
+    if (!parent || !container) return
+    parent.appendChild(container)
+    return () => {
+      if (container.parentNode === parent) container.remove()
+    }
+  }, [container])
+  return settings ? <div ref={slot} hidden={!visible} /> : null
 }

@@ -3,6 +3,8 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   decode,
   snapshotSchema,
+  applySnapshotDelta,
+  type Task,
   type DesktopSyncSubscription,
   type DesktopSyncEvent,
   type RuntimeConnection,
@@ -10,6 +12,7 @@ import {
   type startRuntimeSync,
 } from '@dovo/protocol'
 import { RuntimeConnections } from './runtime-connections.js'
+import { setRuntimeSnapshotTag } from '../../../packages/protocol/src/shared/client.js'
 const disposals: (() => void)[] = []
 afterEach(() => {
   for (const dispose of disposals.splice(0)) dispose()
@@ -68,6 +71,163 @@ function fixture(recover?: (connection: RuntimeConnection) => Promise<RuntimeCon
   })
   return { manager, start, read, input, options, stopped, online, snapshot }
 }
+function conversation(f: ReturnType<typeof fixture>): RuntimeSnapshot {
+  const task: Task = {
+    id: 'thread',
+    title: 'Streaming thread',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    status: 'running',
+    createdAt: '2026-11-01T00:00:00Z',
+    draft: 'Keep my draft',
+    example: false,
+    messages: Array.from({ length: 80 }, (_, index) => ({
+      id: `message-${index}`,
+      role: index % 2 ? 'assistant' : 'user',
+      text: 'content '.repeat(512),
+    })),
+    files: [
+      {
+        path: 'file.ts',
+        before: 'before '.repeat(1000),
+        after: 'after '.repeat(1000),
+        viewed: false,
+      },
+    ],
+    historyBefore: 'older-page',
+    historyTotals: { tokens: 1000, milliseconds: 60000, hasChanges: false },
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'message-79',
+        agentId: 'agent',
+        provider: 'codex',
+        model: '',
+        status: 'running',
+        startedAt: '2026-11-01T00:00:00Z',
+        tokens: 50,
+        checkpoint: { before: 'before', after: 'after', files: [], omitted: [] },
+      },
+    ],
+    sideChats: [
+      {
+        id: 'side',
+        title: 'Question',
+        draft: 'Side draft',
+        createdAt: '2026-11-01T00:00:00Z',
+        messages: [
+          {
+            id: 'side-message',
+            question: 'Explain',
+            answer: 'Answer',
+            status: 'completed',
+            createdAt: '2026-11-01T00:00:00Z',
+          },
+        ],
+      },
+    ],
+    forkedFrom: { taskId: 'parent', title: 'Parent', snapshot: 'private-checkpoint-snapshot' },
+  }
+  return { ...f.snapshot(['thread']), workspace: { ...f.snapshot([]).workspace, tasks: [task] } }
+}
+it.each(['scoped', 'legacy'] as const)(
+  "isolates browser windows from another window's %s conversation bodies while sharing one stream",
+  (mode) => {
+    const f = fixture(),
+      main: DesktopSyncEvent[] = [],
+      browser: DesktopSyncEvent[] = []
+    f.manager.subscribe('main', f.input('main'), (event) => main.push(event))
+    const stream = f.options.get('http://paired.lan:8787')!
+    const source = conversation(f)
+    if (mode === 'legacy') delete source.detailTaskIds
+    setRuntimeSnapshotTag(source, 'source-tag')
+    stream.onSnapshot(source)
+    f.manager.subscribe('browser', f.input('browser', []), (event) => browser.push(event))
+    const mainBaseline = main.findLast((event) => event.type === 'snapshot')!
+    const browserBaseline = browser.findLast((event) => event.type === 'snapshot')!
+    if (mainBaseline.type !== 'snapshot' || browserBaseline.type !== 'snapshot')
+      throw Error('Missing baseline')
+    expect(mainBaseline.snapshot.workspace.tasks[0]?.messages).toHaveLength(80)
+    expect(browserBaseline.snapshot.detailTaskIds).toEqual([])
+    expect(browserBaseline.snapshot.workspace.tasks[0]).toMatchObject({
+      draft: 'Keep my draft',
+      messages: [],
+      files: [{ path: 'file.ts', before: '', after: '', viewed: false }],
+      turns: [{ id: 'turn', tokens: 50, checkpoint: undefined }],
+      historyTotals: source.workspace.tasks[0]!.historyTotals,
+      sideChats: [{ id: 'side', draft: 'Side draft', messages: [] }],
+      forkedFrom: { taskId: 'parent', snapshot: undefined },
+    })
+    expect(source.workspace.tasks[0]?.sideChats?.[0]?.messages).toHaveLength(1)
+    expect(source.workspace.tasks[0]?.turns?.[0]?.checkpoint).toBeDefined()
+    expect(JSON.stringify(browserBaseline).length).toBeLessThan(
+      JSON.stringify(mainBaseline).length / 100,
+    )
+    expect(browserBaseline.tag).not.toBe(mainBaseline.tag)
+    expect(mainBaseline.tag).toBeDefined()
+    let mainSnapshot = mainBaseline.snapshot,
+      browserSnapshot = browserBaseline.snapshot
+    for (let index = 0; index < 12; index++) {
+      const task = mainSnapshot.workspace.tasks[0]!
+      const next = {
+        ...source,
+        revision: index + 2,
+        workspace: {
+          ...source.workspace,
+          tasks: [
+            {
+              ...task,
+              title: `Updated title ${index}`,
+              messages: [
+                ...task.messages,
+                {
+                  id: `extra-${index}`,
+                  role: 'assistant' as const,
+                  text: 'New output '.repeat(1000),
+                },
+              ],
+            },
+          ],
+        },
+      }
+      stream.onSnapshot(next)
+      const mainDelta = main.at(-1)!,
+        browserDelta = browser.at(-1)!
+      if (mainDelta.type !== 'delta' || browserDelta.type !== 'delta') throw Error('Missing delta')
+      expect(browserDelta.delta.workspace.tasks?.changes.every((change) => !change.messages)).toBe(
+        true,
+      )
+      mainSnapshot = applySnapshotDelta(mainSnapshot, mainDelta.delta)
+      browserSnapshot = applySnapshotDelta(browserSnapshot, browserDelta.delta)
+      expect(mainSnapshot).toEqual({ ...next, detailTaskIds: ['thread'] })
+      expect(browserSnapshot.workspace.tasks[0]?.messages).toEqual([])
+      expect(browserSnapshot.workspace.tasks[0]?.title).toBe(`Updated title ${index}`)
+      expect(browserDelta.base).toBe(index ? browserDelta.sequence - 1 : browserBaseline.sequence)
+    }
+    expect(f.start).toHaveBeenCalledOnce()
+  },
+)
+it('upgrades browser thread details on demand and removes them when the linked thread closes', () => {
+  const f = fixture(),
+    events: DesktopSyncEvent[] = []
+  f.manager.subscribe('main', f.input('main'), () => {})
+  const source = conversation(f)
+  setRuntimeSnapshotTag(source, 'same-revision')
+  f.options.get('http://paired.lan:8787')!.onSnapshot(source)
+  f.manager.subscribe('browser', f.input('browser', []), (event) => events.push(event))
+  f.manager.subscribe('browser', f.input('browser'), (event) => events.push(event))
+  const selected = events.at(-1)!
+  if (selected.type !== 'snapshot') throw Error('Missing selected baseline')
+  expect(selected.snapshot.detailTaskIds).toEqual(['thread'])
+  expect(selected.snapshot.workspace.tasks[0]?.messages).toHaveLength(80)
+  f.manager.subscribe('browser', f.input('browser', []), (event) => events.push(event))
+  const deselected = events.at(-1)!
+  if (deselected.type !== 'snapshot') throw Error('Missing deselected baseline')
+  expect(deselected.snapshot.detailTaskIds).toEqual([])
+  expect(deselected.snapshot.workspace.tasks[0]?.messages).toEqual([])
+  expect(selected.tag).toBeDefined()
+  expect(deselected.tag).not.toBe(selected.tag)
+})
 it('shares one stream and fallback poller across main and popout; closing main preserves the popout', async () => {
   const f = fixture(),
     main: DesktopSyncEvent[] = [],

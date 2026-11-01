@@ -281,17 +281,20 @@
 .task-composer [aria-label='Dictate message']:hover:not(:disabled) {
   color: var(--foreground);
 }
-.task-composer button[type='submit']:not([data-labeled]) {
+.task-composer [data-composer-stop] {
+  --composer-accent: var(--destructive);
+}
+.task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) {
   width: 2rem;
   height: 2rem;
   color: var(--primary-foreground);
   background: var(--composer-accent);
 }
-.task-composer button[type='submit']:not([data-labeled]):disabled {
+.task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):disabled {
   background: color-mix(in srgb, var(--composer-accent) 85%, var(--card));
   opacity: 1;
 }
-.task-composer button[type='submit']:not([data-labeled]) svg {
+.task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) svg {
   width: 1rem;
   height: 1rem;
 }
@@ -319,10 +322,10 @@
     inset 0 1px 0 color-mix(in srgb, var(--primary) 5%, transparent),
     var(--studio-glow);
 }
-.dark .task-composer button[type='submit']:not([data-labeled]) {
+.dark .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) {
   border: 1px solid transparent;
 }
-.dark .task-composer button[type='submit']:not([data-labeled]):disabled {
+.dark .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):disabled {
   color: var(--muted-foreground);
   border-color: var(--border);
   background-color: var(--secondary);
@@ -334,7 +337,9 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--primary) 4%, transparent);
   opacity: 0.65;
 }
-.dark .task-composer button[type='submit']:not([data-labeled]):hover:not(:disabled) {
+.dark
+  .task-composer
+  :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):hover:not(:disabled) {
   box-shadow:
     inset 1.5px 0 var(--primary),
     inset 0 1px 0 color-mix(in srgb, var(--primary) 25%, transparent),
@@ -497,6 +502,8 @@ textarea {
 }
 .studio {
   --studio-header-height: 52px;
+  --studio-navigation-width: 68px;
+  --studio-brand-inset: 16px;
   height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -562,30 +569,33 @@ textarea {
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 144px)) + 12px)
   );
 }
+.studio[data-platform='darwin'] {
+  --studio-brand-inset: 51px;
+}
+.studio[data-platform='darwin'][data-thread-window='true'] {
+  --studio-brand-inset: 96px;
+}
+/* Keep the brand at the same screen position with or without a collection sidebar. */
+.studio-header-layout[data-compact='false']
+  .studio:has(.studio-navigation[aria-label='Main navigation'])
+  > .studio-titlebar {
+  padding-left: calc(var(--studio-navigation-width) + var(--studio-brand-inset));
+}
 .studio-titlebar[data-sidebar-brand='true'] {
   justify-content: flex-start;
-  padding-inline: 16px;
-  background: inherit;
+  padding-inline: var(--studio-brand-inset, 16px) 16px;
+  background: var(--sidebar);
 }
 .studio[data-platform='darwin'] .studio-titlebar[data-sidebar-brand='true'] {
-  padding-left: 51px;
-}
-.studio[data-platform='darwin'][data-thread-window='true']
-  .studio-titlebar[data-sidebar-brand='true'] {
-  padding-left: 96px;
+  padding-left: var(--studio-brand-inset);
 }
 .studio-header-layout[data-inline-header='true'] .studio-navigation[aria-label='Main navigation'] {
   margin-top: calc(var(--studio-header-height, 52px) + 8px);
 }
-.studio-header-layout[data-sidebar-collapsed='true']
-  .studio[data-platform='darwin']
-  :is(.studio-task-thread-header, .studio-page-header)[data-window-edge] {
-  padding-left: 51px;
-}
 .studio-header-layout[data-inline-header='true']
   [aria-label='Settings sections']
   > .studio-titlebar {
-  margin: -20px -12px 0;
+  margin: -1rem -0.75rem 0;
 }
 .studio-pull-header .studio-titlebar-task {
   overflow: hidden;
@@ -809,13 +819,12 @@ textarea {
   background: var(--accent);
   color: var(--foreground);
 }
-.studio-navigation .studio-navigation-item[aria-current='page'] {
-  background: var(--selection);
-  color: var(--primary);
-  box-shadow: inset 2px 0 var(--primary);
-}
 /* A compact, floating rail for the workspace navigation. */
 .studio-navigation[aria-label='Main navigation'] {
+  width: calc(var(--studio-navigation-width, 68px) - 16px);
+}
+.studio-navigation[aria-label='Main navigation'],
+.studio-tools-navigation {
   gap: 0;
   margin: 8px;
   padding: 10px 7px;
@@ -827,7 +836,8 @@ textarea {
     0 4px 12px #00000012;
   scrollbar-width: none;
 }
-.dark .studio-navigation[aria-label='Main navigation'] {
+.dark .studio-navigation[aria-label='Main navigation'],
+.dark .studio-tools-navigation {
   background: color-mix(in srgb, var(--sidebar) 55%, #050709);
 }
 .studio-navigation-group,
@@ -848,7 +858,8 @@ textarea {
   margin-top: auto;
   border-top: 1px solid var(--border);
 }
-.studio-navigation[aria-label='Main navigation'] .studio-navigation-item {
+.studio-navigation[aria-label='Main navigation'] .studio-navigation-item,
+.studio-tools-navigation .studio-navigation-item {
   position: relative;
   width: 36px;
   height: 36px;
@@ -858,7 +869,9 @@ textarea {
 }
 .dark .startup-draft .startup-project-selector[data-selected],
 .dark .startup-draft .startup-no-project[aria-pressed='true'],
-.dark .task-composer button[type='submit']:not([data-labeled]):not(:disabled) {
+.dark
+  .task-composer
+  :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):not(:disabled) {
   color: color-mix(in srgb, var(--foreground) 70%, var(--primary));
   border-color: color-mix(in srgb, var(--primary) 30%, transparent);
   background-color: var(--studio-selected-fill);
@@ -934,6 +947,9 @@ textarea {
   }
 }
 @media (pointer: coarse) {
+  .studio {
+    --studio-navigation-width: 76px;
+  }
   .studio-navigation[aria-label='Main navigation'] .studio-navigation-item,
   .studio-navigation .studio-navigation-item {
     min-height: 44px;
@@ -1137,6 +1153,7 @@ textarea {
 }
 .studio-selected-surface,
 .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+.studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
 .studio-browser-sidebar .studio-browser-tab[data-active],
 .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
 .studio-task-sidebar .studio-thread-child[aria-current='true'] {
@@ -1146,8 +1163,8 @@ textarea {
   background-image: var(--studio-selected-gradient);
   color: var(--foreground);
   box-shadow:
-    inset 2px 0 var(--primary),
     inset 0 1px color-mix(in srgb, var(--primary) 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent),
     var(--studio-glow);
 }
 .studio-browser-sidebar .studio-browser-tab-title {
@@ -1482,18 +1499,6 @@ textarea {
 .dark .studio-browser-address {
   background: color-mix(in srgb, var(--sidebar) 55%, #050709);
   border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-}
-.dark .studio-browser-tab[data-active],
-.dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-.dark .studio-task-sidebar .studio-thread-child[aria-current='true'] {
-  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
-  background-color: var(--studio-selected-fill);
-  background-image: var(--studio-selected-gradient);
-  color: var(--foreground);
-  box-shadow:
-    inset 2px 0 var(--primary),
-    inset 0 1px color-mix(in srgb, var(--primary) 18%, transparent),
-    var(--studio-glow);
 }
 .dark .studio-browser-tab[data-active] .studio-browser-tab-profile {
   color: color-mix(in srgb, var(--foreground) 65%, var(--primary));
@@ -1875,14 +1880,50 @@ select:focus-visible,
   box-shadow: none;
 }
 
+/* Keep the tools rail within the 56px reserved beside floating viewers. */
 .studio-tools-navigation {
-  border-right: 0;
-  border-left: 1px solid var(--border);
+  width: 48px;
+  min-height: 0;
+  margin: 8px 4px;
+  padding: 10px 5px;
 }
-.studio-tools-navigation .studio-navigation-item[aria-pressed='true'] {
-  background: var(--selection);
-  color: var(--primary);
-  box-shadow: inset -2px 0 var(--primary);
+.studio-tools-group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.studio-tools-group + .studio-tools-group {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.studio-tools-group:first-of-type {
+  padding-bottom: 12px;
+}
+.studio-thread-tools-panel {
+  margin: 8px 0 8px 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px #00000012;
+}
+.studio-thread-tools-panel .studio-thread-tools-header {
+  min-height: 48px;
+  background: var(--sidebar);
+}
+.studio-thread-tools-panel .studio-thread-tools-header h2 {
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (pointer: coarse) {
+  .studio-tools-navigation {
+    padding-inline: 1px;
+  }
+  .studio-tools-navigation .studio-navigation-item {
+    width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* Worktree setup progress: a light sweep over the progress bar, and a gentle entrance. */
@@ -1963,6 +2004,9 @@ select:focus-visible,
 }
 .dark .studio-selected-surface,
 .dark .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+.dark .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+.dark .studio-browser-sidebar .studio-browser-tab[data-active],
+.dark .studio-task-sidebar .studio-thread-child[aria-current='true'],
 .dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card {
   border-color: var(--primary);
   background-color: var(--studio-selected-fill);
@@ -2041,9 +2085,13 @@ select:focus-visible,
   .studio-thread-card,
 [data-high-contrast='true'] .studio-task-sidebar .studio-thread-child[aria-current='true'],
 :root[data-high-contrast='true'] .studio-selected-surface,
+:root[data-high-contrast='true'] .studio-browser-sidebar .studio-browser-tab[data-active],
 :root[data-high-contrast='true']
   .studio-navigation[aria-label='Main navigation']
-  .studio-navigation-item[aria-current='page'] {
+  .studio-navigation-item[aria-current='page'],
+:root[data-high-contrast='true']
+  .studio-tools-navigation
+  .studio-navigation-item[aria-pressed='true'] {
   border-color: var(--primary);
 }
 
@@ -2231,10 +2279,11 @@ a.studio-project-row:hover {
 :root:root[data-theme-glow='0']
   :is(
     .task-composer .studio-composer,
-    .task-composer button[type='submit'],
+    .task-composer :is(button[type='submit'], [data-composer-stop]),
     .startup-draft .startup-project-selector,
     .startup-draft .startup-no-project,
     .studio-navigation[aria-label='Main navigation'] .studio-navigation-item,
+    .studio-tools-navigation .studio-navigation-item,
     .studio-browser-tab,
     .studio-browser-options,
     .studio-browser-settings-icon,
@@ -2250,10 +2299,11 @@ a.studio-project-row:hover {
 :root:root[data-theme-gradients='false']
   :is(
     .task-composer .studio-composer,
-    .task-composer button[type='submit'],
+    .task-composer :is(button[type='submit'], [data-composer-stop]),
     .startup-draft .startup-project-selector,
     .startup-draft .startup-no-project,
     .studio-navigation[aria-label='Main navigation'] .studio-navigation-item,
+    .studio-tools-navigation .studio-navigation-item,
     .studio-browser-tab,
     .studio-browser-toolbar,
     .studio-browser-site-controls,
@@ -2280,9 +2330,11 @@ a.studio-project-row:hover {
   :root
     .studio-navigation[aria-label='Main navigation']
     .studio-navigation-item[aria-current='page'],
-  .studio-browser-sidebar .studio-browser-tab[data-active],
-  .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-  .studio-task-sidebar .studio-thread-child[aria-current='true'] {
+  :root .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+  :root:root .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]),
+  :root .studio-browser-sidebar .studio-browser-tab[data-active],
+  :root .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+  :root .studio-task-sidebar .studio-thread-child[aria-current='true'] {
     border-color: Highlight;
     background: Canvas;
     color: CanvasText;

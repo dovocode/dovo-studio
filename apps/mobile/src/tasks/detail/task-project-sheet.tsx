@@ -10,6 +10,7 @@ import {
   type ProjectAction,
   type Task,
   type ThreadInfoSectionId,
+  orderedThreadInfoSections,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
@@ -100,7 +101,7 @@ export function TaskProjectSheet({
   const { colors, styles } = useTheme()
   const { act, busy, error } = useAction()
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-  const { threadInfoSections } = useMobilePreferences()
+  const { threadInfoSections, threadInfoOrder } = useMobilePreferences()
   const show = (id: ThreadInfoSectionId) => threadInfoSections[id] !== false
   const [modelSettings, setModelSettings] = useState(false)
   const [settingsBusy, setSettingsBusy] = useState(false)
@@ -115,19 +116,12 @@ export function TaskProjectSheet({
   const agents = indexed(task, true)
   const sheet = useRef<SheetHandle>(null)
   const dismissThen = (action: () => void) => (inline ? action() : sheet.current?.dismiss(action))
-  return (
-    <ProjectPanelFrame inline={inline} sheet={sheet} busy={busy || settingsBusy} onClose={onClose}>
-      <View
-        accessibilityLabel="Thread info sections"
-        style={[styles.card, { borderRadius: 24, padding: 16, gap: 12 }]}
-      >
-        {inline && (
-          <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>Thread info</Text>
-        )}
-        <ThreadInfoCustomization />
-        {!task.example && onShare && (
-          <ProjectRow label="Share thread" icon="share" onPress={() => dismissThen(onShare)} />
-        )}
+  const sections = {
+    sharing: !task.example && onShare && (
+      <ProjectRow label="Share thread" icon="share" onPress={() => dismissThen(onShare)} />
+    ),
+    settings: (
+      <>
         {show('settings') && (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -152,23 +146,75 @@ export function TaskProjectSheet({
             )}
           </>
         )}
+      </>
+    ),
+    usage: (
+      <>
         {show('usage') && (
           <>
             <View style={styles.separator} />
             <ThreadInfoUsage task={task} />
           </>
         )}
+      </>
+    ),
+    project: (
+      <>
         {show('project') && (
           <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
             {repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project')}
           </Text>
         )}
+        {show('project') && (
+          <>
+            <View style={styles.separator} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Icon name="changes" color={colors.muted} />
+              <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
+                {task.checkoutBranch || repository?.branch || 'Project checkout'}
+              </Text>
+            </View>
+            {branchActions.map((action) => (
+              <ProjectRow
+                key={action.label}
+                secondary
+                label={action.label}
+                icon={action.icon}
+                disabled={action.disabled}
+                onPress={() => dismissThen(action.onPress)}
+              />
+            ))}
+          </>
+        )}
+        {show('project') && repository && (
+          <>
+            <ProjectRow
+              secondary
+              label={icons ? 'Hide project icon' : 'Project icon'}
+              icon="projects"
+              onPress={() => setIcons((value) => !value)}
+            />
+            {icons && <ProjectIconSettings repository={repository} />}
+          </>
+        )}
+      </>
+    ),
+    pulls: (
+      <>
         {show('pulls') && (
           <PullStatus task={task} inline onOpen={(url) => dismissThen(() => onPulls(url))} />
         )}
+      </>
+    ),
+    servers: (
+      <>
         {show('servers') && onBrowser && (
           <ThreadServers taskId={task.id} onOpen={(url) => dismissThen(() => onBrowser(url))} />
         )}
+      </>
+    ),
+    scripts: (
+      <>
         {show('scripts') && (
           <>
             {scripts.map((action) => (
@@ -193,27 +239,10 @@ export function TaskProjectSheet({
             />
           </>
         )}
-        {show('project') && (
-          <>
-            <View style={styles.separator} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Icon name="changes" color={colors.muted} />
-              <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-                {task.checkoutBranch || repository?.branch || 'Project checkout'}
-              </Text>
-            </View>
-            {branchActions.map((action) => (
-              <ProjectRow
-                key={action.label}
-                secondary
-                label={action.label}
-                icon={action.icon}
-                disabled={action.disabled}
-                onPress={() => dismissThen(action.onPress)}
-              />
-            ))}
-          </>
-        )}
+      </>
+    ),
+    git: (
+      <>
         {show('git') && !repository?.kind && (
           <ProjectRow
             secondary
@@ -224,6 +253,10 @@ export function TaskProjectSheet({
           />
         )}
         {show('git') && git && <CommitSection task={task} />}
+      </>
+    ),
+    changes: (
+      <>
         {show('changes') && (
           <ProjectRow
             secondary
@@ -232,6 +265,10 @@ export function TaskProjectSheet({
             onPress={() => dismissThen(onChanges)}
           />
         )}
+      </>
+    ),
+    projects: (
+      <>
         {show('projects') && onProjects && (
           <>
             <ProjectRow
@@ -246,11 +283,11 @@ export function TaskProjectSheet({
             <Text style={styles.muted}>Use project checkouts or worktrees on this computer.</Text>
           </>
         )}
-        {(show('lineage') || show('activity')) && <View style={styles.separator} />}
+      </>
+    ),
+    lineage: (
+      <>
         {show('lineage') && <TaskSource task={task} />}
-        {show('activity') && (
-          <TaskWaitingPanel taskId={task.id} onPull={(url) => dismissThen(() => onPulls(url))} />
-        )}
         {show('lineage') && !!agents.length && (
           <View style={{ gap: 8 }} accessibilityLabel="Working subagents">
             <Text style={styles.muted}>Working agents</Text>
@@ -265,16 +302,35 @@ export function TaskProjectSheet({
             ))}
           </View>
         )}
-        {show('project') && repository && (
-          <>
-            <ProjectRow
-              secondary
-              label={icons ? 'Hide project icon' : 'Project icon'}
-              icon="projects"
-              onPress={() => setIcons((value) => !value)}
-            />
-            {icons && <ProjectIconSettings repository={repository} />}
-          </>
+      </>
+    ),
+    activity: (
+      <>
+        {show('activity') && (
+          <TaskWaitingPanel taskId={task.id} onPull={(url) => dismissThen(() => onPulls(url))} />
+        )}
+      </>
+    ),
+  } satisfies Record<Exclude<ThreadInfoSectionId, 'openIn'>, ReactNode>
+  return (
+    <ProjectPanelFrame inline={inline} sheet={sheet} busy={busy || settingsBusy} onClose={onClose}>
+      <View
+        accessibilityLabel="Thread info sections"
+        style={[styles.card, { borderRadius: 24, padding: 16, gap: 12 }]}
+      >
+        {inline && (
+          <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>Thread info</Text>
+        )}
+        <ThreadInfoCustomization />
+
+        {orderedThreadInfoSections(threadInfoOrder).map(
+          ({ id, label }) =>
+            show(id) &&
+            id !== 'openIn' && (
+              <View key={id} accessibilityLabel={label} style={{ gap: 12 }}>
+                {sections[id]}
+              </View>
+            ),
         )}
         {!!error && (
           <Text accessibilityRole="alert" style={styles.error}>

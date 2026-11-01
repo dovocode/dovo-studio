@@ -672,9 +672,7 @@ function TaskListRowView({
               run: () =>
                 isSnoozed(task, Date.now())
                   ? actions.snooze(null)
-                  : chooseSnoozeDuration('Snooze thread', (hours) =>
-                      actions.snooze(new Date(Date.now() + hours * 3600000).toISOString()),
-                    ),
+                  : chooseSnoozeDuration('Snooze thread', (until) => actions.snooze(until)),
             }
       }
     >

@@ -1,3 +1,4 @@
+import { SnoozeSchedule } from './snooze-schedule'
 import { SettingsScrollView } from './settings-search'
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
@@ -300,6 +301,7 @@ export function TaskPreferencesScreen() {
         title="Snoozing"
         footer="Enter 1–12 durations separated by commas, in menu order: m for minutes, h for hours, d for days or w for weeks. Existing snoozed threads keep their wake-up time."
       >
+        <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} ready={preferences.ready} />
         <SnoozeDurations minutes={preferences.taskSnoozeMinutes} />
       </SettingsGroup>
       <SettingsGroup

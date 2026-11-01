@@ -14,7 +14,7 @@ import {studioThemeIds,studioThemes} from '@dovo/studio-core';
 import {useAppearance} from '${root}/packages/studio-shell/src/appearance.ts';
 import Appearance from '${root}/packages/studio-shell/src/app-settings/appearance.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
-import {Button,Message,MessageContent,MessageResponse,TooltipProvider,PullRequestIcon} from '@dovo/studio-ui';
+import {Button,Message,MessageContent,MessageResponse,TooltipProvider,PullRequestIcon,ComposerSubmit} from '@dovo/studio-ui';
 import {preloadStudioHighlighter,useDiffOptions} from '@dovo/studio-ui/code-themes';
 import {FileDiff} from '@pierre/diffs/react';
 import {parseDiffFromFile} from '@pierre/diffs';
@@ -41,12 +41,13 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <Button>Start task</Button>
 <div data-testid="effects" className="flex flex-col gap-2">
 <nav className="studio-navigation" aria-label="Main navigation"><button className="studio-navigation-item" aria-current="page">T</button></nav>
+<nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button className="studio-navigation-item" aria-pressed="true">F</button></nav>
 <div className="studio-browser-sidebar"><button className="studio-browser-tab" data-active>Selected browser tab</button><details open className="studio-list-section"><summary className="studio-list-section-header">Browser section</summary></details></div>
-<div className="studio-task-sidebar"><details open className="studio-list-section"><summary className="studio-list-section-header">Thread section</summary></details><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div></div>
+<div className="studio-task-sidebar"><details open className="studio-list-section"><summary className="studio-list-section-header">Thread section</summary></details><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div><button className="studio-thread-child" aria-current="true">Selected child thread</button></div>
 <button className="studio-selected-surface rounded-lg border" aria-current="true">Selected artifact</button>
 <div className="studio-selected-surface rounded-lg border">Selected settings page</div>
 <Segmented label="Effects settings choice" value="selected" options={[["selected","Selected option"],["other","Other option"]]} onChange={()=>{}}/>
-<div className="task-composer"><div className="studio-composer"><textarea aria-label="Effects composer"/><button type="submit">Send</button></div></div>
+<div className="task-composer"><div className="studio-composer"><textarea aria-label="Effects composer"/><button type="submit">Send</button><ComposerSubmit type="button" variant="destructive" className="studio-destructive-accent" data-composer-stop aria-label="Stop">■</ComposerSubmit></div></div>
 <div className="dovo-dialog-content p-3"><Button>Dialog action</Button></div>
 </div>
 <div data-testid="pull-states"><PullRequestIcon state="open"/><PullRequestIcon state="closed"/><PullRequestIcon state="merged"/></div><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
@@ -211,7 +212,9 @@ try {
         const root = document.querySelector('[data-testid=effects]')
         const thread = getComputedStyle(root.querySelector('.studio-thread-card'))
         return [
-          ...root.querySelectorAll('.studio-selected-surface, .studio-navigation-item'),
+          ...root.querySelectorAll(
+            '.studio-selected-surface, .studio-navigation-item, .studio-browser-tab[data-active], .studio-thread-child',
+          ),
         ].every((el) => {
           const selected = getComputedStyle(el)
           return [
@@ -232,6 +235,8 @@ try {
         const style = (selector) =>
           getComputedStyle(document.querySelector('[data-testid=effects] ' + selector))
         return {
+          stopAccent: style('[data-composer-stop]').getPropertyValue('--primary').trim(),
+          stopError: style('[data-composer-stop]').getPropertyValue('--destructive').trim(),
           intensity: document.documentElement.dataset.themeGlow,
           gradients: document.documentElement.dataset.themeGradients,
           primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
@@ -239,7 +244,7 @@ try {
           tabShadow: style('.studio-browser-tab').boxShadow,
           selections: [
             ...document.querySelectorAll(
-              '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item',
+              '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child',
             ),
           ].map((el) => {
             const selected = getComputedStyle(el)
@@ -269,6 +274,11 @@ try {
           glow,
         }
       }, expected.primary)
+      assert.equal(
+        effects.stopAccent,
+        effects.stopError,
+        id + ' ' + scheme + ' Stop retains the destructive accent',
+      )
       assert.equal(effects.intensity, '0.5')
       assert.equal(effects.gradients, 'true')
       assert.equal(effects.primary, expected.primary)
@@ -386,7 +396,7 @@ try {
     await page.emulateMedia({ forcedColors: 'active' })
     const selections = await page
       .locator(
-        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item',
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
       )
       .evaluateAll((elements) =>
         elements.map((el) => ({
@@ -510,7 +520,7 @@ try {
     await page.emulateMedia({ forcedColors: 'active' })
     const selections = await page
       .locator(
-        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item',
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
       )
       .evaluateAll((elements) =>
         elements.map((el) => ({

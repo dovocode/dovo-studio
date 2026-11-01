@@ -89,6 +89,7 @@ export function PullActions(
         <Button
           size="sm"
           variant="outline"
+          className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected}
           onClick={() => {
             setNotice('')
@@ -129,32 +130,30 @@ export function PullActions(
             sideOffset={6}
             className="z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
           >
-            {available
-              .filter((item) => item !== 'review')
-              .map((item) => (
-                <DropdownMenu.Item
-                  key={item}
-                  onSelect={() => {
-                    setNotice('')
-                    setAction(item)
-                  }}
-                  disabled={
-                    ['merge', 'draft', 'auto-merge'].includes(item) &&
-                    (!!props.detail.stale || !!props.detail.refreshError)
-                  }
-                  className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
-                >
-                  {item === 'draft'
-                    ? props.detail.pull.draft
-                      ? 'Mark ready for review'
-                      : 'Convert to draft'
-                    : item === 'auto-merge'
-                      ? props.detail.pull.autoMergeEnabled
-                        ? 'Disable auto-merge'
-                        : 'Enable auto-merge'
-                      : titles[item]}
-                </DropdownMenu.Item>
-              ))}
+            {available.map((item) => (
+              <DropdownMenu.Item
+                key={item}
+                onSelect={() => {
+                  setNotice('')
+                  setAction(item)
+                }}
+                disabled={
+                  ['merge', 'draft', 'auto-merge'].includes(item) &&
+                  (!!props.detail.stale || !!props.detail.refreshError)
+                }
+                className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+              >
+                {item === 'draft'
+                  ? props.detail.pull.draft
+                    ? 'Mark ready for review'
+                    : 'Convert to draft'
+                  : item === 'auto-merge'
+                    ? props.detail.pull.autoMergeEnabled
+                      ? 'Disable auto-merge'
+                      : 'Enable auto-merge'
+                    : titles[item]}
+              </DropdownMenu.Item>
+            ))}
             {props.onStartTask && (
               <>
                 <DropdownMenu.Separator className="my-1 h-px bg-border" />

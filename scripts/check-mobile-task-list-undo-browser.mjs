@@ -74,7 +74,7 @@ const stubs = [
   {
     path: '../detail/use-task-lifecycle',
     importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const chooseSnoozeDuration=(_title,apply)=>apply(1);export const useTaskLifecycle=task=>({busy:false,error:'',enabled:true,onCurrentRuntime:true,toggleSettled:()=>window.legacy('settle',task),snooze:until=>window.legacy('snooze',task,until)});`,
+    contents: `export const chooseSnoozeDuration=(_title,apply)=>apply(new Date(Date.now()+3600000).toISOString());export const useTaskLifecycle=task=>({busy:false,error:'',enabled:true,onCurrentRuntime:true,toggleSettled:()=>window.legacy('settle',task),snooze:until=>window.legacy('snooze',task,until)});`,
   },
   { path: '../../ui/theme', importer: mobile + 'tasks/list/', contents: controls },
   {

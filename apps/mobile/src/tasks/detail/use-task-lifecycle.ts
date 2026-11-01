@@ -1,4 +1,4 @@
-import { taskSnoozeChoices } from '@dovo/protocol'
+import { taskSnoozeMenuChoices } from '@dovo/protocol'
 import { readMobilePreferences } from '../../runtime/preferences/app-preferences'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
@@ -17,18 +17,22 @@ import {
   type Runtime,
 } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
-export function chooseSnoozeDuration(title: string, apply: (hours: number) => void) {
-  const options = taskSnoozeChoices(readMobilePreferences().taskSnoozeMinutes)
+export function chooseSnoozeDuration(title: string, apply: (until: string) => void) {
+  const preferences = readMobilePreferences()
+  const options = taskSnoozeMenuChoices(
+    preferences.taskSnoozeMinutes,
+    preferences.taskSnoozeSchedule,
+  )
   const show = (offset: number) => {
     const page = Platform.OS === 'android' ? options.slice(offset, offset + 2) : options
     const more = offset + page.length < options.length
     Alert.alert(
       title,
-      'The thread returns to Active when this duration ends.',
+      'The thread returns to Active at the chosen time. Calendar shortcuts use this device’s local time.',
       [
-        ...page.map(({ hours, label }) => ({ text: label, onPress: () => apply(hours) })),
+        ...page.map(({ until, label }) => ({ text: label, onPress: () => apply(until()) })),
         ...(more
-          ? [{ text: 'More durations…', onPress: () => show(offset + page.length) }]
+          ? [{ text: 'More options…', onPress: () => show(offset + page.length) }]
           : [{ text: 'Cancel', style: 'cancel' as const }]),
       ],
       { cancelable: true },

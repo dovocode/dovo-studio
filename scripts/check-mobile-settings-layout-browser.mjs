@@ -78,6 +78,7 @@ const modifiers =
     .map((name) => `export const ${name}=value=>({name:'${name}',value});`)
     .join('\n') + `\nexport const shapes={rectangle:()=>({})};`
 const mocks = {
+  '../ui/controls/icon-button': `export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{width:44,height:44,flexShrink:0}}>{icon==='moveUp'?'↑':'↓'}</button>;`,
   '../../screens/remote-desktop': 'export const MobileRemoteDesktop=()=>null;',
   'react-native': native,
   '@expo/ui/swift-ui': swift,
@@ -563,6 +564,32 @@ try {
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     await row('Conversation').waitFor()
     await page.evaluate(() => window.navigate('/settings/task-preferences'))
+    await page.getByRole('textbox', { name: 'Morning time', exact: true }).fill('08:30')
+    await page.getByRole('textbox', { name: 'Evening time', exact: true }).fill('20:15')
+    await page.getByRole('switch', { name: 'Later today', exact: true }).click()
+    await page.getByRole('button', { name: 'Move Next week up', exact: true }).click()
+    await page.getByRole('button', { name: 'Save calendar shortcuts', exact: true }).click()
+    await page.waitForFunction(
+      () => window.savedPreferences?.taskSnoozeSchedule?.morningTime === '08:30',
+    )
+    assert.deepEqual(await page.evaluate(() => window.savedPreferences.taskSnoozeSchedule), {
+      morningTime: '08:30',
+      eveningTime: '20:15',
+      weekStartsOn: 1,
+      presets: ['tomorrow-morning', 'next-week', 'tomorrow-evening'],
+    })
+    await page.getByRole('textbox', { name: 'Morning time', exact: true }).fill('25:00')
+    await page.getByRole('button', { name: 'Save calendar shortcuts', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: '24-hour' }).waitFor()
+    assert.equal(
+      await page.evaluate(() => window.savedPreferences.taskSnoozeSchedule.morningTime),
+      '08:30',
+    )
+    await page.getByRole('button', { name: 'Reset calendar shortcuts', exact: true }).click()
+    assert.equal(
+      await page.getByRole('textbox', { name: 'Morning time', exact: true }).inputValue(),
+      '09:00',
+    )
     const snooze = page.getByRole('textbox', { name: 'Snooze durations', exact: true })
     await snooze.fill('15m, 90m, 2d')
     await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()

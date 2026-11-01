@@ -323,9 +323,13 @@ try {
   for (const name of ['Overview', 'Changes (2)', 'Checks (1)']) {
     await detail.getByRole('tab', { name, exact: true }).click()
     await noOverflow()
+    await heading.waitFor({ state: 'visible' })
     assert.equal(await heading.isVisible(), true)
     assert.equal(await content.evaluate((element) => element.clientHeight > 100), true)
   }
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Submit review', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
   await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
   await summaryToggle.click()
   await changes.getByRole('navigation', { name: 'Changed files' }).waitFor()
@@ -350,7 +354,10 @@ try {
   })
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail.getByText('Offline · reconnect to refresh.', { exact: true }).waitFor()
-  assert.equal(await detail.getByRole('button', { name: 'Review', exact: true }).isDisabled(), true)
+  assert.equal(
+    await detail.getByRole('button', { name: 'PR actions', exact: true }).isDisabled(),
+    true,
+  )
   assert.equal(await form.getByRole('button', { name: 'Comment', exact: true }).isDisabled(), true)
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   await fullWidthList()

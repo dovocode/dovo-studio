@@ -54,7 +54,7 @@ const built = await build({
       import {WorkspaceValueProvider,defaultTaskHarness} from '@dovo/studio-core';
       import {TooltipProvider,TaskDefaultSettings,Popover,IconButton} from '@dovo/studio-ui';
       import {Info} from 'lucide-react';
-      import {TaskProjectPanelRoot,TaskProjectPopover} from '../extension-tasks/src/detail/task-project-popover';
+      import {TaskProjectPanelRoot,TaskProjectPopover,ThreadInfoSettingsSlot} from '../extension-tasks/src/detail/task-project-popover';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {TaskConversation} from '../extension-tasks/src/detail/task-conversation';
       import {ComposerActivity} from '../extension-tasks/src/chat/composer/composer-activity';
@@ -72,7 +72,7 @@ const built = await build({
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
       function Thread({task,workspaceControls,temporary,onSelectRemote}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover/><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
@@ -508,6 +508,87 @@ try {
           )
         })
       await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
+
+      const stop = page.getByRole('button', { name: 'Stop', exact: true })
+      const stopStyle = await stop.evaluate((button) => {
+        const style = getComputedStyle(button)
+        return {
+          type: button.type,
+          width: style.width,
+          height: style.height,
+          radius: style.borderRadius,
+          accent: style.getPropertyValue('--primary').trim(),
+          error: style.getPropertyValue('--destructive').trim(),
+          shadow: style.boxShadow,
+          gradient: style.backgroundImage,
+          icon: !!button.querySelector('.lucide-square'),
+        }
+      })
+      assert.equal(stopStyle.type, 'button', 'Stop must not submit the message form')
+      assert.equal(stopStyle.width, '32px')
+      assert.equal(stopStyle.height, '32px')
+      assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
+      assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
+      assert.notEqual(stopStyle.shadow, 'none', 'Stop shares Send glow')
+      assert.notEqual(stopStyle.gradient, 'none', 'Stop shares Send gradient')
+      assert.equal(stopStyle.icon, true)
+      if (device.name === 'desktop' && project === 'dovo-studio') {
+        await settleComposer()
+        if (screenshots)
+          await page.screenshot({
+            path: screenshots + '/desktop-stop-glow.png',
+            animations: 'disabled',
+          })
+        await page.evaluate(() => {
+          document.documentElement.dataset.themeGlow = '0'
+          document.documentElement.dataset.themeGradients = 'false'
+        })
+        await page.waitForFunction(
+          () =>
+            getComputedStyle(document.querySelector('[data-composer-stop]')).boxShadow === 'none',
+        )
+        assert.equal(
+          await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
+          'none',
+        )
+        await page.evaluate(() => {
+          delete document.documentElement.dataset.themeGlow
+          delete document.documentElement.dataset.themeGradients
+          document.documentElement.dataset.theme = 'light'
+          document.documentElement.classList.remove('dark')
+        })
+        if (screenshots)
+          await page.screenshot({
+            path: screenshots + '/desktop-stop-light.png',
+            animations: 'disabled',
+          })
+
+        const contrast = await stop.evaluate((button) => {
+          const style = getComputedStyle(button)
+          const context = document.createElement('canvas').getContext('2d')
+          const luminance = (color) => {
+            context.fillStyle = color
+            context.fillRect(0, 0, 1, 1)
+            const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((value) => {
+              const channel = value / 255
+              return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+            })
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+          }
+          const icon = luminance(style.color),
+            background = luminance(style.backgroundColor)
+          return (Math.max(icon, background) + 0.05) / (Math.min(icon, background) + 0.05)
+        })
+        assert.ok(contrast >= 3, 'Light Stop icon has at least 3:1 contrast: ' + contrast)
+        assert.equal(
+          await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
+          'none',
+        )
+        await page.evaluate(() => {
+          document.documentElement.dataset.theme = 'dark'
+          document.documentElement.classList.add('dark')
+        })
+      }
       assert.equal(
         await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
         0,
@@ -536,6 +617,17 @@ try {
         )
       if (screenshots && device.name === 'desktop' && project === 'dovo-studio')
         await page.screenshot({ path: screenshots + '/desktop-info-menu.png' })
+      const settingsNode = await page
+        .getByRole('region', { name: 'Environment and access', exact: true })
+        .elementHandle()
+      await closeInfo()
+      assert.equal(await settingsNode.evaluate((node) => node.isConnected), false)
+      await openInfo()
+      assert.equal(
+        await settingsNode.evaluate((node) => node.isConnected),
+        true,
+        'Info controls keep their existing DOM/state after reopening',
+      )
       await closeInfo()
       assert.equal(await input.inputValue(), '')
       await checkIdle(project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined)

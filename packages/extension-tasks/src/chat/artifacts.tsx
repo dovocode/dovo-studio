@@ -330,6 +330,7 @@ export function ArtifactBrowser({
       <header
         className={cn(
           'flex shrink-0 items-center gap-2 border-b bg-sidebar px-3 py-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]',
+          embedded && !expanded && 'studio-thread-tools-header',
           (!embedded || expanded) && 'pr-14',
         )}
       >

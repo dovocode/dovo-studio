@@ -169,7 +169,7 @@ try {
       await page.addStyleTag({
         content:
           stylesheet +
-          '#app{height:100dvh;background:var(--background);color:var(--foreground)} [aria-label="Thread pull requests"]{width:min(360px,100%);height:calc(100% - 48px);margin-left:auto} .studio-tools-navigation{position:absolute;right:0;top:52px}.studio-navigation[aria-label="Main navigation"]{width:44px} @media(min-width:600px){[aria-label="Thread pull requests"]{margin-right:56px}}',
+          '#app{height:100dvh;background:var(--background);color:var(--foreground)} [aria-label="Thread pull requests"]{width:min(360px,100%);height:calc(100% - 48px);margin-left:auto} .studio-tools-navigation{position:absolute;right:-56px;top:0;bottom:0} @media(min-width:600px){[aria-label="Thread pull requests"]{margin-right:56px}}',
       })
     await page.evaluate((mobile) => {
       window.mobile = mobile
@@ -205,6 +205,80 @@ try {
       await tools
         .getByRole('button', { name: 'Agents', exact: true })
         .waitFor({ state: 'detached' })
+
+      const files = tools.getByRole('button', { name: 'Files', exact: true })
+      await files.click()
+      assert.equal(await files.getAttribute('aria-pressed'), 'true')
+      if (stylesheet) {
+        await page.evaluate(() => {
+          document.documentElement.dataset.theme = 'dark'
+          document.documentElement.classList.add('dark')
+        })
+        const style = await files.evaluate((button) => {
+          const style = getComputedStyle(button)
+          return {
+            radius: style.borderRadius,
+            shadow: style.boxShadow,
+            fill: style.backgroundColor,
+          }
+        })
+        assert.equal(style.radius, '12px')
+        assert.notEqual(style.shadow, 'none')
+        assert.notEqual(style.fill, 'rgba(0, 0, 0, 0)')
+        assert.equal((await tools.boundingBox()).width, 48)
+        const previews = await tools.getByRole('group', { name: 'Previews' }).boundingBox()
+        const rail = await tools.boundingBox()
+        assert.ok(
+          rail.y + rail.height - previews.y - previews.height < 16,
+          'Previews anchor to the rail footer',
+        )
+        await page.screenshot({ path: '/tmp/dovo-right-sidebar-dark.png', animations: 'disabled' })
+        await page.evaluate(() => {
+          document.documentElement.dataset.themeGlow = '0'
+          document.documentElement.dataset.themeGradients = 'false'
+        })
+        await page.waitForFunction(
+          () =>
+            getComputedStyle(document.querySelector('[aria-label="Files"]')).boxShadow === 'none',
+        )
+        assert.equal(
+          await files.evaluate((button) => getComputedStyle(button).backgroundImage),
+          'none',
+        )
+        await page.evaluate(() => {
+          delete document.documentElement.dataset.themeGlow
+          delete document.documentElement.dataset.themeGradients
+          document.documentElement.classList.remove('dark')
+          document.documentElement.dataset.theme = 'light'
+        })
+        await page.screenshot({ path: '/tmp/dovo-right-sidebar-light.png', animations: 'disabled' })
+        await page.evaluate(() => {
+          document.documentElement.classList.add('dark')
+          document.documentElement.dataset.theme = 'dark'
+        })
+        // All conditional tools remain usable in a short desktop window.
+        await page.evaluate(() =>
+          window.setToolContent(
+            [{ id: 'native', name: 'Reviewer', provider: 'codex', status: 'completed' }],
+            [{ id: 'saved' }],
+          ),
+        )
+        await tools.getByRole('button', { name: 'Artifacts', exact: true }).waitFor()
+        await page.setViewportSize({ width: 1200, height: 320 })
+        await tools.getByRole('button', { name: 'Devices', exact: true }).click()
+        await files.click()
+        assert.equal(await files.getAttribute('aria-pressed'), 'true')
+        await page.setViewportSize({ width: 1200, height: 900 })
+        await tools.evaluate((rail) => {
+          rail.scrollTop = 0
+        })
+        await page.evaluate(() => window.setToolContent([], []))
+        await tools
+          .getByRole('button', { name: 'Artifacts', exact: true })
+          .waitFor({ state: 'detached' })
+      }
+      await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+      await page.getByRole('menuitem', { name: 'Chat', exact: true }).click()
     }
     assert.equal(await page.locator('.studio-titlebar').count(), 1)
     if (!mobile) {
@@ -268,6 +342,28 @@ try {
       '85',
     )
     await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Move Context usage up', exact: true }).click()
+    await page.waitForFunction(() => {
+      const nodes = Array.from(document.querySelectorAll('[data-thread-info-section]')).map(
+        (node) => node.dataset.threadInfoSection,
+      )
+      return nodes.indexOf('usage') < nodes.indexOf('lineage')
+    })
+    const reordered = await page
+      .locator('[data-thread-info-section]')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset.threadInfoSection))
+    assert.ok(reordered.indexOf('usage') < reordered.indexOf('lineage'))
+    await page.getByRole('menuitem', { name: 'Move Context usage up', exact: true }).click()
+    await page.waitForFunction(() => {
+      const nodes = Array.from(document.querySelectorAll('[data-thread-info-section]')).map(
+        (node) => node.dataset.threadInfoSection,
+      )
+      return nodes.indexOf('usage') < nodes.indexOf('activity')
+    })
+    const reorderedAgain = await page
+      .locator('[data-thread-info-section]')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset.threadInfoSection))
+    assert.ok(reorderedAgain.indexOf('usage') < reorderedAgain.indexOf('activity'))
     const contextChoice = page.getByRole('menuitemcheckbox', { name: 'Context usage', exact: true })
     await contextChoice.click()
     assert.equal(await contextChoice.getAttribute('aria-checked'), 'false')
@@ -565,8 +661,24 @@ try {
     await page.getByRole('button', { name: 'Linked PRs', exact: true }).waitFor({ state: 'hidden' })
     assert.equal(await page.getByRole('button', { name: 'Linked PRs', exact: true }).count(), 0)
     if (!mobile) {
+      const brandBeforeCollapse = await page.locator('.studio-titlebar-brand').boundingBox()
       await page.getByRole('button', { name: 'Threads', exact: true }).click()
-      await page.waitForFunction(() => !document.querySelector('.studio-titlebar'))
+      await page.locator('.studio-titlebar:not([data-sidebar-brand=true])').waitFor()
+      const brandAfterCollapse = await page.locator('.studio-titlebar-brand').boundingBox()
+      assert.equal(
+        brandBeforeCollapse.x,
+        brandAfterCollapse.x,
+        'Brand does not move when the sidebar collapses',
+      )
+      assert.equal(brandBeforeCollapse.y, brandAfterCollapse.y)
+      assert.equal(await page.locator('.studio-titlebar').count(), 1)
+      const pageHeader = await page.locator('.studio-task-thread-header').boundingBox()
+      assert.equal(
+        pageHeader.y + pageHeader.height / 2,
+        brandBeforeCollapse.y + brandBeforeCollapse.height / 2,
+        'Right controls remain in the same row',
+      )
+      assert.equal(await page.locator('.studio-titlebar-name').textContent(), 'Dovo Studio')
       assert.equal(
         await page.getByRole('navigation', { name: 'Main navigation', exact: true }).isVisible(),
         true,

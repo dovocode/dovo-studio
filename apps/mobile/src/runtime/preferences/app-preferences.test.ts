@@ -598,3 +598,47 @@ it('persists custom snooze durations and restores defaults for invalid saved lis
   await reopened.preferencesReady
   expect(reopened.readMobilePreferences().taskSnoozeMinutes).toEqual([15, 90, 2880])
 })
+
+it('persists calendar snoozes and info order, with field-wise fallback on malformed saved values', async () => {
+  let saved = JSON.stringify({
+    taskSnoozeSchedule: { morningTime: 'invalid' },
+    threadInfoOrder: [false],
+    theme: 'light',
+  })
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const first = await loadPreferences()
+  await first.preferencesReady
+  expect(first.readMobilePreferences()).toMatchObject({
+    theme: 'light',
+    threadInfoOrder: [],
+    taskSnoozeSchedule: { morningTime: '09:00', eveningTime: '18:00' },
+  })
+  const schedule = {
+    morningTime: '08:30',
+    eveningTime: '20:15',
+    weekStartsOn: 0,
+    presets: ['next-week', 'tomorrow-morning'] as ('next-week' | 'tomorrow-morning')[],
+  }
+  first.updateMobilePreferences({
+    taskSnoozeSchedule: schedule,
+    threadInfoOrder: ['usage', 'project'],
+    threadInfoSections: { scripts: false },
+  })
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved)).toMatchObject({
+      taskSnoozeSchedule: schedule,
+      threadInfoOrder: ['usage', 'project'],
+    }),
+  )
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    theme: 'light',
+    taskSnoozeSchedule: schedule,
+    threadInfoOrder: ['usage', 'project'],
+    threadInfoSections: { scripts: false },
+  })
+})

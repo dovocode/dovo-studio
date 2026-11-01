@@ -1447,7 +1447,8 @@ export function Composer({
               <ComposerSubmit
                 type="button"
                 variant="destructive"
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-composer-stop=""
+                className="studio-destructive-accent"
                 aria-label="Stop"
                 title="Stop the agent and pause queued messages"
                 disabled={!connected || stopping || task.archived}

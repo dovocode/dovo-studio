@@ -866,10 +866,8 @@ function TaskDetailContent({
                       onPress: () =>
                         task.snoozedUntil
                           ? lifecycle.snooze(null)
-                          : chooseSnoozeDuration('Snooze thread', (hours) =>
-                              lifecycle.snooze(
-                                new Date(Date.now() + hours * 3600000).toISOString(),
-                              ),
+                          : chooseSnoozeDuration('Snooze thread', (until) =>
+                              lifecycle.snooze(until),
                             ),
                     },
                     {

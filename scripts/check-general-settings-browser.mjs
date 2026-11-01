@@ -429,6 +429,25 @@ try {
   assert.equal(await page.getByLabel('Inherited settings target').count(), 0)
   await settingsSidebar.getByRole('button', { name: 'Task list & projects', exact: true }).click()
   await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  await page.locator('input[aria-label="Morning time"]').fill('08:30')
+  await page.locator('input[aria-label="Evening time"]').fill('20:15')
+  await choose('Next week starts on', 'Sunday')
+  await page.getByRole('switch', { name: 'Later today', exact: true }).click()
+  await page.getByRole('button', { name: 'Move Next week up', exact: true }).click()
+  await page.getByRole('button', { name: 'Save calendar shortcuts', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).taskSnoozeSchedule,
+    ),
+    {
+      morningTime: '08:30',
+      eveningTime: '20:15',
+      weekStartsOn: 0,
+      presets: ['tomorrow-morning', 'next-week', 'tomorrow-evening'],
+    },
+  )
+  await page.getByRole('button', { name: 'Reset calendar shortcuts', exact: true }).click()
+  assert.equal(await page.locator('input[aria-label="Morning time"]').inputValue(), '09:00')
   const snooze = page.getByRole('textbox', { name: 'Snooze durations', exact: true })
   await snooze.fill('15m, 90m, 2d')
   await page.getByRole('button', { name: 'Save snooze durations', exact: true }).click()

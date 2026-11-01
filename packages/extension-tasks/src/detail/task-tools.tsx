@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { artifactListSchema, taskSubagents, type Task } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { startLiveRefresh } from './live-refresh'
@@ -82,40 +82,49 @@ export function TaskTools({
       </span>
       {(
         [
-          ['files', 'Files', Files],
-          ['projects', 'Linked projects', FolderSymlink],
-          ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes] as const] : []),
-          ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
-          ...(hasLinkedPulls ? [['linked-pulls', 'Linked PRs', GitPullRequest] as const] : []),
-          ...(hasAgents ? [['agents', 'Agents', Bot] as const] : []),
-          ['side-chats', 'Side chats', MessageCircleQuestion],
-          ['browser', 'Browsers', Globe],
-          ['devices', 'Devices', Smartphone],
+          {
+            label: 'Thread workspace',
+            tools: [
+              ['files', 'Files', Files],
+              ['projects', 'Linked projects', FolderSymlink],
+              ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes] as const] : []),
+              ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
+              ...(hasLinkedPulls ? [['linked-pulls', 'Linked PRs', GitPullRequest] as const] : []),
+              ...(hasAgents ? [['agents', 'Agents', Bot] as const] : []),
+              ['side-chats', 'Side chats', MessageCircleQuestion],
+            ],
+          },
+          {
+            label: 'Previews',
+            tools: [
+              ['browser', 'Browsers', Globe],
+              ['devices', 'Devices', Smartphone],
+            ],
+          },
         ] as const
-      ).map(([id, label, Icon]) => (
-        <Fragment key={id}>
-          {(id === 'browser' || id === 'devices') && (
-            <div role="separator" className="my-1 w-5 border-t border-border" />
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={label}
-                aria-pressed={surface === id}
-                className={cn('studio-navigation-item', surface === id && 'is-active')}
-                onClick={() => onSelect(id)}
-              >
-                <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-                <span className="studio-navigation-label">{label}</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left" sideOffset={10}>
-              {label}
-            </TooltipContent>
-          </Tooltip>
-        </Fragment>
+      ).map(({ label: groupLabel, tools }) => (
+        <div className="studio-tools-group" role="group" aria-label={groupLabel} key={groupLabel}>
+          {tools.map(([id, label, Icon]) => (
+            <Tooltip key={id}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={label}
+                  aria-pressed={surface === id}
+                  className={cn('studio-navigation-item', surface === id && 'is-active')}
+                  onClick={() => onSelect(id)}
+                >
+                  <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+                  <span className="studio-navigation-label">{label}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={10}>
+                {label}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
       ))}
     </nav>
   )

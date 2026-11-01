@@ -233,7 +233,8 @@ function BrowserContent({
 }) {
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
-    { browser, browserFrames, openBrowserWindow, onBrowserContextAction } = useStudioHost()
+    { browser, browserFrames, openBrowserWindow, onBrowserContextAction, onBrowserWorkspaceFocus } =
+      useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
@@ -1099,11 +1100,15 @@ function BrowserContent({
         if (alive) setError(error.message)
       },
     })
+    // The destination already has a native view, but cannot display it until
+    // its tab state is adopted. Do not leave that waiting for the next 1s tick.
+    const stopHandoff = shared ? onBrowserWorkspaceFocus?.(polling.refresh) : undefined
     return () => {
       alive = false
+      stopHandoff?.()
       void polling.stop()
     }
-  }, [browser, url, mode, scope, browserKey, profileId, shared])
+  }, [browser, url, mode, scope, browserKey, profileId, shared, onBrowserWorkspaceFocus])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
     if (!browser || mode !== 'web') return

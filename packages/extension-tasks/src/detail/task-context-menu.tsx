@@ -1,4 +1,4 @@
-import { taskSnoozeChoices } from '@dovo/protocol'
+import { taskSnoozeMenuChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
 import { Schema } from 'effect'
@@ -109,7 +109,7 @@ export function TaskContextMenu({
   /** Reports an open menu, dialog or action, so a windowed list keeps this row mounted. */
   onActiveChange?: (active: boolean) => void
 }) {
-  const { taskSnoozeMinutes } = useAppPreferences()
+  const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
   const Menu = dropdown ? DropdownMenu : ContextMenu
   const host = useStudioHost()
   const store = useTaskActionStore()
@@ -307,21 +307,23 @@ export function TaskContextMenu({
                 </Menu.SubTrigger>
                 <Menu.Portal>
                   <Menu.SubContent className={menuClass} collisionPadding={8}>
-                    {taskSnoozeChoices(taskSnoozeMinutes).map(({ hours, label }) => (
-                      <Menu.Item
-                        key={hours}
-                        className={itemClass}
-                        onSelect={() =>
-                          void run(() =>
-                            patch({
-                              snoozedUntil: new Date(Date.now() + hours * 3600000).toISOString(),
-                            }),
-                          )
-                        }
-                      >
-                        {label}
-                      </Menu.Item>
-                    ))}
+                    {taskSnoozeMenuChoices(taskSnoozeMinutes, taskSnoozeSchedule).map(
+                      ({ id, until, label }) => (
+                        <Menu.Item
+                          key={id}
+                          className={itemClass}
+                          onSelect={() =>
+                            void run(() =>
+                              patch({
+                                snoozedUntil: until(),
+                              }),
+                            )
+                          }
+                        >
+                          {label}
+                        </Menu.Item>
+                      ),
+                    )}
                     {isSnoozed(task, Date.now()) && (
                       <Menu.Item
                         className={itemClass}

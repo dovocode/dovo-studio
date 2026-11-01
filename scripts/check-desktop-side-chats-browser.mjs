@@ -198,6 +198,10 @@ try {
   // Side chats list full-agent children; earlier read-only questions stay explicitly reachable.
   await page.getByRole('button', { name: 'Open side chats', exact: true }).click()
   const panel = page.getByRole('region', { name: 'Agent side chats' })
+  assert.equal(await page.getByText('Thread tools', { exact: true }).count(), 0)
+  await panel.getByRole('button', { name: 'Close side chats', exact: true }).click()
+  await panel.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Open side chats', exact: true }).click()
   await panel.getByRole('button', { name: 'Investigate cache', exact: true }).waitFor()
   await panel.getByText('Ready', { exact: true }).waitFor()
   await panel.getByRole('tab', { name: 'Read-only (1)', exact: true }).click()

@@ -1188,7 +1188,8 @@ export function registerBrowser(
             const pip = createDocumentPipWindow(
               options,
               view.webContents.getURL(),
-              disallowReturn ? undefined : () => returnFromPip(created),
+              () => returnFromPip(created),
+              !disallowReturn,
             )
             trackPopup(pip.window, pip.contents, true, disallowReturn)
             return pip.contents

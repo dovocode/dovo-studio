@@ -2912,7 +2912,12 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
   const popup = popupWindow()
   mocks.pipWindow.mockReturnValue({ window: popup as never, contents: popup.webContents as never })
   expect(result.createWindow?.({})).toBe(popup.webContents)
-  expect(mocks.pipWindow).toHaveBeenCalledWith({}, 'https://example.com/', expect.any(Function))
+  expect(mocks.pipWindow).toHaveBeenCalledWith(
+    {},
+    'https://example.com/',
+    expect.any(Function),
+    true,
+  )
   expect(popup.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
   expect(popup.setVisibleOnAllWorkspaces.mock.calls).toEqual(
     process.platform === 'linux' ? [[true]] : [],
@@ -2938,6 +2943,38 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
     [],
   )
 })
+
+it.each(['teams.microsoft.com', 'teams.cloud.microsoft', 'teams.live.com'])(
+  'keeps the call restoration callback when Teams hides the Back control at %s',
+  async (host) => {
+    const call = handler()
+    await call(event, workspaceShow)
+    vi.spyOn(mocks.contents, 'getURL').mockReturnValue('https://' + host + '/v2/call')
+    const authorize = mocks.contents.ipc.handle.mock.calls.find(
+      ([name]) => name === 'browser:document-pip-authorize',
+    )?.[1]
+    if (typeof authorize !== 'function') throw new Error('Missing Document PiP authorization')
+    const frameName = authorize({ senderFrame: mocks.contents.mainFrame }, true, false)
+    const result = openHandler()({
+      url: 'about:blank',
+      frameName,
+      disposition: 'new-window',
+      features: 'popup,width=420,height=280',
+    })
+    const popup = popupWindow()
+    mocks.pipWindow.mockReturnValue({
+      window: popup as never,
+      contents: popup.webContents as never,
+    })
+    result.createWindow?.({})
+    expect(mocks.pipWindow).toHaveBeenCalledWith(
+      {},
+      'https://' + host + '/v2/call',
+      expect.any(Function),
+      false,
+    )
+  },
+)
 
 it('reports background tab activity, validates frame reports, and mutes without selecting the tab', async () => {
   const call = handler()

@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mobile = root + '/apps/mobile/src'
-const controls = `import {useState} from 'react';export const Text=({children,style,numberOfLines})=><span style={{display:'block',...flat(style)}}>{children}</span>;const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;export const Pressable=({children,onPress,disabled,style,accessibilityLabel,accessibilityState,testID})=><button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} data-testid={testID} disabled={disabled} onClick={onPress} style={{display:'flex',flexDirection:'column',border:0,background:'transparent',font:'inherit',textAlign:'left',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;export const Image=({source,style})=><img src={source.uri} style={flat(style)}/>;export const ScrollView=({children,contentContainerStyle,horizontal})=><div style={{overflow:'auto',display:'flex',flexDirection:horizontal?'row':'column',...flat(contentContainerStyle)}}>{children}</div>;export const Alert={alert:(...args)=>window.alerts.push(args)};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const Platform={OS:'web'};export const Keyboard={dismiss(){}};`
+const controls = `import {useState,useLayoutEffect,useRef} from 'react';export const Text=({children,style,numberOfLines})=><span style={{display:'block',...flat(style)}}>{children}</span>;const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));export const View=({children,style,accessibilityLabel})=>{const ref=useRef();useLayoutEffect(()=>{if(Array.from(ref.current.childNodes).some(node=>node.nodeType===3&&node.textContent))throw new Error('Text strings must be rendered within a Text component')});return <div ref={ref} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>};export const Pressable=({children,onPress,disabled,style,accessibilityLabel,accessibilityState,testID})=><button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} data-testid={testID} disabled={disabled} onClick={onPress} style={{display:'flex',flexDirection:'column',border:0,background:'transparent',font:'inherit',textAlign:'left',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;export const Image=({source,style})=><img src={source.uri} style={flat(style)}/>;export const ScrollView=({children,contentContainerStyle,horizontal})=><div style={{overflow:'auto',display:'flex',flexDirection:horizontal?'row':'column',...flat(contentContainerStyle)}}>{children}</div>;export const Alert={alert:(...args)=>window.alerts.push(args)};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const Platform={OS:'web'};export const Keyboard={dismiss(){}};`
 const action = `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const SettingsAction=Action;`
 const theme = `export const useTheme=()=>({mode:'dark',colors:{background:'#101014',text:'#efeff2',muted:'#92929e',border:'#303036',accent:'#7297ff',success:'#43c983',error:'#fa7185',elevated:'#26262d'},styles:{text:{color:'#efeff2'},muted:{color:'#92929e',fontSize:13},error:{color:'#fa7185'},row:{display:'flex',flexDirection:'row',flexWrap:'wrap',gap:8},card:{border:'1px solid #303036',padding:12,borderRadius:12},separator:{borderTop:'1px solid #303036'}}});`
 const mocks = {
+  '../../ui/controls/icon-button': `export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{width:44,height:44,flexShrink:0}}>{icon==='moveUp'?'↑':'↓'}</button>;`,
   '@dovo/studio-core': `export {useTaskWaiting} from '${root}/packages/studio-core/src/use-task-waiting.ts';`,
   'react-native':
     controls +
@@ -115,6 +116,21 @@ try {
   )
   await page.getByText('85% used', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+  await page.getByRole('button', { name: 'Move Context usage up', exact: true }).click()
+  const savedOrder = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadInfoOrder,
+  )
+  assert.ok(savedOrder.indexOf('usage') < savedOrder.indexOf('lineage'))
+  const actualOrder = await page
+    .getByLabel('Thread info sections', { exact: true })
+    .evaluate((node) =>
+      Array.from(node.children)
+        .map((child) => child.getAttribute('aria-label'))
+        .filter(Boolean),
+    )
+  assert.ok(
+    actualOrder.indexOf('Context usage') < actualOrder.indexOf('Related threads and agents'),
+  )
   const usageChoice = page.getByRole('switch', { name: 'Context usage', exact: true })
   await usageChoice.uncheck()
   await page.getByLabel('Context usage', { exact: true }).first().waitFor()
@@ -144,6 +160,12 @@ try {
     () => document.querySelector('[role="switch"][aria-label="Context usage"]')?.disabled === false,
   )
   assert.equal(await usageChoice.isChecked(), false)
+  assert.deepEqual(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadInfoOrder,
+    ),
+    savedOrder,
+  )
   assert.equal(
     await page.getByRole('switch', { name: 'Project scripts', exact: true }).isChecked(),
     false,
@@ -175,7 +197,7 @@ try {
   assert.ok(boxes.every(Boolean))
   assert.equal(boxes[0].y, boxes[1].y)
   assert.ok(
-    boxes[0].y <
+    boxes[0].y >
       (await page.getByRole('button', { name: 'Add project script', exact: true }).boundingBox()).y,
   )
   await second.click()

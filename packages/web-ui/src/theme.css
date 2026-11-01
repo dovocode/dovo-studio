@@ -118,8 +118,14 @@
   --destructive-foreground: #ffffff;
 }
 
-/* Decorative effects follow the active palette without replacing selection or focus cues. */
-:root {
+/* Destructive actions reuse the palette effects with a red accent. */
+.studio-destructive-accent {
+  --primary: var(--destructive);
+  --primary-foreground: var(--destructive-foreground);
+}
+/* Resolve effects locally when an action overrides the inherited palette accent. */
+:root,
+.studio-destructive-accent {
   --studio-selected-fill: color-mix(in srgb, var(--primary) 16%, var(--sidebar));
   --studio-selected-gradient: linear-gradient(
     140deg,
@@ -138,10 +144,12 @@
       color-mix(in srgb, var(--primary) calc(20% * var(--studio-glow-strength)), transparent)
   );
 }
-:root[data-theme-gradients='false'] {
+:root[data-theme-gradients='false'],
+:root[data-theme-gradients='false'] .studio-destructive-accent {
   --studio-selected-gradient: none;
 }
-:root[data-theme-glow='0'] {
+:root[data-theme-glow='0'],
+:root[data-theme-glow='0'] .studio-destructive-accent {
   --studio-glow: 0 0 0 transparent;
   --studio-glow-strong: 0 0 0 transparent;
   --studio-glow-wide: 0 0 0 transparent;

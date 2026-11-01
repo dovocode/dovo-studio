@@ -4,6 +4,7 @@ import {
   taskMetadata,
   decode,
   mutableStruct,
+  scopedTaskSummary,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type Database from 'better-sqlite3'
@@ -44,22 +45,7 @@ function pagedTask(task: Task): Task {
   pagedTasks.set(task, result)
   return result
 }
-const scopedTasks = new WeakMap<Task, Task>()
 const scopedWorkspaces = new WeakMap<Workspace, Map<string, Workspace>>()
-function summaryTask(task: Task): Task {
-  const cached = scopedTasks.get(task)
-  if (cached) return cached
-  const summary = {
-    ...task,
-    messages: [],
-    sideChats: task.sideChats?.map((chat) => ({ ...chat, messages: [] })),
-    files: task.files.map(({ path, viewed }) => ({ path, viewed, before: '', after: '' })),
-    forkedFrom: task.forkedFrom ? { ...task.forkedFrom, snapshot: undefined } : undefined,
-    turns: task.turns?.map((turn) => ({ ...turn, checkpoint: undefined })),
-  }
-  scopedTasks.set(task, summary)
-  return summary
-}
 /** Keep editable drafts and task metadata, but send history only for subscribed threads. */
 export function scopedWorkspace(
   workspace: Workspace,
@@ -78,7 +64,7 @@ export function scopedWorkspace(
   const result = {
     ...workspace,
     tasks: workspace.tasks.map((task) =>
-      details.has(task.id) ? (paged ? pagedTask(task) : task) : summaryTask(task),
+      details.has(task.id) ? (paged ? pagedTask(task) : task) : scopedTaskSummary(task),
     ),
   }
   // Device metadata remains filtered separately; only identical workspace projections share a hash.

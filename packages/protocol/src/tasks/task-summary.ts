@@ -48,6 +48,24 @@ export type TaskHistorySummary = Schema.Schema.Type<typeof taskHistorySummarySch
 export type TaskSummary = TaskMetadata & { history: TaskHistorySummary }
 export type WorkspaceSummary = Omit<Workspace, 'tasks'> & { tasks: TaskSummary[] }
 
+const scopedTasks = new WeakMap<Task, Task>()
+/** Keep editable metadata and turn totals while excluding conversation and diff bodies.
+ * A projection can also receive a paged task, so preserve its existing history totals. */
+export function scopedTaskSummary(task: Task): Task {
+  const cached = scopedTasks.get(task)
+  if (cached) return cached
+  const summary: Task = {
+    ...task,
+    messages: [],
+    sideChats: task.sideChats?.map((chat) => ({ ...chat, messages: [] })),
+    files: task.files.map(({ path, viewed }) => ({ path, viewed, before: '', after: '' })),
+    forkedFrom: task.forkedFrom ? { ...task.forkedFrom, snapshot: undefined } : undefined,
+    turns: task.turns?.map((turn) => ({ ...turn, checkpoint: undefined })),
+  }
+  scopedTasks.set(task, summary)
+  return summary
+}
+
 const summaries = new WeakMap<object, WeakMap<object, TaskHistorySummary>>()
 const messageReferences = new WeakMap<object, ReturnType<typeof pullReferencesInText>>()
 function pullReferences(messages: Task['messages']) {

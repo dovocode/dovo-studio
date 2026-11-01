@@ -1,3 +1,4 @@
+import { SnoozeSchedule } from './snooze-schedule'
 import { taskSortOptions, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { Input, Button } from '@dovo/studio-ui'
 import {
@@ -138,6 +139,7 @@ export default function TaskListSettings() {
         title="Snoozing"
         description="Choose the thread snooze options on this device, in menu order. Existing snoozed threads keep their wake-up time."
       >
+        <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} />
         <SettingRow
           label="Snooze durations"
           description="Enter 1–12 durations separated by commas. Use m for minutes, h for hours, d for days or w for weeks."

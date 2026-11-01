@@ -4,7 +4,15 @@ import {
   useSideThreadSource,
 } from '@dovo/studio-core/side-thread-creation'
 import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CornerDownLeft, ExternalLink, GitBranchPlus, PanelRight, Trash2 } from 'lucide-react'
+import {
+  CornerDownLeft,
+  ExternalLink,
+  GitBranchPlus,
+  PanelRight,
+  Trash2,
+  MessageCircleQuestion,
+  X,
+} from 'lucide-react'
 import {
   randomUUID,
   sideThreadAttention,
@@ -422,6 +430,7 @@ export function SideThreadsPanel({
   onBroughtBack,
   onDiscarded,
   readOnlyQuestions,
+  onClose,
 }: {
   task: Task
   /** The side chat currently shown beside this one. */
@@ -432,6 +441,7 @@ export function SideThreadsPanel({
   onBroughtBack: (handoff: SideThreadHandoff, child: Task) => void
   onDiscarded: (childId: string) => void
   readOnlyQuestions: ReactNode
+  onClose?: () => void
 }) {
   const { workspace, connected } = useWorkspace()
   const attention = useSideThreadAttention()
@@ -446,8 +456,18 @@ export function SideThreadsPanel({
   const readOnly = !!task.archivedAt || nested || !eligible
   return (
     <section aria-label="Agent side chats" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <h2 className="min-w-0 flex-1 text-sm font-medium">Side chats</h2>
+      <div
+        className={cn(
+          'studio-thread-tools-header relative flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2',
+          onClose && 'pr-12',
+        )}
+      >
+        <MessageCircleQuestion
+          size={16}
+          className="shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <h2 className="min-w-16 flex-1 truncate text-sm font-medium">Side chats</h2>
         {view === 'threads' && (
           <Button
             size="sm"
@@ -462,6 +482,15 @@ export function SideThreadsPanel({
             <GitBranchPlus className="size-3.5" />
             {busy ? 'Creating…' : 'New side chat'}
           </Button>
+        )}
+        {onClose && (
+          <IconButton
+            label="Close side chats"
+            className="absolute right-3 top-2 size-7"
+            onClick={onClose}
+          >
+            <X size={14} />
+          </IconButton>
         )}
       </div>
       {!eligible && view === 'threads' && (

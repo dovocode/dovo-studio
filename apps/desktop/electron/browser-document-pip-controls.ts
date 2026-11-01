@@ -20,6 +20,7 @@ export function createDocumentPipWindow(
   options: Electron.BrowserWindowConstructorOptions & { webContents?: Electron.WebContents },
   sourceURL: string,
   returnToTab?: () => void | Promise<void>,
+  showReturnToTab = true,
 ) {
   const hostname = new URL(sourceURL).hostname
   const directory = join(app.getPath('userData'), 'browser-media')
@@ -64,11 +65,15 @@ export function createDocumentPipWindow(
   let returning = false
   contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
     if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
-    if (action === 'close') {
-      popup.close()
+    if (action !== 'close' && action !== 'return') return
+    if (action === 'return' && !showReturnToTab) return
+    if (!returnToTab) {
+      if (action === 'close') popup.close()
       return
     }
-    if (action !== 'return' || !returnToTab || returning) return
+    if (returning) return
+    // Restore visibility before pagehide: Teams otherwise leaves the call in the closed child.
+    // Only trusted user controls return to the tab; site/automatic closes must not steal focus.
     returning = true
     void Promise.resolve()
       .then(returnToTab)
@@ -112,7 +117,7 @@ button:hover {background:#ffffff25} button:focus-visible {outline:2px solid whit
 svg {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 </style></head><body><div class="bar" role="toolbar" aria-label="Picture-in-picture controls">
 <span class="domain" title="${escapedHostname}">${escapedHostname}</span>
-${returnToTab ? button('Back to tab', 'return', ['M14 4h6v16H4v-6', 'M4 4h7v7', 'M11 4 3 12']) : ''}
+${returnToTab && showReturnToTab ? button('Back to tab', 'return', ['M14 4h6v16H4v-6', 'M4 4h7v7', 'M11 4 3 12']) : ''}
 ${button('Close picture-in-picture', 'close', ['m6 6 12 12', 'M18 6 6 18'])}
 </div></body></html>`
   void contents

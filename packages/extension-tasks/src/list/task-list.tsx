@@ -1,6 +1,6 @@
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
-  taskSnoozeChoices,
+  taskSnoozeMenuChoices,
   taskIsWorking,
   watchRuntimeSettled,
   settledSummaryPageSize,
@@ -365,10 +365,10 @@ export function TaskList({
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
   const bulk = async (
     action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread',
-    hours?: number,
+    until?: string,
   ) => {
     if (!selectedEntries.length || bulkLock.current) return
-    if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
+    if (action === 'snooze' && until === undefined) throw new Error('Choose a snooze duration.')
     if (
       action === 'delete' &&
       !window.confirm(
@@ -414,9 +414,9 @@ export function TaskList({
               responses.ok,
             )
           else await client.patch(entry.task, { archived: false, snoozedUntil: null })
-        } else
+        } else if (until)
           await client.patch(entry.task, {
-            snoozedUntil: new Date(Date.now() + (hours ?? 0) * 3600000).toISOString(),
+            snoozedUntil: until,
           })
         if ((action === 'archive' || action === 'delete') && entry.key === selectedMainKey)
           onDeselect()
@@ -769,11 +769,14 @@ export function TaskList({
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                  {taskSnoozeChoices(preferences.taskSnoozeMinutes).map((option) => (
+                  {taskSnoozeMenuChoices(
+                    preferences.taskSnoozeMinutes,
+                    preferences.taskSnoozeSchedule,
+                  ).map((option) => (
                     <ContextMenu.Item
-                      key={option.hours}
+                      key={option.id}
                       className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"
-                      onSelect={() => void runBulk(id, option.hours)}
+                      onSelect={() => void runBulk(id, option.until())}
                     >
                       {option.label}
                     </ContextMenu.Item>
@@ -794,7 +797,13 @@ export function TaskList({
         )}
       </>
     )
-  }, [selectedCount, blockedKey, runBulk])
+  }, [
+    selectedCount,
+    blockedKey,
+    runBulk,
+    preferences.taskSnoozeMinutes,
+    preferences.taskSnoozeSchedule,
+  ])
   let bottomSectionIndex = 0
   groups.forEach((group, index) => {
     if (group.open) bottomSectionIndex = index + 1
