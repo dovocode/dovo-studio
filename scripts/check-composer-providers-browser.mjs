@@ -18,7 +18,7 @@ const mocks = {
   '../../ui/layout/sheet': `export const Sheet=({children,onClose,title})=><section aria-label={title}>{children}<button onClick={onClose}>Close picker</button></section>;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
   '../ui/controls/icon': `export const Icon=()=>null;`,
-  'react-native': `export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  'react-native': `export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const MobileContext=createContext(null);export const useRuntime=()=>useContext(MobileContext);export const useRuntimeSelector=select=>select(useContext(MobileContext));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
@@ -142,6 +142,7 @@ try {
   await page.getByRole('button', { name: 'Claude models', exact: true }).waitFor()
   const codexSignIn = page.getByRole('button', { name: 'Codex requires sign-in' })
   if (!(await codexSignIn.isDisabled())) throw new Error('Signed-out provider is selectable')
+  await page.getByText('Provider setup', { exact: true }).click()
   await page.getByText('codex login', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Refresh providers and models' }).click()
   await waitRequests(4)
@@ -265,6 +266,8 @@ try {
   await page.getByRole('option', { name: 'Use custom model “gpt-6.1-terra”' }).click()
   if (await page.evaluate(() => window.value.model !== 'gpt-6.1-terra'))
     throw new Error('Custom Terra model ID was not preserved')
+  await page.getByRole('combobox', { name: 'Search models', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.evaluate(() => {
     window.terraAvailable = true

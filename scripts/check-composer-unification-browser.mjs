@@ -6,12 +6,10 @@ import { chromium } from 'playwright'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshotDirectory = process.env.DOVO_COMPOSER_SCREENSHOTS
-const css = screenshotDirectory
-  ? readdirSync(root + 'apps/desktop/dist/assets')
-      .filter((file) => file.endsWith('.css'))
-      .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
-      .join('\n')
-  : ''
+const css = readdirSync(root + 'apps/desktop/dist/assets')
+  .filter((file) => file.endsWith('.css'))
+  .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
+  .join('\n')
 if (screenshotDirectory) mkdirSync(screenshotDirectory, { recursive: true })
 
 const mocks = {
@@ -125,7 +123,7 @@ try {
   const send = page.getByRole('button', { name: 'Start task', exact: true })
   const server = page.getByRole('combobox', { name: 'Server', exact: true })
   const project = page.getByRole('combobox', { name: 'Project', exact: true })
-  const reasoning = page.getByRole('button', { name: 'Reasoning and speed' })
+  const reasoning = page.getByRole('button', { name: 'Choose agent and model', exact: true })
   const access = page.getByRole('button', { name: 'Configure task permissions' })
   const creationCount = () =>
     page.evaluate(() => window.requests.filter((r) => r.path === '/api/workspace').length)
@@ -158,7 +156,7 @@ try {
     )
     const form = page.locator('.studio-composer')
     const formBounds = await form.boundingBox()
-    for (const button of [send, reasoning, access]) {
+    for (const button of [send, reasoning]) {
       const bounds = await button.boundingBox()
       assert(
         bounds.x >= formBounds.x && bounds.x + bounds.width <= formBounds.x + formBounds.width + 1,
@@ -177,6 +175,37 @@ try {
   }
 
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+  for (const width of [800, 460, 320]) {
+    await page.setViewportSize({ width, height: 670 })
+    const popup = page.locator('[data-model-picker]')
+    // Radix repositions the popup asynchronously after a viewport resize.
+    await page.waitForFunction(() => {
+      const bounds = document.querySelector('[data-model-picker]')?.getBoundingClientRect()
+      return (
+        bounds &&
+        bounds.x >= 0 &&
+        bounds.right <= innerWidth &&
+        bounds.y >= 0 &&
+        bounds.bottom <= innerHeight
+      )
+    })
+    const bounds = await popup.boundingBox()
+    assert(
+      bounds &&
+        bounds.x >= 0 &&
+        bounds.x + bounds.width <= width &&
+        bounds.y >= 0 &&
+        bounds.y + bounds.height <= 670,
+      'Model picker overflowed the viewport',
+    )
+    await page.getByRole('radio', { name: 'High', exact: true }).click({ trial: true })
+    await page
+      .getByRole('button', { name: 'Agent configuration', exact: true })
+      .click({ trial: true })
+    if (screenshotDirectory)
+      await page.screenshot({ path: screenshotDirectory + '/model-picker-' + width + '.png' })
+  }
+  await page.setViewportSize({ width: 800, height: 670 })
   await page.getByRole('button', { name: 'Agent configuration', exact: true }).click()
   const configuration = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
   await configuration.waitFor()
@@ -246,11 +275,46 @@ try {
 
   await project.selectOption({ label: 'dovo-studio' })
   await reasoning.click()
-  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
-  await reasoning.click()
-  await page.getByRole('menuitemradio', { name: 'Fast', exact: true }).click()
+  const popup = await page.locator('[data-model-picker]').elementHandle()
+  const searchModels = page.getByRole('combobox', { name: 'Search models', exact: true })
+  await searchModels.focus()
+  await searchModels.press('ArrowRight')
+  assert(
+    await page
+      .getByRole('radio', { name: 'Extra High', exact: true })
+      .evaluate((node) => node === document.activeElement),
+    'Right arrow did not reach the effort column',
+  )
+  await page.keyboard.press('ArrowUp')
+  assert(
+    await page
+      .getByRole('radio', { name: 'High', exact: true })
+      .evaluate((node) => node === document.activeElement),
+    'Effort keyboard navigation skipped a level',
+  )
+  await page.keyboard.press('ArrowLeft')
+  assert(
+    await searchModels.evaluate((node) => node === document.activeElement),
+    'Left arrow did not return to model search',
+  )
+  await page.getByRole('radio', { name: 'High', exact: true }).click()
+  assert(
+    await page
+      .locator('[data-model-picker]')
+      .evaluate((node, original) => node === original, popup),
+    'Changing effort remounted the model picker',
+  )
+  await page.getByRole('button', { name: 'Daybreak mode', exact: true }).click()
+  await page.getByRole('option', { name: 'Off', exact: true }).click()
+  assert.equal(
+    await page.locator('[data-model-picker]').count(),
+    1,
+    'Selecting a provider option dismissed the model picker',
+  )
+  await page.getByRole('radio', { name: 'Fast', exact: true }).click()
   await access.click()
   await page.locator('[role="menuitemradio"][data-value="workspace-write"]').click()
+  await page.keyboard.press('Escape')
   await input.fill('Keep the same task when retrying')
   await input.press('Enter')
   await page.waitForFunction(() => window.pendingMessage !== null)

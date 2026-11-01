@@ -204,7 +204,6 @@ export function HarnessSettings({
                       'PATCH',
                     ),
                   )
-                  onClose()
                 }),
               )
               return
@@ -249,7 +248,6 @@ export function HarnessSettings({
                     'PATCH',
                   ),
                 )
-                if (value === 'inherit') onClose()
               }),
             )
           }}
@@ -308,6 +306,23 @@ export function HarnessSettings({
                 selection={selection}
                 agent={agent}
                 disabled={controlsDisabled}
+                options={
+                  <Choice
+                    row
+                    label="Access mode"
+                    value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
+                    selectedLabel={permissionPolicyLabel(agent)}
+                    disabled={controlsDisabled || !selectionAllowed}
+                    items={selectableAccessModes(agent.permission, agent.provider)
+                      .filter((mode) => supportsAccess(agent.provider, mode.id))
+                      .map((mode) => ({ id: mode.id, name: mode.name }))}
+                    onChange={(value) =>
+                      save(
+                        selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)),
+                      )
+                    }
+                  />
+                }
                 onChange={(value, next) => save(next, value)}
               />
               {(availability.loading || availability.error || !choices.length) && (

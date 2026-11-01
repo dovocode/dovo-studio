@@ -406,7 +406,7 @@ try {
       )
       assert.equal(
         await modelGroup.getByRole('button', { name: 'Reasoning and speed', exact: true }).count(),
-        1,
+        0,
       )
       assert.equal(
         await modelGroup
@@ -418,7 +418,7 @@ try {
         await workspaceBar
           .getByRole('button', { name: 'Configure task permissions', exact: true })
           .count(),
-        1,
+        0,
       )
       await page.getByRole('textbox', { name: 'Message task' }).focus()
       await settleComposer()
@@ -525,7 +525,10 @@ try {
       )
       assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 0)
       await openInfo()
-      await page.getByRole('button', { name: 'Configure task permissions', exact: true }).waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Configure task permissions', exact: true }).count(),
+        0,
+      )
       if (project === 'dovo-studio')
         assert.equal(
           await page.getByRole('button', { name: 'Checkout branch', exact: true }).isDisabled(),

@@ -19,7 +19,7 @@ const moduleMocks = new Map([
   ],
   [
     `${ui}src/harness-catalog.ts`,
-    `export const useHarnessCatalog=()=>({catalog:{models:[{id:'model',name:'Model',isDefault:true}],reasoning:[]},loading:false,error:null});`,
+    `export const useHarnessCatalog=()=>({catalog:{models:[{id:'model',name:'Model',isDefault:true,reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}],reasoning:[]},loading:false,error:null});`,
   ],
   [
     `${ui}src/use-harness-availability.ts`,
@@ -141,7 +141,7 @@ const result = await build({
         const change=async(next)=>{setValue(next);window.changed=next;window.taskChanged=changeTaskHarness(task,[initial],decode(taskHarnessSchema,next));return true};
         const save=async(next)=>{window.saved.push(next)};
         window.value=value;window.setSupported=setSupported;window.setDisabled=setDisabled;
-        const workspace={connected:!disabled,workspace:snapshot.workspace,snapshot,request,runtimes:[],flush:async()=>{},setWorkspace:update=>setStoredTask(current=>update({...snapshot.workspace,tasks:[current]}).tasks[0])};
+        const workspace={connected:!disabled,workspace:snapshot.workspace,snapshot,request,runtimes:[],flush:async()=>{if(window.holdFlush)await new Promise((resolve,reject)=>{window.finishFlush=fail=>fail?reject(new Error('Settings save failed')):resolve()})},setWorkspace:update=>setStoredTask(current=>update({...snapshot.workspace,tasks:[current]}).tasks[0])};
         const runtime={connected:!disabled,snapshot,profile:{id:'runtime',name:'Runtime',connection:{address:'http://fixture',token:'fixture'}},overviews:[],call:request,callEffect:(...args)=>Effect.tryPromise(()=>request(...args)),previewTaskEffect:(_profile,_id,preview,effect)=>effect.pipe(Effect.tap(()=>Effect.sync(()=>setStoredTask(current=>({...current,...preview})))))};
         const kind=window.fixture.kind;
         return <WorkspaceContext.Provider value={workspace}><RuntimeContext.Provider value={runtime}>
@@ -247,7 +247,12 @@ async function nativeChoice(page, label, name, index = 0) {
   await page.getByRole('button', { name: label, exact: true }).nth(index).click()
   await page.getByRole('button', { name, exact: true }).click()
 }
+async function openComposerPicker(page) {
+  if (!(await page.locator('[data-model-picker]').count()))
+    await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+}
 async function composerChoice(page, label, name) {
+  await openComposerPicker(page)
   await page.getByRole('button', { name: 'Configure task permissions' }).click()
   const trigger = page.getByRole('menuitem', { name: label, exact: true })
   await trigger.focus()
@@ -260,6 +265,7 @@ try {
   await composerChoice(composer, 'Approval policy', 'On request')
   await composerChoice(composer, 'Sandbox', 'Workspace write')
   await composer.waitForFunction(() => window.value.sandboxMode === 'workspace-write')
+  await openComposerPicker(composer)
   await composer.getByRole('button', { name: 'Configure task permissions' }).click()
   await composer.screenshot({ path: `${screenshotDir}/composer-permissions.png` })
   await composer.keyboard.press('Escape')
@@ -268,6 +274,7 @@ try {
     'on-request',
   )
   // Repeat selection of Full access must reset controls even when it is the underlying preset.
+  await openComposerPicker(composer)
   await composer.getByRole('button', { name: 'Configure task permissions' }).click()
   await composer.getByRole('menuitemradio', { name: /^Full access/ }).click()
   assert.deepEqual(
@@ -276,6 +283,7 @@ try {
   )
   await composerChoice(composer, 'Approval policy', 'On request')
   await composerChoice(composer, 'Sandbox', 'Workspace write')
+  await openComposerPicker(composer)
   await composer.getByRole('button', { name: 'Configure task permissions' }).click()
   await composer.getByRole('menuitemradio', { name: /Supervised/ }).click()
   assert.deepEqual(
@@ -294,7 +302,7 @@ try {
   await composerChoice(composer, 'Sandbox', 'Inherit from access mode')
   assert.equal(await composer.evaluate(() => window.taskChanged.agentOverrides.sandboxMode), null)
   await composerChoice(composer, 'Sandbox', 'Read only')
-  await composer.getByRole('button', { name: 'Choose agent and model' }).click()
+  await openComposerPicker(composer)
   await composer.getByRole('button', { name: 'Claude models', exact: true }).click()
   await composer.getByRole('option', { name: /Model/ }).click()
   assert.deepEqual(
@@ -326,7 +334,7 @@ try {
     await composerHarness.evaluate(() => window.task.agentOverrides.sandboxMode),
     'read-only',
   )
-  await composerHarness.getByRole('button', { name: 'Choose agent and model' }).click()
+  await openComposerPicker(composerHarness)
   await composerHarness.getByRole('button', { name: 'Codex models', exact: true }).click()
   await composerHarness.getByRole('button', { name: 'Use Codex directly', exact: true }).click()
   await composerHarness.waitForFunction(() => window.task.agentId === '')
@@ -337,6 +345,7 @@ try {
     supported: undefined,
     policy: { sandboxMode: 'read-only' },
   })
+  await openComposerPicker(oldComposerHarness)
   await oldComposerHarness.getByRole('button', { name: 'Configure task permissions' }).click()
   await oldComposerHarness.getByRole('menuitemradio', { name: /Supervised/ }).click()
   await oldComposerHarness.waitForFunction(() => window.task.harness.permission === 'ask')
@@ -348,6 +357,42 @@ try {
     ['ask', undefined],
   )
   await oldComposerHarness.close()
+
+  // The combined picker remains mounted while a task save is pending or fails.
+  const pendingPicker = await pageFor({ kind: 'composer-harness' })
+  await openComposerPicker(pendingPicker)
+  const mountedPicker = await pendingPicker.locator('[data-model-picker]').elementHandle()
+  await pendingPicker.evaluate(() => {
+    window.holdFlush = true
+  })
+  await pendingPicker.getByRole('radio', { name: 'High', exact: true }).click()
+  await pendingPicker.waitForFunction(() => typeof window.finishFlush === 'function')
+  assert(await pendingPicker.getByRole('radio', { name: 'Low', exact: true }).isDisabled())
+  assert(
+    await pendingPicker
+      .locator('[data-model-picker]')
+      .evaluate((node, original) => node === original, mountedPicker),
+  )
+  await pendingPicker.evaluate(() => window.finishFlush(false))
+  await pendingPicker.waitForFunction(
+    () => !document.querySelector('[role=radio][aria-checked=true]').disabled,
+  )
+  assert.equal(
+    await pendingPicker
+      .getByRole('radio', { name: 'High', exact: true })
+      .getAttribute('aria-checked'),
+    'true',
+  )
+  await pendingPicker.getByRole('radio', { name: 'Low', exact: true }).click()
+  await pendingPicker.evaluate(() => window.finishFlush(true))
+  await pendingPicker.getByRole('alert').filter({ hasText: 'Settings save failed' }).waitFor()
+  assert(
+    await pendingPicker
+      .locator('[data-model-picker]')
+      .evaluate((node, original) => node === original, mountedPicker),
+  )
+  assert(await pendingPicker.getByRole('radio', { name: 'High', exact: true }).isEnabled())
+  await pendingPicker.close()
 
   // Preserve setup's save/provider-switch/old-runtime coverage on the shipped defaults form.
   for (const providerSwitch of [false, true]) {
@@ -466,8 +511,10 @@ try {
       supported: undefined,
       policy: { sandboxMode: 'read-only', approvalPolicy: 'on-request' },
     })
-    if (kind === 'composer')
+    if (kind === 'composer') {
+      await openComposerPicker(page)
       await page.getByRole('button', { name: 'Configure task permissions' }).click()
+    }
     const role = kind === 'composer' ? 'menuitem' : 'button'
     assert.equal(
       await page.getByRole(role, { name: 'Approval policy', exact: true }).isDisabled(),
@@ -594,7 +641,7 @@ try {
     })
     if (kind === 'composer') {
       assert.equal(
-        await page.getByRole('button', { name: 'Configure task permissions' }).isDisabled(),
+        await page.getByRole('button', { name: 'Choose agent and model' }).isDisabled(),
         true,
       )
     } else {
