@@ -199,21 +199,19 @@ try {
       expected,
     )
   }
-  await projectPane.getByRole('button', { name: 'src', exact: true }).waitFor()
-  if (
-    (await projectPane.getByRole('button', { name: 'src', exact: true }).innerText()).trim() !==
-    'src'
-  )
+  const projectFolder = projectPane.locator('summary[aria-label="Folder src"]')
+  await projectFolder.waitFor()
+  if ((await projectFolder.innerText()).trim() !== 'src')
     throw new Error('Project directory still displays a file count')
-  await projectPane.getByRole('button', { name: 'src', exact: true }).click()
-  await projectPane.getByRole('button', { name: 'first.ts', exact: true }).waitFor()
+  await projectFolder.click()
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
   await projectWidth(256)
   await drag('Resize project file tree', -80)
   await projectWidth(336)
   await page.waitForFunction(() => window.saved().projectFilesSidebarWidth === 336)
   await page.getByRole('searchbox', { name: 'Search project files' }).fill('second')
   await projectPane
-    .getByRole('button', { name: 'first.ts', exact: true })
+    .getByRole('button', { name: 'src/first.ts', exact: true })
     .waitFor({ state: 'hidden' })
   await projectPane.getByRole('button', { name: 'src/second.ts', exact: true }).waitFor()
   await page.evaluate(() => window.toggleProject())
