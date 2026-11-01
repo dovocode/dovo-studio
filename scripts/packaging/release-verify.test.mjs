@@ -4,12 +4,34 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 // Exercises the release workflow's verification shell as written, so channel detection and
 // asset naming are tested against complete generated asset lists without dispatching a run.
 const workflow = await readFile(
   new URL('../../.github/workflows/release-desktop.yml', import.meta.url),
   'utf8',
 )
+const { parse } = createRequire(new URL('../../packages/runtime/package.json', import.meta.url))(
+  'yaml',
+)
+
+void test('Windows release artifacts come from x64 builds and upload waits for signing', async () => {
+  const release = parse(workflow).jobs
+  const check = parse(
+    await readFile(new URL('../../.github/workflows/check.yml', import.meta.url), 'utf8'),
+  ).jobs.windows
+  assert.equal(check['runs-on'], 'windows-2025')
+  assert.equal(check.if, undefined, 'Windows checks run on pushes and pull requests')
+  assert.deepEqual(
+    release.platform.strategy.matrix.include.filter((entry) => entry.runner.startsWith('windows')),
+    [{ runner: 'windows-2025', arch: 'x64', unpacked: 'win-unpacked' }],
+  )
+  assert.deepEqual(release['windows-sign'].strategy.matrix.arch, ['x64'])
+  assert.equal(release['windows-sign'].if, release.platform.if)
+  assert.ok(release['windows-sign'].needs.includes('platform'))
+  assert.ok(release.upload.needs.includes('windows-sign'), 'Signed artifacts must exist at upload')
+})
+
 function stepScript(name) {
   const lines = workflow.split('\n')
   const start = lines.findIndex((line) => line.includes(`name: ${name}`))
@@ -36,6 +58,8 @@ export function releaseAssets(tag) {
     `${server}-${version}-macos-arm64.tar.gz`,
     `${server}-${version}-linux-x64.tar.gz`,
     `${server}-${version}-linux-arm64.tar.gz`,
+    `${server}-${version}-windows-x64.zip`,
+    `${prefix}-${version}-windows-x64.exe`,
     `${prefix}-${version}-linux-amd64.deb`,
     `${prefix}-${version}-linux-arm64.deb`,
     `${prefix}-${version}-linux-x86_64.rpm`,
@@ -44,6 +68,7 @@ export function releaseAssets(tag) {
     `${prefix}-${version}-linux-arm64.AppImage`,
     `${feed}-linux.yml`,
     `${feed}-linux-arm64.yml`,
+    `${feed}.yml`,
     `${feed}-mac.yml`,
   ]
 }
@@ -111,6 +136,20 @@ await test('verify-only dispatch derives the channel from the tag and checks the
     })
     assert.notEqual(incomplete.status, 0)
     assert.match(incomplete.output, /Missing release asset: nightly-mac\.yml/)
+    for (const tag of [stable, nightly]) {
+      const windowsAssets = releaseAssets(tag).filter((name) =>
+        /windows-x64\.|^(latest|nightly)\.yml$/.test(name),
+      )
+      for (const missing of windowsAssets) {
+        const incompleteWindows = await verify(directory, {
+          tag,
+          channel: '',
+          assets: releaseAssets(tag).filter((name) => name !== missing),
+        })
+        assert.notEqual(incompleteWindows.status, 0, `Missing ${missing} must block release`)
+        assert.ok(incompleteWindows.output.includes(`Missing release asset: ${missing}`))
+      }
+    }
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

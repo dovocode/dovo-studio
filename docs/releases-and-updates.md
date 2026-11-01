@@ -31,11 +31,11 @@ release. The Release workflow produces:
 | Windows  | x64           | NSIS EXE installer     | Azure Artifact Signing            |
 | Linux    | x64, ARM64    | DEB, RPM, AppImage     | Unsigned                          |
 
-Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64. Windows builds are
-temporarily paused in CI, so current nightlies contain macOS and Linux packages. Generated mise
-definitions include Windows only when the release contains its server archive. Each desktop build
-uses its native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests
-the bundled runtime and terminal. AppImage uses architecture-specific Linux update metadata. DEB/RPM
+Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64. Windows checks,
+packaging and signing run on Windows x64; Windows ARM64 builds are disabled. Generated mise
+definitions include Windows when the release contains its server archive. Each desktop build uses
+its native runner and Node 24, packages its matching SQLite/PTY dependencies, and smoke-tests the
+bundled runtime and terminal. AppImage uses architecture-specific Linux update metadata. DEB/RPM
 users install a new package through their package manager; Check for Updates opens the release
 download page. Artifacts are not a promise of compatibility with every historical
 Debian/Fedora/CentOS release.
@@ -106,9 +106,8 @@ OS and architecture. Append `--dir` for an unpacked build. Linux packaging requi
 tools. Only macOS publishing with `--publish` requires a Developer ID identity and notarization
 credentials. The workflow uses native GitHub-hosted ARM runners; repository/plan eligibility must
 allow those runner labels. Local Windows builds remain unsigned. Release Windows apps and installers
-are signed on Windows x64 after native builds, including ARM64; update hashes are generated
-afterward. Signing establishes publisher identity, but does not guarantee that SmartScreen will
-never prompt.
+are built and signed on Windows x64; update hashes are generated afterward. Signing establishes
+publisher identity, but does not guarantee that SmartScreen will never prompt.
 
 To reproduce the shared release staging locally, set `DOVO_PREPARED_RUNTIME` to a new absolute
 directory, run `pnpm run package:prepare-runtime`, then `pnpm run package:platform` with the same
@@ -249,7 +248,7 @@ References: [Expo Widgets](https://docs.expo.dev/versions/latest/sdk/widgets/),
 ## Homebrew and mise
 
 The release workflow builds standalone server archives for macOS arm64, Linux arm64/x64 and Windows
-arm64/x64, with Node 24 and native dependencies included. Windows archives are ZIPs with a
+x64, with Node 24 and native dependencies included. Windows archives are ZIPs with a
 `bin/dovo-server.cmd` launcher; macOS/Linux use tar.gz. Linux archives are built on Ubuntu 24.04
 (glibc); Alpine/musl is not supported. Agent CLIs and Git remain host tools, so existing signed-in
 accounts and project directories work.
