@@ -789,7 +789,8 @@ it('records owned runtime output durably in the data directory and survives a mi
     expect(text).toContain('warning: slow disk\n')
     expect(text).toContain('local runtime exited (SIGTERM)')
   })
-  expect(statSync(log).mode & 0o777).toBe(0o600)
+  // Windows reports writable files as 0666; ACLs control access rather than Unix mode bits.
+  expect(statSync(log).mode & 0o777).toBe(process.platform === 'win32' ? 0o666 : 0o600)
 })
 
 it('starts even when the runtime log cannot be opened', async () => {
