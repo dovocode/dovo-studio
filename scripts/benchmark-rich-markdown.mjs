@@ -34,6 +34,10 @@ async function load(version) {
 const citation = ':codex-file-citation{path="src/app.ts" line_range_start="4"}'
 const chunk = `Text with [external link](https://example.com/a) and ${citation}.\n\n[local file](src/app.ts)\n\n`
 const workloads = [
+  [
+    'streamed prose with inline links',
+    'Read [the documentation](https://example.com/guide) for more details.\n\n'.repeat(650),
+  ],
   ['links and citations', chunk.repeat(300)],
   ['single long line of links', '[link](https://example.com/a) '.repeat(3000)],
   ['many citations', `${citation} `.repeat(1500)],
@@ -56,6 +60,10 @@ if (implementations.length === 2) {
     `[${citation}](https://example.com)\n\n[ref][image]\n\n[image]: image.png`,
     `[one](a.png) [two](b.png)\r\n[three](c.png)\n\n${citation}`,
     `:codex-file-citation[${citation}]{path="outer.ts"}`,
+    'Read [docs](https://example.com) for details.\nwww.example.com/clip.mp4\n',
+    '\u00a0[image](image.png)\r\n<https://example.com/video.mp4>\r\n',
+    'Read [docs][ref] first.\n\n[ref]: https://example.com\n',
+    'Read [docs](https://example.com) first.\nhttps://example.com/image.png\n',
     `\uE200visualize\uE202{"path":"/tmp/demo.html"}\uE201\n\n${citation}`,
     '::artifact-template{artifact_kind="site" display_name="Site" skill_name="artifact-template-site" skill_directory="/tmp/site"}',
   ]

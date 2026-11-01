@@ -64,7 +64,7 @@ const mocks = {
     import {createContext,useContext} from 'react';
     import {Effect} from 'effect';
     export const RuntimeContext=createContext(null);
-    export const useRuntime=()=>useContext(RuntimeContext);
+    export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>useContext(RuntimeContext);
     export const RuntimeScope=({runtimeId,children})=>{
       const root=useRuntime();
       const entry=root.overviews.find(entry=>entry.profile.id===runtimeId);
@@ -241,6 +241,8 @@ const built = await build({
         window.openRoute=href=>setRoute(route=>({href:typeof href==='string'?href:href.pathname,params:typeof href==='string'?{}:href.params,key:route.key+1}));
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
         window.online=setOnline;
+        window.clearSnapshots=()=>setSnapshots(saved=>{window.snapshotBackup=saved;return {a:null,b:null}});
+        window.restoreSnapshots=()=>setSnapshots(window.snapshotBackup);
         window.selectRuntime=setActiveId;
         window.setLinkedProject=(present)=>setSnapshots(s=>({...s,a:{...s.a,workspace:{...s.a.workspace,repositories:[s.a.workspace.repositories[0],...(present?[{id:'repo',name:'Linked project',path:'/linked',branch:'main'}]:[])]}}}));
         window.makeGit=(runtimeId,kind)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind}))}}}));
@@ -657,10 +659,29 @@ try {
 
   await page.evaluate(() => {
     window.online(false)
+    window.selectRuntime('a')
+    window.openRoute('/new')
+  })
+  await input.waitFor()
+  assert.equal(await page.evaluate(() => window.runtimeId), 'a')
+  await input.fill('Draft while the computer is unreachable')
+  const offlineRequests = await page.evaluate(() => window.requests.length)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  assert.equal(await input.inputValue(), 'Draft while the computer is unreachable')
+  assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
+  await page.getByRole('button', { name: 'Remote', exact: true }).click()
+  await page.waitForFunction(() => window.runtimeId === 'b')
+  assert.equal(await input.inputValue(), 'Draft while the computer is unreachable')
+  assert.equal(await page.evaluate(() => window.savedDraft[0]), 'b')
+  assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
+  // A never-loaded computer still needs its first workspace; do not invent defaults.
+  await page.evaluate(() => {
+    window.clearSnapshots()
     window.openRoute('/new')
   })
   await page.getByText('Connect a computer', { exact: true }).waitFor()
   assert.equal(await input.count(), 0)
+  await page.evaluate(() => window.restoreSnapshots())
 
   // Already decoded history opens without another aggregate read, while live metadata wins.
   await page.evaluate(async () => {

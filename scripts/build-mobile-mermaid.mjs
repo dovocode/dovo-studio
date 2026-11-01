@@ -1,7 +1,15 @@
+import { generatedAssetsCache } from './generated-assets-cache.mjs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { mkdir, writeFile } from 'node:fs/promises'
+const cache = await generatedAssetsCache(
+  import.meta.url,
+  ['../apps/mobile/assets/mermaid.json'],
+  [],
+)
+if (cache.current) process.exit(0)
 const result = await build({
+  metafile: true,
   entryPoints: [fileURLToPath(new URL('../apps/mobile/mermaid/client.ts', import.meta.url))],
   bundle: true,
   write: false,
@@ -17,3 +25,5 @@ await writeFile(
   new URL('../apps/mobile/assets/mermaid.json', import.meta.url),
   JSON.stringify(html),
 )
+
+await cache.save(Object.keys(result.metafile.inputs))

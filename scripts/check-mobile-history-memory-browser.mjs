@@ -36,8 +36,8 @@ const app=createRoot(document.getElementById('app'));app.render(<App/>);window.u
       importer: root + 'apps/mobile/src/tasks/conversation/state/use-conversation-history.ts',
       contents: `
 const profile={connection:{address:'http://localhost',token:'memory-fixture-device-token'}};
-const read=async(_path,{before})=>{window.requests.push(before);const end=Number(before.slice(1));const start=Math.max(0,end-50);return {messages:Array.from({length:end-start},(_,index)=>({id:'m'+(start+index),role:(start+index)%2?'assistant':'user',text:'x'.repeat(6000),bookmarked:start+index===1||start+index===649})),turns:[],before:start?'m'+start:undefined,historyRevision:1}};
-const readCache={read:()=>new Promise(resolve=>{window.restoreHistory=()=>resolve(window.cachedHistory?{value:window.cachedHistory}:null)}),write:async()=>{}};export const useRuntime=()=>({profile,connected:window.connected,readCache:window.enableCache?readCache:null,read});`,
+const read=async(_path,{before})=>{window.requests.push(before);const end=Number(before.slice(1));const start=Math.max(0,end-50);const page={messages:Array.from({length:end-start},(_,index)=>({id:'m'+(start+index),role:(start+index)%2?'assistant':'user',text:'x'.repeat(6000),bookmarked:start+index===1||start+index===649})),turns:[],before:start?'m'+start:undefined,historyRevision:1};window.responseBytes=(window.responseBytes??0)+new TextEncoder().encode(JSON.stringify(page)).length;return page};
+const readCache={read:()=>new Promise(resolve=>{window.restoreHistory=()=>resolve(window.cachedHistory?{value:window.cachedHistory}:null)}),write:async()=>{}};export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>({profile,connected:window.connected,readCache:window.enableCache?readCache:null,read});`,
     },
   ],
 )
@@ -92,7 +92,7 @@ try {
   )
   assert.equal(new Set(messages).size, messages.length)
   assert.equal(messages.at(-1), 'm650')
-  // Opening fills nearest older pages automatically after the latest reply lays out.
+  // Opening fetches at most one older page after the latest reply lays out.
   await page.evaluate(() => {
     window.setHistoryMode(false)
     window.setLive({
@@ -105,17 +105,26 @@ try {
   })
   await page.waitForFunction(() => window.historyState.task.id === 'opening')
   const openingRequests = await page.evaluate(() => window.requests.length)
+  const openingBytes = await page.evaluate(() => window.responseBytes)
   assert.equal(await page.evaluate(() => window.historyState.task.messages.length), 1)
   await page.evaluate(() => window.setHistoryMode(true))
   await page.waitForFunction(
-    () => !window.historyState.busy && window.historyState.task.messages.length >= 500,
+    () => !window.historyState.busy && window.historyState.task.messages.length > 1,
   )
-  assert.equal(await page.evaluate(() => window.requests.length), openingRequests + 10)
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  const openingTraffic = await page.evaluate(
+    ({ requests, bytes }) => ({
+      requests: window.requests.length - requests,
+      bytes: window.responseBytes - bytes,
+    }),
+    { requests: openingRequests, bytes: openingBytes },
+  )
+  console.log('Mobile opening history traffic:', openingTraffic)
+  assert.equal(openingTraffic.requests, 1, 'opening must not drain ten pages of older history')
   assert.equal(await page.evaluate(() => window.historyState.task.messages.at(-1).text), 'Latest')
-  assert.deepEqual(
-    await page.evaluate(() => window.requests.slice(-10)),
-    Array.from({ length: 10 }, (_, index) => 'm' + (650 - index * 50)),
-  )
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1)), 'm650')
   // Delayed cache hydration also fills automatically; live text wins on overlap.
   await page.evaluate(() => {
     window.enableCache = true
@@ -127,6 +136,7 @@ try {
       })),
       turns: [],
       historyRevision: 1,
+      before: 'm600',
     }
     window.restoreHistory = undefined
     window.setLive({
@@ -151,7 +161,7 @@ try {
     'Live latest',
   )
   assert.equal(await page.evaluate(() => window.requests.length), cachedRequests)
-  assert.equal(await page.evaluate(() => window.historyState.hasMore), false)
+  assert.equal(await page.evaluate(() => window.historyState.hasMore), true)
   // Offline opening and reconnect keep the restored window without manual loading.
   await page.evaluate(() => {
     window.setConnected(false)
@@ -175,10 +185,30 @@ try {
   await page.waitForFunction(() => window.historyState.task.messages.at(-1)?.text === 'Live again')
   assert.equal(await page.evaluate(() => window.historyState.task.messages.length), 51)
   assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
+  // A complete initial live page already supplies context without any older download.
+  await page.evaluate(() => {
+    window.enableCache = false
+    window.setLive({
+      id: 'full-live-page',
+      messages: Array.from({ length: 75 }, (_, index) => ({
+        id: 'm' + (576 + index),
+        role: 'assistant',
+        text: 'Live ' + index,
+      })),
+      turns: [],
+      historyBefore: 'm576',
+      historyRevision: 1,
+    })
+  })
+  await page.waitForFunction(() => window.historyState.task.id === 'full-live-page')
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(await page.evaluate(() => window.requests.length), offlineRequests)
   assert.deepEqual(errors, [])
   await page.evaluate(() => window.unmount())
   console.log(
-    'Mobile history: automatic newest-first history fill, delayed cache restoration and offline/reconnect restoration; reading ranges protected and evicted pages reload without gaps or duplicates.',
+    'Mobile history: one-page initial prefetch, delayed cache restoration and offline/reconnect restoration; reading ranges protected and evicted pages reload without gaps or duplicates.',
   )
 } finally {
   await browser.close()

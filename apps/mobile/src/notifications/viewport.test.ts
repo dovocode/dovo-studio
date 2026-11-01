@@ -1,5 +1,5 @@
-import { expect, it } from 'vite-plus/test'
-import { createNotificationViewport, type Rectangle } from './viewport'
+import { expect, it, vi } from 'vite-plus/test'
+import { createNotificationViewport, type Rectangle, type Measure } from './viewport'
 import { blockAccessibleNotificationInputs, shouldAlertForNotification } from './visibility'
 
 it('alerts when scrolled away, and suppresses only cards fully visible after scrolling back', () => {
@@ -67,4 +67,20 @@ it('rejects stale and missing measurements, including after unmount', () => {
   remove()
   cardCallback?.(rect)
   expect(alert()).toBe(true)
+})
+
+it('does not cross the native measurement bridge when no notification cards are present', () => {
+  const measure = vi.fn<Measure>()
+  const viewport = createNotificationViewport(measure)
+  viewport.refresh()
+  viewport.refresh()
+  expect(measure).not.toHaveBeenCalled()
+  const remove = viewport.observe(
+    { runtimeId: 'host', taskId: 'task', inputId: 'input', inputType: 'question' },
+    () => {},
+  )
+  expect(measure).toHaveBeenCalledTimes(1)
+  remove()
+  viewport.refresh()
+  expect(measure).toHaveBeenCalledTimes(1)
 })

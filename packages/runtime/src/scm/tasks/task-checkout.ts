@@ -25,6 +25,7 @@ import { taskWorktreeKeys, isTaskWorktree, worktreesRoot } from './task-worktree
 export class TaskCheckout {
   readonly linked: LinkedCheckouts
   private pending = new PendingCheckouts<string>()
+  private originFetches = new PendingCheckouts<void>()
   private prepared = new Map<
     string,
     {
@@ -415,10 +416,11 @@ export class TaskCheckout {
       'agent',
     ]
     this.progress(id, steps, steps[0], branch)
-    let refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
     // "Start from origin": fetch first so the worktree starts from origin's latest commit.
-    if (refs && fetching)
-      refs = await this.fetchOrigin(root, signal).then(() => listBranches({ git: this.git }, root))
+    if (fetching) await this.fetchOrigin(root, signal)
+    // Only post-fetch refs can choose the base. Inspecting every branch beforehand
+    // launches another complete round of Git reads whose result is immediately discarded.
+    const refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
     const selection =
       task.worktreeBaseBranch ??
       (refs &&
@@ -533,16 +535,32 @@ export class TaskCheckout {
   }
   /** Offline or credential-less fetches are not fatal: the last fetched origin refs are used. */
   private async fetchOrigin(root: string, signal?: AbortSignal) {
+    const common = (
+      await this.git.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    ).trim()
+    const key = await realpath(common)
+    return this.originFetches.run(
+      key,
+      (sharedSignal) =>
+        this.git.measureCheckout(root, 'fetch', () => this.refreshOrigin(root, sharedSignal)),
+      signal,
+    )
+  }
+  private async refreshOrigin(root: string, signal?: AbortSignal) {
     const remotes = (await this.git.command(root, ['remote']))
       .split('\n')
       .map((name) => name.trim())
     if (!remotes.includes('origin')) return
-    await this.git
+    const fetched = await this.git
       .checkoutCommand(root, ['fetch', '--quiet', '--no-tags', 'origin'], signal, undefined, 30000)
+      .then(() => true)
       .catch((error: unknown) => {
         if (error instanceof OwnedProcessShutdownError || signal?.aborted) throw error
+        return false
       })
     signal?.throwIfAborted()
+    // A second remote request cannot teach us the default branch while origin is offline.
+    if (!fetched) return
     // Learn origin's default branch once, for clones that never recorded origin/HEAD.
     const known = await this.git
       .command(root, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'])
@@ -620,25 +638,30 @@ export class TaskCheckout {
         signal,
       )
       signal?.throwIfAborted()
-      await this.git.checkoutCommand(
-        cwd,
-        [
-          'submodule',
-          'update',
-          '--init',
-          ...(task.submodules === 'recursive' ? ['--recursive'] : []),
-        ],
-        signal,
-        processEnvironment({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
+      await this.git.measureCheckout(cwd, 'submodules', () =>
+        this.git.checkoutCommand(
+          cwd,
+          [
+            'submodule',
+            'update',
+            '--init',
+            ...(task.submodules === 'recursive' ? ['--recursive'] : []),
+          ],
+          signal,
+          processEnvironment({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
+        ),
       )
       signal?.throwIfAborted()
       this.store.updateTask(id, (current) => ({ ...current, worktreeSubmodulesComplete: true }))
     }
-    if (task.setupCommand?.trim() && !task.worktreeSetupComplete) {
+    const setupCommand = task.setupCommand
+    if (setupCommand?.trim() && !task.worktreeSetupComplete) {
       this.progress(id, steps, 'setup', branch)
       try {
         signal?.throwIfAborted()
-        await this.git.setupWorktree(cwd, task.setupCommand, signal)
+        await this.git.measureCheckout(cwd, 'setup', () =>
+          this.git.setupWorktree(cwd, setupCommand, signal),
+        )
         signal?.throwIfAborted()
       } catch (error) {
         if (error instanceof OwnedProcessShutdownError || signal?.aborted) throw error

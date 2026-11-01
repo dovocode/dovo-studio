@@ -1,3 +1,4 @@
+import { selectConversationConnection } from './workspace-selection'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   conversationPageSchema,
@@ -6,7 +7,7 @@ import {
   type ConversationPage,
   type Task,
 } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
+import { useWorkspaceSelector, sameWorkspaceFields } from '@dovo/studio-core'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
 import {
   conversationHistoryBudget,
@@ -20,9 +21,15 @@ import {
 
 const emptyPages: ConversationPage[] = []
 export function useConversationHistory<
-  T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
+  T extends Pick<
+    Task,
+    'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision' | 'historyTotals'
+  >,
 >(live: T, prefetchRecent = true) {
-  const { connection, request, connected } = useWorkspace()
+  const { connection, request, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const revision = live.historyRevision ?? 0
   const scope = JSON.stringify([connection?.address, connection?.token, live.id])
   const [loaded, setLoaded] = useState<{
@@ -119,7 +126,16 @@ export function useConversationHistory<
       )
   }, [scope, live])
   const pages = loaded.scope === scope && loaded.revision === revision ? loaded.pages : emptyPages
-  const task = useMemo(() => mergeConversationHistory(live, pages), [live, pages])
+  const { messages, turns, historyBefore, historyRevision, historyTotals } = live
+  const projection = useMemo(
+    () =>
+      mergeConversationHistory(
+        { messages, turns, historyBefore, historyRevision, historyTotals },
+        pages,
+      ),
+    [messages, turns, historyBefore, historyRevision, historyTotals, pages],
+  )
+  const task = useMemo(() => ({ ...live, ...projection }), [live, projection])
   const cursor = !live.historyBefore
     ? undefined
     : pages.length

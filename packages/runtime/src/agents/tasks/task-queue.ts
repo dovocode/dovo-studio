@@ -115,6 +115,7 @@ export class TaskQueue {
     subagentResultId?: string,
     options: {
       turnSettings?: TurnSettings
+      initialTitle?: { before: string; after: string }
       queueOnly?: boolean
       steering?: boolean
       reopenSettled?: boolean
@@ -154,6 +155,13 @@ export class TaskQueue {
         t.nativeTodos?.length &&
         t.nativeTodos.every((todo) => todo.status === 'completed')
           ? { nativeTodos: undefined }
+          : {}),
+        ...(options.initialTitle &&
+        t.title === options.initialTitle.before &&
+        !t.history.messages &&
+        !t.queue?.length &&
+        !t.history.turns
+          ? { title: options.initialTitle.after }
           : {}),
         checkoutLocked: true,
         ...(options.unsnooze ? { snoozedUntil: null } : {}),

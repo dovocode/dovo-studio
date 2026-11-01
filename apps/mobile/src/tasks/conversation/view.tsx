@@ -895,8 +895,8 @@ export function Conversation({
             maxToRenderPerBatch={6}
             windowSize={7}
             onEndReached={() => {
-              // Opening already fills the bounded recent window automatically. Native
-              // end events during measurement must not drain all older history as well.
+              // Native end events during measurement must not drain older history.
+              // Additional pages follow an actual reader interaction with the list.
               if (
                 visible &&
                 historyInteraction.current &&

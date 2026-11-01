@@ -202,7 +202,7 @@ it('restores battery choices independently and preserves defaults for older or i
   const preferences = await loadPreferences()
   await preferences.preferencesReady
   expect(preferences.readMobilePreferences()).toMatchObject({
-    computerRefresh: 'normal',
+    computerRefresh: 'reduced',
     widgetUpdates: false,
     taskSort: 'title',
   })

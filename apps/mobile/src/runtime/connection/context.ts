@@ -22,6 +22,7 @@ type Call = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Promise<T['Type']>
 type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -29,12 +30,14 @@ type RuntimeRead = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Promise<T['Type']>
 type CallEffect = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
 type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -42,6 +45,7 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   input: unknown,
   schema: T,
   method?: string,
+  options?: { defer?: boolean },
 ) => Effect.Effect<T['Type'], Error>
 
 export type Runtime = {

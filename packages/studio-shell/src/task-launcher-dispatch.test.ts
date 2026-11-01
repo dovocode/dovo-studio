@@ -83,3 +83,16 @@ it('keeps the Scope prompt pending and sends nothing if project selection fails'
   await dispatchLauncherTask(attempt, request)
   expect(calls.mock.calls.filter(([path]) => path === '/api/tasks/message')).toHaveLength(1)
 })
+
+it('carries Scope selection with a durable submission on supporting runtimes', async () => {
+  const { attempt, calls, request } = fixture('')
+  attempt.task.autoProject = true
+  await dispatchLauncherTask(attempt, request, { messageSetup: true })
+  expect(calls.mock.calls.map(([path]) => path)).toEqual(['/api/workspace', '/api/tasks/message'])
+  expect(calls.mock.calls[1]?.[1]).toMatchObject({
+    id: attempt.task.id,
+    messageId: attempt.messageId,
+    selectProject: true,
+    initialTitle: { before: attempt.task.title, after: attempt.task.title },
+  })
+})

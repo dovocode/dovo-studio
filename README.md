@@ -42,6 +42,12 @@ pnpm install
 pnpm dev:desktop
 ```
 
+Installation prepares shared runtime assets only. Mobile bundles and native Markdown grammars are
+prepared by the mobile start/build commands; unchanged mobile bundles reuse their import-graph
+cache. Before running an individual browser check, install managed Chromium with
+`pnpm exec playwright install chromium` (`--with-deps chromium` on Linux when needed).
+`pnpm test:browser` includes that browser installation step.
+
 For the public brand website, run `pnpm dev:site` (http://localhost:3001). See
 [the site README](apps/site/README.md) for static deployment instructions.
 

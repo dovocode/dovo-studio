@@ -1420,6 +1420,7 @@ export class Tasks {
     queueOnly = false,
     preserveQueuePause = false,
     sendNow = false,
+    initialTitle?: { before: string; after: string },
   ) {
     return runtimeOperation(() => {
       if (this.deletionReservations.has(id))
@@ -1451,6 +1452,7 @@ export class Tasks {
             undefined,
             {
               turnSettings,
+              initialTitle,
               queueOnly,
               source,
               reopenSettled: resumePaused,

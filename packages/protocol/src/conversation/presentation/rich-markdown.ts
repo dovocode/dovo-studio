@@ -142,9 +142,11 @@ function renderCitations(text: string, root: Nodes) {
   return pieces.join('')
 }
 export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[] {
+  // Cards only replace links on their own line. Ordinary inline links are rendered by
+  // the Markdown view already; avoid building a second AST on every streaming update.
   if (
-    !text.includes('[') &&
-    !/https?:\/\//i.test(text) &&
+    (!/^[^\S\r\n]*(?:\[|<|https?:\/\/|www\.)/im.test(text) ||
+      (!text.includes('[') && !/https?:\/\//i.test(text))) &&
     !text.includes(':codex-file-citation') &&
     !text.includes('::artifact-template') &&
     !text.includes('\uE200visualize\uE202')

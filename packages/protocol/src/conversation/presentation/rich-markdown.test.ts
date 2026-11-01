@@ -160,3 +160,26 @@ it('keeps invalid, remote, incomplete and code-example visualization markers lit
     expect(richMarkdownPaths(text)).toEqual([])
   }
 })
+
+it('preserves inline links and still recognizes standalone autolinks after prose', () => {
+  const prose = 'Read [the docs](https://example.com) before continuing.\n'
+  expect(richMarkdown(prose.repeat(500))).toEqual([
+    { kind: 'markdown', text: prose.repeat(500), offset: 0 },
+  ])
+  for (const link of [
+    'https://example.com/clip.mp4',
+    'www.example.com/clip.mp4',
+    '<https://example.com/clip.mp4>',
+  ]) {
+    const parts = richMarkdown(prose + link)
+    expect(parts.find((part) => part.kind === 'video')).toMatchObject({
+      path: link.startsWith('www.')
+        ? 'http://www.example.com/clip.mp4'
+        : 'https://example.com/clip.mp4',
+    })
+  }
+  const indented = prose + '\u00a0[shot](shot.png)'
+  expect(richMarkdown(indented).find((part) => part.kind === 'image')).toMatchObject({
+    path: 'shot.png',
+  })
+})

@@ -44,7 +44,7 @@ export function TemporaryTaskRuntime({
   }, [])
   const { readEffect: rootRead, callEffect: rootCall } = runtime
   const requestEffect = useCallback<typeof runtime.readEffect>(
-    (path, input, schema, method) =>
+    (path, input, schema, method, options) =>
       Effect.tryPromise({
         try: async () => {
           if (!committed.current && path === '/api/workspace' && method === 'PATCH') {
@@ -75,6 +75,7 @@ export function TemporaryTaskRuntime({
                   { collection: 'tasks', id: task.id, create: current.current, changes: {} },
                   revision,
                   'PATCH',
+                  options,
                 ),
               ).catch((error: unknown) => {
                 creation.current = null
@@ -85,7 +86,13 @@ export function TemporaryTaskRuntime({
             if (mounted.current) setTemporary(false)
           }
           const result = await runClientEffect(
-            (needsTask || committed.current ? rootCall : rootRead)(path, input, schema, method),
+            (needsTask || committed.current ? rootCall : rootRead)(
+              path,
+              input,
+              schema,
+              method,
+              options,
+            ),
           )
           // Background watcher reads must not finalize a draft after a failed first action.
           if (

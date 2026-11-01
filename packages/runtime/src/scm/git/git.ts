@@ -303,6 +303,7 @@ export class GitService {
       args: string[],
       result?: {
         error?: string
+        durationMs?: number
         github?: {
           host: string
           method: string
@@ -678,6 +679,22 @@ export class GitService {
       child.stdin?.end(limits.input)
     })
   }
+  /** Preparation timings are retained with command activity for startup diagnostics. */
+  async measureCheckout<T>(cwd: string, stage: string, operation: () => Promise<T>): Promise<T> {
+    const started = performance.now()
+    let failure: string | undefined
+    try {
+      return await operation()
+    } catch (error) {
+      failure = errorMessage(error)
+      throw error
+    } finally {
+      this.audit?.(cwd, ['worktree-prepare', stage], {
+        durationMs: Math.round((performance.now() - started) * 100) / 100,
+        ...(failure ? { error: failure } : {}),
+      })
+    }
+  }
   /** Git operations that write repository configuration shared by every linked worktree. */
   sharedConfigCommand(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
     return this.withSharedConfig(cwd, () => this.command(cwd, args, env))
@@ -705,20 +722,22 @@ export class GitService {
     })
     let held = false
     try {
-      if (signal)
-        await new Promise<void>((resolve, reject) => {
-          const aborted = () => {
-            signal.removeEventListener('abort', aborted)
-            reject(signal.reason)
-          }
-          signal.addEventListener('abort', aborted, { once: true })
-          if (signal.aborted) aborted()
-          void previous.then(() => {
-            signal.removeEventListener('abort', aborted)
-            resolve()
+      await this.measureCheckout(cwd, 'config-wait', async () => {
+        if (signal)
+          await new Promise<void>((resolve, reject) => {
+            const aborted = () => {
+              signal.removeEventListener('abort', aborted)
+              reject(signal.reason)
+            }
+            signal.addEventListener('abort', aborted, { once: true })
+            if (signal.aborted) aborted()
+            void previous.then(() => {
+              signal.removeEventListener('abort', aborted)
+              resolve()
+            })
           })
-        })
-      else await previous
+        else await previous
+      })
       signal?.throwIfAborted()
       this.identities.clear()
       return await operation()
@@ -741,43 +760,47 @@ export class GitService {
     const parts = /git version (\d+)\.(\d+)/.exec(version)
     if (!parts || Number(parts[1]) < 2 || (Number(parts[1]) === 2 && Number(parts[2]) < 36))
       throw new HttpError(409, 'Git 2.36 or newer is required for safely owned worktree creation.')
-    const files = await includedWorktreeFiles(root, signal)
+    const files = await this.measureCheckout(root, 'include-files', () =>
+      includedWorktreeFiles(root, signal),
+    )
     const reason = `dovo-creating ${randomUUID()}`
-    await this.withSharedConfig(
-      root,
-      async () => {
-        await this.assertCheckoutAvailable(root)
-        // Git accepts an empty folder. Creating it exclusively gives us an identity before
-        // checkout hooks run, so a confirmed cancellation can clean only this attempt.
-        try {
-          await mkdir(directory)
-        } catch (error) {
-          if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
-            throw new HttpError(
-              409,
-              `The checkout path ${directory} already exists; its files were preserved.`,
-            )
-          throw error
-        }
-        let identity: Awaited<ReturnType<typeof lstat>> | undefined
-        let canonical: string | undefined
-        const registration = async () => {
-          const records = (await this.command(root, ['worktree', 'list', '--porcelain', '-z']))
-            .split('\0\0')
-            .map((block) => block.split('\0'))
-          return records.find((record) => {
-            const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
-            return path && canonical && resolve(path) === resolve(canonical)
-          })
-        }
-        const owns = async () => (await registration())?.includes(`locked ${reason}`) ?? false
-        try {
+    let identity: Awaited<ReturnType<typeof lstat>> | undefined
+    let canonical: string | undefined
+    const registration = async () => {
+      const records = (await this.command(root, ['worktree', 'list', '--porcelain', '-z']))
+        .split('\0\0')
+        .map((block) => block.split('\0'))
+      return records.find((record) => {
+        const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
+        return path && canonical && resolve(path) === resolve(canonical)
+      })
+    }
+    const owns = async () => (await registration())?.includes(`locked ${reason}`) ?? false
+    try {
+      await this.withSharedConfig(
+        root,
+        async () => {
+          await this.assertCheckoutAvailable(root)
+          // Git accepts an empty folder. Creating it exclusively gives us an identity before
+          // checkout hooks run, so a confirmed cancellation can clean only this attempt.
+          try {
+            await mkdir(directory)
+          } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+              throw new HttpError(
+                409,
+                `The checkout path ${directory} already exists; its files were preserved.`,
+              )
+            throw error
+          }
           canonical = await realpath(directory)
           identity = await lstat(canonical)
-          await this.checkoutCommand(
-            root,
-            ['worktree', 'add', '--lock', '--reason', reason, ...args],
-            signal,
+          await this.measureCheckout(root, 'checkout', () =>
+            this.checkoutCommand(
+              root,
+              ['worktree', 'add', '--lock', '--reason', reason, ...args],
+              signal,
+            ),
           )
           signal?.throwIfAborted()
           const created = await lstat(canonical)
@@ -786,8 +809,21 @@ export class GitService {
               409,
               'The worktree registration changed during creation; its files were preserved.',
             )
-          await copyWorktreeFiles(root, canonical, files, signal)
+        },
+        signal,
+      )
+      // The durable dovo-creating registration fences this checkout while independent
+      // worktrees can acquire the shared config lock and start their own checkout.
+      if (!canonical) throw new Error('Missing newly created worktree path')
+      const checkout = canonical
+      await this.measureCheckout(root, 'copy', () =>
+        copyWorktreeFiles(root, checkout, files, signal),
+      )
+      await this.withSharedConfig(
+        root,
+        async () => {
           signal?.throwIfAborted()
+          if (!canonical || !identity) throw new Error('Missing worktree ownership')
           const current = await lstat(canonical)
           if (current.dev !== identity.dev || current.ino !== identity.ino || !(await owns()))
             throw new HttpError(
@@ -801,51 +837,53 @@ export class GitService {
             this.worktreeCreated(common, canonical)
           }
           await this.command(root, ['worktree', 'unlock', canonical])
-        } catch (error) {
-          // Never clean while a process may still be writing or before identity was captured.
-          if (error instanceof OwnedProcessShutdownError) throw error
-          let cleaned = false
-          if (canonical && identity) {
-            const current = await lstat(canonical).catch(() => undefined)
-            if (current?.dev === identity.dev && current.ino === identity.ino) {
-              try {
-                const record = await registration()
-                // Keep the owned registration fenced if deleting the directory fails. Git's
-                // own remove can erase the registration even when files could not be removed.
-                if (record?.includes(`locked ${reason}`)) {
-                  await rm(canonical, { recursive: true, maxRetries: 3, retryDelay: 100 })
-                  await this.checkoutCommand(root, [
-                    'worktree',
-                    'remove',
-                    '--force',
-                    '--force',
-                    canonical,
-                  ])
-                  cleaned = true
-                } else {
-                  // A failure before registration may leave our empty directory. Never recurse
-                  // here: nonempty unregistered folders require explicit inspection.
-                  await rmdir(canonical)
-                  cleaned = true
-                }
-              } catch (cleanupError) {
-                if (cleanupError instanceof OwnedProcessShutdownError) throw cleanupError
-                throw new AggregateError(
-                  [error, cleanupError],
-                  `Worktree preparation failed; inspect ${directory} (${reason}).`,
-                )
+        },
+        signal,
+      )
+    } catch (error) {
+      // Never clean while a process may still be writing or before identity was captured.
+      if (error instanceof OwnedProcessShutdownError) throw error
+      await this.withSharedConfig(root, async () => {
+        let cleaned = false
+        if (canonical && identity) {
+          const current = await lstat(canonical).catch(() => undefined)
+          if (current?.dev === identity.dev && current.ino === identity.ino) {
+            try {
+              const record = await registration()
+              // Keep the owned registration fenced if deleting the directory fails. Git's
+              // own remove can erase the registration even when files could not be removed.
+              if (record?.includes(`locked ${reason}`)) {
+                await rm(canonical, { recursive: true, maxRetries: 3, retryDelay: 100 })
+                await this.checkoutCommand(root, [
+                  'worktree',
+                  'remove',
+                  '--force',
+                  '--force',
+                  canonical,
+                ])
+                cleaned = true
+              } else {
+                // A failure before registration may leave our empty directory. Never recurse
+                // here: nonempty unregistered folders require explicit inspection.
+                await rmdir(canonical)
+                cleaned = true
               }
+            } catch (cleanupError) {
+              if (cleanupError instanceof OwnedProcessShutdownError) throw cleanupError
+              throw new AggregateError(
+                [error, cleanupError],
+                `Worktree preparation failed; inspect ${directory} (${reason}).`,
+              )
             }
           }
-          if (cleaned || signal?.aborted) throw error
-          throw new HttpError(
-            409,
-            `${errorMessage(error)} Worktree preparation did not complete. Inspect ${directory} and its Git registration (${reason}) before retrying; existing files were preserved.`,
-          )
         }
-      },
-      signal,
-    )
+        if (cleaned || signal?.aborted) throw error
+        throw new HttpError(
+          409,
+          `${errorMessage(error)} Worktree preparation did not complete. Inspect ${directory} and its Git registration (${reason}) before retrying; existing files were preserved.`,
+        )
+      })
+    }
   }
   // Credential helpers answer or fail; git must never wait on a terminal prompt.
   private nonInteractive() {

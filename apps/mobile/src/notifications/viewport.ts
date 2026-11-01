@@ -12,6 +12,7 @@ export function createNotificationViewport(measureViewport: Measure) {
   let revision = 0
   const refresh = () => {
     const current = ++revision
+    if (!entries.size) return
     for (const entry of entries) {
       entry.remove?.()
       entry.remove = undefined

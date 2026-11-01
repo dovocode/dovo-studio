@@ -1,13 +1,22 @@
 import { useEffect, useRef, useMemo, type ComponentProps } from 'react'
 import { Alert } from 'react-native'
 import { responses, threadPullLink } from '@dovo/protocol'
-import { useRuntime } from '../../../runtime/connection/provider'
+import {
+  useRuntimeSelector,
+  sameRuntimeFields,
+  type useRuntime,
+} from '../../../runtime/connection/provider'
 import { Markdown } from '../../../ui/content/markdown'
 import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { openAppLink } from '../../../ui/content/open-link'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
-import { useConversationSelector } from '../state/provider'
+import { useConversationSelector, useAppendConversationTemplate } from '../state/provider'
+
+const selectLinkActions = (value: ReturnType<typeof useRuntime>) => ({
+  call: value.call,
+  connected: value.connected,
+})
 
 export function ThreadMarkdown({
   plainText = false,
@@ -17,7 +26,7 @@ export function ThreadMarkdown({
 }) {
   const { styles, colors } = useTheme()
 
-  const draft = useConversationSelector((value) => value.actions.draft)
+  const appendTemplate = useAppendConversationTemplate()
   const taskId = useConversationSelector((value) => value.task.id)
   const origin = useLinkOrigin(taskId)
   const linkActions = useRef<AbortController | null>(null)
@@ -26,8 +35,12 @@ export function ThreadMarkdown({
     linkActions.current = controller
     return () => controller.abort()
   }, [taskId, origin.runtimeId])
-  const task = useConversationSelector((value) => value.task)
-  const { call, connected } = useRuntime()
+  const pullRequest = useConversationSelector((value) => value.task.pullRequest)
+  const linkedPullRequests = useConversationSelector((value) => value.task.linkedPullRequests)
+  const archived = useConversationSelector(
+    (value) => !!value.task.archived || !!value.task.archivedAt,
+  )
+  const { call, connected } = useRuntimeSelector(selectLinkActions, sameRuntimeFields)
   // Keep user text literal. The native Markdown parser drops HTML entities,
   // including the encoded spaces/newlines previously used around PR links.
   const plainParts = useMemo(
@@ -47,19 +60,13 @@ export function ThreadMarkdown({
     const pull = threadPullLink(url)
     if (!pull) return false
     const linked =
-      task.pullRequest?.url === pull.url ||
-      task.linkedPullRequests?.some((item) => item.url === pull.url)
+      pullRequest?.url === pull.url || linkedPullRequests?.some((item) => item.url === pull.url)
     void openAppLink(url, false, origin, [
       {
         signal: linkActions.current?.signal,
         label: linked ? 'Already linked to this thread' : 'Link to this thread',
-        disabled:
-          !!linked ||
-          !connected ||
-          !!task.archived ||
-          !!task.archivedAt ||
-          (task.linkedPullRequests?.length ?? 0) >= 20,
-        run: () => call('/api/scm/pulls/link-thread', { id: task.id, pulls: [pull] }, responses.ok),
+        disabled: !!linked || !connected || archived || (linkedPullRequests?.length ?? 0) >= 20,
+        run: () => call('/api/scm/pulls/link-thread', { id: taskId, pulls: [pull] }, responses.ok),
       },
     ]).catch((cause: unknown) => Alert.alert('Could not open link', String(cause)))
     return true
@@ -99,9 +106,7 @@ export function ThreadMarkdown({
         <Markdown
           {...props}
           taskId={taskId}
-          onUseTemplate={(prompt) =>
-            draft.update([draft.text.trimEnd(), prompt].filter(Boolean).join('\n\n'))
-          }
+          onUseTemplate={appendTemplate}
           onLinkPress={(url) => {
             if (!choose(url)) open(url)
           }}

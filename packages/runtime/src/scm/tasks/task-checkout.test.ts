@@ -7,6 +7,7 @@ import { fixture } from '../../testing/fixture'
 import type { AgentRun } from '../../agents/execution/types'
 import { responses } from '@dovo/protocol'
 import { TaskCheckout } from './task-checkout'
+import { PendingCheckouts } from './pending-checkouts'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -389,13 +390,19 @@ it('defaults worktrees to the latest origin branch and still supports local bran
     return (await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()
   }
   expect(await make(false)).toBe(local)
+  const commands = vi.spyOn(s.git, 'command')
   // Fetched first, so the worktree starts from origin's newest commit.
   expect(await make()).toBe(remote)
+  expect(
+    commands.mock.calls.filter(
+      ([, args]) => args[0] === 'for-each-ref' && args.includes('refs/remotes/'),
+    ),
+  ).toHaveLength(1)
   // A branch origin does not have falls back to origin's detected default branch.
   await git('checkout', '--quiet', '-b', 'feature-only-here')
   expect(await make(true)).toBe(remote)
   expect(await make(false)).toBe(local)
-  const commands = vi.spyOn(s.git, 'command')
+  commands.mockClear()
   expect(await make(undefined, 'refs/heads/chosen-base')).toBe(local)
   expect(commands.mock.calls.some(([, args]) => args[0] === 'fetch')).toBe(false)
   await expect(make(false, 'refs/heads/missing')).rejects.toThrow('Choose an existing base branch')
@@ -791,4 +798,95 @@ it('compares a fork started at a source commit with that commit, not the project
   const result = await s.git.branchChangesFiles(cwd, s.checkouts.branchBase(fork.id))
   expect(result.base).toBe(head)
   expect(result.files.map((file) => file.path)).toEqual(['child.txt'])
+})
+
+it('shares simultaneous origin fetches and fetches again for a later checkout', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'shared-fetch-test-owner-token-32-characters',
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  await s.git.command(f.directory, ['remote', 'add', 'origin', f.directory])
+  let fetching!: () => void, resume!: () => void
+  const started = new Promise<void>((resolve) => {
+    fetching = resolve
+  })
+  const waiting = new Promise<void>((resolve) => {
+    resume = resolve
+  })
+  const checkout = s.git.checkoutCommand.bind(s.git)
+  const calls = vi
+    .spyOn(s.git, 'checkoutCommand')
+    .mockImplementation(async (cwd, args, ...rest) => {
+      if (args[0] === 'fetch') {
+        fetching()
+        await waiting
+      }
+      return checkout(cwd, args, ...rest)
+    })
+  const make = () => {
+    const task = s.tasks.create({
+      title: 'Parallel checkout',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+      execution: 'worktree',
+    })
+    return s.checkouts.directory(task.id).then((cwd) => {
+      cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+      return cwd
+    })
+  }
+  const coordination = vi.spyOn(PendingCheckouts.prototype, 'run')
+  const common = await realpath(join(f.directory, '.git'))
+  const first = make()
+  await started
+  const second = make()
+  // Both requests must enter fetch coordination before releasing the shared operation.
+  await vi.waitFor(() =>
+    expect(coordination.mock.calls.filter(([key]) => key === common)).toHaveLength(2),
+  )
+  resume()
+  await Promise.all([first, second])
+  expect(calls.mock.calls.filter(([, args]) => args[0] === 'fetch')).toHaveLength(1)
+  await make()
+  expect(calls.mock.calls.filter(([, args]) => args[0] === 'fetch')).toHaveLength(2)
+})
+
+it('uses local refs after a failed fetch without making a second remote default-branch request', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'offline-fetch-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  await s.git.command(f.directory, ['remote', 'add', 'origin', f.directory])
+  const checkout = s.git.checkoutCommand.bind(s.git)
+  const calls = vi.spyOn(s.git, 'checkoutCommand').mockImplementation((cwd, args, ...rest) => {
+    if (args[0] === 'fetch') return Promise.reject(new Error('Origin is offline'))
+    return checkout(cwd, args, ...rest)
+  })
+  const task = s.tasks.create({
+    title: 'Offline origin',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+    execution: 'worktree',
+  })
+  const cwd = await s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('original\n')
+  expect(calls.mock.calls.filter(([, args]) => args[0] === 'fetch')).toHaveLength(1)
+  expect(calls.mock.calls.some(([, args]) => args[0] === 'remote' && args[1] === 'set-head')).toBe(
+    false,
+  )
 })

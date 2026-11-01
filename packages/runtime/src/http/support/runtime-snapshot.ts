@@ -304,6 +304,7 @@ export function runtimeSnapshot(
       promptQueueStagingSupported: true,
       queuePausePreservationSupported: true,
       directMessageSupported: true,
+      messageSetupSupported: true,
       fullTurnSettingsSupported: true,
       planModeSupported: true,
       persistentTurnModelsSupported: true,

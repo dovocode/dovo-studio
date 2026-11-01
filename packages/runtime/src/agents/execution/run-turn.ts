@@ -410,9 +410,10 @@ ${
         const previouslyConsumed =
           task.consumedMessageIds ??
           currentMessages.slice(0, lastAssistant + 1).map((message) => message.id)
+        const previouslyConsumedIds = new Set(previouslyConsumed)
         const pendingIds = new Set(
           currentMessages
-            .filter((message) => !previouslyConsumed.includes(message.id))
+            .filter((message) => !previouslyConsumedIds.has(message.id))
             .map((message) => message.id),
         )
         // Accepted input from an unsuccessful attempt is still unfinished work.
@@ -441,7 +442,7 @@ ${
         const resumeId =
           task.sessionAgentId === fingerprint || importedResume ? task.sessionId : undefined
         const compactRequested =
-          currentMessages.filter((message) => !previouslyConsumed.includes(message.id)).length ===
+          currentMessages.filter((message) => !previouslyConsumedIds.has(message.id)).length ===
             1 && currentMessages.at(-1)?.text.trim() === '/compact'
         // Only act on occupancy belonging to this exact native session. A model change
         // starts with a conservative replay budget instead of inheriting the old limit.
@@ -533,8 +534,9 @@ ${
           ? (task.consumedMessageIds ??
             currentMessages.slice(0, lastAssistant + 1).map((message) => message.id))
           : [...importedMessageIds]
+        const consumedIds = new Set(consumedMessageIds)
         const messages = sessionId
-          ? currentMessages.filter((message) => !consumedMessageIds.includes(message.id))
+          ? currentMessages.filter((message) => !consumedIds.has(message.id))
           : currentMessages.filter((message) => !importedMessageIds.has(message.id))
         const compact =
           messages.length === 1 &&
@@ -591,7 +593,9 @@ ${
           : []
         const before = captureGit
           ? yield* runtimeOperation(() =>
-              this.git.snapshot(cwd, `refs/dovo/checkpoints/${turnId}/before`),
+              this.git.measureCheckout(cwd, 'initial-checkpoint', () =>
+                this.git.snapshot(cwd, `refs/dovo/checkpoints/${turnId}/before`),
+              ),
             )
           : ''
         controller.signal.throwIfAborted()

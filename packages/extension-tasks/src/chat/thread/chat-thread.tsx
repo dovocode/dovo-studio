@@ -1,3 +1,4 @@
+import { selectConversationConnection } from './workspace-selection'
 import {
   providerRetryLabel,
   createRuntimeClient,
@@ -47,7 +48,7 @@ import {
   IconButton,
 } from '@dovo/studio-ui'
 import type { Task } from '@dovo/studio-core'
-import { useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useWorkspaceSelector, sameWorkspaceFields, useStudioHost } from '@dovo/studio-core'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
 const emptyTools: ReturnType<typeof useTaskActivity>['tools'] = []
 const emptyCompactions: NonNullable<Task['compactions']> = []
@@ -86,7 +87,10 @@ export function ChatThread({
   emptyState?: ReactNode
   active?: boolean
 }) {
-  const { request, connected, workspace, connection, activeRuntimeId } = useWorkspace()
+  const { request, connected, connection, activeRuntimeId } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const linkScope = JSON.stringify([connection?.address, connection?.token, liveTask.id])
   const [recentScope, setRecentScope] = useState('')
   const onRecentReady = useCallback(() => setRecentScope(linkScope), [linkScope])
@@ -101,7 +105,12 @@ export function ChatThread({
   const [linkError, setLinkError] = useState('')
   const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
   const pull = selectedPull?.scope === linkScope ? threadPullLink(selectedPull.url) : null
-  const fullTask = workspace.tasks.find((item) => item.id === liveTask.id)
+  const fullTask = useWorkspaceSelector(
+    useCallback(
+      (value) => value.workspace.tasks.find((item) => item.id === liveTask.id),
+      [liveTask.id],
+    ),
+  )
   const linkOperation = useRef<AbortController | null>(null)
   useLayoutEffect(() => {
     const controller = new AbortController()

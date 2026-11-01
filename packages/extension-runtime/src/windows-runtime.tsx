@@ -344,15 +344,10 @@ export function WindowsRuntimeGate({ children }: { children: ReactNode }) {
     let disposed = false
     void api
       .read()
-      .then(async (raw) => {
+      .then((raw) => {
         const status = decode(windowsRuntimeStatusSchema, raw)
-        if (status.configured) {
-          const connection = decodeResult(connectionSchema, await api.connection())
-          if (!connection.success)
-            throw new Error(
-              'The desktop returned invalid runtime connection details. Restart Dovo Studio and retry.',
-            )
-        }
+        // The workspace restores cached content while its provider validates and connects
+        // to the selected runtime. Only first-time execution-environment setup gates it.
         if (!disposed) {
           setReady(status.configured)
           setChecked(true)

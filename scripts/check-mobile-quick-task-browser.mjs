@@ -41,10 +41,10 @@ const built = await build({
     loader: 'tsx',
     contents: `
 import {createRoot} from 'react-dom/client';import {TaskLauncherScreen} from './src/tasks/creation/task-launcher-screen';import {defaultTaskHarness} from '@dovo/protocol';
-const profile={id:'runtime',name:'Runtime'};const repository={id:'repo',name:'Project',path:'/repo',branch:'main'};
+const profile={id:'runtime',name:'Runtime',connection:{address:'http://runtime.lan',token:'private-device-token'}};const repository={id:'repo',name:'Project',path:'/repo',branch:'main'};
 const snapshot={revision:0,owner:true,approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],workspace:{version:1,runtimeAddress:'',agents:[],repositories:[repository],tasks:[],automations:[]},defaults:{harness:defaultTaskHarness('codex'),execution:'main'}};
 window.requests=[];window.navigation=[];window.failMessage=true;
-window.runtime={ready:true,profiles:[profile],activeId:profile.id,readRuntime:async(_profile,path,input)=>{if(path==='/api/snapshot')return snapshot;window.requests.push({path,input});if(path==='/api/tasks/message'&&window.failMessage){window.failMessage=false;throw Error('Delivery failed')}return {revision:1,ok:true}},refreshRuntime:async()=>{}};
+window.runtime={ready:true,profiles:[profile],overviews:window.cachedOffline?[{profile,snapshot}]:[],activeId:profile.id,readRuntime:async(_profile,path,input,_schema,_method,options)=>{if(path.startsWith('/api/snapshot'))return snapshot;window.requests.push({path,input});if(path==='/api/tasks/message'&&window.failMessage&&!window.cachedOffline){window.failMessage=false;throw Error('Delivery failed')}return {revision:1,ok:true,...(options?.defer?{pending:true}:{})}},refreshRuntime:async()=>{}};
 createRoot(document.getElementById('app')).render(<TaskLauncherScreen/>);
 `,
   },
@@ -119,6 +119,20 @@ try {
   assert.equal(requests[1].input.messageId, requests[2].input.messageId)
   assert.equal(requests[1].input.text, 'Investigate this issue')
   assert.equal(requests[2].input.text, requests[1].input.text)
+  const cached = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  cached.on('pageerror', (error) => errors.push(error.message))
+  await cached.setContent('<div id="app"></div>')
+  await cached.evaluate(() => {
+    window.cachedOffline = true
+  })
+  await cached.addScriptTag({ content: built.outputFiles[0].text })
+  await cached.getByRole('textbox', { name: 'Task prompt' }).fill('Send from cached workspace')
+  await cached.getByRole('button', { name: 'Start task' }).click()
+  await cached.waitForFunction(() => window.navigation.length === 1)
+  assert.deepEqual(await cached.evaluate(() => window.requests.map((item) => item.path)), [
+    '/api/workspace',
+    '/api/tasks/message',
+  ])
   assert.deepEqual(errors, [])
   console.log(
     'Quick task: compact, focus, model sheet, typing and retry identity passed (native adapters).',

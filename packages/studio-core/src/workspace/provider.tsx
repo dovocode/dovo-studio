@@ -1381,33 +1381,48 @@ export function WorkspaceProvider({
         }),
         window,
       )
-      if (desktop.success) {
+      const restoreLocal = Effect.gen(function* () {
+        if (!desktop.success) return
         const connection = yield* native(() => desktop.data.dovo.runtimeConnection())
         const local = yield* Effect.try({
           try: () => runtimeProfile(decode(connectionSchema, connection)),
           catch: connectionError,
         })
         localOwnerToken.current = local.connection.token
-        const firstConnection = !registry.profiles.length
-        const previousLocal = registry.profiles.find(
+        const saved = registryRef.current
+        const firstConnection = !saved.profiles.length
+        const previousLocal = saved.profiles.find(
           (profile) => profile.connection.token === local.connection.token,
         )
-        if (!runtimeId)
-          registry = upsertRuntime(
-            registry,
-            previousLocal
-              ? {
-                  ...previousLocal,
-                  connection: { ...previousLocal.connection, ...local.connection },
-                  id: previousLocal.id,
-                  name: previousLocal.name,
-                  nameIsCustom: runtimeHasCustomName(previousLocal),
-                }
-              : local,
-            !runtimeId,
-          )
+        if (!runtimeId || previousLocal?.id === runtimeId) {
+          const profile = previousLocal
+            ? {
+                ...previousLocal,
+                connection: { ...previousLocal.connection, ...local.connection },
+                id: previousLocal.id,
+                name: previousLocal.name,
+                nameIsCustom: runtimeHasCustomName(previousLocal),
+              }
+            : local
+          if (firstConnection) registry = upsertRuntime(saved, profile)
+          else if (saved.activeId === profile.id && !changingConnection.current) {
+            // Bind the current local address through normal outbox migration. The cached
+            // workspace is already visible while Electron finishes starting its runtime.
+            yield* openProfileEffect(profile)
+          } else if (!runtimeId) {
+            yield* native(() => saveRegistry((latest) => upsertRuntime(latest, profile, false)))
+          }
+        }
         if (firstConnection) firstLocalConnection = local.connection
-      }
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            if (!disposed) setSyncError(`Could not restore the local connection. ${error.message}`)
+          }),
+        ),
+      )
+      const deferredLocal = registry.profiles.length > 0
+      if (!deferredLocal) yield* restoreLocal
       registry = selectRegistry(registry)
       // A thread window only selects its owning runtime in memory. Opening it must
       // not overwrite the main window's saved selection or connection metadata.
@@ -1418,46 +1433,80 @@ export function WorkspaceProvider({
           'This thread’s computer is no longer saved. Pair it again in the main window.',
         )
       let migrated = true
-      for (const profile of registry.profiles) {
-        let lastSeen: string | null = null
-        let pulls: RuntimeOverview['pulls'] = null
-        yield* Effect.gen(function* () {
-          const stored = yield* cacheFor(profile).readEffect('snapshot', runtimeSnapshotCacheSchema)
-          if (stored) {
-            cached[profile.id] = stored.value.snapshot
-            lastSeen = stored.value.lastSeen
-            pulls = stored.value.pulls ? { ...stored.value.pulls, partial: true } : null
-          } else if (cached[profile.id])
-            yield* cacheFor(profile).writeEffect('snapshot', {
-              snapshot: cached[profile.id],
-              lastSeen: null,
-              pulls: null,
-            })
-        }).pipe(
-          Effect.catch(() =>
+      const restoreCache = (profile: RuntimeProfile) =>
+        Effect.gen(function* () {
+          const before = overviewsRef.current[profile.id]
+          let lastSeen: string | null = null
+          let pulls: RuntimeOverview['pulls'] = null
+          yield* Effect.gen(function* () {
+            const stored = yield* cacheFor(profile).readEffect(
+              'snapshot',
+              runtimeSnapshotCacheSchema,
+            )
+            if (stored) {
+              cached[profile.id] = stored.value.snapshot
+              lastSeen = stored.value.lastSeen
+              pulls = stored.value.pulls ? { ...stored.value.pulls, partial: true } : null
+            } else if (cached[profile.id])
+              yield* cacheFor(profile).writeEffect('snapshot', {
+                snapshot: cached[profile.id],
+                lastSeen: null,
+                pulls: null,
+              })
+          }).pipe(
+            Effect.catch(() =>
+              Effect.sync(() => {
+                migrated = false
+                setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
+              }),
+            ),
+          )
+          const value = cached[profile.id]
+          if (value)
+            cached[profile.id] = {
+              ...value,
+              approvals: [],
+              questions: [],
+              terminals: [],
+              pendingDevices: [],
+            }
+          // A live refresh or user selection may finish while an inactive cache is loading.
+          if (disposed || overviewsRef.current[profile.id] !== before) return
+          updateOverview({
+            ...idleRuntimeOverview(profile, cached[profile.id] ?? null),
+            lastSeen,
+            pulls,
+          })
+        })
+      const active = registry.profiles.find((profile) => profile.id === registry.activeId)
+      if (active) yield* restoreCache(active)
+      const restoreInactive = Effect.gen(function* () {
+        yield* Effect.forEach(
+          registry.profiles.filter((profile) => profile.id !== active?.id),
+          restoreCache,
+          { concurrency: 3, discard: true },
+        )
+        if (migrated)
+          yield* native(() => localStorage.removeItem(snapshotKey)).pipe(
+            Effect.catch((error) =>
+              Effect.sync(() => {
+                if (!disposed)
+                  setStorageError(`Could not finish migrating the device cache. ${error.message}`)
+              }),
+            ),
+          )
+        yield* refreshRuntimesEffect().pipe(
+          Effect.catch((error) =>
             Effect.sync(() => {
-              migrated = false
-              setStorageError('Saved device cache could not be loaded. Reconnect to refresh it.')
+              if (!disposed) setSyncError(String(error))
             }),
           ),
         )
-        const value = cached[profile.id]
-        if (value)
-          cached[profile.id] = {
-            ...value,
-            approvals: [],
-            questions: [],
-            terminals: [],
-            pendingDevices: [],
-          }
-        updateOverview({
-          ...idleRuntimeOverview(profile, cached[profile.id] ?? null),
-          lastSeen,
-          pulls,
-        })
+      })
+      const continueStartup = () => {
+        if (deferredLocal) void commands.run(restoreLocal)
+        void commands.run(restoreInactive)
       }
-      if (migrated) yield* native(() => localStorage.removeItem(snapshotKey))
-      const active = registry.profiles.find((profile) => profile.id === registry.activeId)
       if (active) {
         const outbox = yield* native(() => readWorkspaceOutbox(active.connection))
         const legacyRecovery = `${storageKey}.before-outbox-migration`
@@ -1481,6 +1530,7 @@ export function WorkspaceProvider({
         adopt(active, cached[active.id] ?? null, false, outbox)
         const initialWorkspace = current.current
         setReady(true)
+        continueStartup()
         if (firstLocalConnection) {
           const localConnection = firstLocalConnection
           yield* Effect.gen(function* () {
@@ -1501,15 +1551,16 @@ export function WorkspaceProvider({
                 .pipe(Effect.uninterruptible)
           }).pipe(Effect.catch((error) => Effect.sync(() => setSyncError(error.message))))
         }
-        if (!outbox)
+        const localSelection =
+          desktop.success &&
+          ['localhost', '127.0.0.1', '[::1]'].includes(new URL(active.connection.address).hostname)
+        if (!outbox && !(deferredLocal && localSelection))
           yield* openProfileEffect(active).pipe(
             Effect.catch((error) => Effect.sync(() => setSyncError(error.message))),
           )
       }
       setReady(true)
-      yield* refreshRuntimesEffect().pipe(
-        Effect.catch((error) => Effect.sync(() => setSyncError(String(error)))),
-      )
+      if (!active) continueStartup()
     }).pipe(
       Effect.catch((error) =>
         Effect.sync(() => {
@@ -1581,7 +1632,8 @@ export function WorkspaceProvider({
     let wakeFallback = () => {}
     const live = startRuntimeSync(connection, {
       onConnection: (latest) => {
-        if (stopped || latest.token !== localOwnerToken.current) return
+        if (stopped || latest.token !== localOwnerToken.current || changingConnection.current)
+          return
         void connect(latest, undefined, id).catch((error: unknown) => {
           if (!stopped)
             setSyncError(

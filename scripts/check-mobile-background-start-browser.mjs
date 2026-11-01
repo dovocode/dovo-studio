@@ -9,8 +9,14 @@ const actionOptions = {
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
+import {RuntimeMutations} from '@dovo/protocol';
 window.requests=[];window.fail=true;window.finish=null;window.starts=0;window.acknowledgements=0;window.outcomes=[];window.startFactory=()=>{window.starts++;return {confirmed:()=>{window.acknowledgements++},settled:outcome=>window.outcomes.push(outcome)}};
-window.request=(path,input)=>path==='/api/tasks/title'?Effect.succeed({title:'Generated'}):path==='/api/tasks/projects/select'?(window.failProject?Effect.fail(new Error('Project selection failed')):Effect.succeed(window.task)):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true,pending:window.pending===true})}),catch:error=>error});
+const connection={address:'http://computer.lan',token:'device-token'};let operation=0;
+window.journal=[];window.networkRequests=[];
+window.mutations=new RuntimeMutations({id:()=>String(++operation),read:async()=>structuredClone(window.journal),clear:async()=>{window.journal=[]},update:async(_connection,change)=>{if(window.failStorage)throw Error('Storage unavailable');window.journal=structuredClone(change(structuredClone(window.journal)));return window.journal}});
+window.recover=()=>Effect.runPromise(window.mutations.recoverEffect(connection));
+window.fetch=async(url,init)=>{window.networkRequests.push(String(url));if(window.networkMode==='offline')throw Error('Offline');if(new URL(url).pathname==='/api/mutations/status')return Response.json({version:1});if(window.networkMode==='stalled')await new Promise(resolve=>window.releaseNetwork=resolve);return Response.json({ok:true})};
+window.request=(path,input,schema,method,options)=>options?.defer?window.mutations.enqueueEffect(connection,path,input,schema,method):path==='/api/tasks/title'?Effect.succeed({title:'Generated'}):path==='/api/tasks/projects/select'?(window.failProject?Effect.fail(new Error('Project selection failed')):Effect.succeed(window.task)):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true,pending:window.pending===true})}),catch:error=>error});
 function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'draft',archived:false,draft:'',messages:[],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <><textarea aria-label="Message" value={actions.draft.text} disabled={actions.backgroundSubmitting||!!task.archivedAt||(actions.busy&&!actions.submitting)} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/><button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 const appRoot=createRoot(document.getElementById('app'));let epoch=0;window.remount=()=>appRoot.render(<App key={++epoch}/>);window.remount();`,
     resolveDir: root,
@@ -48,7 +54,7 @@ const actionStubs = [
   {
     path: '../../../runtime/connection/provider',
     importer: actions,
-    contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:window.queuedSupported!==false,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
+    contents: `export const useRuntime=()=>({connected:window.networkMode!=='offline',activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{messageSetupSupported:window.localSend===true,promptQueueStagingSupported:window.stagingSupported!==false,queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:window.queuedSupported!==false,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
   },
   {
     path: '../../../runtime/preferences/app-preferences',
@@ -222,6 +228,59 @@ async function backgroundSend(page) {
   })
 }
 try {
+  for (const mode of ['fast', 'stalled', 'offline']) {
+    const local = await fixture(built)
+    await local.evaluate((mode) => {
+      window.localSend = true
+      window.networkMode = mode
+    }, mode)
+    const editor = local.getByRole('textbox', { name: 'Message' })
+    await editor.fill('Start without waiting for the connection')
+    await backgroundSend(local)
+    await local.waitForFunction(() => !window.actions.busy && window.acknowledgements === 1)
+    assert.equal(await editor.inputValue(), '')
+    assert.equal(await editor.isEnabled(), true)
+    assert.deepEqual(await local.evaluate(() => window.outcomes), ['confirmed'])
+    assert.equal(await local.evaluate(() => window.journal.length), 1)
+    assert.equal(await local.evaluate(() => window.networkRequests.length), 0)
+    assert.equal(await local.evaluate(() => window.actions.pendingMessage.state), 'saved')
+    await local.evaluate(() => {
+      window.recovery = window.recover().catch(() => {})
+    })
+    if (mode === 'stalled') await local.waitForFunction(() => !!window.releaseNetwork)
+    else await local.evaluate(() => window.recovery)
+    await editor.fill('Type and send the next prompt')
+    await backgroundSend(local)
+    await local.waitForFunction(() => !window.actions.busy && window.acknowledgements === 2)
+    assert.equal(await editor.inputValue(), '')
+    const messages = await local.evaluate(() => window.journal.map((item) => item.input.messageId))
+    assert.equal(new Set(messages).size, messages.length)
+    assert.equal(messages.length, mode === 'fast' ? 1 : 2)
+    if (mode === 'stalled') {
+      await local.evaluate(() => {
+        window.networkMode = 'fast'
+        window.releaseNetwork()
+      })
+      await local.evaluate(() => window.recovery)
+      assert.equal(await local.evaluate(() => window.journal.length), 0)
+    }
+    await local.close()
+  }
+  const storageFailure = await fixture(built)
+  await storageFailure.evaluate(() => {
+    window.localSend = true
+    window.failStorage = true
+  })
+  await storageFailure.getByRole('textbox', { name: 'Message' }).fill('Keep if storage fails')
+  await backgroundSend(storageFailure)
+  await storageFailure.waitForFunction(() => !window.actions.busy && !!window.actions.error)
+  assert.equal(await storageFailure.evaluate(() => window.acknowledgements), 0)
+  assert.equal(await storageFailure.evaluate(() => window.journal.length), 0)
+  assert.equal(
+    await storageFailure.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Keep if storage fails',
+  )
+  await storageFailure.close()
   const page = await fixture(built)
   const input = page.getByRole('textbox', { name: 'Message' })
   await input.fill('Start this thread')
@@ -452,7 +511,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile background start: admitted lifecycle, validation/project failure cleanup, deferred commit, edit lock, pending retry identity, queue retry after remount, stage retry guard, synchronous reset without redundant storage writes, configuration retention, focus/unmount and stale callback guards passed.',
+    'Mobile background start: equal local admission with fast/stalled/offline transport, durable outbox, held sender isolation, storage failure protection, legacy pending retries, lifecycle/validation guards, configuration retention and focus/unmount guards passed.',
   )
 } finally {
   await browser.close()

@@ -113,7 +113,7 @@ const defaults: MobilePreferences = {
   ],
   browserAutoSettleMinutes: 0,
   browserCloseSettledMinutes: 0,
-  computerRefresh: 'normal',
+  computerRefresh: 'reduced',
   widgetUpdates: true,
   carMode: false,
   readRepliesAloud: true,

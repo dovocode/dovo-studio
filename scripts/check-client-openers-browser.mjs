@@ -30,7 +30,7 @@ const app=createRoot(document.getElementById('app'));let n=0;window.render=()=>a
   [
     {
       path: '@dovo/studio-core',
-      contents: `export const useWorkspace=()=>({connected:true,snapshot:{runtimeId:window.server},request:window.request});export const useStudioHost=()=>({repositoryOpener:window.enabled?window.bridge:undefined});`,
+      contents: `export const useWorkspaceSelector=select=>select(useWorkspace());export const useWorkspace=()=>({connected:true,snapshot:{runtimeId:window.server},request:window.request});export const useStudioHost=()=>({repositoryOpener:window.enabled?window.bridge:undefined});`,
     },
   ],
 )

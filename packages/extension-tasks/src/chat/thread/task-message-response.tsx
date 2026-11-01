@@ -1,3 +1,4 @@
+import { selectConversationConnection } from './workspace-selection'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import {
   createRuntimeClient,
@@ -33,7 +34,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@dovo/studio-ui'
-import { useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useWorkspaceSelector, sameWorkspaceFields, useStudioHost } from '@dovo/studio-core'
 
 const markdownParts = cachedMarkdownParts(richMarkdown)
 
@@ -48,7 +49,10 @@ function TaskImage({
   alt: string
   onPreview: (path: string) => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [result, setResult] = useState<{ key: string; uri?: string; error?: string }>()
   const [revision, setRevision] = useState(0)
   const key = JSON.stringify([taskId, path, connection?.address, connection?.token])
@@ -106,7 +110,10 @@ export function TaskMessageResponse({
   taskId: string
   onUseTemplate?: (prompt: string) => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const { openExternalLink } = useStudioHost()
   const [error, setError] = useState('')
   const [previewPath, setPreviewPath] = useState<string>()
@@ -291,7 +298,10 @@ function TaskVideo({
   label: string
   onPreview: (path: string) => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [revision, setRevision] = useState(0)
   const [source, setSource] = useState<{ key: string; url?: string; error?: string }>()
   const key = JSON.stringify([taskId, path, connection?.address, connection?.token])
@@ -366,7 +376,10 @@ function TaskFileDialog({
   path: string
   onClose: () => void
 }) {
-  const { request, connection, connected } = useWorkspace()
+  const { request, connection, connected } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{
     key: string

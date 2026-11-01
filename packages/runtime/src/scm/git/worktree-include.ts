@@ -60,13 +60,13 @@ export async function copyWorktreeFiles(
   files: string[],
   signal?: AbortSignal,
 ) {
-  for (const path of files) {
+  async function copy(path: string) {
     signal?.throwIfAborted()
     const target = join(directory, path)
     // Preserve tracked files, other branch content and existing symlinks.
     try {
       await lstat(target)
-      continue
+      return
     } catch (error) {
       if (!missing(error)) throw error
     }
@@ -74,4 +74,23 @@ export async function copyWorktreeFiles(
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(await safeFile(root, path), destination, constants.COPYFILE_EXCL)
   }
+  const pending = [...new Set(files)]
+  let next = 0
+  let failed = false
+  let failure: unknown
+  // Drain every in-flight copy before rejecting: the caller may remove its owned checkout.
+  await Promise.all(
+    Array.from({ length: Math.min(4, pending.length) }, async () => {
+      while (!failed && next < pending.length) {
+        const path = pending[next++]!
+        try {
+          await copy(path)
+        } catch (error) {
+          if (!failed) failure = error
+          failed = true
+        }
+      }
+    }),
+  )
+  if (failed) throw failure
 }

@@ -8,6 +8,7 @@ import {
   watchRuntimeSettled,
   watchRuntimeActivity,
   runtimeSnapshotPath,
+  type RuntimeSyncStatus,
 } from './live-sync.js'
 import type { RuntimeSnapshot } from './runtime.js'
 import { snapshotDelta } from './sync.js'
@@ -55,9 +56,10 @@ async function stalledSocketFixture(address: string, format?: number) {
   )
   const receive = vi.fn<(value: RuntimeSnapshot) => void>()
   const wake = vi.fn<() => void>()
+  const status = vi.fn<(value: RuntimeSyncStatus) => void>()
   const live = startRuntimeSync(
     { address, token: 'stalled-socket-test-token' },
-    { onSnapshot: receive, onWake: wake },
+    { onSnapshot: receive, onWake: wake, onStatus: status },
   )
   stopped.push(live.stop)
   await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
@@ -86,7 +88,7 @@ async function stalledSocketFixture(address: string, format?: number) {
     tag: 'baseline',
     snapshot: baseline,
   })
-  return { clock, Socket, receive, wake, live, frame }
+  return { clock, Socket, receive, wake, status, live, frame }
 }
 
 async function routedSocketFixture(id: string, constructorFailure = false) {
@@ -314,6 +316,53 @@ it('does not retain late activity frames after the final listener leaves a scope
   stopped.push(watchRuntimeActivity(connection, 'old', listen))
   expect(listen).not.toHaveBeenCalled()
 })
+it('hands activity to a replacement listener without dropping its baseline or sending duplicate watches', async () => {
+  const address = 'http://activity-handoff.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const { Socket, frame, live } = await stalledSocketFixture(address, 5)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  socket.onmessage?.({ data: frame })
+  let stop = watchRuntimeActivity(connection, 'task', () => {}, true)
+  await Promise.resolve()
+  const event = {
+    id: 'tool',
+    scope: 'task',
+    time: '2026-11-01',
+    kind: 'tool',
+    summary: 'Working',
+    payload: '{}',
+  }
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'activity', scope: 'task', order: ['tool'], events: [event] }),
+  })
+  const sent = socket.sent.length
+  const receive = vi.fn<(events: unknown[]) => void>()
+  for (let index = 0; index < 10; index++) {
+    const previous = stop
+    previous()
+    stop = watchRuntimeActivity(connection, 'task', receive, true)
+    previous()
+    await Promise.resolve()
+  }
+  expect(receive).toHaveBeenCalledTimes(10)
+  expect(receive.mock.lastCall?.[0]).toEqual([event])
+  expect(socket.sent).toHaveLength(sent)
+  socket.onmessage?.({
+    data: JSON.stringify({ type: 'activity', scope: 'task', order: ['tool'], events: [] }),
+  })
+  expect(live.online()).toBe(true)
+  expect(Socket.instances).toHaveLength(1)
+  stop()
+  await Promise.resolve()
+  expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ scopes: [] })
+  receive.mockClear()
+  stopped.push(watchRuntimeActivity(connection, 'task', receive, true))
+  await Promise.resolve()
+  expect(receive).not.toHaveBeenCalled()
+  expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ scopes: ['task'] })
+})
 it('coalesces thread selection changes on a negotiated stream and ignores obsolete baselines', async () => {
   const address = 'http://live-subscriptions.local'
   const connection = { address, token: 'stalled-socket-test-token' }
@@ -345,6 +394,100 @@ it('coalesces thread selection changes on a negotiated stream and ignores obsole
   expect(receive).toHaveBeenCalledTimes(2)
   expect(receive.mock.lastCall?.[0].detailTaskIds).toEqual(['b'])
 })
+it('applies selection handoffs in order while publishing only the current selection', async () => {
+  const address = 'http://selection-deltas.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const { Socket, frame, receive } = await stalledSocketFixture(address, 5)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  socket.onmessage?.({ data: frame })
+  const before = receive.mock.calls[0]![0]
+  const stopA = watchRuntimeTask(connection, 'a')
+  stopped.push(stopA)
+  await Promise.resolve()
+  expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+    type: 'watch',
+    tasks: ['a'],
+    selectionDelta: true,
+  })
+  stopA()
+  stopped.push(watchRuntimeTask(connection, 'b'))
+  await Promise.resolve()
+  const selectedA = { ...before, detailTaskIds: ['a'] }
+  const selectedB = { ...before, detailTaskIds: ['b'] }
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'selection',
+      previousEpoch: 'stalled',
+      base: 1,
+      epoch: 'a-view',
+      sequence: 7,
+      tag: 'a',
+      delta: snapshotDelta(before, selectedA, true, true),
+    }),
+  })
+  expect(receive).toHaveBeenCalledTimes(1)
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'selection',
+      previousEpoch: 'a-view',
+      base: 7,
+      epoch: 'b-view',
+      sequence: 3,
+      tag: 'b',
+      delta: snapshotDelta(selectedA, selectedB, true, true),
+    }),
+  })
+  expect(receive).toHaveBeenCalledTimes(2)
+  expect(receive.mock.lastCall?.[0]).toEqual(selectedB)
+  const next = { ...selectedB, revision: 2 }
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'delta',
+      epoch: 'b-view',
+      base: 3,
+      sequence: 4,
+      tag: 'next',
+      delta: snapshotDelta(selectedB, next, true, true),
+    }),
+  })
+  expect(receive.mock.lastCall?.[0]).toEqual(next)
+  expect(Socket.instances).toHaveLength(1)
+})
+it.each(['epoch', 'sequence'])(
+  'requests a baseline when a selection handoff has the wrong predecessor %s',
+  async (mismatch) => {
+    vi.useFakeTimers()
+    const { Socket, frame, receive, live } = await stalledSocketFixture(
+      `http://selection-${mismatch}.local`,
+      5,
+    )
+    const socket = Socket.instances[0]!
+    socket.readyState = 1
+    socket.onopen?.()
+    socket.onmessage?.({ data: frame })
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'selection',
+        previousEpoch: mismatch === 'epoch' ? 'unknown' : 'stalled',
+        base: mismatch === 'sequence' ? 9 : 1,
+        epoch: 'new-view',
+        sequence: 5,
+        tag: 'new',
+        delta: { workspace: {} },
+      }),
+    })
+    expect(live.online()).toBe(false)
+    expect(receive).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(Socket.instances).toHaveLength(2)
+    const replacement = Socket.instances[1]!
+    replacement.readyState = 1
+    replacement.onopen?.()
+    expect(JSON.parse(replacement.sent[0]!)).toEqual({ type: 'resume' })
+  },
+)
 it('replaces a stale socket immediately on refresh and ignores its late callbacks', async () => {
   const { clock, Socket, receive, live, frame } = await stalledSocketFixture(
     'http://stale-runtime.local',
@@ -369,10 +512,13 @@ it('replaces a stale socket immediately on refresh and ignores its late callback
   expect(second.readyState).toBe(1)
 })
 it('recovers a stalled handshake even when the native socket never emits close', async () => {
-  const { clock, Socket, wake } = await stalledSocketFixture('http://handshake-runtime.local')
+  const { clock, Socket, wake, status } = await stalledSocketFixture(
+    'http://handshake-runtime.local',
+  )
   clock.mockReturnValue(12000)
   await vi.waitFor(() => expect(Socket.instances).toHaveLength(2), { timeout: 4000 })
   expect(wake).toHaveBeenCalledOnce()
+  expect(status).toHaveBeenCalledWith('reconnecting')
 })
 it('does not create duplicate sockets when refreshed during a handshake', async () => {
   const { Socket, live } = await stalledSocketFixture('http://opening-runtime.local')

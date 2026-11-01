@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import {
   conversationPageSchema,
+  conversationPageMessages,
   compactConversationPages,
   conversationPagesSize,
   trimConversationPages,
@@ -9,15 +10,33 @@ import {
   type ConversationPage,
   type Task,
 } from '@dovo/protocol'
-import { useRuntime } from '../../../runtime/connection/provider'
+import {
+  useRuntimeSelector,
+  sameRuntimeFields,
+  type useRuntime,
+} from '../../../runtime/connection/provider'
 
+const selectHistoryConnection = (value: ReturnType<typeof useRuntime>) => ({
+  profile: value.profile,
+  read: value.read,
+  connected: value.connected,
+  readCache: value.readCache,
+})
 const emptyPages: ConversationPage[] = []
 const recentMessageCount = 500
 const historyBudget = 6 * 1024 * 1024
 export function useConversationHistory<
-  T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
+  T extends Pick<
+    Task,
+    'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision' | 'historyTotals'
+  >,
 >(live: T, prefetchRecent = true) {
-  const { profile, read: request, connected, readCache } = useRuntime()
+  const {
+    profile,
+    read: request,
+    connected,
+    readCache,
+  } = useRuntimeSelector(selectHistoryConnection, sameRuntimeFields)
   const revision = live.historyRevision ?? 0
   const scope = JSON.stringify([profile?.connection.address, profile?.connection.token, live.id])
   const [loaded, setLoaded] = useState<{
@@ -43,7 +62,9 @@ export function useConversationHistory<
   const previous = useRef({ scope, live })
   const latest = useRef(live)
   latest.current = live
-  const refill = useRef(recentMessageCount)
+  // Initial opening needs at most one extra page; larger refills only restore a
+  // previously loaded window after a rewind, revision change or gap.
+  const refill = useRef(0)
 
   useEffect(() => {
     generation.current++
@@ -58,7 +79,7 @@ export function useConversationHistory<
   useEffect(() => {
     active.current = scope
     const before = previous.current
-    if (before.scope !== scope) refill.current = recentMessageCount
+    if (before.scope !== scope) refill.current = 0
     previous.current = { scope, live }
     const beforeIds = new Set(before.live.messages.map((message) => message.id))
     const gap =
@@ -66,14 +87,13 @@ export function useConversationHistory<
       !!live.historyBefore &&
       !live.messages.some((message) => beforeIds.has(message.id))
     if (before.scope === scope && ((before.live.historyRevision ?? 0) !== revision || gap)) {
-      refill.current = Math.max(
-        recentMessageCount,
-        new Set(
-          [...loaded.pages.flatMap((page) => page.messages), ...before.live.messages].map(
-            (message) => message.id,
-          ),
-        ).size,
-      )
+      refill.current = loaded.pages.length
+        ? new Set(
+            [...loaded.pages.flatMap((page) => page.messages), ...before.live.messages].map(
+              (message) => message.id,
+            ),
+          ).size
+        : 0
       generation.current++
       pending.current = null
       setLoaded({ scope, revision, pages: [] })
@@ -102,10 +122,17 @@ export function useConversationHistory<
   }, [scope, live])
   const pages = loaded.scope === scope && loaded.revision === revision ? loaded.pages : emptyPages
   const authoritative = connected || live.messages.length > 0
-  const task = useMemo(
-    () => mergeConversationHistory(live, pages, authoritative),
-    [live, pages, authoritative],
+  const { messages, turns, historyBefore, historyRevision, historyTotals } = live
+  const projection = useMemo(
+    () =>
+      mergeConversationHistory(
+        { messages, turns, historyBefore, historyRevision, historyTotals },
+        pages,
+        authoritative,
+      ),
+    [messages, turns, historyBefore, historyRevision, historyTotals, pages, authoritative],
   )
+  const task = useMemo(() => ({ ...live, ...projection }), [live, projection])
   // Keep only IDs for discovered bookmarks when their message bodies are evicted. Revision
   // changes invalidate the index; loaded authoritative messages can also remove a bookmark.
   const bookmarkIndex = useRef({ scope, revision, ids: new Set<string>() })
@@ -309,13 +336,15 @@ export function useConversationHistory<
     }
   }, [cursor, connected, scope, request, live, revision])
   useEffect(() => {
-    // Keep transport pages small; fill the recent window incrementally.
+    // Cached history already supplies context. Otherwise fetch at most one extra
+    // bounded page after layout; scrolling and saved-position restoration load more.
     if (
       !prefetchRecent ||
       restoreFinished !== scope ||
       !cursor ||
       !connected ||
-      task.messages.length >= refill.current ||
+      task.messages.length >= (refill.current || conversationPageMessages) ||
+      (!refill.current && pages.length > 0) ||
       (delivery.scope === scope && (delivery.busy || delivery.error))
     )
       return
@@ -327,6 +356,7 @@ export function useConversationHistory<
     load,
     restoreFinished,
     task.messages.length,
+    pages.length,
     delivery,
     prefetchRecent,
   ])
@@ -339,7 +369,7 @@ export function useConversationHistory<
           return value
         const pages = trimConversationPages(value.pages, { budget: historyBudget, protectFrom })
         if (pages === value.pages) return value
-        refill.current = recentMessageCount
+        refill.current = 0
         return { ...value, pages }
       })
     },

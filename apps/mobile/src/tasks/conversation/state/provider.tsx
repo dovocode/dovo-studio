@@ -65,6 +65,19 @@ export function useConversationSelector<A>(selector: (value: Conversation) => A)
   if (!atom) throw new Error('Task conversation provider is missing')
   return useAtomValue(atom, selector)
 }
+/** Read the current draft only when the user chooses a template. */
+export function useAppendConversationTemplate() {
+  const atom = useContext(Context)
+  const registry = useContext(RegistryContext)
+  if (!atom) throw new Error('Task conversation provider is missing')
+  return useCallback(
+    (prompt: string) => {
+      const { draft } = registry.get(atom).actions
+      draft.update([draft.text.trimEnd(), prompt].filter(Boolean).join('\n\n'))
+    },
+    [atom, registry],
+  )
+}
 export function useConversationTurn(assistantId: string) {
   return useConversationSelector(
     useCallback((value: Conversation) => value.presentation.get(assistantId)?.turn, [assistantId]),

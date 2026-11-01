@@ -31,7 +31,7 @@ const boundaries = new Map([
   ].map((path) => [mobile + path, ui]),
   [
     mobile + 'runtime/connection/provider',
-    `import {createContext,useContext} from 'react';export const RuntimeContext=createContext(null);export const useRuntime=()=>useContext(RuntimeContext);`,
+    `import {createContext,useContext} from 'react';export const RuntimeContext=createContext(null);export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>useContext(RuntimeContext);`,
   ],
   [mobile + 'scm/pulls/list/create-pull', 'export const CreatePull=()=>null;'],
   [mobile + 'scm/pulls/detail/linked-threads', 'export const PullLinkedThreads=()=>null;'],

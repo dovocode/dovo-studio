@@ -11,7 +11,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
 window.requests=[];window.fail=true;window.finish=null;
-window.request=(path,input)=>path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
+window.request=(path,input,_schema,_method,options)=>window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
 function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:true,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <><textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||actions.busy} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/><button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
@@ -47,7 +47,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../../runtime/connection/provider',
       importer: actions,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
+      contents: `export const useRuntime=()=>({connected:!window.offline,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queueRestoreReceiptsSupported:true,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],finishAttachmentEffect:()=>Effect.void,reviewAttachments:()=>{},call:()=>{},readEffect:window.request,callEffect:window.request});`,
     },
     {
       path: '../../../runtime/preferences/app-preferences',
@@ -333,6 +333,20 @@ try {
   })
   await page.waitForFunction(() => !window.actions.busy)
   assert.equal(await input.inputValue(), '')
+  await page.evaluate(() => {
+    window.offline = true
+    window.setTask((task) => ({ ...task }))
+  })
+  await input.fill('Keep this offline message')
+  await page.waitForFunction(() => window.actions.canSend && !window.actions.connected)
+  await send.click()
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), '')
+  assert.equal(await page.evaluate(() => window.requests.at(-1).defer), true)
+  assert.equal(
+    await page.evaluate(() => window.requests.at(-1).input.text),
+    'Keep this offline message',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile settled-thread submission: drafting, rejected send, stable retries, attachment-only input and archived-thread guard passed.',

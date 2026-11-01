@@ -21,6 +21,7 @@ export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
 export const Platform={OS:'android'};
+export const AppState={currentState:'active',addEventListener(){return {remove(){}}}};
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
 export const BackHandler={addEventListener(_event,listener){(window.backHandlers??=new Set()).add(listener);return {remove:()=>window.backHandlers.delete(listener)}}};export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
@@ -203,7 +204,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(
   {
     path: '../creation/task-machine-selector',
     importer: mobile,
-    contents: `import {FolderPicker} from './src/tasks/creation/folder-picker';export const TaskMachineSelector=props=>{window.machineSelector=props;const runtime=window.runtime;return <FolderPicker stacked prominent={props.prominent} renderControls={props.renderControls} repositories={runtime.snapshot.workspace.repositories} value={props.task.repositoryId} autoProject={props.task.autoProject} onAuto={runtime.snapshot.autoProjectSelectionEnabled?props.onAuto:undefined} disabled={props.disabled} onMoving={props.onMoving} onChange={(_id,target)=>props.onProjectChange(target)}/>;}`,
+    contents: `import {TaskMachineSelector as Selector} from './src/tasks/creation/task-machine-selector';export const TaskMachineSelector=props=>{window.machineSelector=props;return <Selector {...props}/>;}`,
   },
   ...[
     ['../creation/checkout-choice', 'CheckoutChoice'],
@@ -245,7 +246,7 @@ function App(){
   window.conversation.actions.stageSupported=snapshot.promptQueueStagingSupported;
   window.conversation.actions.defaultSendMode=snapshot.promptQueueStagingSupported && task.queue?.length && (task.queuePaused || task.queue[0]?.paused) ? 'stage' : 'queue';
   window.conversation.actions.attachmentPicker.pasteImage=()=>window.calls.push({mode:'paste-image'});
-  return <Composer task={task} onHistoryBrowsingChange={reportHistory} renderAbove={(setup,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  return <Composer task={task} onSelectRemote={window.localDraft?async()=>{}:undefined} onHistoryBrowsingChange={reportHistory} renderAbove={(setup,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -1670,10 +1671,39 @@ try {
   assert.equal(await general.isDisabled(), true)
   assert.equal(await scope.isDisabled(), true)
   assert.equal(await projects.isDisabled(), true)
+  // A temporary draft only changes local configuration, even when its computer is offline.
+  const beforeOfflineSelection = await page.evaluate(() => window.calls.length)
   await page.evaluate(() => {
+    window.localDraft = true
+    window.setTask({})
+  })
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Choose project"]').disabled,
+  )
+  assert.equal(await general.isEnabled(), true)
+  assert.equal(await scope.isEnabled(), true)
+  await projects.click()
+  const offlineProject = page.getByRole('button', { name: 'Project', exact: true })
+  assert.equal(await offlineProject.isEnabled(), true)
+  await offlineProject.click()
+  await page.waitForFunction(() => window.currentTask.repositoryId === 'repo')
+  assert.equal(await historyInput.inputValue(), 'Keep this draft')
+  assert.equal(
+    await page.evaluate(
+      (before) => window.calls.slice(before).some((call) => call.path),
+      beforeOfflineSelection,
+    ),
+    false,
+    'Cached local project selection requires no network request',
+  )
+  await general.click()
+  await page.waitForFunction(() => window.currentTask.repositoryId === 'scratch')
+  await page.evaluate(() => {
+    window.localDraft = false
     window.setConnected(true)
     window.setInputs({ questions: [], approvals: [], autoProjectSelectionEnabled: false })
   })
+  await scope.waitFor({ state: 'hidden' })
   await page.waitForFunction(
     () => !document.querySelector('[aria-label="Start without a project"]').disabled,
   )

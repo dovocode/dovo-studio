@@ -37,6 +37,7 @@ import { useComposerHistory } from '../../composer/use-composer-history'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
 const sendAttempts = createSendAttempts(randomUUID)
 export type BackgroundStart = {
+  /** The message is durably saved locally or acknowledged by its computer. */
   confirmed: () => void
   settled: (outcome: 'failed' | 'pending' | 'confirmed') => void
 }
@@ -381,7 +382,8 @@ export function useConversationActions(task: Task) {
   const canSend =
     !policyIssue &&
     !planIssue &&
-    connected &&
+    (connected ||
+      (!!profile && !editing && (!task.autoProject || snapshot?.messageSetupSupported === true))) &&
     !busy &&
     !cancellation.busy &&
     !storedDraft.pendingRestore &&
@@ -404,6 +406,7 @@ export function useConversationActions(task: Task) {
       }
     >,
     refresh = true,
+    defer = false,
   ) =>
     (refresh ? callEffect : readEffect)(
       '/api/workspace',
@@ -416,6 +419,7 @@ export function useConversationActions(task: Task) {
         revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
       }),
       'PATCH',
+      { defer },
     )
   const patch = (changes: Parameters<typeof patchEffect>[0]) =>
     runClientEffect(patchEffect(changes))
@@ -459,6 +463,14 @@ export function useConversationActions(task: Task) {
         return yield* Effect.fail(
           new Error('Resolve the earlier send before starting in background.'),
         )
+      if (
+        !connected &&
+        (editing ||
+          mode === 'steer' ||
+          mode === 'direct' ||
+          (task.autoProject && !snapshot?.messageSetupSupported))
+      )
+        return yield* Effect.fail(new Error('Connect to the computer before using this action.'))
       if (mode === 'direct' && snapshot?.directMessageSupported !== true)
         return yield* Effect.fail(
           new Error('Update the task computer to send without resuming the queue.'),
@@ -489,6 +501,9 @@ export function useConversationActions(task: Task) {
         return yield* Effect.fail(
           new Error('Queue this message to plan before the agent changes anything.'),
         )
+      const deferSend =
+        (mode === 'queue' || mode === 'stage') &&
+        (snapshot?.messageSetupSupported === true || !connected)
       if (editing) {
         yield* callEffect(
           '/api/tasks/queue',
@@ -573,7 +588,7 @@ export function useConversationActions(task: Task) {
         },
       })
       yield* storedDraft.stageEffect(attempt)
-      if (firstMessage && task.autoProject) {
+      if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
         yield* callEffect(
           '/api/tasks/projects/select',
           { id: task.id, requestId: attempt.id, text: text || 'Work with the attached files' },
@@ -587,15 +602,17 @@ export function useConversationActions(task: Task) {
         const title = attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
         sendAttempts.setTitle(scope, attempt.id, title)
         yield* storedDraft.stageEffect(attempt)
-        yield* patchEffect(
-          {
-            title: {
-              before: task.title,
-              after: title,
+        if (!snapshot?.messageSetupSupported)
+          yield* patchEffect(
+            {
+              title: {
+                before: task.title,
+                after: title,
+              },
             },
-          },
-          false,
-        )
+            false,
+            deferSend,
+          )
       }
       return yield* mobileWorkflow(function* () {
         let messageAcknowledged = false
@@ -604,6 +621,12 @@ export function useConversationActions(task: Task) {
           {
             id: task.id,
             messageId: attempt.id,
+            ...(firstMessage && snapshot?.messageSetupSupported
+              ? {
+                  initialTitle: { before: task.title, after: attempt.title },
+                  ...(task.autoProject ? { selectProject: true } : {}),
+                }
+              : {}),
             ...(mode === 'stage' ? { queueOnly: true } : {}),
             ...(mode === 'direct' ? { sendNow: true } : {}),
             ...(attempt.preserveQueuePause ? { preserveQueuePause: true } : {}),
@@ -614,6 +637,8 @@ export function useConversationActions(task: Task) {
             attachmentIds,
           },
           responses.ok,
+          undefined,
+          { defer: deferSend },
         ).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
@@ -625,17 +650,20 @@ export function useConversationActions(task: Task) {
             }),
           ),
         )
-        // Background starts must retain their retry identity while the runtime is pending.
-        const clearDraft = background
-          ? yield* request.pipe(
-              Effect.flatMap(() =>
-                messageAcknowledged
-                  ? sendAttempts.deliverEffect(scope, attempt, Effect.void)
-                  : Effect.succeed(false),
-              ),
-            )
-          : yield* sendAttempts.deliverEffect(scope, attempt, request)
-        if (background && !messageAcknowledged) {
+        // Legacy requests retain their retry identity until acknowledged.
+        // A deferred send has already committed to the durable outbox, so it can
+        // release the composer without waiting for the network recovery worker.
+        const clearDraft =
+          background && !deferSend
+            ? yield* request.pipe(
+                Effect.flatMap(() =>
+                  messageAcknowledged
+                    ? sendAttempts.deliverEffect(scope, attempt, Effect.void)
+                    : Effect.succeed(false),
+                ),
+              )
+            : yield* sendAttempts.deliverEffect(scope, attempt, request)
+        if (background && !messageAcknowledged && !deferSend) {
           backgroundOutcome = 'pending'
           return
         }
@@ -653,7 +681,7 @@ export function useConversationActions(task: Task) {
         else if (attempt.mode === 'queue')
           setStageIntents((current) => current.filter((intent) => intent.scope !== pendingScope))
         yield* storedDraft.confirmEffect(attempt, clearDraft)
-        if (firstMessage)
+        if (firstMessage && messageAcknowledged && !snapshot?.messageSetupSupported)
           void runClientEffect(
             readEffect(
               '/api/tasks/title',
@@ -673,7 +701,7 @@ export function useConversationActions(task: Task) {
           if (attempt.plan)
             setDraftPlan((current) => (current === !!attempt.plan ? false : current))
         }
-        if (messageAcknowledged && background) {
+        if (background && (messageAcknowledged || deferSend)) {
           yield* Effect.sync(background.confirmed)
           backgroundOutcome = 'confirmed'
         }

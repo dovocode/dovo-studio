@@ -131,6 +131,16 @@ export const syncFrameSchema = Schema.Union([
     base: Schema.Number,
     delta: syncDeltaSchema,
   }),
+  // Opt-in handoff between scoped views. The predecessor belongs to the old
+  // view; the destination cursor can have a different epoch and sequence.
+  mutableStruct({
+    type: Schema.Literal('selection'),
+    ...cursor,
+    previousEpoch: Schema.String,
+    base: Schema.Number,
+    tag: Schema.String,
+    delta: syncDeltaSchema,
+  }),
   mutableStruct({
     type: Schema.Literal('activity'),
     scope: Schema.String,
@@ -157,6 +167,7 @@ export const syncInputSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('watch'),
+    selectionDelta: Schema.optional(Schema.Literal(true)),
     tasks: Schema.optional(
       mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
         Schema.check(Schema.isMaxLength(8)),

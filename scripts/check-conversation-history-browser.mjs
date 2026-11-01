@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const environment = `export const AppState={addEventListener:(_event,handler)=>{window.background=handler;return {remove:()=>{}}}};export const useWorkspace=()=>window.connection;export const useRuntime=()=>({...window.connection,profile:{connection:window.connection.connection},read:window.connection.request,readCache:window.cache});`
+const environment = `export const AppState={addEventListener:(_event,handler)=>{window.background=handler;return {remove:()=>{}}}};export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>window.connection;export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>({...window.connection,profile:{connection:window.connection.connection},read:window.connection.request,readCache:window.cache});`
 async function checkFirstLayout(page) {
   await page.evaluate(() => {
     window.prefetchRequests = 0
@@ -40,6 +40,21 @@ async function checkFirstLayout(page) {
     throw new Error('Conversation lost its newest initial reply while history was deferred')
   await page.evaluate(() => window.setPrefetchReady(true))
   await page.waitForFunction(() => window.prefetchRequests === 1 && !window.historyState.busy)
+  await page.evaluate(() => {
+    window.projectedMessages = window.historyState.task.messages
+    window.projectedTurns = window.historyState.task.turns
+    window.setLive((old) => ({ ...old, draft: 'Typing in the composer', title: 'Updated title' }))
+  })
+  await page.waitForFunction(() => window.historyState.task.draft === 'Typing in the composer')
+  if (
+    !(await page.evaluate(
+      () =>
+        window.historyState.task.messages === window.projectedMessages &&
+        window.historyState.task.turns === window.projectedTurns,
+    ))
+  )
+    throw new Error('Draft/title edits rebuilt conversation history arrays')
+
   if (
     (await page.evaluate(() => window.historyState.task.messages.at(-1)?.id)) !==
     'newest-first-layout'
@@ -525,7 +540,7 @@ const productionRoot=createRoot(document.getElementById('app'));let instance=0;w
               contents = "export {useState as useApplicationState} from 'react'"
             else if (args.path === '@dovo/studio-core')
               contents =
-                "export * from '@dovo/protocol';export const useWorkspace=()=>window.connection;export const useAppPreferences=()=>({collapseComposerOnScroll:false});export const formatDateTime=()=>''"
+                "export * from '@dovo/protocol';export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>window.connection;export const useAppPreferences=()=>({collapseComposerOnScroll:false});export const formatDateTime=()=>''"
             else if (args.path === '@dovo/studio-ui') contents = 'export const Button=()=>null'
             else if (args.path.endsWith('chat-thread'))
               contents = `
@@ -744,10 +759,17 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
         })
       })
       await page.waitForFunction(
-        () => window.historyState.task.messages.length >= 500 && !window.historyState.busy,
+        () => window.historyState.task.messages.length === 52 && !window.historyState.busy,
       )
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      if ((await page.evaluate(() => window.requests)) !== 2)
+        throw new Error('Mobile opening downloaded more than one older page')
+      // A reader can still expand the offline window explicitly.
+      for (let index = 0; index < 9; index++) await page.evaluate(() => window.historyState.load())
       const count = await page.evaluate(() => window.requests)
-      if (count !== 11) throw new Error('Mobile did not automatically fetch ten bounded pages')
+      if (count !== 11) throw new Error('Mobile did not load reader-requested history pages')
       await page.evaluate(() =>
         window.setLive((old) => ({
           ...old,
@@ -798,10 +820,10 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
         })
       })
       await page.waitForFunction(
-        () => !window.historyState.busy && window.historyState.task.messages[0]?.id === 'm1200',
+        () => !window.historyState.busy && window.historyState.task.messages[0]?.id === 'm1650',
       )
-      if ((await page.evaluate(() => window.requests)) !== count + 10)
-        throw new Error('Reconnect failed to refill a gap in cached history')
+      if ((await page.evaluate(() => window.requests)) !== count + 1)
+        throw new Error('Reconnect must replace a stale cached window with one fresh older page')
       await page.evaluate(() => window.background('background'))
       await page.waitForFunction(
         () => window.saved.get('conversation:large')?.messages.at(-1)?.id === 'm1701',
@@ -822,7 +844,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
       await page.waitForFunction(
         () =>
           !window.historyState.busy &&
-          window.historyState.task.messages.length >= 500 &&
+          window.historyState.task.messages.length === 42 &&
           window.historyState.task.messages.at(-1)?.id === 'm1691',
       )
       if (
@@ -846,7 +868,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
       await page.waitForFunction(
         () => !window.historyState.busy && window.historyState.error.includes('did not advance'),
       )
-      if ((await page.evaluate(() => window.requests)) !== count + 12)
+      if ((await page.evaluate(() => window.requests)) !== count + 2)
         throw new Error('Invalid history cursor triggered an automatic retry loop')
       if (errors.length) throw new Error(errors.join('\n'))
       await checkLiveDeletion(page)
@@ -1085,7 +1107,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
   await checkProductionPaging(browser)
   await checkConversationScroll(browser)
   console.log(
-    'History checks passed: 500-message loading, offline restoration, background saves, reconnect gaps, rewinds, live and older deletions, revision invalidation, cursor errors and host isolation.',
+    'History checks passed: desktop recent-window fill, one-page mobile opening and reader-requested expansion, offline restoration, background saves, reconnect gaps, rewinds, live and older deletions, revision invalidation, cursor errors and host isolation.',
   )
 } finally {
   await browser.close()

@@ -1,5 +1,6 @@
+import { selectConversationConnection } from './workspace-selection'
 import { useEffect, useState } from 'react'
-import { useWorkspace } from '@dovo/studio-core'
+import { useWorkspaceSelector, sameWorkspaceFields } from '@dovo/studio-core'
 import { artifactPreviewHtml, responses } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 import { FloatingPreview, type PreviewPlacement } from '../../detail/floating-preview'
@@ -14,7 +15,10 @@ export function TaskVisualization({
   path: string
   label: string
 }) {
-  const { request, connected, connection } = useWorkspace()
+  const { request, connected, connection } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const previewTheme = useArtifactPreviewTheme()
   const [loaded, setLoaded] = useState<{ key: string; contents: string }>()
   const [error, setError] = useState('')

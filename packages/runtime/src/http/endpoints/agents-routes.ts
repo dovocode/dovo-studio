@@ -1,5 +1,11 @@
 import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
-import { agentTodosSchema, turnSettingsSchema, nextQueuedMessage } from '@dovo/protocol'
+import {
+  taskMessageSchema,
+  taskHistoryCounts,
+  agentTodosSchema,
+  turnSettingsSchema,
+  nextQueuedMessage,
+} from '@dovo/protocol'
 import { localCommitRoute } from './local-commit-routes.js'
 import { codexSessionRoute } from './codex-session-routes.js'
 import { acknowledgeSubagentFailure } from '../../studio/subagent-failures.js'
@@ -628,26 +634,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
       }
       if (method === 'POST' && (path === '/api/tasks/message' || path === '/api/tasks/steer')) {
-        const input = decode(
-          mutableStruct({
-            id: idSchema,
-            messageId: idSchema,
-            text: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 120000),
-            attachmentIds: attachmentIdsSchema.pipe(
-              Schema.withDecodingDefaultType(Effect.sync(() => [])),
-            ),
-            turnSettings: Schema.optional(turnSettingsSchema),
-            review: Schema.optional(Schema.Boolean),
-            plan: Schema.optional(Schema.Boolean),
-            queueOnly: Schema.optional(Schema.Boolean),
-            preserveQueuePause: Schema.optional(Schema.Boolean),
-            sendNow: Schema.optional(Schema.Boolean),
-            runId: Schema.optional(idSchema),
-          }),
-          yield* serviceResult(body(request)),
-        )
-        if (!input.text && !input.attachmentIds.length)
-          throw new HttpError(400, 'Add a message or attachment')
+        const input = decode(taskMessageSchema, yield* serviceResult(body(request)))
         if (
           input.sendNow &&
           (input.queueOnly || input.preserveQueuePause || path === '/api/tasks/steer')
@@ -675,7 +662,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.runId,
           )
         }
-        return yield* s.tasks.sendEffect(
+        const before = s.store.taskSummary(input.id)
+        const firstSubmission =
+          !taskHistoryCounts(before).messages &&
+          !before.queue?.length &&
+          !taskHistoryCounts(before).turns
+        if (input.selectProject)
+          yield* s.titles.selectProjectsEffect({
+            id: input.id,
+            requestId: input.messageId,
+            text: input.text || 'Work with the attached files',
+          })
+        const result = yield* s.tasks.sendEffect(
           input.id,
           input.messageId,
           input.text,
@@ -688,7 +686,29 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.queueOnly,
           input.preserveQueuePause,
           input.sendNow,
+          input.initialTitle,
         )
+        if (firstSubmission && input.initialTitle) {
+          const expectedTitle = input.initialTitle.after
+          Effect.runFork(
+            runtimeOperation(() => {
+              const task = s.store.task(input.id)
+              const first =
+                task.messages.find((message) => message.role === 'user') ?? task.queue?.[0]
+              if (task.title !== expectedTitle || first?.id !== input.messageId) return undefined
+              return {
+                taskId: input.id,
+                expectedTitle,
+                text: input.text,
+                attachments: s.attachments.metadata(input.id, input.attachmentIds),
+              }
+            }).pipe(
+              Effect.flatMap((title) => (title ? s.titles.generateEffect(title) : Effect.void)),
+              Effect.catch((error) => Effect.logWarning('Could not generate thread title', error)),
+            ),
+          )
+        }
+        return result
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
         const input = decode(

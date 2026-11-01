@@ -765,7 +765,7 @@ export function Composer({
     try {
       composerDraft.flush()
       await flush()
-      if (firstMessage && task.autoProject) {
+      if (firstMessage && task.autoProject && !snapshot?.messageSetupSupported) {
         const selected = await request(
           '/api/tasks/projects/select',
           {
@@ -797,13 +797,10 @@ export function Composer({
         const title =
           attempt.current.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
         attempt.current.title = title
-        setWorkspace((w) =>
-          updateTask(w, task.id, (t) => ({
-            ...t,
-            title,
-          })),
-        )
-        await flush()
+        if (!snapshot?.messageSetupSupported) {
+          setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, title })))
+          await flush()
+        }
       }
       let acknowledged = false
       if (connection) {
@@ -812,6 +809,12 @@ export function Composer({
           {
             id: task.id,
             messageId: attempt.current.id,
+            ...(firstMessage && snapshot?.messageSetupSupported
+              ? {
+                  initialTitle: { before: task.title, after: attempt.current.title },
+                  ...(task.autoProject ? { selectProject: true } : {}),
+                }
+              : {}),
             runId: attempt.current.runId,
             turnSettings: attempt.current.turnSettings,
             ...(attempt.current.plan ? { plan: true } : {}),
@@ -833,7 +836,7 @@ export function Composer({
           }))
           if (!attachmentIds.length) setAwaitingQueuedSubmission(null)
         } else if (mode === 'queue' && !result.pending) setStagingGap(null)
-        if (firstMessage)
+        if (firstMessage && !snapshot?.messageSetupSupported)
           void request(
             '/api/tasks/title',
             {

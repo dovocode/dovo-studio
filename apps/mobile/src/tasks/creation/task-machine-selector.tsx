@@ -49,6 +49,7 @@ export function TaskMachineSelector({
   return (
     <View style={{ gap: 4, width: prominent ? '100%' : undefined }}>
       <FolderPicker
+        allowOffline={!!onSelectRemote}
         stacked
         prominent={prominent}
         renderControls={renderControls}

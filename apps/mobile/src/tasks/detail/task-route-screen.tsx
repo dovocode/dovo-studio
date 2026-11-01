@@ -227,8 +227,9 @@ export function NewTaskScreen() {
   const { ready, overviews, activeId } = useRuntime()
   const { navigate } = useNavigation()
   const owner =
-    overviews.find((entry) => entry.connected && entry.profile.id === activeId) ??
-    overviews.find((entry) => entry.connected)
+    overviews.find((entry) => entry.snapshot && entry.profile.id === activeId) ??
+    overviews.find((entry) => entry.connected && entry.snapshot) ??
+    overviews.find((entry) => entry.snapshot)
   if (!ready)
     return (
       <>
@@ -241,7 +242,10 @@ export function NewTaskScreen() {
       <View style={styles.content}>
         <ScreenHeader title="New thread" />
         <Text style={styles.title}>Connect a computer</Text>
-        <Text style={styles.muted}>A computer needs to be online to start a task.</Text>
+        <Text style={styles.muted}>
+          Connect once to load a computer’s projects and settings. You can then draft and save
+          messages offline.
+        </Text>
         <Action label="Open computer settings" onPress={() => navigate('settings')} />
         <Action label="Back" secondary onPress={backToTasks} />
       </View>

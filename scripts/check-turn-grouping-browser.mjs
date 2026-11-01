@@ -36,7 +36,7 @@ async function bundle(mobile) {
     './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,
-    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
+    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useWorkspaceSelector=select=>select(useFixture());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/studio-ui': ui,
     './use-conversation-history': `export const useConversationHistory=task=>({task,hasMore:false,busy:false,error:'',setBookmark:()=>{}});`,
@@ -45,11 +45,11 @@ async function bundle(mobile) {
     './task-activity': `import {useFixture} from 'fixture';import {TaskActivity as ActualTaskActivity} from '${root}/packages/extension-tasks/src/chat/thread/task-activity.tsx';export const useTaskActivity=()=>({tools:useFixture().tools,error:''});export const TaskActivity=props=>window.artifactCase?<ActualTaskActivity {...props}/>:props.tools.length?<div data-tools>Tools</div>:null;`,
     './pull-link-actions': `export const PullLinkActions=()=>null;`,
     './turn-label': `export const TurnLabel=({turn})=><span>{turn.status==='running'?'Working…':'Worked for 1m'}</span>;`,
-    './state/provider': `import {useFixture} from 'fixture';export const useConversationSelector=select=>select(useFixture());export const useConversationPresentation=id=>useFixture().presentation.get(id);export const usePendingConversationMessage=()=>null;`,
+    './state/provider': `import {useFixture} from 'fixture';export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>select(useFixture());export const useConversationPresentation=id=>useFixture().presentation.get(id);export const usePendingConversationMessage=()=>null;`,
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
     '../../runtime/preferences/app-preferences': `import {useFixture} from 'fixture';export const useCarMode=()=>false;export const useMobilePreferences=()=>useFixture().preferences;export const formatTime=()=>'';`,
-    '../../runtime/connection/provider': `import {useFixture} from 'fixture';export const useRuntime=()=>({connected:useFixture().connected});`,
+    '../../runtime/connection/provider': `import {useFixture} from 'fixture';export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>({connected:useFixture().connected});`,
     '../controls/icon': `export const Icon=({name})=><span data-file-icon={name}/>;`,
     '../theme': `export const useTheme=()=>({mode:'dark',colors:{},styles:{}});`,
     './text': `export {Text} from 'react-native';`,
@@ -88,7 +88,7 @@ export const Alert={alert:message=>{throw Error(message)}};export const Activity
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag,onEndReached,maintainVisibleContentPosition,inverted,onContentSizeChange,ref})=>{useImperativeHandle(ref,()=>({scrollToOffset:()=>{window.nativeScrollResets=(window.nativeScrollResets??0)+1},scrollToIndex:()=>{}}),[]);window.listAnchor=maintainVisibleContentPosition;window.listInverted=inverted;window.measureOlder=height=>onContentSizeChange(390,height);window.reachEarlier=onEndReached;window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
   mocks['../state/provider'] =
-    `import {useFixture} from 'fixture';export const useConversationSelector=select=>select(useFixture());export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
+    `import {useFixture} from 'fixture';export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>select(useFixture());export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
   for (const path of [
     '../../../runtime/preferences/app-preferences',
     '../../../runtime/state/application-state',

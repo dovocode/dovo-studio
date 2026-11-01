@@ -153,7 +153,8 @@ export function StartupThread({
                   autoProjectExecution,
                 ) => {
                   const destination = runtime.overviews.find((item) => item.profile.id === targetId)
-                  if (!destination?.connected) throw new Error('This computer is offline.')
+                  if (!destination?.snapshot)
+                    throw new Error('This computer has no saved workspace.')
                   const next = taskMachineDraft(
                     { ...draft, draft: text, autoProject, autoProjectExecution },
                     target,
@@ -171,9 +172,9 @@ export function StartupThread({
         <View style={styles.content}>
           <Text style={styles.title}>Choose a folder</Text>
           <FolderPicker
+            allowOffline
             repositories={entry.snapshot.workspace.repositories}
             value=""
-            disabled={!entry.connected}
             onChange={(_id, target, targetId) => {
               const destination = runtime.overviews.find((item) => item.profile.id === targetId)
               setSelection({

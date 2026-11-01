@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
+import * as includes from './worktree-include'
 import * as owned from '../../agents/execution/stop-owned-child'
 import { availableWorktree, worktreeRecords } from './worktree-records'
 
@@ -346,4 +347,33 @@ it('keeps a cancelled queued config writer behind its predecessor and retains un
   confirmed.resolve()
   await held
   expect(successorEntered).toBe(true)
+})
+
+it('allows another checkout during file copying while fencing the unfinished worktree', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const copying = barrier(),
+    resume = barrier()
+  const first = join(f.directory, 'copy-first'),
+    second = join(f.directory, 'copy-second')
+  const copy = includes.copyWorktreeFiles
+  vi.spyOn(includes, 'copyWorktreeFiles').mockImplementation(async (...args) => {
+    if (args[1] === first) {
+      copying.resolve()
+      await resume.promise
+    }
+    return copy(...args)
+  })
+  const pending = git.addWorktree(f.directory, first, ['--detach', first, 'HEAD'])
+  try {
+    await copying.promise
+    await expect(new GitService().inspect(first)).rejects.toMatchObject({ status: 409 })
+    await new GitService().addWorktree(f.directory, second, ['--detach', second, 'HEAD'])
+    expect(await readFile(join(second, 'hello.txt'), 'utf8')).toBe('original\n')
+  } finally {
+    resume.resolve()
+    await pending
+  }
+  await expect(git.inspect(first)).resolves.toMatchObject({ path: first })
 })

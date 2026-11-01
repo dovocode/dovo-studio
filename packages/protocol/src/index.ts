@@ -53,6 +53,7 @@ export * from './scm/repositories/repository-pickers.js'
 export * from './auth/access.js'
 
 export * from './tasks/title-generation.js'
+export * from './tasks/task-message.js'
 
 export * from './shared/resources.js'
 

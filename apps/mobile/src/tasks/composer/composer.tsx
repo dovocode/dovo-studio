@@ -703,7 +703,7 @@ export function Composer({
   const showStartModes =
     !!renderAbove && firstMessage && task.status === 'draft' && checkoutEditable
   const startModeDisabled =
-    !connected ||
+    (!connected && !onSelectRemote) ||
     busy ||
     !draft.ready ||
     attaching ||
@@ -1486,13 +1486,15 @@ export function Composer({
                   label={
                     editing
                       ? 'Save changes'
-                      : defaultSendMode === 'stage' && hasInput
-                        ? 'Add to queue'
-                        : task.status === 'running'
-                          ? hasInput
-                            ? 'Queue follow-up'
-                            : 'Stop'
-                          : 'Send'
+                      : !connected && hasInput
+                        ? 'Send when online'
+                        : defaultSendMode === 'stage' && hasInput
+                          ? 'Add to queue'
+                          : task.status === 'running'
+                            ? hasInput
+                              ? 'Queue follow-up'
+                              : 'Stop'
+                            : 'Send'
                   }
                   disabled={
                     machineMoving ||

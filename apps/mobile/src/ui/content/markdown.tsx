@@ -15,7 +15,11 @@ import { memo, lazy, Suspense, useMemo, useState } from 'react'
 import { Alert, Platform, View } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { resolveMarkdownLink, localMarkdownPath, markdownFileName } from '@dovo/protocol'
-import { useRuntime } from '../../runtime/connection/provider'
+import {
+  useRuntimeSelector,
+  sameRuntimeFields,
+  type useRuntime,
+} from '../../runtime/connection/provider'
 import { useTheme, type MobileTheme } from '../theme'
 import { carZoom, useCarMode } from '../../runtime/preferences/app-preferences'
 const MermaidDiagram = lazy(() =>
@@ -224,6 +228,11 @@ function zoomMarkdown(style: MarkdownStyle): MarkdownStyle {
     }),
   ) as MarkdownStyle
 }
+const selectMarkdownConnection = (value: ReturnType<typeof useRuntime>) => ({
+  connection: value.connection,
+  connected: value.connected,
+})
+
 export const Markdown = memo(function Markdown({
   text,
   baseURL,
@@ -248,7 +257,7 @@ export const Markdown = memo(function Markdown({
   onLinkPress?: (url: string) => void
   onLinkLongPress?: (url: string) => void
 }) {
-  const { connection, connected } = useRuntime()
+  const { connection, connected } = useRuntimeSelector(selectMarkdownConnection, sameRuntimeFields)
   const origin = useLinkOrigin(taskId)
   const navigateAfterSheet = useSheetNavigation()
   const [previewPath, setPreviewPath] = useState<string>()

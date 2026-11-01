@@ -174,6 +174,8 @@ export const snapshotSchema = mutableStruct({
   queuePausePreservationSupported: Schema.optional(Schema.Literal(true)),
   /** Send one composer message immediately while leaving the queue paused. */
   directMessageSupported: Schema.optional(Schema.Literal(true)),
+  /** First title and automatic project selection travel with the durable send. */
+  messageSetupSupported: Schema.optional(Schema.Literal(true)),
   /** Queued model/reasoning choices become thread defaults when their turn starts. */
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),

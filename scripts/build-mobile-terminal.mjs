@@ -1,11 +1,33 @@
+import { generatedAssetsCache } from './generated-assets-cache.mjs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 const require = createRequire(new URL('../apps/mobile/package.json', import.meta.url))
+const cache = await generatedAssetsCache(
+  import.meta.url,
+  ['../apps/mobile/assets/terminal.json'],
+  [
+    fileURLToPath(
+      new URL(
+        '../packages/studio-ui/src/assets/fonts/jetbrains-mono-nerd-regular.woff2',
+        import.meta.url,
+      ),
+    ),
+    fileURLToPath(
+      new URL(
+        '../packages/studio-ui/src/assets/fonts/jetbrains-mono-nerd-bold.woff2',
+        import.meta.url,
+      ),
+    ),
+    require.resolve('@xterm/xterm/css/xterm.css'),
+  ],
+)
+if (cache.current) process.exit(0)
 const result = await build({
+  metafile: true,
   entryPoints: [fileURLToPath(new URL('../apps/mobile/terminal/client.ts', import.meta.url))],
-  // postinstall runs before workspace packages have emitted dist files.
+  // Assets can be prepared before workspace packages have emitted dist files.
   conditions: ['development'],
   bundle: true,
   write: false,
@@ -35,3 +57,5 @@ await writeFile(
   new URL('../apps/mobile/assets/terminal.json', import.meta.url),
   JSON.stringify(html),
 )
+
+await cache.save(Object.keys(result.metafile.inputs))

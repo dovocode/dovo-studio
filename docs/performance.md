@@ -61,9 +61,139 @@ replace `HEAD` with that reference. Browser fixtures exercise real row, provider
 components, with transport and unrelated UI adapted for the test environment. Mobile browser checks
 use native-control adapters; native device rendering and gestures were not measured.
 
+### Mobile local interaction under poor connectivity, 2026-11-01
+
+New thread opens from the selected computer's cached workspace while disconnected. Local draft
+project/computer selection uses cached settings, without remote mutation calls. Start in background
+advances after durable outbox admission, keeping network recovery separate from the next draft.
+Legacy sends without local admission still wait for acknowledgement and preserve their retry ID.
+
+After installing Playwright Chromium, reproduce with:
+
+```sh
+node scripts/check-mobile-background-start-browser.mjs
+node scripts/check-mobile-draft-transition-browser.mjs
+node scripts/check-mobile-composer-actions-browser.mjs
+node scripts/check-mobile-registry-recovery-browser.mjs
+```
+
+The background-start fixture exercises real conversation actions and the durable mutation queue with
+fast, held and failing transports. All three admit the message without any network request; a second
+message can be saved while the recovery worker holds the first response. A failed local write
+preserves the draft and does not advance. The provider fixture also verifies ordered recovery and no
+extra snapshot download after live actions. The route and composer fixtures check cached offline
+creation, draft preservation and local project selection. These are functional browser checks with
+native controls adapted; they do not measure phone frame times or establish identical remote
+execution, upload or new-content latency across networks.
+
+### Mobile cached startup and Markdown, 2026-11-01
+
+Cached mobile startup and foreground resume wait for the live stream's first connection attempt
+before enabling HTTP snapshot fallback. Existing ticket/socket deadlines and failure statuses wake
+fallback; no extra grace timer is added. An uncached workspace still starts its HTTP read
+immediately. The real-provider browser fixture reproduces one redundant snapshot read before this
+change and zero during a successful cached startup or resume afterward. Failed and unsupported
+stream attempts each wake one HTTP read immediately. Reproduce with
+`node scripts/check-mobile-registry-recovery-browser.mjs` after installing Playwright Chromium.
+
+Native Markdown splitting shares one syntax tree for diagrams, fenced code and images. Fragments
+with reference definitions still parse images independently because a definition across a fence can
+change nested image/link syntax. Completed-message caching and unfinished-fence behavior remain the
+same. Compare the split pipeline with a Git reference preceding this change:
+
+```sh
+node scripts/benchmark-mobile-markdown.mjs --baseline-ref HEAD
+```
+
+The benchmark uses current shared helpers in both versions, bypasses the completed-message cache,
+and checks 107,096 exact outputs across streaming prefixes with local-file rendering on and off. On
+the Linux development host with Node 26.8.1, median preprocessing time for a 34 KB reply mixing
+diagrams, code and linked images fell from 68.72 ms to 45.91 ms. Adding citations produced 35.6 KB
+and fell from 78.22 ms to 53.32 ms. Ordinary inline prose stayed at 0.09 ms. These are isolated
+JavaScript preprocessing measurements, excluding native Markdown layout, image decoding, network
+latency and phone frame times. They do not establish installed-app rendering performance.
+
+### Mobile history traffic and slow sync clients, 2026-11-01
+
+Mobile opening uses restored history or at most one additional bounded page after the newest reply
+lays out, rather than filling 500 messages automatically. Larger windows remain accessible by
+scrolling and reading-position/bookmark restoration. Already loaded windows still refill after an
+active conversation's gap or revision change; stale offline history never bridges a gap. The
+500-message persistent cache and protected reading ranges keep their existing bounds.
+
+In the real-hook browser fixture, opening a thread with 6 KB messages fetched 10 pages / 3,030,359
+JSON response bytes before this change and one page / 303,035 bytes afterward (90% less). This
+counts application JSON before transport compression and excludes the initial live baseline. Cached
+reopening performs no history reads. Reproduce with:
+
+```sh
+node scripts/check-mobile-history-memory-browser.mjs
+node scripts/check-conversation-history-browser.mjs
+```
+
+Runtime sync pauses live writes when a socket has at least 64 KiB buffered. Individual frames can
+exceed that window; subsequent updates wait for draining. If every ready reader of a view is backed
+up, workspace changes coalesce into one delta from its last published state. A healthy reader
+sharing the view continues normally. Each client tracks its own sent sequence so a lagging reader
+can replay missing deltas, or receive a fresh baseline if the bounded replay cache has expired.
+Heartbeats report that client's sequence, and activity changes coalesce separately. Device
+revocation is still checked while sends are paused.
+
+Real-WebSocket integration tests with simulated send-buffer pressure show 12 intermediate workspace
+updates becoming one delta for a private backed-up view. Shared-view tests cover ordered replay,
+replay-budget eviction, continued healthy-client updates and reconnecting without another baseline
+after catch-up. Large current deltas still send directly to healthy clients even when too large for
+the replay cache. These tests do not measure radio throughput or physical-phone latency.
+
+```sh
+pnpm exec vp test packages/runtime/src/http/runtime-sync.test.ts
+```
+
+Worktree creation with origin fetching now reads the branch catalog only after fetching, removing a
+complete pre-fetch inspection whose result was discarded. The real Git regression checks one scan
+instead of two while asserting the worktree starts at a commit newly added to origin. Checkout,
+setup and network-fetch wall-clock times remain machine/repository dependent.
+
 On the review host with Node 26.8.1, the Vite+ recursive runner failed with `spawn EINVAL` for the
 root typecheck and build commands. The same package scripts passed using
 `pnpm -r --no-bail typecheck` and `pnpm -r --no-bail build` directly.
+
+### Thread handoffs and offline images, 2026-11-01
+
+Clients opt into selection deltas in their live watch request. A thread switch can then patch the
+connection's existing snapshot instead of downloading the whole workspace again. Handoffs identify
+both the exact predecessor cursor and the destination view's cursor; subsequent updates and
+reconnects use the destination. A lagging client whose sent snapshot is no longer retained receives
+a full baseline. Older clients and runtimes retain the full-snapshot path. Rapid navigation applies
+intermediate handoffs in wire order but only publishes the requested selection.
+
+`node scripts/benchmark-snapshot-deltas.mjs` includes a synthetic 301-thread selection comparison.
+With 300 unchanged drafts of roughly 1.3 KB each and a short destination reply, full JSON was
+449,243 bytes and the handoff was 502 bytes. Independent level-3 raw deflate produced 8,307 and 268
+bytes respectively (about 97% less compressed payload). This excludes protocol framing, runtime
+capability/default metadata, physical network latency and rendering; large destination histories
+still need transferring. A real-runtime WebSocket regression also compares handoffs with the full
+baseline and checks exact state, later streaming, peer isolation, lagging-reader fallback and cursor
+resume.
+
+Activity listener replacement within one JavaScript turn preserves its baseline until the handoff
+settles. Identical watches on the same socket are omitted. A regression replaces a populated
+listener ten times: every replacement receives cached activity immediately with no additional watch
+frames or reconnect. Final unsubscription still releases the cache, late activity is ignored, and
+new sockets always send their subscriptions.
+
+Mobile keeps successfully loaded thumbnails and sharper previews while their component remains
+mounted and the paired source identity is unchanged. Going offline no longer hides the image, and
+reconnecting or reopening its preview does not download it again. Failed and cancelled loads still
+retry; changing source or pairing cannot show the previous image. This adds no persistent/shared
+image cache. The native-component browser fixture covers three disconnect/reconnect cycles with zero
+repeat reads, offline preview opening, explicit retry and cancellation. Physical-device image
+decoding and radio usage were not measured.
+
+```sh
+pnpm exec vp test packages/runtime/src/http/runtime-sync.test.ts packages/protocol/src/runtime/connection/live-sync.test.ts
+node scripts/check-mobile-server-images-browser.mjs
+```
 
 ## Measurements
 

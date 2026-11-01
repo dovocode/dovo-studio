@@ -987,6 +987,24 @@ device's workspace. Desktop stores credentials with Electron's encrypted storage
 iOS Keychain / Android Keystore through SecureStore. Browser connections remain in the current
 browser's local storage.
 
+On mobile, normal Send and Add to queue save the message on the phone before delivery. Offline
+messages and new threads survive an app restart and send automatically when the app is active and
+their computer becomes reachable. New thread uses the selected computer's cached workspace even
+while disconnected; a never-loaded computer needs an initial connection first. Choosing a cached
+project or computer for a new local draft needs no network request. Start in background opens the
+next draft after the message is safely saved locally; execution starts when the computer receives
+it. Automatic project selection also needs an updated runtime. Uploading files, editing queued
+messages, steering a running agent and Send now require a connection. Failed local storage leaves
+the draft available for retry.
+
+The open computer updates live. Other-computer refresh defaults to every two minutes on Wi-Fi and
+pauses on cellular; choose a different frequency in **Settings → This app → General → Battery &
+background**. Opening the app restores the selected computer first and delays background checks.
+Actions use live updates without downloading another snapshot after every change. With a cached
+workspace, startup and foreground resume let the live stream finish its first connection attempt
+before starting HTTP snapshot fallback. Failed or unsupported streams wake fallback immediately;
+without a cached workspace, the initial HTTP read starts immediately.
+
 The mobile native build permits HTTP to user-selected runtime addresses, including LAN IPs,
 Tailscale DNS names, and NetBird custom domains. Its ATS configuration uses `NSAllowsArbitraryLoads`
 without the narrower keys that override it on current iOS (see
@@ -1041,6 +1059,11 @@ workspace. The `assistant-cloud` package is needed to resolve optional upstream 
 cloud client or cloud persistence is configured. The conversation follows its measured native
 content height through streaming Markdown and keyboard changes. Scrolling up keeps your reading
 position; Latest message or a local send resumes following.
+
+Opening a mobile thread uses its cached history and fetches at most one extra older page after the
+latest reply lays out. Scrolling upward, jumping to a bookmark or restoring an older reading
+position loads more as needed. The phone retains up to 500 recent loaded messages for offline
+reopening; it does not download 500 messages merely to fill that cache.
 
 Run `node scripts/verify-mobile.mjs <simulator UUID> --conversation-only` to verify streaming,
 expandable tool output and checkpoint navigation against the isolated local harness fixture.

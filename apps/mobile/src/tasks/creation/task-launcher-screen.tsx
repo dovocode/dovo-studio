@@ -20,6 +20,7 @@ import {
   launcherDefaultAgent,
   type LauncherAgent,
   snapshotSchema,
+  runtimeSnapshotPath,
   type LauncherAttempt,
   type RuntimeSnapshot,
 } from '@dovo/protocol'
@@ -40,7 +41,9 @@ export function TaskLauncherScreen() {
     reduceMotion ? ReduceMotion.Always : ReduceMotion.System,
   )
 
-  const { ready, profiles, activeId, readRuntime, refreshRuntime } = useRuntime()
+  const { ready, profiles, overviews, activeId, readRuntime, refreshRuntime } = useRuntime()
+  const cachedOverviews = useRef(overviews)
+  cachedOverviews.current = overviews
   const params = useLocalSearchParams<{ text?: string }>()
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')
   const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null)
@@ -66,11 +69,30 @@ export function TaskLauncherScreen() {
     if (!ready || attempt.current) return
     const profile = profiles.find((profile) => profile.id === runtimeId)
     let current = true
-    setSnapshot(null)
+    const cached = cachedOverviews.current.find((entry) => entry.profile.id === runtimeId)?.snapshot
+    setSnapshot(cached ?? null)
     setError('')
     if (!profile) return
+    if (cached && retry === 0) {
+      setRepositoryId((id) =>
+        cached.workspace.repositories.some((entry) => entry.id === id)
+          ? id
+          : (cached.workspace.repositories.find((entry) => entry.kind === 'scratch')?.id ??
+            cached.workspace.repositories[0]?.id ??
+            ''),
+      )
+      setLoadedRuntimeId(runtimeId)
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    void readRuntime(profile, '/api/snapshot', undefined, snapshotSchema, 'GET')
+    void readRuntime(
+      profile,
+      runtimeSnapshotPath(profile.connection),
+      undefined,
+      snapshotSchema,
+      'GET',
+    )
       .then(
         (next) => {
           if (!current) return
@@ -84,7 +106,6 @@ export function TaskLauncherScreen() {
                 ''),
           )
           setLoadedRuntimeId(runtimeId)
-          void refreshRuntime(profile).catch((cause: unknown) => setError(String(cause)))
         },
         (cause: unknown) => {
           if (current) setError(cause instanceof Error ? cause.message : String(cause))
@@ -141,13 +162,23 @@ export function TaskLauncherScreen() {
         }
       const current = attempt.current
       if (!current) return
-      await dispatchLauncherTask(current, readRuntime)
+      const messageSetup = snapshot?.messageSetupSupported === true
+      const canDefer = !current.task.autoProject || messageSetup
+      const result = await dispatchLauncherTask(
+        current,
+        (owner, path, input, schema, method) =>
+          readRuntime(owner, path, input, schema, method, {
+            defer: canDefer && (path === '/api/workspace' || path === '/api/tasks/message'),
+          }),
+        { messageSetup },
+      )
       Keyboard.dismiss()
       // Navigation carries the owning computer, so the thread can reconnect without guessing.
       router.replace(taskHref(current.profile.id, current.task.id))
-      void refreshRuntime(current.profile).catch((cause: unknown) =>
-        console.error('Could not refresh the dispatched task:', cause),
-      )
+      if (!result.pending)
+        void refreshRuntime(current.profile).catch((cause: unknown) =>
+          console.error('Could not refresh the dispatched task:', cause),
+        )
       attempt.current = null
       setText('')
     } catch (cause) {

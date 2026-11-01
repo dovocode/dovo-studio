@@ -27,6 +27,7 @@ export function FolderPicker({
   onChange,
   onAdded,
   allowMachineChange = true,
+  allowOffline = false,
   chatOnly = false,
   onMoving,
   stacked = false,
@@ -52,6 +53,8 @@ export function FolderPicker({
   onAdded?: (repository: Repository, runtimeId: string) => void
   chatOnly?: boolean
   allowMachineChange?: boolean
+  /** Only for local draft configuration; remote mutations still need a connection. */
+  allowOffline?: boolean
   onMoving?: (moving: boolean) => void
 }) {
   const { colors, styles } = useTheme()
@@ -70,6 +73,8 @@ export function FolderPicker({
     (entry) => allowMachineChange || entry.profile.id === runtime.activeId,
   )
   const multipleMachines = sources.length > 1
+  const available = (source: (typeof sources)[number]) =>
+    source.connected || (allowOffline && !!source.snapshot)
   const groups = taskProjectGroups(
     sources.flatMap((source) =>
       (source.profile.id === runtime.activeId
@@ -79,7 +84,7 @@ export function FolderPicker({
         repository,
         source,
         runtimeId: source.profile.id,
-        online: source.connected,
+        online: available(source),
         defaults: source.snapshot?.defaults,
       })),
     ),
@@ -97,12 +102,8 @@ export function FolderPicker({
   )
   const locked = disabled || busy
   const choose = async (repository: Repository, runtimeId: string, preserveAuto = false) => {
-    if (
-      locked ||
-      repository.gitIdentityError ||
-      !sources.find((source) => source.profile.id === runtimeId)?.connected
-    )
-      return
+    const source = sources.find((source) => source.profile.id === runtimeId)
+    if (locked || repository.gitIdentityError || !source || !available(source)) return
     setBusy(true)
     onMoving?.(true)
     setError('')
@@ -526,7 +527,7 @@ export function FolderPicker({
                       : source.profile.id === runtime.activeId && item.id === value,
                 )
                 if (!target) return null
-                const unavailable = !source.connected || !!target.gitIdentityError
+                const unavailable = !available(source) || !!target.gitIdentityError
                 return (
                   <Pressable
                     key={source.profile.id}
