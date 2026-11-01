@@ -330,7 +330,11 @@ try {
     window.finishSend()
   })
   await page.waitForFunction(() => window.saved.some((task) => task.status === 'running'))
-  await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
+  // Watch controls live in Thread info; runtime updates must not restore the old chat bar.
+  assert.equal(
+    await page.getByRole('region', { name: 'Related items and watchers', exact: true }).count(),
+    0,
+  )
   assert.equal(await editor.evaluate((element) => element === window.originalEditor), true)
   await editor.fill('Next input')
   await page.waitForFunction(() => window.saved.some((task) => task.draft === 'Next input'))
