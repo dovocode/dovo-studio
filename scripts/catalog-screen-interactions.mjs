@@ -139,8 +139,15 @@ export async function checkScreenInteractions(page, origin) {
       'Compare the mobile sidebar and preserve this local draft.',
       'The complete mobile composer must retain an editable local draft while disconnected',
     )
-    const send = page.getByRole('button', { name: 'Send', exact: true })
-    assert.equal(await send.isDisabled(), true, 'Disconnected catalog composer must not send')
+    const send = page.getByRole('button', { name: 'Send when online', exact: true })
+    assert.equal(await send.isEnabled(), true, 'Offline composer must allow a local send attempt')
+    await send.click()
+    await page.getByRole('alert').filter({ hasText: 'Runtime requests is disabled' }).waitFor()
+    assert.equal(
+      await input.inputValue(),
+      'Compare the mobile sidebar and preserve this local draft.',
+      'The catalog rejects delivery through its synthetic runtime and must retain the draft',
+    )
     await input.fill('')
     checks++
     assert.deepEqual(errors, [], 'Screen compositions must not throw browser errors')
