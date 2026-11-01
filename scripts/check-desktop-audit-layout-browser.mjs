@@ -9,6 +9,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = `${root}/packages/studio-ui/src`
 const mocks = {
+  // Snapshot previews have their own browser suite; this fixture audits the surrounding layout.
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@xyflow/react': `export const Handle=()=>null;export const Position={Left:'left',Right:'right'};export const ReactFlowProvider=({children})=>children;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-core': `export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={codex:{short:'Codex',name:'OpenAI Codex'}};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const acpHarnessName=()=>'';export const formatDateTime=String;`,
