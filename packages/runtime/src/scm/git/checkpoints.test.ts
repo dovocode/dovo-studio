@@ -1,5 +1,15 @@
 import { afterEach, expect, it } from 'vite-plus/test'
-import { chmod, lstat, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
@@ -8,6 +18,29 @@ import { safeFile } from '../repositories/paths.js'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
+})
+it('captures same-size edits when the source index considers the file racily clean', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const file = join(f.directory, 'hello.txt')
+  const index = join(f.directory, '.git/index')
+  // Model a filesystem whose timestamps cannot distinguish two rapid writes.
+  const timestamp = new Date('2026-01-01T00:00:00Z')
+  await git.command(f.directory, ['config', 'core.trustctime', 'false'])
+  await writeFile(file, 'child edit\n')
+  await utimes(file, timestamp, timestamp)
+  await git.command(f.directory, ['add', 'hello.txt'])
+  await utimes(index, timestamp, timestamp)
+  const staged = await readFile(index)
+  const indexTime = (await stat(index)).mtimeMs
+  await writeFile(file, 'later edit\n')
+  await utimes(file, timestamp, timestamp)
+
+  const snapshot = await git.snapshot(f.directory, 'refs/dovo/checkpoints/racy/after')
+  expect(await git.command(f.directory, ['show', `${snapshot}:hello.txt`])).toBe('later edit\n')
+  expect(await readFile(index)).toEqual(staged)
+  expect((await stat(index)).mtimeMs).toBe(indexTime)
 })
 it('undoes external and dangling symlink creation without following their targets', async () => {
   const f = await fixture()
