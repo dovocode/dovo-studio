@@ -37,6 +37,7 @@ jobs:
         if: failure()
         with:
           name: mobile-native-failure
+          include-hidden-files: true
           path: |
             work/mobile-native-smoke/
             ~/.maestro/tests/
