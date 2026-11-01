@@ -44,6 +44,7 @@ import {
   mkdtemp,
   rm,
   copyFile,
+  utimes,
   realpath,
 } from 'node:fs/promises'
 import { join, dirname, basename, resolve } from 'node:path'
@@ -1440,7 +1441,11 @@ export class GitService {
         await this.command(cwd, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
       ).trim()
       try {
+        const sourceStat = await stat(source)
         await copyFile(source, index)
+        // Git uses the index mtime to rehash racily clean entries. A fresh copy's
+        // timestamp can hide same-size edits made within the filesystem's clock tick.
+        await utimes(index, sourceStat.atime, sourceStat.mtime)
       } catch (error) {
         if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
       }
