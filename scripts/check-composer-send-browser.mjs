@@ -36,7 +36,7 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {RunControls} from './src/chat/actions/run-controls.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-thread/create'){if(window.failSideSave)throw Error('Side save failed');return new Promise((resolve,reject)=>{window.sideSaved=()=>resolve({id:'side-'+input.childId});window.sideLost=()=>reject(Error('Side chat response lost'))})};if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
 function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{workspace,...inputs,runs:[],queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -658,7 +658,8 @@ try {
         ['/api/tasks/message', '/api/tasks/steer', '/api/tasks/start-fork'].includes(request.path),
       ).length,
   )
-  // The side-chat action consumes the current draft only after saving it, leaving attachments.
+  // Ask on side turns the current draft into a draft agent side chat, leaving attachments. It
+  // never runs the child or the main composer.
   await page.evaluate(() => {
     window.setTask((task) => ({
       ...task,
@@ -677,10 +678,23 @@ try {
         new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
       ),
     )
+  const creates = () =>
+    page.evaluate(() =>
+      window.requests.filter((request) => request.path === '/api/tasks/side-thread/create'),
+    )
   await askSide()
   await page.waitForFunction(() => typeof window.sideSaved === 'function')
   if ((await input.inputValue()) !== 'Explain this worktree')
-    throw Error('Side question cleared before persistence')
+    throw Error('Side chat draft cleared before the side chat was created')
+  // An uncertain response is retried with the same child id, so it cannot create two side chats.
+  await page.evaluate(() => {
+    window.sideLost()
+    window.sideSaved = null
+  })
+  await page.getByText('Side chat response lost', { exact: true }).waitFor()
+  assert.equal(await input.inputValue(), 'Explain this worktree')
+  await askSide()
+  await page.waitForFunction(() => typeof window.sideSaved === 'function')
   await page.evaluate(() => {
     window.dispatchEvent(
       new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
@@ -688,36 +702,30 @@ try {
     window.sideSaved()
     window.sideSaved = null
   })
-  await page.waitForFunction(() => window.sideResponse !== null)
-  if ((await input.inputValue()) !== '') throw Error('Side send did not consume the saved draft')
-  await input.fill('A newer draft')
-  const sideAsk = await page.evaluate(() =>
-    window.requests.findLast((request) => request.path === '/api/tasks/side-chat/ask'),
-  )
+  await page.waitForFunction(() => window.asides.length > 0)
+  if ((await input.inputValue()) !== '') throw Error('Side chat did not consume the main draft')
+  const [lost, created] = await creates()
   if (
-    sideAsk.input.question !== 'Explain this worktree' ||
-    sideAsk.input.id !== 'task' ||
-    sideAsk.input.chatId !== 'side-0'
+    !created ||
+    created.input.id !== 'task' ||
+    created.input.objective !== 'Explain this worktree' ||
+    !created.input.childId ||
+    created.input.childId !== lost.input.childId
   )
-    throw Error('Side question went to the wrong destination')
-  if (
-    (await page.evaluate(
-      () =>
-        window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
-    )) !== 1
-  )
-    throw Error('Duplicate side send')
+    throw Error('Side chat retry went to the wrong destination or changed its child id')
+  assert.equal((await creates()).length, 2, 'Duplicate side chat creation')
+  assert.equal(await page.evaluate(() => window.asides.at(-1)), `side-${created.input.childId}`)
   if (
     !(await page.evaluate(() => window.current.draftAttachments.some((file) => file.id === 'keep')))
   )
-    throw Error('Side send consumed attachments')
-  await page.evaluate(() => {
-    window.sideResponse()
-    window.sideResponse = null
-  })
-  if ((await input.inputValue()) !== 'A newer draft')
-    throw Error('Side answer cleared newer typing')
-  // Saving a side question must not clear an edit made away from and back to the same text.
+    throw Error('Side chat consumed attachments')
+  if (
+    await page.evaluate(() =>
+      window.requests.some((request) => request.path.startsWith('/api/tasks/side-chat/')),
+    )
+  )
+    throw Error('Ask on side used the legacy read-only side chat')
+  // Saving a side chat must not clear an edit made away from and back to the same text.
   await input.fill('Keep this new edit')
   await askSide()
   await page.waitForFunction(() => typeof window.sideSaved === 'function')
@@ -727,44 +735,17 @@ try {
     window.sideSaved()
     window.sideSaved = null
   })
-  await page.waitForFunction(() => window.sideResponse !== null)
+  await page.waitForFunction(() => window.asides.length > 1)
   assert.equal(await input.inputValue(), 'Keep this new edit')
-  await page.evaluate(() => {
-    window.sideResponse()
-    window.sideResponse = null
-  })
-  // Keyboard dispatch targets the same action, using live text rather than a stale task snapshot.
-  await input.fill('Keyboard side question')
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
-    ),
-  )
-  await page.waitForFunction(() => typeof window.sideSaved === 'function')
-  await page.evaluate(() => {
-    window.sideSaved()
-    window.sideSaved = null
-  })
-  await page.waitForFunction(() => window.sideResponse !== null)
-  if ((await input.inputValue()) !== '')
-    throw Error('Saved side question remained in the main composer')
-  await page.evaluate(() => {
-    window.sideResponse()
-    window.sideResponse = null
-  })
-  const saves = await page.evaluate(
-    () => window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
-  )
+  const [, , second] = await creates()
+  if (second.input.childId === created.input.childId)
+    throw Error('A new side chat reused the previous child id')
+  const saves = (await creates()).length
+  await input.fill('')
   await askSide()
   if ((await page.evaluate(() => window.asides.at(-1))) !== null)
     throw Error('Empty composer did not open side chats')
-  if (
-    (await page.evaluate(
-      () =>
-        window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
-    )) !== saves
-  )
-    throw Error('Empty composer created a chat')
+  if ((await creates()).length !== saves) throw Error('Empty composer created a side chat')
   await input.fill('Keep after side save failure')
   await page.evaluate(() => {
     window.failSideSave = true
@@ -1170,7 +1151,7 @@ try {
   assert.equal(await input.inputValue(), 'Verify the queue and checklist layout')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, immediate side-chat sending, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',
+    'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, draft agent side chats with stable retry ids, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',
   )
 } finally {
   await browser.close()

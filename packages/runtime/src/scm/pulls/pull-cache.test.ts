@@ -622,6 +622,76 @@ it('caches PR sections independently, coalesces concurrent reads, and scopes the
   await vi.waitFor(() => expect(section).toHaveBeenCalledTimes(8))
 })
 
+it.each(['status', 'checks'] as const)(
+  'revalidates live %s on polls from read start and backs off failures',
+  async (kind) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-31T00:00:00Z'))
+    const { cache, pulls } = setup()
+    const detail: PullDetail = {
+      pull: {
+        number: 7,
+        title: 'Pending',
+        url: 'https://github.com/a/b/pull/7',
+        repositoryUrl: 'https://github.com/a/b',
+        state: 'open',
+        draft: false,
+        author: 'dev',
+        updatedAt: '',
+        head: 'feature',
+        base: 'main',
+        labels: [],
+        headSha: 'a'.repeat(40),
+        baseSha: 'b'.repeat(40),
+        body: '',
+        additions: 0,
+        deletions: 0,
+        changedFiles: 0,
+        mergeable: true,
+        reviewers: [],
+        assignees: [],
+      },
+      comments: [],
+      files: [],
+      checks: [],
+      warnings: [],
+    }
+    const load = vi.spyOn(pulls, 'section').mockResolvedValue(detail)
+    const read = () => Effect.runPromise(cache.sectionEffect('/repo', 7, kind))
+    await read()
+    vi.setSystemTime(Date.now() + 5_000)
+    expect((await read()).pull.title).toBe('Pending')
+    expect(load).toHaveBeenCalledTimes(1)
+    vi.setSystemTime(Date.now() + 5_000)
+    let finish: ((value: PullDetail) => void) | undefined
+    load.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const first = read()
+    const second = read()
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    expect(load).toHaveBeenCalledTimes(2)
+    vi.setSystemTime(Date.now() + 12_000)
+    finish!({ ...detail, pull: { ...detail.pull, title: 'Complete' } })
+    const [result, shared] = await Promise.all([first, second])
+    expect(result.pull.title).toBe('Complete')
+    expect(shared.pull.title).toBe('Complete')
+    expect(result.cachedAt).toBe(new Date().toISOString())
+    load.mockRejectedValueOnce(new Error('Offline'))
+    expect(await read()).toMatchObject({ stale: true, refreshError: 'Offline' })
+    expect(load).toHaveBeenCalledTimes(3)
+    vi.setSystemTime(Date.now() + 5_000)
+    expect(await read()).toMatchObject({ stale: true, refreshError: 'Offline' })
+    expect(load).toHaveBeenCalledTimes(3)
+    vi.setSystemTime(Date.now() + 55_000)
+    await read()
+    expect(load).toHaveBeenCalledTimes(4)
+  },
+)
+
 it('migrates persisted checkout aliases so writes invalidate pre-upgrade caches', async () => {
   const { db, store, pulls, cache } = setup()
   vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })

@@ -116,7 +116,8 @@ const mocks = {
     import {Schema} from 'effect';
     import {runClientEffect} from '@dovo/client-runtime';
     import {useRuntime} from '../../runtime/connection/provider';
-    export const Composer=({task,onSelectRemote,renderAbove})=>{
+    export const Composer=({task,onSelectRemote,renderAbove,onHistoryBrowsingChange})=>{
+      window.setHistoryBrowsing=onHistoryBrowsingChange;
       const runtime=useRuntime();
       const [text,setText]=useState(task.draft);
       const [pending,setPending]=useState(false);
@@ -148,7 +149,9 @@ for (const [path, names] of Object.entries({
   './task-linked-pull-sheet': ['TaskLinkedPullSheet'],
   './task-thread-behavior': ['TaskThreadBehavior'],
   '../preview/browser-pane': ['BrowserPane', 'DevicesPane'],
-  '../composer/composer-activity': ['ComposerActivity'],
+  './side-thread-changes': ['SideThreadChanges'],
+  '../conversation/components/agent-side-chats': ['SideThreadActions', 'SideChatAttention'],
+  './project-approval-rules': ['ProjectApprovalRules'],
   './task-questions': ['TaskQuestions'],
   './linked-projects': ['LinkedProjects'],
   './rename-thread': ['RenameThread'],
@@ -296,6 +299,11 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByLabel('Message')
   await input.waitFor()
+  assert.equal(await page.evaluate(() => window.headerGestures), true)
+  await page.evaluate(() => window.setHistoryBrowsing(true))
+  await page.waitForFunction(() => window.headerGestures === false)
+  await page.evaluate(() => window.setHistoryBrowsing(false))
+  await page.waitForFunction(() => window.headerGestures === true)
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), ['redirect'])
   assert.equal(await page.evaluate(() => window.watches.length), 0)
   await page.getByRole('button', { name: 'Link project', exact: true }).click()

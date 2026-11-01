@@ -160,6 +160,27 @@ it('surfaces nested child input on ancestors without crossing independent famili
   )
 })
 
+it('rolls side-thread input up to the parent without adding lifecycle ownership', () => {
+  const parent = task('parent')
+  const side: Task = {
+    ...task('side'),
+    sideThread: {
+      parentTaskId: parent.id,
+      objective: '',
+      source: 'head',
+      contextMessageCount: 0,
+      parentHistoryRevision: 0,
+      contextHash: '',
+      permissionCeiling: { provider: 'codex', permission: 'read-only' },
+    },
+  }
+  const worker = task('worker', side.id)
+  expect(taskFamilyInputIds([parent, side, worker], [worker.id])).toEqual(
+    new Set(['worker', 'side', 'parent']),
+  )
+  expect(taskFamilyIds([parent, side, worker], parent.id)).toEqual(new Set(['parent']))
+})
+
 it('rolls remote attention up through local ancestors without treating offline or paused snapshots as live input', () => {
   const parent = task('parent')
   const child = task('child', 'parent')

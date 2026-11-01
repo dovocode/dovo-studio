@@ -75,7 +75,12 @@ export function RunControls({ task }: { task: Task }) {
   )
     return null
   return (
-    <div ref={controls} className="shrink-0 space-y-2 px-5 pb-2">
+    <div
+      ref={controls}
+      className="shrink-0 space-y-2 px-5 pb-2"
+      data-human-input={approvals.length ? 'approval' : undefined}
+      data-human-input-task={task.id}
+    >
       {!connected && (
         <p role="status" className="mx-auto max-w-[var(--chat-max)] text-xs text-muted-foreground">
           {executionHost} is offline. Your draft is saved here.

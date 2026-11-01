@@ -291,3 +291,30 @@ it('keeps staged first prompts and their plan settings in the queue across recon
   expect(pending).toMatchObject([{ destination: 'queue', message: { id: 'staged', plan: true } }])
   expect(pendingMessageQueue(task, pending).map((message) => message.id)).toEqual(['staged'])
 })
+
+it('restores Send now previews into the conversation without expanding the paused queue', () => {
+  const task = decode(taskSchema, {
+    id: 't',
+    title: 'Task',
+    repositoryId: 'r',
+    agentId: '',
+    status: 'review',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+    queuePaused: true,
+    queue: [{ id: 'held', role: 'user', text: 'Wait', paused: true, createdAt: '' }],
+  })
+  const pending = savedPendingMessages(task, [
+    {
+      id: 'mutation',
+      path: '/api/tasks/message',
+      method: 'POST',
+      input: { id: 't', messageId: 'direct', text: 'Send now', sendNow: true },
+    },
+  ])
+  expect(pending).toMatchObject([{ destination: 'thread', message: { id: 'direct' } }])
+  expect(pendingMessageQueue(task, pending).map((message) => message.id)).toEqual(['held'])
+})

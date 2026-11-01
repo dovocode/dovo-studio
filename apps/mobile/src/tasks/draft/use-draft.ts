@@ -1,37 +1,14 @@
+import { drafts } from './runtime-drafts'
+export { saveRuntimeDraft, appendRuntimeDraft } from './runtime-drafts'
 import { Effect } from 'effect'
 import { clientTaskScope, runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../../runtime/connection/provider'
 import { AppState } from 'react-native'
 import type { SendAttempt } from '../composer/send-attempts'
-import {
-  createDraftStorage,
-  type DraftRecord,
-  type PendingQueueRestore,
-  type PendingFork,
-} from './storage'
+import { type DraftRecord, type PendingQueueRestore, type PendingFork } from './storage'
 import { hydrateDraft } from './hydration'
-const drafts = createDraftStorage(AsyncStorage)
-export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
-  return drafts.write(`dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`, text)
-}
-/** Append through the same serialized store as the composer, including queued keyboard edits. */
-export function appendRuntimeDraft(
-  runtimeId: string,
-  taskId: string,
-  text: string,
-  initialDraft = '',
-) {
-  return runClientEffect(
-    drafts.appendEffect(
-      `dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`,
-      text,
-      initialDraft,
-    ),
-  )
-}
 export function useDraft(taskId: string, initial = '', deliveredIds: readonly string[] = []) {
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`

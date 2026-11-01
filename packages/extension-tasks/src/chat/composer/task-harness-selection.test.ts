@@ -224,9 +224,11 @@ it.each([
   {
     ...draft,
     archived: true,
+    archivedAt: '2026-10-31T00:00:00Z',
   },
 ])('rejects both selection paths while the task cannot be configured', (task) => {
-  const message = task.status === 'running' ? 'Stop the current turn' : 'Reopen this task'
+  const message =
+    task.status === 'running' ? 'Stop the current turn' : 'Restore this archived thread'
   expect(() => chooseTaskAgent(task, agents, custom.id)).toThrow(message)
   expect(() => changeTaskHarness(task, agents, defaultTaskHarness('codex'))).toThrow(message)
 })
@@ -261,4 +263,20 @@ it('custom task permission dimensions survive model/access edits and clear with 
   expect(resolveTaskAgent(cleared, [policyAgent])?.approvalPolicy).toBeUndefined()
   expect(resolveTaskAgent(cleared, [policyAgent])?.sandboxMode).toBeUndefined()
   expect(policyAgent.sandboxMode).toBe('workspace-write')
+})
+
+it('changes settled thread model settings without reopening it', () => {
+  const settled = { ...draft, archived: true }
+  const selected = chooseTaskAgent(settled, agents, custom.id)
+  const changed = changeTaskHarness(selected, agents, {
+    ...decode(taskHarnessSchema, custom),
+    model: 'another-model',
+    reasoning: 'low',
+  })
+  expect(resolveTaskAgent(changed, agents)).toMatchObject({
+    model: 'another-model',
+    reasoning: 'low',
+  })
+  expect(changed.archived).toBe(true)
+  expect(changed.status).toBe(settled.status)
 })

@@ -303,6 +303,7 @@ export function runtimeSnapshot(
       queuedTurnSettingsSupported: true,
       promptQueueStagingSupported: true,
       queuePausePreservationSupported: true,
+      directMessageSupported: true,
       fullTurnSettingsSupported: true,
       planModeSupported: true,
       persistentTurnModelsSupported: true,

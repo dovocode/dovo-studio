@@ -12,6 +12,15 @@ export function taskParentReference(
     tasks: readonly TaskMetadata[]
   }[] = [],
 ) {
+  if (task.sideThread)
+    return {
+      runtimeId,
+      runtimeIdentity,
+      threadId: task.sideThread.parentTaskId,
+      title:
+        tasks.find((parent) => parent.id === task.sideThread?.parentTaskId)?.title ??
+        'Parent thread',
+    }
   if (task.spawnParent)
     return {
       runtimeId: task.spawnParent.runtimeId,

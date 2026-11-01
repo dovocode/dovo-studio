@@ -95,8 +95,7 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
           if(path==='/api/tasks/title')return {title:'Unify the composers'};
-          if(path==='/api/tasks/side-chat/save')return {id:'side-fixture'};
-          if(path==='/api/tasks/side-chat/ask')return {answer:'Side answer'};
+          if(path==='/api/tasks/side-thread/create')return {id:'side-fixture'};
           if(path==='/api/tasks/message'||path==='/api/tasks/steer'){
             setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===input.id?{...t,status:'running',messages:[{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}));
             return {ok:true};
@@ -607,13 +606,13 @@ try {
   await page.getByRole('option', { name: '/sidechat', exact: false }).waitFor()
   await input.press('Enter')
   await page.waitForFunction(() =>
-    window.requests.some((r) => r.path === '/api/tasks/side-chat/ask'),
+    window.requests.some((r) => r.path === '/api/tasks/side-thread/create'),
   )
   const sideAsk = await page.evaluate(() =>
-    window.requests.findLast((r) => r.path === '/api/tasks/side-chat/ask'),
+    window.requests.findLast((r) => r.path === '/api/tasks/side-thread/create'),
   )
-  assert.equal(sideAsk.input.question.trim(), 'Explain this code')
-  assert.equal(sideAsk.input.question.includes('/sidechat'), false)
+  assert.equal(sideAsk.input.objective.trim(), 'Explain this code')
+  assert.equal(sideAsk.input.objective.includes('/sidechat'), false)
   assert.equal(await input.inputValue(), '')
   assert.equal(
     await page.evaluate(

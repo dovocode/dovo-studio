@@ -15,6 +15,7 @@ export const Markdown=({text})=><span>{text}</span>;export const formatTime=()=>
 export const openAppLink=()=>{};export const readMobilePreferences=()=>({locale:'en',dateStyle:'relative'});
 `
 const boundaries = new Map([
+  [mobile + 'scm/pulls/detail/agent-chat', 'export const PullAgentChat=()=>null;'],
   ...[
     'ui/content/text',
     'ui/controls/action',
@@ -141,7 +142,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   [
     {
       path: 'react-native',
-      contents: `export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
+      contents: `export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:(name,callback)=>{(window.appStateListeners??=new Set()).add(callback);return{remove(){window.appStateListeners.delete(callback)}}}};`,
     },
     { path: 'expo-router', contents: 'export const router={push(){}};' },
   ],
@@ -193,6 +194,30 @@ try {
   )
   assert.equal(pagination.input.expectedReaderIdentity, 'github-host-account')
   assert.equal(pagination.input.expectedDestination, 'destination-origin')
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.find(
+          (call) => call.path.endsWith('/detail') && call.input.section === 'overview',
+        ).input.refresh,
+    ),
+    true,
+  )
+  assert.doesNotMatch(await page.locator('body').innerText(), /showing cached|Last fetched/i)
+  const beforeResume = await page.evaluate(
+    () => window.calls.filter((call) => call.path.endsWith('/detail')).length,
+  )
+  await page.evaluate(() => window.appStateListeners.forEach((callback) => callback('active')))
+  await page.waitForFunction(
+    (before) => window.calls.filter((call) => call.path.endsWith('/detail')).length > before,
+    beforeResume,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path.endsWith('/detail')).at(-1).input.refresh,
+    ),
+    true,
+  )
   await page.evaluate(() => window.setOffline(true))
   await page.waitForFunction(() => !window.reader.readConnected && !window.list.connected)
   assert.equal(await page.evaluate(() => window.reader.detail.stale), true)

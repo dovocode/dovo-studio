@@ -155,10 +155,14 @@ bounded by ten user requests, 75 messages and an approximate byte budget. Whole 
 remain accessible; files are never removed to fit a page. Authenticated `POST /api/tasks/history`
 loads earlier pages with stable message-ID cursors. Loaded history is separate from live workspace
 and draft state, and live versions win on overlap. Desktop, web and mobile fill a recent window of
-500 messages in bounded pages, then load older pages automatically when scrolling back. Old turns
-remain deferred or virtualized; a retry control appears if loading fails. Mobile caches the latest
-500 messages for offline reopening. Budget totals, search, bookmarks, copy and checkpoint review
-retain access to older history. Legacy clients receive full history until they opt in.
+500 messages in bounded pages, then load older pages automatically when scrolling back. Mobile
+starts filling after the latest reply's first layout; its inverted list renders newest first and
+keeps native position anchoring enabled as older rows measure above it. Background history growth
+does not trigger JS scroll resets, and opening layout events cannot drain history beyond the bounded
+recent window. Old turns remain deferred or virtualized; a retry control appears if loading fails.
+Mobile caches the latest 500 loaded messages for offline reopening. Budget totals, search,
+bookmarks, copy and checkpoint review retain access to older history. Legacy clients receive full
+history until they opt in.
 
 Auditing and history persistence skip unchanged task and message objects. Replaceable tool progress
 is coalesced for 50 ms with bounded buffering; terminal and boundary events flush it. Raw transport

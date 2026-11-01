@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -42,7 +43,7 @@ function App(){
  const[turn,setTurn]=useState(undefined);window.turn=turn;window.openTurn=()=>{setTurn(null);setTask(old=>({...old,status:'running',messages:[{id:'first',role:'user',text:'Started'}]}));setEditing(true)};
  const[queueStatus,setQueueStatus]=useState({pending:0,error:null});window.queueStatus=setQueueStatus;
  const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
- window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
+ window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',archived:true,createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
  const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
  window.host=setHost;window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;
  const profile={id:host,name:host,connection:{address:'http://'+host,token:'private-token'}};
@@ -549,6 +550,11 @@ try {
   if (await star.isDisabled())
     throw new Error("The previous computer's pending favorite save blocked this computer")
 
+  assert.equal(
+    await page.evaluate(() => window.rawTask.archived),
+    true,
+    'Model changes reopened the settled thread',
+  )
   const defaultsBeforeTurn = await page.evaluate(() => window.rawTask.harness)
   await page.evaluate(() => window.openTurn())
   await page.getByText('Other settings apply only to this message.', { exact: true }).waitFor()

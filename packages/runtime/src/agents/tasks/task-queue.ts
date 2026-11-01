@@ -394,11 +394,15 @@ export class TaskQueue {
     }))
     this.activity?.add('queue', id, 'Queued message edited', { messageId })
   }
-  take(id: string, runId: string = randomUUID(), attemptId?: string) {
+  take(id: string, runId: string = randomUUID(), attemptId?: string, messageId?: string) {
     this.store.updateTaskHistory(
       id,
       (t) => {
-        const message = nextQueuedMessage(t)
+        const message = messageId
+          ? t.queue?.find((item) => item.id === messageId)
+          : nextQueuedMessage(t)
+        if (messageId && (!message || message.paused))
+          throw new HttpError(409, 'The message was removed or paused before it could be sent.')
         const pendingSubagentInputs = [
           ...new Map(
             [

@@ -21,7 +21,7 @@ const setup = source
   .replace('<textarea data-editor-mount={mount}', '<textarea ref={input} data-editor-mount={mount}')
   .replace(
     'permissionPolicySupported:true}};',
-    'permissionPolicySupported:true,promptQueueStagingSupported:true,queuePausePreservationSupported:true,planModeSupported:true}};',
+    'permissionPolicySupported:true,promptQueueStagingSupported:true,queuePausePreservationSupported:true,directMessageSupported:true,planModeSupported:true}};',
   )
 const test = `
 const browser = await chromium.launch({headless:true});
@@ -157,6 +157,26 @@ try {
   await page.getByRole('menuitem',{name:'Add without starting'}).click();
   await page.getByRole('alert').filter({hasText:'Scope needs a project choice'}).waitFor();
   assert.equal(await page.evaluate(() => window.requests.some(request => request.path === '/api/tasks/message')),false);
+  await page.reload(); await page.addScriptTag({content:built.outputFiles[0].text});
+  await page.evaluate(() => window.setTask(task=>({...task,status:'review',queuePaused:true,queue:[{id:'held',role:'user',text:'Held prompt',paused:true}]})));
+  await page.getByRole('textbox',{name:'Message'}).fill('Send this alone');
+  await page.getByRole('button',{name:'More message actions'}).click();
+  await page.getByRole('menuitem',{name:'Send now',exact:true}).click();
+  await page.waitForFunction(() => window.requests.some(request=>request.path==='/api/tasks/message'));
+  const direct=await page.evaluate(()=>window.requests.find(request=>request.path==='/api/tasks/message').input);
+  assert.equal(direct.sendNow,true);
+  assert.equal(direct.queueOnly,undefined);
+  assert.equal(direct.preserveQueuePause,undefined);
+  await page.evaluate(()=>{window.fail=true;window.response()});
+  await page.getByRole('alert').filter({hasText:'Network failure'}).waitFor();
+  await page.getByRole('button',{name:'More message actions'}).click();
+  await page.getByRole('menuitem',{name:'Send now',exact:true}).click();
+  await page.waitForFunction(() => window.requests.filter(request=>request.path==='/api/tasks/message').length===2);
+  assert.equal(await page.evaluate(()=>window.requests.filter(request=>request.path==='/api/tasks/message')[1].input.messageId),direct.messageId);
+  await page.evaluate(()=>{window.fail=false;window.response()});
+  await page.waitForFunction(() => document.querySelector('form').getAttribute('aria-busy')!=='true');
+  assert.equal(await page.evaluate(()=>window.current.queuePaused),true);
+  assert.deepEqual(await page.evaluate(()=>window.current.queue.map(message=>message.id)),['held']);
   console.log('Desktop automatic Add to queue, explicit staging and paused-queue setup checks passed');
 } finally { await browser.close(); }
 `

@@ -349,7 +349,7 @@ try {
     window.source.connected = false
   })
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
-  await detail.getByText('Offline · showing last loaded details.', { exact: true }).waitFor()
+  await detail.getByText('Offline · reconnect to refresh.', { exact: true }).waitFor()
   assert.equal(await detail.getByRole('button', { name: 'Review', exact: true }).isDisabled(), true)
   assert.equal(await form.getByRole('button', { name: 'Comment', exact: true }).isDisabled(), true)
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()

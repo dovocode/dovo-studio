@@ -52,6 +52,7 @@ async function applyStash(s: HandoffServices, cwd: string, ref: string) {
  * uncommitted changes. The agent continues in a new session with the conversation replayed. */
 export async function handoffTask(s: HandoffServices, id: string, target: 'worktree' | 'main') {
   const task = s.store.taskSummary(id)
+  if (task.sideThread) throw new HttpError(409, 'Side threads keep their isolated worktree.')
   if (task.importedCodexSession)
     throw new HttpError(
       409,

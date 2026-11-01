@@ -500,6 +500,11 @@ export class WorkspaceStore {
   get(): WorkspaceSummary {
     return this.workspace
   }
+  wasTaskDeleted(id: string) {
+    return !!this.db
+      .prepare('SELECT 1 FROM documents WHERE id=?')
+      .get(`workspace-deleted:tasks:${id}`)
+  }
   /** Enclosing writes must share this boundary so a rollback restores the live snapshot too.
    * Updates remain synchronously visible to other operations inside the transaction. Cached
    * histories are keyed by the summaries they were written for, so rolled-back histories are
@@ -844,6 +849,35 @@ export class WorkspaceStore {
             if (task.settledAt !== settledAt) task = { ...task, settledAt }
           } else if (task.settledAt !== undefined) task = { ...task, settledAt: undefined }
           task = versionReviewedFiles(task, previous)
+          if (
+            task.sideThread &&
+            [...(task.linkedCheckouts ?? []), ...(task.pendingLinkedCheckouts ?? [])].some(
+              (link) => link.access !== 'read-only',
+            )
+          )
+            throw new HttpError(403, 'Side-thread linked checkouts must be read-only.')
+          if (
+            task.sideThread &&
+            (!previous ||
+              previous.agentId !== task.agentId ||
+              !isDeepStrictEqual(previous.harness, task.harness) ||
+              !isDeepStrictEqual(previous.agentOverrides, task.agentOverrides) ||
+              !isDeepStrictEqual(previous.draftTurnSettings, task.draftTurnSettings) ||
+              previous.modelSelection !== task.modelSelection ||
+              previous.modelSelectionDifficulty !== task.modelSelectionDifficulty ||
+              previous.harnessCustomized !== task.harnessCustomized)
+          ) {
+            const childAgent = resolveTaskAgent(task, parsed.agents)
+            const parent = summaries.find((entry) => entry.id === task.sideThread?.parentTaskId)
+            const parentAgent = parent && resolveTaskAgent(parent, parsed.agents)
+            if (
+              !childAgent ||
+              !permissionPolicyWithinCeiling(task.sideThread.permissionCeiling, childAgent) ||
+              !parentAgent ||
+              !permissionPolicyWithinCeiling(parentAgent, childAgent)
+            )
+              throw new HttpError(403, 'Side-thread permissions cannot exceed their parent.')
+          }
           const childPermissionChanged =
             task.delegation &&
             (!previous ||
@@ -1439,6 +1473,7 @@ export class WorkspaceStore {
           record.autoProjectFallback !== undefined ||
           record.contextUsage !== undefined ||
           record.sideChats !== undefined ||
+          record.sideThread !== undefined ||
           record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined)
       )
@@ -1516,7 +1551,7 @@ export class WorkspaceStore {
       throw new HttpError(400, 'Cannot edit the managed project kind')
     if (
       patch.collection === 'tasks' &&
-      current.delegation &&
+      (current.delegation || current.sideThread) &&
       [
         'repositoryId',
         'execution',
@@ -1528,7 +1563,7 @@ export class WorkspaceStore {
         'setupCommand',
       ].some((key) => patch.changes[key])
     )
-      throw new HttpError(400, 'Child agents use their parent’s checkout')
+      throw new HttpError(400, 'Child threads cannot change their checkout')
     const allowed =
       patch.collection === 'tasks'
         ? new Set([

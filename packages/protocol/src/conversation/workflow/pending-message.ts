@@ -81,6 +81,7 @@ const savedSendSchema = mutableStruct({
   turnSettings: Schema.optional(turnSettingsSchema),
   text: Schema.String,
   queueOnly: Schema.optional(Schema.Boolean),
+  sendNow: Schema.optional(Schema.Boolean),
   plan: Schema.optional(Schema.Boolean),
   attachmentIds: Schema.optional(Schema.Array(Schema.String)),
 })
@@ -97,7 +98,13 @@ export function savedPendingMessages(task: Task, journal: MutationOutbox): Pendi
       state: item.blocked ? 'failed' : 'saved',
       destination: pendingMessageDestination(
         task,
-        item.path === '/api/tasks/steer' ? 'steer' : input.data.queueOnly ? 'stage' : 'queue',
+        item.path === '/api/tasks/steer'
+          ? 'steer'
+          : input.data.sendNow
+            ? 'direct'
+            : input.data.queueOnly
+              ? 'stage'
+              : 'queue',
       ),
       message: {
         id: input.data.messageId,
@@ -128,7 +135,7 @@ export function visiblePendingMessage(
 
 export function pendingMessageDestination(
   task: Pick<Task, 'status' | 'queue'>,
-  mode: 'queue' | 'steer' | 'stage',
+  mode: 'queue' | 'steer' | 'stage' | 'direct',
 ) {
   if (mode === 'stage') return 'queue'
   return mode === 'queue' && (task.status === 'running' || !!task.queue?.length)

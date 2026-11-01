@@ -5,6 +5,8 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
+  '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   // Sharing controls have a separate browser suite; this fixture covers model selection.
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',

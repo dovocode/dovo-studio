@@ -5,7 +5,7 @@ import { nativeEffect } from '../../runtime/state/native-effect'
 export type SendScope = { runtimeId: string; taskId: string }
 type DraftContent = { text: string; attachmentIds: readonly string[] }
 type SendInput = DraftContent & {
-  mode: 'queue' | 'steer' | 'stage'
+  mode: 'queue' | 'steer' | 'stage' | 'direct'
   runId?: string
   turnSettings?: TurnSettings
   plan?: boolean

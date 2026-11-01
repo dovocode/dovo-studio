@@ -1,3 +1,6 @@
+import { sideThreadsOf } from './side-threads'
+import { sideThreadAttentionTarget } from '@dovo/protocol'
+import { SideThreadAttentionBadge, useSideThreadAttention } from '../chat/thread/side-threads-panel'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import {
@@ -167,6 +170,7 @@ export function TaskHeader({
   const terminals =
     snapshot?.terminals.filter((session) => session.taskId === task.id && !session.exited).length ??
     0
+  const sideAttention = sideThreadAttentionTarget(useSideThreadAttention(), task.id)?.kind
   const surfaces = [
     ['chat', 'Chat', MessageSquare, 0],
     ['files', 'Files', Files, 0],
@@ -180,7 +184,12 @@ export function TaskHeader({
     ['terminal', 'Terminal', Terminal, terminals],
     ['browser', 'Preview', Globe, 0],
     ['devices', 'Devices', Smartphone, 0],
-    ['side-chats', 'Side chats', MessageCircleQuestion, task.sideChats?.length ?? 0],
+    [
+      'side-chats',
+      'Side chats',
+      MessageCircleQuestion,
+      (task.sideChats?.length ?? 0) + sideThreadsOf(workspace.tasks, task.id).length,
+    ],
   ] as const
   const titleMenu = (
     <TaskContextMenu
@@ -210,6 +219,9 @@ export function TaskHeader({
             >
               <Icon className="size-3.5 text-muted-foreground" />
               {label}
+              {id === 'side-chats' && sideAttention && (
+                <SideThreadAttentionBadge kind={sideAttention} />
+              )}
             </DropdownMenu.Item>
           ))}
           <DropdownMenu.Separator className="my-1 h-px bg-border/70" />

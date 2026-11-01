@@ -21,6 +21,7 @@ export function SavedFilePreview({
   commitSha,
   checkoutId,
   working = false,
+  sideThreadSnapshot,
 }: {
   file: ChangedFile
   taskId: string
@@ -28,6 +29,7 @@ export function SavedFilePreview({
   commitSha?: string
   checkoutId?: string
   working?: boolean
+  sideThreadSnapshot?: { before: string; after: string }
 }) {
   const { styles } = useTheme()
 
@@ -42,6 +44,8 @@ export function SavedFilePreview({
     commitSha,
     checkoutId,
     working,
+    sideThreadSnapshot?.before,
+    sideThreadSnapshot?.after,
     file.path,
   ])
   const full = fullKey === ownerKey
@@ -74,17 +78,28 @@ export function SavedFilePreview({
   useEffect(() => {
     let active = true
     void read(
-      commitSha ? '/api/tasks/commits/file-preview' : '/api/tasks/file/preview',
-      {
-        id: taskId,
-        path: file.path,
-        turnId,
-        checkoutId,
-        working,
-        full,
-        patch: true,
-        sha: commitSha,
-      },
+      sideThreadSnapshot
+        ? '/api/tasks/side-thread/file-preview'
+        : commitSha
+          ? '/api/tasks/commits/file-preview'
+          : '/api/tasks/file/preview',
+      sideThreadSnapshot
+        ? {
+            id: taskId,
+            path: file.path,
+            ...sideThreadSnapshot,
+            full,
+          }
+        : {
+            id: taskId,
+            path: file.path,
+            turnId,
+            checkoutId,
+            working,
+            full,
+            patch: true,
+            sha: commitSha,
+          },
       filePreviewSchema,
     ).then(
       (result) => {

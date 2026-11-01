@@ -1,4 +1,8 @@
-import { pullCommentsByFile } from '@dovo/protocol'
+import {
+  buildPullReviewObjective,
+  pullCommentsByFile,
+  type PullReviewSelection,
+} from '@dovo/protocol'
 import {
   pullFileFingerprint,
   createReviewFileLookup,
@@ -28,10 +32,16 @@ export function PullChanges({
   active = true,
   repositoryId,
   onSteer,
+  thread,
+  onAskAgent,
   onPosted,
   embedded = false,
   initialFragment = '',
 }: {
+  /** The explicitly linked thread that receives agent feedback instead of a new task. */
+  thread?: { title: string; onAsk: (objective: string) => void }
+  /** Opens the explicit conversation chooser for agent feedback. */
+  onAskAgent?: (selection: PullReviewSelection) => void
   embedded?: boolean
   initialFragment?: string
   detail: PullDetail
@@ -283,6 +293,17 @@ export function PullChanges({
                     split={split}
                     provider={detail.pull.provider}
                     allowAgent={!repositoryId.startsWith('http')}
+                    agentAction={
+                      thread
+                        ? {
+                            option: `“${thread.title}”`,
+                            submit: `Ask in “${thread.title}”`,
+                            clears: true,
+                          }
+                        : onAskAgent
+                          ? { option: 'Agent', submit: 'Ask agent…', clears: false }
+                          : undefined
+                    }
                     allowInlineComment={
                       detail.capabilities?.actions.includes('inline-comment') ?? true
                     }
@@ -310,6 +331,30 @@ export function PullChanges({
                                 pullLineCommentResponse,
                               )
                               onPosted()
+                            } else if (thread) {
+                              if (baseline.headSha !== detail.pull.headSha)
+                                throw new Error(
+                                  'The PR changed while you were writing. Your draft is preserved. Select lines on the current revision before asking the thread.',
+                                )
+                              thread.onAsk(
+                                buildPullReviewObjective(detail, {
+                                  question: body,
+                                  path: baseline.path,
+                                  ...range,
+                                  code: baseline.code,
+                                }),
+                              )
+                            } else if (onAskAgent) {
+                              if (baseline.headSha !== detail.pull.headSha)
+                                throw new Error(
+                                  'The PR changed while you were writing. Your draft is preserved. Select lines on the current revision before asking an agent.',
+                                )
+                              onAskAgent({
+                                question: body,
+                                path: baseline.path,
+                                ...range,
+                                code: baseline.code,
+                              })
                             } else
                               onSteer(
                                 `Address this feedback on ${baseline.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${baseline.headSha}:\n${body}\n\nReference patch at time of comment:\n${baseline.patch.slice(0, 1500)}`,

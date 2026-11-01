@@ -514,6 +514,10 @@ const renderConversationMessage = ({ item }: { item: string }) => (
   <ThreadPrimitive.Unstable_MessageById messageId={item} components={messageComponents} />
 )
 const messageKey = (id: string) => id
+// Inverted lists start at the latest reply. Native anchoring runs in the same
+// layout pass as older cells, before those measurements can move a visible row.
+const followLatestPosition = { minIndexForVisible: 0, autoscrollToTopThreshold: 0 }
+const preserveReadingPosition = { minIndexForVisible: 0 }
 const readingPositions = createReadingPositionCache()
 export function Conversation({
   setup,
@@ -583,6 +587,7 @@ export function Conversation({
       }
     | undefined
   >(undefined)
+  const historyInteraction = useRef(false)
   const offset = useRef(0)
   const offsetScope = useRef(positionKey)
   const cellViews = useRef(new Map<string, ComponentRef<typeof View>>())
@@ -642,6 +647,7 @@ export function Conversation({
     cancelRestore()
     cancelMove()
     capturePending.current = undefined
+    historyInteraction.current = false
     if (offsetScope.current !== positionKey) {
       offsetScope.current = positionKey
       offset.current = 0
@@ -882,15 +888,28 @@ export function Conversation({
             renderItem={renderMessage}
             onViewableItemsChanged={viewability.current}
             keyExtractor={messageKey}
-            maintainVisibleContentPosition={following ? undefined : { minIndexForVisible: 0 }}
+            maintainVisibleContentPosition={
+              following ? followLatestPosition : preserveReadingPosition
+            }
             initialNumToRender={8}
             maxToRenderPerBatch={6}
             windowSize={7}
             onEndReached={() => {
-              if (recentReady && history.hasMore && !history.busy && !history.error && connected)
+              // Opening already fills the bounded recent window automatically. Native
+              // end events during measurement must not drain all older history as well.
+              if (
+                visible &&
+                historyInteraction.current &&
+                !scroll.following &&
+                recentReady &&
+                history.hasMore &&
+                !history.busy &&
+                !history.error &&
+                connected
+              )
                 void history.load()
             }}
-            onEndReachedThreshold={2}
+            onEndReachedThreshold={0.5}
             ref={list}
             onScrollToIndexFailed={({ index, averageItemLength }) => {
               if (restoration.current) {
@@ -928,6 +947,7 @@ export function Conversation({
               if (!messageCount) onRecentLayout()
             }}
             onScrollBeginDrag={() => {
+              historyInteraction.current = true
               cancelRestore()
               cancelMove()
               scroll.beginInteraction()
@@ -976,7 +996,9 @@ export function Conversation({
                     Scope found no matching project; continued without a project.
                   </Text>
                 )}
-                {history.busy && <ActivityIndicator size="small" color={colors.muted} />}
+                {history.busy && (!following || !messageCount) && (
+                  <ActivityIndicator size="small" color={colors.muted} />
+                )}
                 {history.hasMore && !!history.error && (
                   <IconButton
                     icon="history"

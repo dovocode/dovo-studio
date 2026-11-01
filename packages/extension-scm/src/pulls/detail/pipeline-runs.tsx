@@ -52,7 +52,6 @@ export function PullPipelineRuns({
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [notice, setNotice] = useApplicationState('')
-  const [stale, setStale] = useApplicationState(false)
   const generation = useRef(0)
   const pending = useRef(false)
   const stored = useRef<ForgePipeline[]>([])
@@ -133,7 +132,6 @@ export function PullPipelineRuns({
         depth.current = cursor ? Math.min(500, depth.current + 1) : pages
         setRuns(items)
         setNext(page.next)
-        setStale(!!page.stale)
         setError(page.refreshError ?? '')
         try {
           await readCache?.write(cacheKey, {
@@ -148,7 +146,6 @@ export function PullPipelineRuns({
       } catch (cause) {
         if (current === generation.current) {
           setError(cause instanceof Error ? cause.message : String(cause))
-          setStale(true)
         }
       } finally {
         if (current === generation.current) {
@@ -180,7 +177,6 @@ export function PullPipelineRuns({
           depth.current = cached.value.loadedPages ?? 1
           setRuns(cached.value.items)
           setNext(cached.value.next)
-          setStale(true)
         }
       } catch {
         if (current === generation.current) setError('Saved pipeline runs could not be read.')
@@ -229,7 +225,6 @@ export function PullPipelineRuns({
           <h3 className="text-sm font-medium">Pipeline runs</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             For commit <code>{sha.slice(0, 8)}</code>
-            {stale || !connected ? ' · Cached' : ''}
           </p>
         </div>
         <Button

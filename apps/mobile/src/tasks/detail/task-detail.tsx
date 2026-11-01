@@ -50,7 +50,6 @@ import { BrowserPane, DevicesPane } from '../preview/browser-pane'
 import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
-import { ComposerActivity } from '../composer/composer-activity'
 import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { TaskQuestions } from './task-questions'
 import { LinkedProjects } from './linked-projects'
@@ -89,6 +88,8 @@ import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
+import { SideThreadActions, SideChatAttention } from '../conversation/components/agent-side-chats'
+import { SideThreadChanges } from './side-thread-changes'
 import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
 import { ProjectApprovalRules } from './project-approval-rules'
@@ -351,7 +352,7 @@ function TaskDetailContent({
             ),
         },
         {
-          label: 'Ask a side question',
+          label: 'Side chats',
           group: 'Tools',
           icon: 'chat',
           overflow: true,
@@ -600,10 +601,13 @@ function TaskDetailContent({
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
+  const [sideChanges, setSideChanges] = useState(false)
   const [projectInfo, setProjectInfo] = useState(false)
+  const [historyBrowsing, setHistoryBrowsing] = useState(false)
   // Navigation keeps screens mounted; thread info belongs only to this view.
   useEffect(() => {
     setProjectInfo(false)
+    setSideChanges(false)
   }, [focused, activeId, task.id, pane, native?.parentKey])
   const [linkedPulls, setLinkedPulls] = useState(false)
   const [linkedPullUrl, setLinkedPullUrl] = useState<string | undefined>(undefined)
@@ -673,7 +677,12 @@ function TaskDetailContent({
           )
         }
         hidden={!!native || ((pane === 'browser' || pane === 'devices') && expandedPreview)}
-        gestureEnabled={pane !== 'browser' && pane !== 'devices' && pane !== 'diff'}
+        gestureEnabled={
+          pane !== 'browser' &&
+          pane !== 'devices' &&
+          pane !== 'diff' &&
+          !(pane === 'chat' && historyBrowsing)
+        }
         onBack={
           pane === 'diff'
             ? backToChat
@@ -948,6 +957,17 @@ function TaskDetailContent({
         }
       />
       {!native && !expandedPreview && parentNavigation}
+      {!native && !expandedPreview && (
+        <SideThreadActions task={task} onReview={() => setSideChanges(true)} />
+      )}
+      {!native && !expandedPreview && <SideChatAttention task={task} />}
+      {sideChanges && !!task.sideThread && !native && (
+        <SideThreadChanges
+          key={`${activeId}:${task.id}`}
+          taskId={task.id}
+          onClose={() => setSideChanges(false)}
+        />
+      )}
       {projectInfo && !native && (
         <TaskProjectSheet
           key={`${activeId}:${task.id}`}
@@ -1048,8 +1068,8 @@ function TaskDetailContent({
             }}
           >
             <Composer
+              onHistoryBrowsingChange={setHistoryBrowsing}
               onStartInBackground={startup?.onStartInBackground}
-              queuedMessages={<ComposerActivity task={task} />}
               renderAbove={(setup, startModes) => (
                 <Conversation setup={setup} startModes={startModes}>
                   {preparation ? (

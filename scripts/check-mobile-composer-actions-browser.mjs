@@ -9,8 +9,8 @@ const mobile = root + 'apps/mobile/'
 const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
 if (screenshots) mkdirSync(screenshots, { recursive: true })
 const controls = `
-import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
-const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>t.rotate?'rotate('+t.rotate+')':'translateY('+t.translateY+'px)').join(' ');return s};
+import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';import {Layers,ListChecks,ChevronDown,ArrowUpRight,Ellipsis,Plus,Mic,Keyboard as KeyboardIcon,ArrowUp,ListPlus,Pause,Play,SlidersHorizontal} from '${root}packages/studio-ui/node_modules/lucide-react';
+const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));for(const kind of ['padding','margin']){for(const [axis,edges] of [['Horizontal',['Left','Right']],['Vertical',['Top','Bottom']]]){const key=kind+axis;if(s[key]!==undefined){for(const edge of edges)s[kind+edge]??=s[key];delete s[key]}}}if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>t.rotate?'rotate('+t.rotate+')':'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal,keyboardShouldPersistTaps})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div onMouseDown={keyboardShouldPersistTaps==='always'?event=>event.preventDefault():undefined} ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
@@ -21,19 +21,19 @@ export const SafeModal=({visible,children})=>visible?<div role="dialog">{childre
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
 export const Platform={OS:'android'};
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
-export const ActivityIndicator=()=>null;
+export const BackHandler={addEventListener(_event,listener){(window.backHandlers??=new Set()).add(listener);return {remove:()=>window.backHandlers.delete(listener)}}};export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
 export const Keyboard={dismiss(){window.keyboardDismissals=(window.keyboardDismissals??0)+1;document.activeElement?.blur()},addListener(name,callback){(window.keyboardListeners??={})[name]??=new Set();window.keyboardListeners[name].add(callback);return {remove(){window.keyboardListeners[name].delete(callback)}}},metrics(){return window.keyboardMetrics}};export const Linking={openSettings:async()=>{}};
-export const Icon=()=>null;
+export const Icon=({name,size=20,color})=>{const Glyph={stack:Layers,checklist:ListChecks,down:ChevronDown,steer:ArrowUpRight,more:Ellipsis,add:Plus,microphone:Mic,keyboard:KeyboardIcon,send:ArrowUp,queue:ListPlus,pause:Pause,play:Play,tune:SlidersHorizontal}[name];return Glyph?<Glyph size={size} color={color} style={{flexShrink:0}}/>:null};
 export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
-export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
+export const Action=({label,onPress,disabled})=><button onPointerDown={event=>event.preventDefault()} disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
 export const Image=({source,style})=><img src={source?.uri} style={style}/>;
-export const Glass=View;
+export const Glass=({style,...props})=><View {...props} style={[{backgroundColor:'#242424'},style]}/>;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
 export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return createPortal(<div role="dialog" aria-label={title} style={{position:"fixed",inset:0,zIndex:1000,overflowY:"auto",background:"#202020",padding:12}}>{children}<button onClick={onClose}>Close</button></div>,document.body)};
-export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff',selection:'#24354c'},styles:{content:{},muted:{color:'#999'}}});
+export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff',selection:'#24354c',action:'#eee',onAccent:'#111',background:'#101010',warning:'#e5ad55',success:'#6cbd82'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
   {
@@ -123,8 +123,8 @@ const stubs = [
     path: 'react-native-gesture-handler',
     contents: `
 import {useRef} from 'react';export {Pressable} from 'react-native';
-export const Gesture={Native:()=>({native:true}),Pan:()=>{const gesture={callbacks:{},enabled(value){this.active=value;return this},activateAfterLongPress(value){this.delay=value;return this},minDistance(){return this},blocksExternalGesture(){return this},runOnJS(){return this},onStart(fn){this.callbacks.start=fn;return this},onUpdate(fn){this.callbacks.update=fn;return this},onEnd(fn){this.callbacks.end=fn;return this},onFinalize(fn){this.callbacks.finalize=fn;return this}};return gesture}};
-export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(gesture.native)return children;return <div style={{display:'flex',flex:children.props.style?.flex,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;const target=event.currentTarget;const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;target.setPointerCapture(event.pointerId);gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
+export const Gesture={Native:()=>({native:true}),Pan:()=>{const gesture={callbacks:{},enabled(value){this.active=value;return this},maxPointers(){return this},activeOffsetX(value){this.axis='x';this.offset=value;return this},activeOffsetY(value){this.axis='y';this.offset=value;return this},failOffsetX(value){this.failX=value;return this},failOffsetY(value){this.failY=value;return this},activateAfterLongPress(value){this.delay=value;return this},minDistance(){return this},blocksExternalGesture(){return this},runOnJS(){return this},onStart(fn){this.callbacks.start=fn;return this},onUpdate(fn){this.callbacks.update=fn;return this},onEnd(fn){this.callbacks.end=fn;return this},onFinalize(fn){this.callbacks.finalize=fn;return this}};return gesture}};
+export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(gesture.native)return children;if(gesture.axis)return <div style={{touchAction:'none'}} onPointerDown={event=>{event.preventDefault();state.current=gesture.active?{x:event.clientX,y:event.clientY}:null}} onPointerMove={event=>{const current=state.current;if(!current||current.failed)return;const x=event.clientX-current.x,y=event.clientY-current.y;if(!current.dragging){if((gesture.failX&&(x<gesture.failX[0]||x>gesture.failX[1]))||(gesture.failY&&(y<gesture.failY[0]||y>gesture.failY[1]))){current.failed=true;return}const distance=gesture.axis==='x'?x:y;current.dragging=Array.isArray(gesture.offset)?distance<gesture.offset[0]||distance>gesture.offset[1]:distance>gesture.offset;if(current.dragging)event.currentTarget.setPointerCapture(event.pointerId)}}} onPointerUp={event=>{const current=state.current;if(current?.dragging&&!current.failed)gesture.callbacks.end?.({translationX:event.clientX-current.x,translationY:event.clientY-current.y},true)}} onPointerCancel={()=>{state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>;return <div style={{display:'flex',flex:children.props.style?.flex,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;const target=event.currentTarget;const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;target.setPointerCapture(event.pointerId);gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
 `,
   },
   ...[
@@ -197,7 +197,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(
   {
     path: './composer-field',
     importer: mobile,
-    contents: `import {useRef,useEffect} from 'react';export const ComposerField=({value,onChangeText,onFocus,onBlur,editable,focusKey,onSelectionChange,showOptions,placeholder})=>{const ref=useRef(null);useEffect(()=>{if(focusKey)ref.current?.focus()},[focusKey]);return <textarea ref={ref} style={{width:"100%",minWidth:0,minHeight:showOptions?64:44,height:showOptions?64:44,margin:0,resize:"none",boxSizing:"border-box"}} placeholder={placeholder} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>{onChangeText(event.target.value);onSelectionChange?.({start:event.target.value.length,end:event.target.value.length})}}/>};`,
+    contents: `import {useRef,useEffect} from 'react';export const ComposerField=({value,onChangeText,onFocus,onBlur,editable,focusKey,onSelectionChange,showOptions,placeholder})=>{const ref=useRef(null);useEffect(()=>{if(focusKey)ref.current?.focus()},[focusKey]);return <textarea ref={ref} style={{width:"100%",minWidth:0,minHeight:showOptions?64:44,height:showOptions?64:44,background:"transparent",border:0,color:"inherit",padding:"11px 12px",fontSize:16,lineHeight:"22px",margin:0,resize:"none",boxSizing:"border-box"}} placeholder={placeholder} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>{onChangeText(event.target.value);onSelectionChange?.({start:event.target.value.length,end:event.target.value.length})}}/>};`,
   },
   {
     path: '../creation/task-machine-selector',
@@ -229,22 +229,22 @@ const built = await bundleBrowser(
       contents: `
 import {useState,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';
-import {TaskEmptyState} from './src/tasks/creation/task-empty-state';import {Composer} from './src/tasks/composer/composer';import {ComposerActivity} from './src/tasks/composer/composer-activity';
-window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
+import {useComposerHistory} from './src/tasks/composer/use-composer-history';import {TaskEmptyState} from './src/tasks/creation/task-empty-state';import {Composer} from './src/tasks/composer/composer';
+window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;const reportHistory=value=>{window.historyBrowsing=value};
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',activeRunId:'active-run',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [plan,setPlan]=useState(false);window.plan=plan;
   const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;window.setTurnSettings=setTurnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
-  const snapshot={promptQueueStagingSupported:window.stageSupported===true,queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
-  const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
-  window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{plan,planSupported:true,setPlan,editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
+  const snapshot={directMessageSupported:window.stageSupported===true,promptQueueStagingSupported:window.stageSupported===true,queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
+  const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const composerHistory=useComposerHistory({scope:task.id,text,revision:text,messages:task.messages,enabled:!editing&&!pendingFork&&!task.archivedAt});window.composerHistory=composerHistory;const draft={text:editing?.text??composerHistory.text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:JSON.stringify([editing?.text??text,composerHistory.index]),update:value=>{composerHistory.cancel();editing?setEditing({...editing,text:value}):setText(value)}};
+  window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-thread/create')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else {window.lastSentText=draft.text;composerHistory.cancel();window.calls.push({mode:mode??'queue'})}},stop:()=>window.calls.push({mode:'stop'}),actions:{composerHistory,plan,planSupported:true,setPlan,editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
   window.conversation.actions.stageSupported=snapshot.promptQueueStagingSupported;
   window.conversation.actions.defaultSendMode=snapshot.promptQueueStagingSupported && task.queue?.length && (task.queuePaused || task.queue[0]?.paused) ? 'stage' : 'queue';
   window.conversation.actions.attachmentPicker.pasteImage=()=>window.calls.push({mode:'paste-image'});
-  return <Composer task={task} renderAbove={(setup,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  return <Composer task={task} onHistoryBrowsingChange={reportHistory} renderAbove={(setup,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -293,6 +293,86 @@ try {
     window.setTask({})
   })
   await page.getByRole('switch', { name: 'Plan', exact: true }).waitFor({ state: 'hidden' })
+  // Touch history keeps the original draft and keyboard while browsing a stable sent-message snapshot.
+  const historyInput = page.getByRole('textbox', { name: 'Message', exact: true })
+  const originalMessages = await page.evaluate(() => window.currentTask.messages)
+  await page.evaluate(() => {
+    window.setTask({
+      messages: [
+        { id: 'old', role: 'user', text: 'Older request' },
+        { id: 'reply', role: 'assistant', text: 'Assistant reply' },
+        { id: 'empty', role: 'user', text: ' ' },
+        { id: 'latest', role: 'user', text: 'Newest request' },
+      ],
+    })
+    window.setDraftText('Unsent draft')
+  })
+  await historyInput.focus()
+  const keyboardDismissals = await page.evaluate(() => window.keyboardDismissals ?? 0)
+  const swipeHistory = async (dx, dy) => {
+    const box = await historyInput.boundingBox()
+    assert.ok(box)
+    const x = box.x + box.width / 2
+    const y = box.y + 12
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y + dy, { steps: 8 })
+    await page.mouse.up()
+  }
+  const historyBrowser = page.getByTestId('Composer history browser')
+  await swipeHistory(60, 0)
+  await swipeHistory(0, 16)
+  await swipeHistory(0, -40)
+  assert.equal(await historyBrowser.count(), 0, 'Only a deliberate downward swipe enters history')
+  await swipeHistory(0, 44)
+  await historyBrowser.waitFor()
+  assert.equal(await page.evaluate(() => window.historyBrowsing), true)
+  assert.equal(await historyInput.inputValue(), 'Newest request')
+  assert.equal(await historyInput.evaluate((node) => node === document.activeElement), true)
+  await swipeHistory(60, 0)
+  assert.equal(await historyInput.inputValue(), 'Older request', 'Right recalls older messages')
+  await swipeHistory(60, 0)
+  assert.equal(await historyInput.inputValue(), 'Older request', 'The oldest entry is a boundary')
+  await page.evaluate(() =>
+    window.setTask({
+      messages: [
+        ...window.currentTask.messages,
+        { id: 'incoming', role: 'user', text: 'Incoming message' },
+      ],
+    }),
+  )
+  await swipeHistory(-60, 0)
+  assert.equal(
+    await historyInput.inputValue(),
+    'Newest request',
+    'Incoming messages cannot shift browsing',
+  )
+  await swipeHistory(-60, 0)
+  assert.equal(await historyInput.inputValue(), 'Unsent draft')
+  await swipeHistory(60, 0)
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await historyInput.inputValue(), 'Unsent draft')
+  assert.equal(await historyBrowser.count(), 0)
+  assert.equal(await page.evaluate(() => window.historyBrowsing), false)
+  assert.equal(await historyInput.evaluate((node) => node === document.activeElement), true)
+  assert.equal(await page.evaluate(() => window.keyboardDismissals ?? 0), keyboardDismissals)
+  await swipeHistory(0, 44)
+  assert.equal(await historyInput.inputValue(), 'Incoming message')
+  assert.equal(await page.evaluate(() => [...window.backHandlers].at(-1)()), true)
+  await historyBrowser.waitFor({ state: 'hidden' })
+  assert.equal(await historyInput.inputValue(), 'Unsent draft')
+  assert.equal(await page.evaluate(() => window.historyBrowsing), false)
+  await swipeHistory(0, 44)
+  await historyInput.fill('Edited recalled message')
+  assert.equal(await historyBrowser.count(), 0, 'Typing adopts the selected message')
+  await swipeHistory(0, 44)
+  await page.evaluate(() => window.setDraftText('External draft update'))
+  await historyBrowser.waitFor({ state: 'hidden' })
+  assert.equal(await historyInput.inputValue(), 'External draft update')
+  await page.evaluate((messages) => {
+    window.setTask({ messages })
+    window.setDraftText('Continue the review')
+  }, originalMessages)
   if (process.env.DOVO_COMPOSER_MESSAGE_ACTIONS_ONLY === '1') {
     await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor()
     await page.evaluate(() => {
@@ -338,6 +418,9 @@ try {
     await holdSend()
     await menu.getByRole('menuitem', { name: 'Add without starting', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stage' })
+    await holdSend()
+    await menu.getByRole('menuitem', { name: 'Send now', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'direct' })
     await holdSend()
     await menu.getByRole('menuitem', { name: 'Add and run queue', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
@@ -634,7 +717,8 @@ try {
   const pauseBounds = await pauseQueue.boundingBox()
   assert.ok(pauseBounds && pauseBounds.width === 44 && pauseBounds.height === 44)
   assert.ok(pauseBounds.x >= 0 && pauseBounds.x + pauseBounds.width <= 320)
-  await queuedMessages.getByText('Runs after this turn', { exact: true }).waitFor()
+  assert.equal(await queuedMessages.getByText('Runs after this turn', { exact: true }).count(), 0)
+  assert.match(await queuedMessages.getAttribute('aria-label'), /after this turn/)
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Pause queued message 1', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'pause-message')
@@ -820,7 +904,7 @@ try {
   })
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedTurnSettings), null)
   const sideCommand = page.getByRole('button', {
-    name: 'Command sidechat: Ask a side question',
+    name: 'Command sidechat: Start an agent side chat',
     exact: true,
   })
   await page
@@ -828,27 +912,30 @@ try {
     .fill('Explain this checkout\n/sidechat')
   await sideCommand.click()
   await page.waitForFunction(() =>
-    window.calls.some((call) => call.path === '/api/tasks/side-chat/ask'),
+    window.calls.some((call) => call.path === '/api/tasks/side-thread/create'),
   )
-  assert.deepEqual(
-    await page.evaluate(
-      () => window.calls.find((call) => call.path === '/api/tasks/side-chat/ask').input,
-    ),
-    { id: 'task', chatId: 'side-1', question: 'Explain this checkout\n' },
+  const sideCreate = await page.evaluate(
+    () => window.calls.find((call) => call.path === '/api/tasks/side-thread/create').input,
   )
+  assert.equal(sideCreate.id, 'task')
+  assert.equal(sideCreate.objective, 'Explain this checkout\n')
+  assert.equal(typeof sideCreate.childId, 'string')
   assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
-  assert.deepEqual(await page.evaluate(() => window.calls.find((call) => call.mode === 'aside')), {
-    mode: 'aside',
-    chatId: 'side-1',
-  })
-  // The local slash command saves before sending in both running and idle threads.
+  assert.equal(await page.evaluate(() => window.navigations.at(-1).params.taskId), 'side-1')
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some((call) => call.path === '/api/tasks/side-chat/ask'),
+    ),
+    false,
+  )
+  // The slash command creates an editable agent draft in both running and idle threads.
   await page.evaluate(() => window.setTask({ status: 'review' }))
   await page
     .getByRole('textbox', { name: 'Message', exact: true })
     .fill('From the command\n/sidechat')
   await sideCommand.click()
   await page.waitForFunction(
-    () => window.calls.filter((call) => call.path === '/api/tasks/side-chat/ask').length === 2,
+    () => window.calls.filter((call) => call.path === '/api/tasks/side-thread/create').length === 2,
   )
   await page.evaluate(() => {
     window.failSideSave = true
@@ -988,10 +1075,8 @@ try {
   await queueTab.waitFor()
   assert.match(await queueTab.innerText(), /Queue.*1/s)
   assert.match(await checklistTab.innerText(), /Checklist.*0\/1/s)
-  const activityHeader = page
-    .getByLabel('Composer activity', { exact: true })
-    .locator(':scope > div')
-    .first()
+  assert.match(await checklistTab.getAttribute('aria-label'), /0\/1/)
+  const activityHeader = page.getByRole('tablist').locator('..')
   const activityGeometry = () =>
     activityHeader.evaluate((header) => {
       const origin = header.getBoundingClientRect()
@@ -1000,6 +1085,67 @@ try {
         return { x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height }
       })
     })
+  const surface = page.getByTestId('Composer input row')
+  const activity = page.getByLabel('Composer activity', { exact: true })
+  assert.equal(
+    await activity.evaluate((node) => {
+      const shell = document.querySelector('[data-testid="Composer surface"]')
+      const input = document.querySelector('[data-testid="Composer input row"]')
+      return (
+        !shell.contains(node) &&
+        shell.contains(input) &&
+        !!(node.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING)
+      )
+    }),
+    true,
+    'Queue and checklist have a separate panel just above the original input',
+  )
+  const stableInput = page.getByRole('textbox', { name: 'Message', exact: true })
+  await stableInput.evaluate((node) => {
+    window.activityInput = node
+  })
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const control of [
+      queueTab,
+      checklistTab,
+      page.getByRole('button', { name: 'Pause queue', exact: true }),
+    ]) {
+      const box = await control.boundingBox()
+      assert.ok(
+        box && box.x >= 0 && box.x + box.width <= width && box.height >= 44,
+        JSON.stringify(box),
+      )
+    }
+    if (screenshots)
+      await page
+        .getByTestId('Composer')
+        .screenshot({ path: screenshots + '/desktop-style-activity-' + width + '.png' })
+    for (const title of ['Queue', 'Checklist']) {
+      const labelSize = await activity.getByText(title, { exact: true }).evaluate((node) => ({
+        width: node.clientWidth,
+        content: node.scrollWidth,
+      }))
+      assert.ok(
+        labelSize.content <= labelSize.width,
+        title + ' fits at ' + width + ': ' + JSON.stringify(labelSize),
+      )
+    }
+    const row = page.getByTestId('Queued message row 1')
+    const rowBox = await row.boundingBox(),
+      inputBox = await surface.boundingBox()
+    const activityBox = await activity.boundingBox()
+    const shellBox = await page.getByTestId('Composer surface').boundingBox()
+    assert.ok(rowBox && inputBox && rowBox.y + rowBox.height <= inputBox.y)
+    assert.ok(activityBox && shellBox)
+    assert.ok(
+      Math.abs(shellBox.y - (activityBox.y + activityBox.height)) < 1,
+      'The activity panel meets the composer without a gap',
+    )
+    assert.ok(Math.abs(activityBox.x - shellBox.x - 20) < 1)
+    assert.ok(Math.abs(shellBox.width - activityBox.width - 40) < 1)
+  }
+  await page.setViewportSize({ width: 320, height: 900 })
   const runningGeometry = await activityGeometry()
   await page.evaluate(() => window.setTask({ queuePaused: true, status: 'completed' }))
   await page.getByRole('tab', { name: 'Queue · 1 · Paused', exact: true }).waitFor()
@@ -1021,6 +1167,11 @@ try {
   )
   assert.equal(await queueTab.getAttribute('aria-selected'), 'false')
   assert.equal(await page.getByTestId('Queued messages').isVisible(), false)
+  assert.equal(
+    await stableInput.evaluate((node) => node === window.activityInput),
+    true,
+    'Tab switching keeps the input mounted',
+  )
   const collapse = page.getByRole('button', { name: 'Collapse composer activity', exact: true })
   const expand = page.getByRole('button', { name: 'Expand composer activity', exact: true })
   await collapse.click()
@@ -1599,7 +1750,7 @@ try {
   assert.equal(await page.evaluate(() => window.calls.length), beforeProjectMove)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: default Queue / empty Stop, anchored Fork/Queue/Steer/Stop and + menus, keyboard bounds and outside dismissal without composer movement or accidental send, inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
+    'Mobile composer: default Queue / empty Stop, anchored Fork/Queue/Steer/Stop and + menus, keyboard bounds and outside dismissal without composer movement or accidental send, inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, full-agent side-chat drafts, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()

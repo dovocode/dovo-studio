@@ -125,6 +125,7 @@ export class PullCache {
     reconcile?: (fresh: T, cached?: T) => T,
     ttl = 120_000,
     acceptCached?: (value: T) => boolean,
+    live = false,
   ): Effect.Effect<T, RuntimeFailure> {
     return Effect.gen({ self: this }, function* () {
       if (this.stopped && force)
@@ -161,7 +162,8 @@ export class PullCache {
         const worker = Effect.gen({ self: this }, function* () {
           // Register ownership before a synchronous SDK failure can finish this worker.
           yield* Effect.yieldNow
-          const fetched = yield* runtimeOperation(() => retrievalFresh(force, fetch))
+          const started = Date.now()
+          const fetched = yield* runtimeOperation(() => retrievalFresh(force || live, fetch))
           return yield* runtimeOperation(() => {
             const updated = Date.now()
             const value = {
@@ -171,7 +173,7 @@ export class PullCache {
             }
             this.db
               .prepare('INSERT OR REPLACE INTO pull_cache(key,value,updated) VALUES(?,?,?)')
-              .run(key, JSON.stringify(value), updated)
+              .run(key, JSON.stringify(value), started)
             this.db
               .prepare(
                 'DELETE FROM pull_cache WHERE key IN (SELECT key FROM pull_cache ORDER BY updated DESC LIMIT -1 OFFSET 500)',
@@ -229,8 +231,18 @@ export class PullCache {
             }
           : yield* Effect.fail(missing.error)
       if (cached && row && !force) {
-        if (!this.stopped && stale && Date.now() - (this.failedAt.get(key) ?? 0) >= 60000)
-          this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.
+        const failedAt = this.failedAt.get(key)
+        const canRefresh =
+          !this.stopped && stale && (failedAt === undefined || Date.now() - failedAt >= 60000)
+        if (canRefresh && live)
+          return yield* refresh.pipe(
+            Effect.catch((error) =>
+              this.rejectCachedFallback(error)
+                ? Effect.fail(error)
+                : Effect.succeed({ ...cached, stale: true, refreshError: errorMessage(error) }),
+            ),
+          )
+        if (canRefresh) this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.
         return {
           ...cached,
           cachedAt: cached.cachedAt ?? new Date(row.updated).toISOString(),
@@ -535,8 +547,13 @@ export class PullCache {
           if (section === 'changes') this.acceptDetail(detail, scope, number, attempt)
           return detail
         },
-        section === 'changes' ? 300_000 : 60_000,
+        section === 'changes'
+          ? 300_000
+          : section === 'status' || section === 'checks'
+            ? 10_000
+            : 60_000,
         revision ? (detail) => pullRevision(detail) === revision : undefined,
+        section === 'status' || section === 'checks',
       )
     })
   }

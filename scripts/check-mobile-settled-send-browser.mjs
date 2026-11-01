@@ -82,6 +82,19 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByRole('textbox', { name: 'Message' })
   const send = page.getByRole('button', { name: 'Send', exact: true })
+  await input.fill('Unsent history draft')
+  await page.evaluate(() => window.actions.composerHistory.begin())
+  await page.waitForFunction(() => window.actions.composerHistory.active)
+  assert.equal(await input.inputValue(), 'Earlier request')
+  assert.equal(await page.evaluate(() => window.requests.length), 0)
+  await page.evaluate(() => window.actions.composerHistory.cancel())
+  await page.waitForFunction(() => !window.actions.composerHistory.active)
+  assert.equal(await input.inputValue(), 'Unsent history draft')
+  await page.evaluate(() => window.actions.composerHistory.begin())
+  await page.waitForFunction(() => window.actions.composerHistory.active)
+  await input.fill('Edited recalled request')
+  assert.equal(await page.evaluate(() => window.actions.composerHistory.active), false)
+  assert.equal(await input.inputValue(), 'Edited recalled request')
   await input.fill('New work')
   assert.equal(await page.evaluate(() => window.task.archived), true)
   assert.equal(await send.isEnabled(), true)
@@ -290,6 +303,36 @@ try {
   await page.evaluate(() => window.actions.cancelEdit())
   await page.waitForFunction(() => !window.actions.editing)
   assert.equal(await input.inputValue(), 'Draft kept while editing')
+  // Send uses the preview, persists it for retries, and clears it after acceptance.
+  await page.evaluate(() => {
+    window.setTask((task) => ({ ...task, status: 'review' }))
+    window.fail = true
+    window.finish = null
+    window.actions.composerHistory.begin()
+  })
+  await page.waitForFunction(() => window.actions.composerHistory.active)
+  assert.equal(await input.inputValue(), 'Earlier request')
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.text), 'Earlier request')
+  const historyMessageId = await page.evaluate(() => window.requests.at(-1).input.messageId)
+  await page.evaluate(() => {
+    window.finish()
+    window.finish = null
+  })
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), 'Earlier request')
+  assert.equal(await page.evaluate(() => window.actions.composerHistory.active), false)
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.messageId), historyMessageId)
+  await page.evaluate(() => {
+    window.fail = false
+    window.finish()
+    window.finish = null
+  })
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), '')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile settled-thread submission: drafting, rejected send, stable retries, attachment-only input and archived-thread guard passed.',

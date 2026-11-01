@@ -121,14 +121,14 @@ try {
   assert.equal(await server.locator('span').nth(1).innerText(), 'MCP server')
   assert.deepEqual(errors, [])
   await update({ text: '/sidechat', sidechat: true })
-  await page.getByRole('button', { name: 'Command sidechat: Ask a side question' }).click()
+  await page.getByRole('button', { name: 'Command sidechat: Start an agent side chat' }).click()
   assert.equal(await page.evaluate(() => window.sidechat), '')
   await update({ text: 'Question\n/sidechat' })
-  await page.getByRole('button', { name: 'Command sidechat: Ask a side question' }).click()
+  await page.getByRole('button', { name: 'Command sidechat: Start an agent side chat' }).click()
   assert.equal(await page.evaluate(() => window.sidechat), 'Question\n')
   await update({ text: '/sidechat', sidechat: false })
   assert.equal(
-    await page.getByRole('button', { name: 'Command sidechat: Ask a side question' }).count(),
+    await page.getByRole('button', { name: 'Command sidechat: Start an agent side chat' }).count(),
     0,
   )
   console.log('Mobile file mention request races and resource details passed')

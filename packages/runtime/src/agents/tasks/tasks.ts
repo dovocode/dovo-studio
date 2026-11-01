@@ -33,6 +33,7 @@ import {
   taskFamilyIds,
   taskFamilyWorking,
   taskFamilyRunToken,
+  taskPullLinks,
   nativeAgentWorking,
   type SubagentSpawn,
 } from '@dovo/protocol'
@@ -68,6 +69,21 @@ import {
 } from '../../errors.js'
 const hasAgentInput = (task: Pick<TaskMetadata, 'queue' | 'subagentInbox'>) =>
   !!nextQueuedMessage(task) || !!task.subagentInbox?.length
+
+const sideThreadContextHash = (messages: Task['messages']) =>
+  createHash('sha256')
+    .update(
+      JSON.stringify(
+        messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          text: message.text,
+          file: message.file,
+          attachments: message.attachments?.map((attachment) => attachment.id),
+        })),
+      ),
+    )
+    .digest('hex')
 
 const delegatedAnswer = (task: Task) => {
   const lastUser = task.messages.map((message) => message.role).lastIndexOf('user')
@@ -114,6 +130,7 @@ export class Tasks {
   private restartLease: { id: string; expiresAt: number; resumeInterrupted?: boolean } | undefined
   private steering = new Map<string, symbol>()
   private checkoutMutations = new Set<string>()
+  private sideThreadCreations = new Map<string, Promise<{ id: string }>>()
   private checkoutEdits = new Map<string, number>()
   private running = new Map<string, Running>()
   private nativeSessions = new Map<
@@ -898,6 +915,438 @@ export class Tasks {
     return submit()
   }
 
+  private sideThreadBusy(id: string) {
+    const tasks = this.store.get().tasks
+    const family = taskFamilyIds(tasks, id)
+    return tasks.some(
+      (task) =>
+        family.has(task.id) &&
+        (task.status === 'running' ||
+          !!task.activeRunId ||
+          !!task.runPhase ||
+          !!task.runAttempt ||
+          this.running.has(task.id) ||
+          this.nativeStopping.has(task.id) ||
+          !!task.subagents?.some(nativeAgentWorking)),
+    )
+  }
+
+  async createSideThread(id: string, childId: string, objective = ''): Promise<{ id: string }> {
+    const pending = this.sideThreadCreations.get(childId)
+    if (pending) {
+      await pending
+      return this.createSideThread(id, childId, objective)
+    }
+    const creation = this.createSideThreadOnce(id, childId, objective)
+    this.sideThreadCreations.set(childId, creation)
+    try {
+      return await creation
+    } finally {
+      this.sideThreadCreations.delete(childId)
+    }
+  }
+
+  private async createSideThreadOnce(id: string, childId: string, objective: string) {
+    const existing = () => {
+      const child = this.store.get().tasks.find((task) => task.id === childId)
+      if (!child) {
+        if (this.store.wasTaskDeleted(childId))
+          throw new HttpError(409, 'This side thread was deleted. Use a new ID.')
+        return false
+      }
+      if (child.sideThread?.parentTaskId !== id || child.sideThread.objective !== objective)
+        throw new HttpError(409, 'This side-thread ID already has different contents.')
+      return true
+    }
+    if (existing()) return { id: childId }
+    const source = this.store.task(id)
+    if (this.deletionReservations.has(id))
+      throw new HttpError(409, 'The parent thread is being deleted.')
+    if (source.sideThread) throw new HttpError(409, 'Side threads cannot create side threads.')
+    if (source.archivedAt) throw new HttpError(409, 'Restore the parent thread first.')
+    const repo = this.store.get().repositories.find((item) => item.id === source.repositoryId)
+    if (!repo || (repo.kind && repo.kind !== 'scratch'))
+      throw new HttpError(400, 'Side threads require a Git project or General workspace.')
+    const scratch = repo.kind === 'scratch'
+    const cwd = scratch ? undefined : await this.checkouts.directory(id)
+    const create = async (snapshotFiles: boolean) => {
+      if (existing()) return { id: childId }
+      const current = this.store.task(id)
+      if (current.sideThread || current.archivedAt)
+        throw new HttpError(409, 'The parent thread is no longer available.')
+      if (snapshotFiles && this.sideThreadBusy(id))
+        throw new HttpError(409, 'The parent started while creating the side thread. Try again.')
+      const head = cwd ? (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim() : undefined
+      if (cwd && head)
+        await this.git.command(cwd, ['update-ref', `refs/dovo/forks/${childId}/head`, head])
+      const snapshot =
+        cwd && snapshotFiles
+          ? await this.git.snapshot(cwd, `refs/dovo/forks/${childId}/source`)
+          : undefined
+      if (cwd && snapshot && (await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim() !== head)
+        throw new HttpError(
+          409,
+          'The parent checkout changed while taking its snapshot. Try again.',
+        )
+      return this.store.transaction(() => {
+        if (existing()) return { id: childId }
+        const parent = this.store.task(id)
+        if (parent.archivedAt || parent.sideThread || this.deletionReservations.has(id))
+          throw new HttpError(409, 'The parent thread is no longer available.')
+        if (snapshotFiles && this.sideThreadBusy(id))
+          throw new HttpError(409, 'The parent started while creating the side thread. Try again.')
+        const agent = resolveTaskAgent(parent, this.store.get().agents)
+        if (!agent) throw new HttpError(400, 'Select an agent for the parent thread first.')
+        const completed = [...(parent.turns ?? [])]
+          .reverse()
+          .find((turn) => turn.status === 'completed')
+        const end = completed
+          ? parent.messages.findIndex((message) => message.id === completed.assistantId)
+          : -1
+        const history =
+          snapshotFiles && !parent.turns?.some((turn) => turn.status === 'running')
+            ? parent.messages
+            : end >= 0
+              ? parent.messages.slice(0, end + 1)
+              : []
+        const messages = history
+          .filter((message) => message.role === 'assistant' || !message.file)
+          .map((message) => ({
+            ...message,
+            ...(message.attachments?.length
+              ? {
+                  attachments: this.attachments.copy(
+                    id,
+                    childId,
+                    message.attachments.map((file) => file.id),
+                  ),
+                }
+              : {}),
+          }))
+        const child: Task = {
+          id: childId,
+          title: `Side thread: ${parent.title}`.slice(0, 200),
+          repositoryId: parent.repositoryId,
+          agentId: parent.agentId,
+          agentName: parent.agentName,
+          agentIcon: parent.agentIcon,
+          harness: decode(taskHarnessSchema, agent),
+          agentOverrides: parent.agentOverrides,
+          harnessCustomized: parent.harnessCustomized,
+          modelSelection: parent.modelSelection,
+          modelSelectionDifficulty: parent.modelSelectionDifficulty,
+          budget: parent.budget,
+          linkedCheckouts: parent.linkedCheckouts?.map((link) => ({
+            ...link,
+            access: 'read-only',
+          })),
+          linkedPullRequests: taskPullLinks(parent)
+            .slice(0, 20)
+            .map((pull) => ({
+              number: pull.number,
+              url: pull.url,
+              provider: pull.provider,
+              repositoryUrl: pull.repositoryUrl,
+              title: pull.title,
+            })),
+          execution: scratch ? 'main' : 'worktree',
+          setupCommand: scratch ? undefined : parent.setupCommand,
+          submodules: scratch ? undefined : parent.submodules,
+          forkedFrom: { taskId: id, title: parent.title, head, snapshot },
+          sideThread: {
+            parentTaskId: id,
+            objective,
+            contextMessageCount: messages.length,
+            parentHistoryRevision: parent.historyRevision ?? 0,
+            contextLastMessageId: messages.at(-1)?.id,
+            contextHash: sideThreadContextHash(messages),
+            source: scratch ? 'scratch' : snapshot ? 'snapshot' : 'head',
+            reviewBaseline: snapshot ?? head,
+            permissionCeiling: {
+              provider: agent.provider,
+              permission: agent.permission,
+              approvalPolicy: agent.approvalPolicy,
+              sandboxMode: agent.sandboxMode,
+            },
+          },
+          status: 'draft',
+          createdAt: new Date().toISOString(),
+          messages,
+          files: [],
+          draft: objective,
+          example: false,
+        }
+        this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, child] }))
+        return { id: childId }
+      })
+    }
+    if (!cwd) return create(!this.sideThreadBusy(id))
+    return this.sideThreadBusy(id)
+      ? create(false)
+      : this.withCheckoutMutation(cwd, () => create(true))
+  }
+
+  async bringBackSideThread(id: string, expectedDraft?: string) {
+    const deliver = (location?: string) =>
+      this.store.transaction(() => {
+        const child = this.store.task(id)
+        const side = child.sideThread
+        if (!side || child.forkedFrom?.taskId !== side.parentTaskId)
+          throw new HttpError(409, 'This side thread has no valid parent lineage.')
+        const parent = this.store.get().tasks.find((task) => task.id === side.parentTaskId)
+        if (
+          !parent ||
+          parent.sideThread ||
+          parent.repositoryId !== child.repositoryId ||
+          (parent.historyRevision ?? 0) !== side.parentHistoryRevision
+        )
+          throw new HttpError(409, 'The parent thread is no longer available.')
+        if (
+          child.archivedAt ||
+          this.deletionReservations.has(id) ||
+          this.sideThreadBusy(id) ||
+          child.queue?.length ||
+          child.subagentInbox?.length
+        )
+          throw new HttpError(409, 'The side thread must be open and finished with an empty queue.')
+        const turn = child.turns?.at(-1)
+        if (!turn || turn.status !== 'completed' || !['review', 'done'].includes(child.status))
+          throw new HttpError(409, 'Complete the side thread before bringing back its result.')
+        const receiptId = `${id}:${turn.id}`
+        if (side.broughtBackThrough === turn.id) {
+          if (side.broughtBackText === undefined)
+            throw new HttpError(409, 'This older handoff has no saved receipt text.')
+          return { id: parent.id, receiptId, text: side.broughtBackText }
+        }
+        if (
+          parent.archivedAt ||
+          this.deletionReservations.has(parent.id) ||
+          this.sideThreadBusy(parent.id) ||
+          parent.queue?.length ||
+          parent.subagentInbox?.length
+        )
+          throw new HttpError(409, 'The parent must be open and idle with an empty queue.')
+        if (
+          side.broughtBackThrough &&
+          !child.turns?.some((item) => item.id === side.broughtBackThrough)
+        )
+          throw new HttpError(409, 'The side thread completion history changed.')
+        if (expectedDraft !== undefined && parent.draft !== expectedDraft)
+          throw new HttpError(
+            409,
+            'The parent draft changed. Refresh before bringing back the result.',
+          )
+        if (
+          side.contextMessageCount > child.messages.length ||
+          (side.contextMessageCount > 0 &&
+            child.messages[side.contextMessageCount - 1]?.id !== side.contextLastMessageId) ||
+          sideThreadContextHash(child.messages.slice(0, side.contextMessageCount)) !==
+            side.contextHash
+        )
+          throw new HttpError(409, 'The side thread conversation no longer matches its source.')
+        const end = child.messages.findIndex((message) => message.id === turn.assistantId)
+        if (end < side.contextMessageCount)
+          throw new HttpError(409, 'The completed result is missing.')
+        const turns = child.turns ?? []
+        const previous = side.broughtBackThrough
+          ? turns.findIndex((item) => item.id === side.broughtBackThrough)
+          : -1
+        let start = side.contextMessageCount
+        if (previous >= 0) {
+          const boundary = child.messages.findIndex(
+            (message) => message.id === turns[previous].assistantId,
+          )
+          if (boundary < start || turns[previous].status !== 'completed')
+            throw new HttpError(409, 'The side thread completion history changed.')
+          start = boundary + 1
+        }
+        const parts: string[] = []
+        let omitted = false
+        let ambiguousUnowned = false
+        for (const item of turns.slice(previous + 1)) {
+          const boundary = child.messages.findIndex((message) => message.id === item.assistantId)
+          if (item.status !== 'completed') {
+            omitted = true
+            if (boundary >= start && boundary <= end) start = boundary + 1
+            else ambiguousUnowned = true
+            continue
+          }
+          if (boundary < start || boundary > end)
+            throw new HttpError(409, 'The side thread completion history changed.')
+          for (const message of child.messages.slice(start, boundary + 1)) {
+            if (
+              (message.turnId && message.turnId !== item.id) ||
+              (!message.turnId && ambiguousUnowned)
+            ) {
+              omitted = true
+              continue
+            }
+            if (message.file) {
+              omitted = true
+              continue
+            }
+            const attachments = message.attachments?.map((attachment) => attachment.name) ?? []
+            const text = message.text.trim()
+            if (text || attachments.length)
+              parts.push(
+                `${message.role === 'user' ? 'User' : 'Assistant'}: ${text}${attachments.length ? `\nAttachments (names only): ${attachments.join(', ')}` : ''}`,
+              )
+          }
+          ambiguousUnowned = false
+          start = boundary + 1
+        }
+        let result = parts.join('\n\n')
+        if (!result) throw new HttpError(409, 'The completed side thread has no text result.')
+        const omissionNotice = omitted ? '\n[Some non-completed or file content was omitted.]' : ''
+        const truncationNotice = '[Earlier conversation text omitted or truncated.]\n'
+        const budget = 12000 - omissionNotice.length
+        if (result.length > budget) {
+          let remaining = budget - truncationNotice.length
+          const retained: string[] = []
+          for (const part of [...parts].reverse()) {
+            const available = remaining - (retained.length ? 2 : 0)
+            if (part.length <= available) {
+              retained.unshift(part)
+              remaining = available - part.length
+              continue
+            }
+            const label = part.startsWith('User: ') ? 'User: ' : 'Assistant: '
+            const prefix = `${label}[earlier text truncated] `
+            if (available > prefix.length)
+              retained.unshift(`${prefix}${part.slice(-(available - prefix.length))}`)
+            break
+          }
+          result = `${truncationNotice}${retained.join('\n\n')}`
+        }
+        result += omissionNotice
+        if (!location) return undefined
+        const handoff = `[Side thread ${child.id} ${turn.id}]\n${child.title}\n${location}\nNo Git merge was performed; changes remain in the side-thread checkout.\n\n${result}`
+        this.store.updateTask(parent.id, (task) => ({
+          ...task,
+          draft: task.draft ? `${task.draft}\n\n${handoff}` : handoff,
+        }))
+        this.store.updateTask(id, (task) => ({
+          ...task,
+          sideThread: task.sideThread
+            ? { ...task.sideThread, broughtBackThrough: turn.id, broughtBackText: handoff }
+            : undefined,
+        }))
+        return { id: parent.id, receiptId, text: handoff }
+      })
+    const existing = deliver()
+    if (existing) return existing
+    const cwd = await this.checkouts.fileDirectory(id)
+    return this.withCheckoutMutation(cwd, async () => {
+      const child = this.store.task(id)
+      const location =
+        child.sideThread?.source === 'scratch'
+          ? `Scratch directory: ${cwd}\nGit: not applicable`
+          : `Checkout: ${cwd}\nBranch: ${(await this.git.command(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()}\nHEAD: ${(await this.git.command(cwd, ['rev-parse', 'HEAD'])).trim()}`
+      const result = deliver(location)
+      if (!result) throw new HttpError(409, 'The side-thread handoff changed. Try again.')
+      return result
+    })
+  }
+
+  requireUnusedSideThread(id: string) {
+    const task = this.store.task(id)
+    if (!task.sideThread || task.forkedFrom?.taskId !== task.sideThread.parentTaskId)
+      throw new HttpError(409, 'Only an unused side thread can be discarded.')
+    if (
+      task.turns?.length ||
+      task.queue?.length ||
+      task.subagentInbox?.length ||
+      task.messages.length !== task.sideThread.contextMessageCount ||
+      this.sideThreadBusy(id) ||
+      taskFamilyIds(this.store.get().tasks, id).size !== 1
+    )
+      throw new HttpError(
+        409,
+        'This side thread has started or is delivering and cannot be discarded.',
+      )
+  }
+
+  private async sideThreadBaseline(id: string, cwd: string) {
+    const child = this.store.task(id)
+    const side = child.sideThread
+    const parent = side && this.store.get().tasks.find((task) => task.id === side.parentTaskId)
+    if (
+      !side ||
+      !parent ||
+      child.forkedFrom?.taskId !== parent.id ||
+      parent.repositoryId !== child.repositoryId ||
+      (parent.historyRevision ?? 0) !== side.parentHistoryRevision
+    )
+      throw new HttpError(409, 'The side thread parent or baseline is no longer available.')
+    if (side.source === 'scratch')
+      throw new HttpError(400, 'General side threads do not have Git changes.')
+    if (!/^[a-f0-9-]{36}$/.test(id))
+      throw new HttpError(409, 'The side thread baseline is unavailable.')
+    let before: string
+    try {
+      const ref = side.source === 'snapshot' ? 'source' : 'head'
+      before = (
+        await this.git.command(cwd, ['rev-parse', '--verify', `refs/dovo/forks/${id}/${ref}`])
+      ).trim()
+    } catch {
+      throw new HttpError(409, 'The side thread baseline is unavailable.')
+    }
+    const expected =
+      side.reviewBaseline ??
+      child.forkedFrom.snapshot ??
+      (side.source === 'head' ? child.forkedFrom.head : undefined)
+    if (!expected || !/^[a-f0-9]{40,64}$/.test(before) || expected !== before)
+      throw new HttpError(409, 'The side thread baseline is unavailable.')
+    return before
+  }
+
+  async sideThreadChanges(id: string) {
+    const reservation = this.reserveDeletion([id])
+    try {
+      if (this.sideThreadBusy(id))
+        throw new HttpError(409, 'Wait for the side thread to finish before reviewing changes.')
+      const cwd = await this.checkouts.fileDirectory(id)
+      return await this.withCheckoutMutation(cwd, async () => {
+        if (this.sideThreadBusy(id))
+          throw new HttpError(409, 'Wait for the side thread to finish before reviewing changes.')
+        const before = await this.sideThreadBaseline(id, cwd)
+        const after = await this.git.snapshot(cwd, `refs/dovo/side-thread-reviews/${id}/current`)
+        await this.git.command(cwd, [
+          'update-ref',
+          `refs/dovo/side-thread-reviews/${id}/snapshots/${after}`,
+          after,
+        ])
+        return { before, after, ...(await this.git.checkpointChanges(cwd, before, after)) }
+      })
+    } finally {
+      this.releaseDeletion([id], reservation)
+    }
+  }
+
+  async sideThreadFile(id: string, before: string, after: string, path: string, full = false) {
+    const cwd = await this.checkouts.fileDirectory(id)
+    if ((await this.sideThreadBaseline(id, cwd)) !== before || !/^[a-f0-9]{40,64}$/.test(after))
+      throw new HttpError(409, 'The side thread review is no longer available.')
+    let saved: string
+    try {
+      saved = (
+        await this.git.command(cwd, [
+          'rev-parse',
+          '--verify',
+          `refs/dovo/side-thread-reviews/${id}/snapshots/${after}`,
+        ])
+      ).trim()
+    } catch {
+      throw new HttpError(409, 'The saved review is no longer available. Refresh changes.')
+    }
+    if (saved !== after)
+      throw new HttpError(409, 'The saved review is no longer available. Refresh changes.')
+    const changes = await this.git.checkpointChanges(cwd, before, after)
+    if (!changes.files.some((file) => file.path === path) && !changes.omitted.includes(path))
+      throw new HttpError(404, 'This file is not in the side thread changes.')
+    return this.git.checkpointFilePreview(cwd, before, after, path, full)
+  }
+
   /** Empty conversation in this checkout, or an independent snapshot of its current files. */
   async newWorktreeThread(id: string, mode: 'reuse' | 'fork') {
     const source = this.store.taskSummary(id)
@@ -957,7 +1406,7 @@ export class Tasks {
     }))
     return { ok: true }
   }
-  /** Explicit sends can resume an idle queue; scheduled input keeps its paused state. */
+  /** Explicit sends can resume an idle queue; Send now runs only its own input with the queue paused. */
   sendEffect(
     id: string,
     messageId: string,
@@ -970,6 +1419,7 @@ export class Tasks {
     plan = false,
     queueOnly = false,
     preserveQueuePause = false,
+    sendNow = false,
   ) {
     return runtimeOperation(() => {
       if (this.deletionReservations.has(id))
@@ -981,6 +1431,15 @@ export class Tasks {
         runtimeOperation(() => {
           if (this.deletionReservations.has(id))
             throw new HttpError(409, 'This thread is being deleted.')
+          if (sendNow) {
+            if (this.queue.accepted(id, messageId, text, attachments, turnSettings, plan))
+              return false
+            if (this.running.has(id))
+              throw new HttpError(
+                409,
+                'The agent is running. Steer it or queue this message instead.',
+              )
+          }
           this.queue.add(
             id,
             messageId,
@@ -988,7 +1447,7 @@ export class Tasks {
             attachments,
             undefined,
             review,
-            resumePaused && !preserveQueuePause && !queueOnly && !this.running.has(id),
+            resumePaused && !sendNow && !preserveQueuePause && !queueOnly && !this.running.has(id),
             undefined,
             {
               turnSettings,
@@ -1005,8 +1464,7 @@ export class Tasks {
             !queueOnly &&
             task.queue?.some((message) => message.id === messageId) &&
             !this.running.has(id) &&
-            !task.queuePaused &&
-            (!preserveQueuePause || !task.queue[0]?.paused)
+            (sendNow || (!task.queuePaused && (!preserveQueuePause || !task.queue[0]?.paused)))
           )
         }),
       ),
@@ -1014,7 +1472,7 @@ export class Tasks {
         start
           ? this.startEffect(
               id,
-              false,
+              sendNow,
               preserveQueuePause
                 ? () => {
                     const task = this.store.taskSummary(id)
@@ -1026,6 +1484,9 @@ export class Tasks {
                     )
                   }
                 : undefined,
+              undefined,
+              false,
+              sendNow ? messageId : undefined,
             ).pipe(
               Effect.catch((error) =>
                 runtimeOperation(() => {
@@ -1273,6 +1734,7 @@ export class Tasks {
     admit?: () => boolean,
     continuingRunId?: string,
     retryFailed = false,
+    directMessageId?: string,
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
     return Effect.suspend(() => {
       if (this.deletionReservations.has(id))
@@ -1281,7 +1743,13 @@ export class Tasks {
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
       const next = this.store.taskSummary(id)
-      if (next.importedCodexSession && !nextQueuedMessage(next) && !next.subagentInbox?.length) {
+      // Send now selects one accepted message without reordering or resuming held input.
+      const firstMessage = directMessageId
+        ? next.queue?.find((message) => message.id === directMessageId)
+        : nextQueuedMessage(next)
+      if (directMessageId && (!firstMessage || firstMessage.paused))
+        return Effect.fail(new HttpError(409, 'The message changed before it could be sent.'))
+      if (next.importedCodexSession && !firstMessage && !next.subagentInbox?.length) {
         const history = this.store.task(id)
         if (
           !history.messages.some(
@@ -1304,6 +1772,7 @@ export class Tasks {
         return Effect.fail(new HttpError(409, 'Only a failed task can be retried.'))
       if (
         !retryFailed &&
+        !directMessageId &&
         next.queue?.length &&
         !hasAgentInput(next) &&
         next.restartRecovery?.kind !== 'turn' &&
@@ -1311,7 +1780,7 @@ export class Tasks {
       )
         return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
       return (
-        (!retryFailed && nextQueuedMessage(next)?.turnSettings) ||
+        (!retryFailed && firstMessage?.turnSettings) ||
         (continuingRunId && next.runAttempt?.turnSettings)
           ? Effect.void
           : this.resolveModel(id)
@@ -1428,14 +1897,15 @@ export class Tasks {
             return Effect.fail(new HttpError(409, 'This task is already running'))
           if (
             !retryFailed &&
+            !directMessageId &&
             task.queue?.length &&
             !hasAgentInput(task) &&
             task.restartRecovery?.kind !== 'turn' &&
             task.runPhase !== 'finalizing'
           )
             return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
-          let recoveringQueue = task.restartRecovery?.kind === 'queue'
-          const recoveringTurn = task.restartRecovery?.kind === 'turn'
+          let recoveringQueue = !directMessageId && task.restartRecovery?.kind === 'queue'
+          const recoveringTurn = !directMessageId && task.restartRecovery?.kind === 'turn'
           const pendingLinks =
             !recoveringTurn && task.runPhase !== 'finalizing'
               ? task.pendingLinkedCheckouts
@@ -1584,14 +2054,18 @@ export class Tasks {
               yield* this.drainChildren(id, run.id)
               yield* this.runner.finalizeEffect(id, cwd, hasGit)
               resumeInterruptedTurn = false
-              if (retryFailed || pauseQueue || !hasAgentInput(this.store.taskSummary(id))) return
+              if (
+                !directMessageId &&
+                (retryFailed || pauseQueue || !hasAgentInput(this.store.taskSummary(id)))
+              )
+                return
             }
             let firstAttempt = true
             do {
               yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
               if (
                 (recoveringQueue && !hasAgentInput(this.store.taskSummary(id))) ||
-                (!(firstAttempt && retryFailed) &&
+                (!(firstAttempt && (retryFailed || directMessageId)) &&
                   !resumeInterruptedTurn &&
                   this.store.taskSummary(id).queue?.length &&
                   !hasAgentInput(this.store.taskSummary(id)))
@@ -1614,11 +2088,12 @@ export class Tasks {
               }
               run.retiring = false
               const retryingFailedAttempt = firstAttempt && retryFailed
+              const immediateMessageId = firstAttempt ? directMessageId : undefined
               firstAttempt = false
               // Retrying a provider failure continues existing context and files, without
               // consuming queued user messages or undoing the previous attempt's work.
               if (!resumeInterruptedTurn && !retryingFailedAttempt)
-                this.queue.take(id, run.runId, run.id)
+                this.queue.take(id, run.runId, run.id, immediateMessageId)
               this.deliverCompletions()
               resumeInterruptedTurn = false
               const attemptId = run.id

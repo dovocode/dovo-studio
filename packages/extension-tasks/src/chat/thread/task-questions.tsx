@@ -15,7 +15,11 @@ export function TaskQuestions({ taskId }: { taskId: string }) {
   if (!questions.length) return null
   const pending = questions.find((q) => q.prompt.blocking !== false) ?? questions[0]
   return (
-    <div className="mx-auto w-full max-w-[var(--chat-max)] shrink-0 px-5 pb-2">
+    <div
+      className="mx-auto w-full max-w-[var(--chat-max)] shrink-0 px-5 pb-2"
+      data-human-input="question"
+      data-human-input-task={taskId}
+    >
       {questions.length > 1 && (
         <p className="pb-1 text-[0.625rem] text-muted-foreground">
           {questions.length} requests waiting

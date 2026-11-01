@@ -41,6 +41,7 @@ export function PullChanges({
   onOpen,
   onAction,
   onLineComment,
+  onAskAgent,
   initialPath,
   fragment,
   onAnchor,
@@ -52,6 +53,7 @@ export function PullChanges({
   onOpen: (url: string) => void
   onAction?: (target: PullActionTarget) => void
   onLineComment?: (path: string) => void
+  onAskAgent?: (path: string) => void
   initialPath?: string
   fragment?: string
   onAnchor?: (node: ComponentRef<typeof View>) => void
@@ -266,6 +268,9 @@ export function PullChanges({
         </View>
       ) : (
         <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>
+      )}
+      {onAskAgent && (
+        <Action secondary label="Ask agent about this file" onPress={() => onAskAgent(file.path)} />
       )}
       {(!!comments.length || canComment) && (
         <View

@@ -171,6 +171,47 @@ it('notifies in the main conversation for child approvals and waits for question
   ).toEqual(['parent'])
 })
 
+it.each([
+  {
+    name: 'local',
+    metadata: { delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'worker' } },
+  },
+  {
+    name: 'targeted',
+    metadata: { spawnParent: { runtimeId: 'parent-runtime', threadId: 'parent' } },
+  },
+])(
+  'suppresses $name completion while retaining parent completion and child failures',
+  ({ metadata }) => {
+    const { runtime, snapshot } = fixture()
+    snapshot.workspace.tasks[1] = {
+      ...snapshot.workspace.tasks[1]!,
+      delegation: undefined,
+      ...metadata,
+    }
+    const before = taskNotificationStates([runtime])
+    snapshot.workspace.tasks[1]!.status = 'review'
+    expect(taskNotificationEvents(before, taskNotificationStates([runtime]))).toEqual([])
+    snapshot.workspace.tasks[0]!.status = 'review'
+    expect(
+      taskNotificationEvents(before, taskNotificationStates([runtime])).map((event) => [
+        event.target.entityId,
+        event.kind,
+      ]),
+    ).toEqual([['parent', 'done']])
+    snapshot.workspace.tasks[1]!.status = 'failed'
+    expect(
+      taskNotificationEvents(before, taskNotificationStates([runtime])).map((event) => [
+        event.target.entityId,
+        event.kind,
+      ]),
+    ).toEqual([
+      ['parent', 'done'],
+      ['child', 'failed'],
+    ])
+  },
+)
+
 it('notifies separately for new approvals and questions while earlier requests still wait', () => {
   const { runtime, snapshot } = fixture()
   snapshot.approvals.push({

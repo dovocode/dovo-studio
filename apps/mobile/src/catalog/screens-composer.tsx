@@ -1,7 +1,6 @@
 import { View } from 'react-native'
 import { ConversationProvider } from '../tasks/conversation/state/provider'
 import { Composer } from '../tasks/composer/composer'
-import { MessageQueue } from '../tasks/composer/message-queue'
 import { StartupThread } from '../tasks/creation/startup-thread'
 import { TaskDetail } from '../tasks/detail/task-detail'
 import { Text } from '../ui/content/text'
@@ -24,10 +23,7 @@ export function MobileComposerScreen() {
         openCheckpoint={() => undefined}
         openTerminal={() => undefined}
       >
-        <Composer
-          task={catalogScreenTask}
-          queuedMessages={<MessageQueue task={catalogScreenTask} />}
-        />
+        <Composer task={catalogScreenTask} />
       </ConversationProvider>
     </View>
   )
