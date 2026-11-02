@@ -4,10 +4,14 @@ import { Terminal } from '@xterm/headless'
 import { Terminals } from './terminals'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
+import { exec } from '../process'
+import { defaultShell } from './shell'
+import { quoteTerminalPaths } from './file-paths'
 
 // Cold Windows PowerShell startup can exceed ten seconds on hosted runners.
 // Keep prompt startup separate from command delivery and leave time for cleanup.
 vi.setConfig({ ...runtimeIntegration, testTimeout: process.platform === 'win32' ? 45_000 : 30_000 })
+const shellStartupTimeout = process.platform === 'win32' ? 20_000 : 10_000
 async function waitForPrompt(terminals: Terminals, id: string, output: () => string) {
   await vi.waitFor(
     () => {
@@ -20,9 +24,34 @@ async function waitForPrompt(terminals: Terminals, id: string, output: () => str
         output: output(),
       }).toMatchObject({ ready: true, exited: false })
     },
-    { timeout: process.platform === 'win32' ? 20_000 : 10_000 },
+    { timeout: shellStartupTimeout },
   )
 }
+
+// This starts a native shell, so Windows runs it with the isolated startup checks.
+it('the native shell receives dropped paths as literal arguments without submitting input', async () => {
+  const paths = [
+    '/tmp/with spaces.txt',
+    "/tmp/it's a file.txt",
+    '/tmp/$(echo injected);`echo nope`&file',
+    '/tmp/日本語🙂.txt',
+    'C:\\Users\\Dominic\\file name.txt',
+  ]
+  const shell = defaultShell()
+  const text = quoteTerminalPaths(paths, shell)
+  const windows = process.platform === 'win32'
+  const command = windows
+    ? `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); ConvertTo-Json -InputObject @(Write-Output ${text}) -Compress`
+    : `printf '%s\\0' ${text}`
+  const { stdout } = await exec(
+    shell,
+    [...(windows ? ['-NoLogo', '-NoProfile', '-Command'] : ['-c']), command],
+    { timeout: shellStartupTimeout },
+  )
+  expect(windows ? JSON.parse(stdout) : stdout.split('\0').slice(0, -1)).toEqual(paths)
+  expect(text.endsWith(' ')).toBe(true)
+  expect(text).not.toContain('\n')
+})
 
 // Keep the marker out of echoed input and use the actual platform shell syntax.
 const outputCommand =
