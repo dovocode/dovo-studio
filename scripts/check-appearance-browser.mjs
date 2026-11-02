@@ -4,8 +4,17 @@ import { readFile, readdir } from 'node:fs/promises'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
+import { createServer } from 'vite-plus'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
+const vite = await createServer({
+  configFile: false,
+  root,
+  logLevel: 'error',
+  server: { host: '127.0.0.1', port: 0 },
+})
+await vite.listen()
+const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
 const built = await build({
   stdin: {
     contents: `import {useEffect,useState} from 'react';
@@ -65,6 +74,9 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   write: false,
   format: 'esm',
   platform: 'browser',
+  define: {
+    'import.meta.url': JSON.stringify(`${origin}/packages/terminal/src/browser/terminal.ts`),
+  },
   jsx: 'automatic',
   alias: {
     react: root + '/packages/studio-ui/node_modules/react',
@@ -84,9 +96,22 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           path: 'core',
           namespace: 'fixture',
         }))
-        b.onResolve({ filter: /^@xterm\/xterm$/ }, () => ({
+        b.onResolve({ filter: /^@dovo\/terminal$/ }, () => ({
           path: 'terminal',
           namespace: 'fixture',
+        }))
+        b.onResolve({ filter: /^@dovo\/studio-ui\/terminal-fonts$/ }, () => ({
+          path: 'fonts',
+          namespace: 'terminal-fonts',
+        }))
+        b.onLoad({ filter: /.*/, namespace: 'terminal-fonts' }, async () => ({
+          contents: (
+            await readFile(root + '/packages/studio-ui/src/terminal-fonts.ts', 'utf8')
+          ).replaceAll(
+            'import.meta.url',
+            JSON.stringify(origin + '/packages/studio-ui/src/terminal-fonts.ts'),
+          ),
+          loader: 'ts',
         }))
         b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           contents:
@@ -96,8 +121,12 @@ export const useStudioHost=()=>({});
 const connection={address:'http://fixture.local'};
 const request=async()=>({ticket:'fixture'});
 export const useWorkspace=()=>({connection,request});`
-              : `import {Terminal as Base} from '${root}/packages/extension-tasks/node_modules/@xterm/xterm/lib/xterm.mjs';
-export class Terminal extends Base {constructor(options){super(options);window.terminals.push(this)}}`,
+              : `import {BrowserTerminal as Base} from '${root}/packages/terminal/src/browser/terminal.ts';
+export const openElectronTerminalPort=async()=>undefined;
+export class BrowserTerminal extends Base {
+constructor(options){super({...options,renderer:'canvas2d'});window.terminals.push(this)}
+async connect(url,signal,opened){await this.ready;const channel=new MessageChannel();const socket=new WebSocket(url);channel.port1.onmessage=event=>{if(typeof event.data==='string')socket.send(event.data);else if(event.data.type==='close')socket.close()};channel.port1.start();socket.onopen=()=>channel.port1.postMessage({type:'open'});socket.onmessage=event=>channel.port1.postMessage({type:'data',data:event.data});socket.onclose=()=>channel.port1.postMessage({type:'close',message:'Closed'});try{await super.connect(url,signal,opened,channel.port2)}finally{channel.port1.close();socket.close()}}
+}`,
           loader: 'tsx',
           resolveDir: root,
         }))
@@ -113,10 +142,7 @@ const css = (
       .map((name) => readFile(assets + '/' + name, 'utf8')),
   )
 ).join('\n')
-const terminalCSS = await readFile(
-  root + '/packages/extension-tasks/node_modules/@xterm/xterm/css/xterm.css',
-  'utf8',
-)
+const terminalCSS = await readFile(root + '/packages/terminal/src/browser/styles.css', 'utf8')
 const logo = await readFile(root + '/packages/studio-shell/src/assets/dovo-logo.png')
 const browser = await chromium.launch()
 try {
@@ -138,10 +164,12 @@ try {
   })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.route('http://appearance.local/**', async (route) => {
+  await page.route(`${origin}/**`, async (route) => {
     const path = new URL(route.request().url()).pathname
     if (path === '/app.mjs')
       return route.fulfill({ contentType: 'text/javascript', body: built.outputFiles[0].text })
+    if (path === '/packages/terminal/src/browser/terminal.worker.ts')
+      return route.continue({ url: route.request().url() + '?worker_file&type=module' })
     if (path.startsWith('/assets/') && path.endsWith('.woff2'))
       return route.fulfill({
         contentType: 'font/woff2',
@@ -149,6 +177,7 @@ try {
       })
     if (path === '/assets/dovo-logo.png')
       return route.fulfill({ contentType: 'image/png', body: logo })
+    if (path !== '/') return route.continue()
     return route.fulfill({
       contentType: 'text/html',
       body: `<style>${css}\n${terminalCSS}\n@media(max-width:767px){aside{display:none}}</style><div id="app"></div><script type="module" src="/app.mjs"></script>`,
@@ -161,7 +190,7 @@ try {
     await page.getByRole('combobox', { name: 'Color scheme', exact: true }).click()
     await page.getByRole('option', { name, exact: true }).click()
   }
-  await page.goto('http://appearance.local/')
+  await page.goto(origin)
   await ready()
   const preserved = page.locator('[data-preserved-lines] p')
   await preserved.waitFor()
@@ -179,10 +208,9 @@ try {
     'Entered single line breaks remain visible in sent messages',
   )
   await page.waitForFunction(() =>
-    window.terminals?.[0]?.buffer.active
-      .getLine(0)
-      ?.translateToString()
-      .includes('theme session preserved'),
+    window.terminals?.[0]?.viewport?.lines.some((line) =>
+      line.text.includes('theme session preserved'),
+    ),
   )
   await page.waitForFunction(() =>
     document
@@ -322,7 +350,7 @@ try {
           user: color(getComputedStyle(user).backgroundColor),
           userText: color(getComputedStyle(user).color),
           terminal: terminal.options.theme,
-          buffer: terminal.buffer.active.getLine(0).translateToString(),
+          buffer: terminal.viewport.lines.map((line) => line.text).join('\n'),
           sessions: window.sockets.length,
           dark: document.documentElement.classList.contains('dark'),
         }
@@ -561,6 +589,12 @@ try {
       window.terminals[0].options.fontFamily.includes('JetBrains Mono Nerd Font'),
   )
   const fontState = await page.evaluate(async () => {
+    // Terminal fonts now load in the worker's FontFaceSet. Exercise both DOM
+    // font weights explicitly for the code-font and bundled-glyph assertions.
+    await Promise.all([
+      document.fonts.load('18px "JetBrains Mono Nerd Font"'),
+      document.fonts.load('bold 18px "JetBrains Mono Nerd Font"'),
+    ])
     await document.fonts.ready
     const canvas = document.createElement('canvas').getContext('2d')
     canvas.font = '18px "JetBrains Mono Nerd Font"'
@@ -582,7 +616,7 @@ try {
       widths: ['M', '\ue0a0', '\uf07b', '\uf121', '\u{f0001}'].map(
         (glyph) => canvas.measureText(glyph).width,
       ),
-      buffer: window.terminals[0].buffer.active.getLine(0).translateToString(),
+      buffer: window.terminals[0].viewport.lines.map((line) => line.text).join('\n'),
       sockets: window.sockets.length,
     }
   })
@@ -724,4 +758,5 @@ try {
   )
 } finally {
   await browser.close()
+  await vite.close()
 }
