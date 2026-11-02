@@ -71,6 +71,13 @@ native/process tests. New pushes cancel superseded Check runs. Release jobs inst
 per native platform, deploy one private production runtime, then package desktop and server in
 parallel. The extracted Windows server still exercises setup, start, status and stop.
 
+On macOS, signing still runs from nested binaries to the enclosing app, followed by notarization and
+stapling. The temporary notarization ZIP uses compression level 1 to reduce local compression time;
+distributed ZIP/DMG compression is unchanged. After stapling, the mise archive runs alongside DMG
+and update ZIP creation. Release summaries separately time notarization signature checks, ZIP
+creation, upload plus Apple processing, and stapling. Apple processing and upload remain one timed
+command; these timings do not imply control over Apple's queue or a guaranteed release speedup.
+
 Both workflows cache the pnpm package store and registry metadata. Metadata entries refresh daily;
 frozen-lockfile supply-chain checks remain enabled. Release jobs also cache Node headers and
 Electron packaging downloads, separated by job, operating system, architecture and Node version.
