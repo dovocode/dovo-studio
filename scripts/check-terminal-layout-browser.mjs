@@ -53,6 +53,7 @@ const node=createRoot(document.getElementById('app'));window.render=()=>node.ren
       path: '@dovo/terminal',
       contents: `import {BrowserTerminal as Base} from '${root}/packages/terminal/src/browser/terminal';
 export const openElectronTerminalPort=async()=>undefined;
+export {terminalDropPaths} from '${root}/packages/terminal/src/browser/drop';
 export class BrowserTerminal extends Base {
 constructor(options){super({...options,renderer:'canvas2d'});window.terminals.push(this)}
 async connect(url,signal,opened){await this.ready;const channel=new MessageChannel();const socket=this.socket=new WebSocket(url);channel.port1.onmessage=event=>{if(typeof event.data==='string')socket.send(event.data);else if(event.data.type==='close')socket.close()};channel.port1.start();socket.onopen=()=>channel.port1.postMessage({type:'open'});socket.onmessage=event=>channel.port1.postMessage({type:'data',data:event.data});socket.onclose=()=>channel.port1.postMessage({type:'close',message:'Closed'});try{await super.connect(url,signal,opened,channel.port2)}finally{channel.port1.close();socket.close()}}
@@ -221,9 +222,11 @@ try {
   await page.setViewportSize({ width: 1000, height: 360 })
   await page.waitForFunction(() => window.terminals[0].viewport.rows > 2)
   const selectionScreen = await terminal.locator('.dovo-terminal-canvas').boundingBox()
-  await page.mouse.move(selectionScreen.x + 3, selectionScreen.y + 7)
+  const metrics = await page.evaluate(() => window.terminals[0].viewport.metrics)
+  const selectionY = selectionScreen.y + metrics.cellHeight / 2
+  await page.mouse.move(selectionScreen.x + metrics.cellWidth / 2, selectionY)
   await page.mouse.down()
-  await page.mouse.move(selectionScreen.x + 45, selectionScreen.y + 7, { steps: 8 })
+  await page.mouse.move(selectionScreen.x + metrics.cellWidth * 6.5, selectionY, { steps: 8 })
   await page.mouse.up()
   await terminal.getByRole('button', { name: 'Add selection to message' }).click()
   const [selection] = await page.evaluate(() => window.insertions)

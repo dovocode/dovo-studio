@@ -11,6 +11,10 @@
   display: block;
   width: calc(100% - 12px);
   height: 100%;
+  cursor: text;
+}
+.dovo-terminal[data-mouse-tracking='true'] .dovo-terminal-canvas {
+  cursor: default;
 }
 .dovo-terminal-input {
   position: absolute;

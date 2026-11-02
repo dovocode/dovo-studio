@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import wasmUrl from './assets/ghostty-vt.wasm?url&inline'
+import { measureTerminalFont } from './font-metrics'
 import {
   Ghostty,
   Key,
@@ -150,14 +151,10 @@ async function configure(value: BrowserTerminalOptions, devicePixelRatio: number
   }
   const context = new OffscreenCanvas(1, 1).getContext('2d')
   if (!context) throw new Error('Terminal font measurement is unavailable')
-  context.font = `${options.fontSize}px ${options.fontFamily}`
-  const measured = context.measureText('M')
   metrics = {
     fontFamily: options.fontFamily,
     fontSize: options.fontSize,
-    cellWidth: Math.max(1, measured.width),
-    cellHeight: Math.ceil(options.fontSize * 1.3),
-    baseline: Math.ceil(options.fontSize),
+    ...measureTerminalFont(context, options.fontFamily, options.fontSize, ratio),
     devicePixelRatio: ratio,
     background: options.theme.background,
     cursor: options.theme.cursor,
@@ -190,8 +187,8 @@ function resize() {
     post({ type: 'selection', text: '' })
     if (open) send({ type: 'resize', cols, rows })
   }
-  const pixelWidth = Math.ceil(width * ratio),
-    pixelHeight = Math.ceil(height * ratio)
+  const pixelWidth = Math.round(width * ratio),
+    pixelHeight = Math.round(height * ratio)
   if (canvas && (canvas.width !== pixelWidth || canvas.height !== pixelHeight)) {
     renderer?.resize(pixelWidth, pixelHeight)
     lastFrame = undefined
@@ -242,7 +239,7 @@ async function useCanvas(next: OffscreenCanvas, preferred?: TerminalRendererKind
     post({ type: 'replaceCanvas', renderer: recovery })
     return
   }
-  renderer.resize(Math.ceil(width * ratio), Math.ceil(height * ratio))
+  renderer.resize(Math.round(width * ratio), Math.round(height * ratio))
   post({ type: 'renderer', renderer: renderer.kind })
   scheduleRender()
 }
@@ -656,8 +653,8 @@ function pointer(message: Extract<TerminalWorkerRequest, { type: 'pointer' }>) {
       (message.alt ? 8 : 0) +
       (message.ctrl ? 16 : 0)
     if (message.phase === 'up') mouseButton = -1
-    const x = point.x + 1,
-      y = point.y - top + 1
+    const x = Math.min(terminal.cols, point.x + 1),
+      y = Math.min(terminal.rows, point.y - top + 1)
     userReport(
       sgr
         ? `\x1b[<${code};${x};${y}${message.phase === 'up' ? 'm' : 'M'}`

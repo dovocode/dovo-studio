@@ -303,7 +303,7 @@ export class GlyphAtlas {
     const dpr = options.devicePixelRatio,
       cw = options.cellWidth,
       ch = options.cellHeight
-    const pixelHeight = Math.max(1, Math.ceil(ch * dpr))
+    const pixelHeight = Math.max(1, Math.ceil(ch * dpr - 1e-6))
     let vertexCount = 0
     const tile = (
       key: string,
@@ -416,7 +416,7 @@ export class GlyphAtlas {
           x = end - 1
           continue
         }
-        const w = Math.max(1, Math.ceil(cw * span * dpr))
+        const w = Math.max(1, Math.ceil(cw * span * dpr - 1e-6))
         const t = tile(
           JSON.stringify(['cell', cell.text, span, cell.foreground, cell.background, cell.flags]),
           w,
@@ -444,7 +444,7 @@ export class GlyphAtlas {
     ) {
       const cell = frame.cells[frame.cursor.y]?.[frame.cursor.x]
       const span = frame.cursor.style === 'block' ? Math.max(1, cell?.width ?? 1) : 1
-      const cursorWidth = Math.max(1, Math.ceil(cw * span * dpr))
+      const cursorWidth = Math.max(1, Math.ceil(cw * span * dpr - 1e-6))
       const t = tile(
         JSON.stringify(['cursor', frame.cursor.style, cell, options.cursor]),
         cursorWidth,

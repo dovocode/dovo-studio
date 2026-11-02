@@ -1,4 +1,5 @@
 export { BrowserTerminal } from './terminal'
+export { terminalDropPaths } from './drop'
 export { openElectronTerminalPort } from './electron-port'
 export type {
   BrowserTerminalOptions,

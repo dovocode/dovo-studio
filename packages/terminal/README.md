@@ -19,6 +19,13 @@ software-backed DOM canvas after GPU failure, or when transferring the HTML canv
 WebGPU availability depends on the browser/security context; HTTP runtime connections remain
 supported through the fallback backends.
 
+Font cells and baselines use whole device pixels, and the CSS canvas size matches its backing
+bitmap. Display-density changes refresh metrics and rendering without reconnecting the PTY. Mouse
+tracking is forwarded to terminal applications; Shift-drag selects text instead. Desktop file drops
+insert existing paths quoted for the terminal's launch shell (POSIX, PowerShell or CMD), without
+submitting the input line. Files stay on their original computer; a remote terminal must already be
+able to access those paths. Browser-created files without native paths report an error.
+
 PTYs stay in the runtime's existing `node-pty` service, including local/background and WSL sessions.
 Desktop MessagePorts bridge the authenticated WebSocket to the worker. Web/mobile connect directly.
 `stream=binary-v1` supplies UTF-8 output with replay boundaries, consumption acknowledgements and
@@ -44,6 +51,10 @@ discarded rather than forwarding stale terminal responses to the shell.
 change positive active-screen indexes. The worker bundles the WASM as a data URL so packaged
 Electron builds do not need file-scheme fetches or an external WASM server.
 
+`vendor/wasm-zero-pages.patch` clears newly allocated terminal pages on WASM. Unlike native
+anonymous mappings, its allocator can reuse nonzero memory from a previous terminal. Explicit
+initialization prevents stale cells from appearing after replay and column reflow.
+
 Rebuild with Zig 0.15.2, curl and tar installed:
 
 ```sh
@@ -64,6 +75,8 @@ pnpm --filter @dovo/terminal typecheck
 pnpm exec vp test packages/terminal/src
 node scripts/check-ghostty-terminal-browser.mjs
 node scripts/check-terminal-renderers-browser.mjs
+node scripts/check-terminal-interactions-browser.mjs
+xvfb-run -a node scripts/check-terminal-file-drop-native.mjs # Linux; omit xvfb-run on macOS
 node scripts/check-canvas2d-retained-browser.mjs
 node scripts/check-terminal-layout-browser.mjs
 node scripts/check-mobile-native-terminal-browser.mjs

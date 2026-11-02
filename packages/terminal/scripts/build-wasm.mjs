@@ -31,7 +31,7 @@ try {
     throw new Error('Ghostty source archive checksum mismatch')
   run('tar', ['-xf', archive])
   const source = join(temporary, `ghostty-${revision}`)
-  for (const patch of ['ghostty-wasm-api.patch', 'history-wrap.patch'])
+  for (const patch of ['ghostty-wasm-api.patch', 'history-wrap.patch', 'wasm-zero-pages.patch'])
     run('git', ['apply', '--whitespace=nowarn', join(root, 'vendor', patch)], source)
   run(
     process.env.ZIG ?? 'zig',

@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   BrowserTerminal,
   openElectronTerminalPort,
+  terminalDropPaths,
   type BrowserTerminalOptions,
 } from '@dovo/terminal'
 import { terminalFontSources } from '@dovo/studio-ui/terminal-fonts'
@@ -41,6 +42,8 @@ export function TerminalSession({
   fileHandler.current = onOpenFile
   const actionScope = useRef(0)
   const canWriteRef = useRef<(() => boolean) | null>(null)
+  const inputAllowedRef = useRef(false)
+  inputAllowedRef.current = active && connected && !readOnly
   const menuContext = useRef<{
     terminal: BrowserTerminal
     scope: number
@@ -104,6 +107,31 @@ export function TerminalSession({
     const terminal = new BrowserTerminal(optionsRef.current)
     terminalRef.current = terminal
     terminal.onError = (cause) => setError(cause.message)
+    terminal.onDrop = (data) => {
+      const scope = actionScope.current
+      setActionError('')
+      void (async () => {
+        if (!canWriteRef.current?.() || !inputAllowedRef.current)
+          throw new Error('Terminal is not writable.')
+        // Resolve the native files while the drop event still owns its data.
+        const paths = terminalDropPaths(data)
+        if (!paths.length) return
+        const result = await request(
+          '/api/terminals/quote-paths',
+          { id, paths },
+          responses.terminalPaths,
+        )
+        if (scope !== actionScope.current || !canWriteRef.current?.() || !inputAllowedRef.current)
+          return
+        terminal.paste(result.text)
+        terminal.focus()
+      })().catch((cause: unknown) => {
+        if (scope === actionScope.current)
+          setActionError(
+            `Could not insert file paths: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
+      })
+    }
     terminal.onActivate = (point, viewport) => {
       const handler = fileHandler.current
       if (!handler) return

@@ -79,6 +79,16 @@ try {
   const results = await page.evaluate(async (gpuUnavailable) => {
     const { createTerminalRenderer } =
       await import('/packages/terminal/src/browser/renderers/index.ts')
+    const { measureTerminalFont } = await import('/packages/terminal/src/browser/font-metrics.ts')
+    const { drawFrame } = await import('/packages/terminal/src/browser/renderers/scene.ts')
+    const { terminalFontSources } = await import('/packages/studio-ui/src/terminal-fonts.ts')
+    for (const source of terminalFontSources) {
+      const face = new FontFace(source.family, `url(${JSON.stringify(source.url)})`, {
+        weight: source.weight,
+      })
+      await face.load()
+      document.fonts.add(face)
+    }
     const counts = { pages: 0, webglUploads: 0, webgpuUploads: 0 }
     const NativeCanvas = window.OffscreenCanvas
     window.OffscreenCanvas = class extends NativeCanvas {
@@ -253,6 +263,52 @@ try {
             document.body.append(dest, document.createElement('br'))
           }
         }
+      const textQuality = []
+      for (const fontFamily of ['monospace', '"JetBrains Mono Nerd Font"'])
+        for (const dpr of [1, 1.25, 1.5, 2]) {
+          const measure = new OffscreenCanvas(1, 1).getContext('2d')
+          const textOptions = {
+            ...options,
+            fontFamily,
+            fontSize: 12,
+            devicePixelRatio: dpr,
+            ...measureTerminalFont(measure, fontFamily, 12, dpr),
+          }
+          const cols = 24,
+            rows = 4
+          const textFrame = {
+            cols,
+            rows,
+            cells: Array.from({ length: rows }, (_, flags) =>
+              Array.from({ length: cols }, () => cell('M', { flags })),
+            ),
+            cursor: { x: 0, y: 0, visible: false, style: 'block' },
+          }
+          const w = Math.round(cols * textOptions.cellWidth * dpr)
+          const h = Math.round(rows * textOptions.cellHeight * dpr)
+          renderer.resize(w, h)
+          renderer.render(textFrame, textOptions)
+          const expected = new OffscreenCanvas(w, h)
+          const reference = expected.getContext('2d', { willReadFrequently: true })
+          drawFrame(reference, textFrame, textOptions, w, h)
+          const target = new OffscreenCanvas(w, h).getContext('2d', { willReadFrequently: true })
+          const bitmap = await createImageBitmap(canvas)
+          target.drawImage(bitmap, 0, 0)
+          bitmap.close()
+          const a = target.getImageData(0, 0, w, h).data
+          const b = reference.getImageData(0, 0, w, h).data
+          let maxDelta = 0
+          for (let i = 0; i < a.length; i++) maxDelta = Math.max(maxDelta, Math.abs(a[i] - b[i]))
+          // Repeated glyphs must retain identical strokes at every column.
+          const pitch = Math.round(textOptions.cellWidth * dpr)
+          let uneven = 0
+          for (let y = 0; y < h; y++)
+            for (let x = pitch; x < w; x++)
+              for (let c = 0; c < 4; c++)
+                if (Math.abs(a[(y * w + x) * 4 + c] - a[(y * w + (x % pitch)) * 4 + c]) > 3)
+                  uneven++
+          textQuality.push({ fontFamily, dpr, maxDelta, uneven })
+        }
       if (preferred === 'webgl2') {
         const gl = canvas.getContext('webgl2')
         const extension = gl?.getExtension('WEBGL_lose_context')
@@ -280,6 +336,7 @@ try {
         secondCounts,
         losses,
         fractional,
+        textQuality,
       })
     }
     return out
@@ -332,6 +389,17 @@ try {
         [],
         `${result.preferred}: fractional backgrounds at DPR ${sample.dpr}, selected=${sample.selected}: ${JSON.stringify(sample.failures)}`,
       )
+    for (const sample of result.textQuality) {
+      assert.ok(
+        sample.maxDelta <= 3,
+        `${result.preferred}: native-size glyphs ${JSON.stringify(sample)}`,
+      )
+      assert.equal(
+        sample.uneven,
+        0,
+        `${result.preferred}: consistent strokes ${JSON.stringify(sample)}`,
+      )
+    }
     if (result.preferred === 'webgl2') assert.match(result.losses[0] ?? '', /context lost/i)
     console.log(
       `${result.preferred}: rendered${result.preferred !== 'canvas2d' ? '; atlas reused' : ''}${result.preferred === 'webgl2' ? '; context loss reported' : ''}`,

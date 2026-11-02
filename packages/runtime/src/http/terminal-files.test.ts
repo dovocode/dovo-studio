@@ -4,7 +4,45 @@ import { join } from 'node:path'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration } from '../testing/integration'
+import { decode, responses } from '@dovo/protocol'
+import { parse } from 'shell-quote'
 vi.setConfig(runtimeIntegration)
+it('quotes existing dropped paths without submitting input and rejects unauthenticated or invalid requests', async () => {
+  const f = await fixture()
+  const token = 'terminal-drop-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  try {
+    const terminal = runtime.services.terminals.createCommand(
+      'task',
+      f.directory,
+      { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], env: {} },
+      'Drop paths',
+    )
+    const write = vi.spyOn(runtime.services.terminals.get(terminal.id).process, 'write')
+    const call = (paths: string[], credential = token, id = terminal.id) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/terminals/quote-paths`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, paths }),
+      })
+    const paths = ['/tmp/with spaces.txt', "/tmp/it's.txt", '/tmp/$(touch nope)']
+    expect((await call(paths, 'invalid')).status).toBe(401)
+    const result = await call(paths)
+    expect(result.status).toBe(200)
+    const { text } = decode(responses.terminalPaths, await result.json())
+    expect(parse(text)).toEqual(paths)
+    expect(write).not.toHaveBeenCalled()
+    for (const invalid of [[], ['line\nbreak'], [''], Array.from({ length: 101 }, () => '/file')])
+      expect((await call(invalid)).status).toBe(400)
+    expect((await call(paths, token, 'missing')).status).toBe(404)
+    await runtime.services.terminals.close(terminal.id)
+    expect((await call(paths)).status).toBe(404)
+  } finally {
+    vi.restoreAllMocks()
+    await runtime.close()
+    await f.cleanup()
+  }
+})
 it('resolves terminal locations within the original authorized checkout and rejects escapes and moved checkouts', async () => {
   const f = await fixture()
   const token = 'terminal-files-owner-token-at-least-32-characters'

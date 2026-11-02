@@ -420,6 +420,7 @@ export const responses = {
     ticket: Schema.String,
   }),
   terminal: terminalSchema,
+  terminalPaths: mutableStruct({ text: Schema.String }),
   provider: providerStatusSchema,
   files: mutableStruct({
     files: taskSchema.fields.files,

@@ -39,6 +39,8 @@ jobs:
       - run: pnpm exec vp test --maxWorkers=4
       - name: Verify native browser extensions
         run: pnpm test:browser-extensions:native
+      - name: Verify native terminal file paths
+        run: xvfb-run -a node scripts/check-terminal-file-drop-native.mjs
       - name: Verify browser tab capture and media consent
         run: |
           # Chromium discovers shareable X11 windows through the window manager's client list.

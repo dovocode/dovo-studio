@@ -1,4 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+contextBridge.exposeInMainWorld('dovoTerminalFilePath', (file: File) =>
+  webUtils.getPathForFile(file),
+)
 
 const browserFrameListeners = new Map<string, number>()
 

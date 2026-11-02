@@ -13,6 +13,7 @@ import type { WorkspaceStore } from '../../storage/workspace.js'
 import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError, runtimeOperation } from '../../errors.js'
 import { body } from '../support/body.js'
+import { quoteTerminalPaths } from '../../terminal/file-paths.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: string) {
   const seen = new Set<string>()
@@ -201,6 +202,21 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         )
         if (isRunToken(token)) s.runCredentials.addTerminal(token, terminal.id)
         return terminal
+      }
+      if (method === 'POST' && path === '/api/terminals/quote-paths') {
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            paths: Schema.Array(maxValue(minValue(Schema.String, 1), 32768)).pipe(
+              Schema.check(Schema.isMinLength(1)),
+              Schema.check(Schema.isMaxLength(100)),
+            ),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const session = s.terminals.get(input.id)
+        if (session.info.exited) throw new HttpError(409, 'The terminal has exited.')
+        return { text: quoteTerminalPaths(input.paths, session.command) }
       }
       if (method === 'POST' && path === '/api/terminals/file') {
         const input = decode(

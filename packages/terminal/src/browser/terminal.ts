@@ -15,6 +15,8 @@ export class BrowserTerminal {
   private scrollbar = document.createElement('input')
   private element = document.createElement('div')
   private observer: ResizeObserver | undefined
+  private densityQuery: MediaQueryList | undefined
+  private ratio = window.devicePixelRatio || 1
   private viewport: TerminalViewport | undefined
   private selection = ''
   private disposed = false
@@ -34,6 +36,7 @@ export class BrowserTerminal {
   onError: (error: Error) => void = () => {}
   onViewport: (viewport: TerminalViewport) => void = () => {}
   onActivate: (point: TerminalPoint, viewport: TerminalViewport) => void = () => {}
+  onDrop: (data: DataTransfer) => void = () => {}
   renderer: string | undefined
 
   constructor(private options: BrowserTerminalOptions) {
@@ -72,6 +75,8 @@ export class BrowserTerminal {
     this.scrollbar.step = '1'
     this.element.append(this.canvas, this.textarea, this.accessible, this.scrollbar)
     this.attachInput()
+    this.watchDensity()
+    window.addEventListener('resize', this.watchDensity)
     const transferable = typeof this.canvas.transferControlToOffscreen === 'function'
     const offscreen = transferable ? this.canvas.transferControlToOffscreen() : undefined
     this.post(
@@ -120,6 +125,7 @@ export class BrowserTerminal {
       event.bitmap.close()
     } else if (event.type === 'viewport') {
       this.viewport = event.viewport
+      this.element.dataset.mouseTracking = String(event.viewport.mouseTracking)
       this.scrollbar.max = String(event.viewport.history)
       this.scrollbar.value = String(event.viewport.top)
       this.scrollbar.hidden = !event.viewport.history
@@ -139,12 +145,17 @@ export class BrowserTerminal {
     this.fit()
   }
   fit() {
-    const width = this.element.clientWidth - 12,
-      height = this.element.clientHeight
+    const bounds = this.element.getBoundingClientRect()
+    const width = Math.floor((bounds.width - 12) * this.ratio) / this.ratio,
+      height = Math.floor(bounds.height * this.ratio) / this.ratio
     if (width > 0 && height > 0) {
+      // Match the CSS presentation size to whole device pixels too; otherwise
+      // Chromium rescales an already-rasterized canvas in fractional layouts.
+      this.canvas.style.width = `${width}px`
+      this.canvas.style.height = `${height}px`
       if (typeof this.canvas.transferControlToOffscreen !== 'function') {
-        this.canvas.width = Math.ceil(width * (window.devicePixelRatio || 1))
-        this.canvas.height = Math.ceil(height * (window.devicePixelRatio || 1))
+        this.canvas.width = Math.round(width * this.ratio)
+        this.canvas.height = Math.round(height * this.ratio)
       }
       this.post({ type: 'resize', width, height })
     }
@@ -152,6 +163,17 @@ export class BrowserTerminal {
   configure(options: BrowserTerminalOptions) {
     this.options = options
     this.post({ type: 'configure', options, devicePixelRatio: window.devicePixelRatio || 1 })
+  }
+  private watchDensity = () => {
+    this.densityQuery?.removeEventListener('change', this.watchDensity)
+    const ratio = window.devicePixelRatio || 1
+    if (ratio !== this.ratio) {
+      this.ratio = ratio
+      this.configure(this.options)
+      this.fit()
+    }
+    this.densityQuery = window.matchMedia(`(resolution: ${ratio}dppx)`)
+    this.densityQuery.addEventListener('change', this.watchDensity)
   }
   setInputEnabled(enabled: boolean) {
     this.post({ type: 'inputEnabled', enabled })
@@ -204,6 +226,15 @@ export class BrowserTerminal {
     }
   }
   private attachInput() {
+    this.element.addEventListener('dragover', (event) => {
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+    })
+    this.element.addEventListener('drop', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.dataTransfer) this.onDrop(event.dataTransfer)
+    })
     this.textarea.addEventListener('compositionstart', () => {
       this.composing = true
     })
@@ -271,7 +302,11 @@ export class BrowserTerminal {
         return
       event.preventDefault()
       this.focus()
-      if ((event.ctrlKey || event.metaKey) && this.viewport) {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        this.viewport &&
+        (!this.viewport.mouseTracking || event.shiftKey)
+      ) {
         this.onActivate(this.point(event), this.viewport)
         return
       }
@@ -288,6 +323,7 @@ export class BrowserTerminal {
       })
     })
     this.element.addEventListener('pointermove', (event) => {
+      this.canvas.style.cursor = event.shiftKey ? 'text' : ''
       if (this.dragging || this.viewport?.mouseTracking)
         this.post({
           type: 'pointer',
@@ -326,6 +362,7 @@ export class BrowserTerminal {
     })
     this.element.addEventListener('pointerup', release)
     this.element.addEventListener('pointercancel', release)
+    this.element.addEventListener('lostpointercapture', release)
     this.element.addEventListener(
       'wheel',
       (event) => {
@@ -388,6 +425,8 @@ export class BrowserTerminal {
     this.post({ type: 'dispose' })
     this.disposed = true
     this.observer?.disconnect()
+    window.removeEventListener('resize', this.watchDensity)
+    this.densityQuery?.removeEventListener('change', this.watchDensity)
     this.worker.terminate()
     this.element.remove()
     this.listeners.clear()

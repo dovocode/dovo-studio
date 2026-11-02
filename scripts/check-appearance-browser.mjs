@@ -123,6 +123,7 @@ const request=async()=>({ticket:'fixture'});
 export const useWorkspace=()=>({connection,request});`
               : `import {BrowserTerminal as Base} from '${root}/packages/terminal/src/browser/terminal.ts';
 export const openElectronTerminalPort=async()=>undefined;
+export {terminalDropPaths} from '${root}/packages/terminal/src/browser/drop';
 export class BrowserTerminal extends Base {
 constructor(options){super({...options,renderer:'canvas2d'});window.terminals.push(this)}
 async connect(url,signal,opened){await this.ready;const channel=new MessageChannel();const socket=new WebSocket(url);channel.port1.onmessage=event=>{if(typeof event.data==='string')socket.send(event.data);else if(event.data.type==='close')socket.close()};channel.port1.start();socket.onopen=()=>channel.port1.postMessage({type:'open'});socket.onmessage=event=>channel.port1.postMessage({type:'data',data:event.data});socket.onclose=()=>channel.port1.postMessage({type:'close',message:'Closed'});try{await super.connect(url,signal,opened,channel.port2)}finally{channel.port1.close();socket.close()}}
