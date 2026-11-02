@@ -1039,7 +1039,7 @@ try {
       await page.getByText('Active order', { exact: true }).waitFor()
       if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'true')
     }
-    // Attention has a fixed top position, including inherited child input and snoozed/pinned owners.
+    // Pinning outranks inherited child input and snoozed/waiting state; unpinned input follows.
     await page.evaluate(() => {
       const base = {
         ...window.workspace.tasks[0],
@@ -1079,8 +1079,12 @@ try {
         },
         { ...base, id: 'normal-pin', title: 'Ordinary pinned thread', pinned: true },
         { ...base, id: 'normal-open', title: 'Ordinary open thread' },
+        { ...base, id: 'attention-open', title: 'Unpinned needs a reply' },
       ])
-      window.store.snapshot.questions = [{ id: 'input', taskId: 'attention-child' }]
+      window.store.snapshot.questions = [
+        { id: 'input', taskId: 'attention-child' },
+        { id: 'unpin-input', taskId: 'attention-open' },
+      ]
       window.updatePreferences({
         collapsedThreadSections: [],
         threadSectionOrder: ['settled', 'snoozed', 'waiting', 'working', 'active', 'pinned'],
@@ -1101,12 +1105,21 @@ try {
             })
             .allTextContents()
         : await page.locator('summary').allTextContents()
-      assert.match(headers[0], /^Needs input/)
+      assert.match(headers[0], /^Pinned/)
+      assert.match(headers[1], /^Needs input/)
       if (!mobile) {
         const attention = page
           .locator('details')
           .filter({ has: page.locator('summary').filter({ hasText: 'Needs input' }) })
-        assert.equal(await attention.getByText('Parent needs a reply', { exact: true }).count(), 1)
+        assert.equal(
+          await attention.getByText('Unpinned needs a reply', { exact: true }).count(),
+          1,
+        )
+        const pinned = page
+          .locator('details')
+          .filter({ has: page.locator('summary').filter({ hasText: 'Pinned' }) })
+        assert.equal(await pinned.getByText('Parent needs a reply', { exact: true }).count(), 1)
+        assert.equal(await attention.getByText('Parent needs a reply', { exact: true }).count(), 0)
         const waiting = page
           .locator('details')
           .filter({ has: page.locator('summary').filter({ hasText: 'Waiting' }) })
@@ -1117,9 +1130,10 @@ try {
       ? page.getByRole('button', { name: 'Needs input, 1 tasks', exact: true })
       : page.locator('summary').filter({ hasText: 'Needs input' })
     await attentionHeader.click()
-    await page.getByText('Parent needs a reply', { exact: true }).waitFor({ state: 'hidden' })
-    await attentionHeader.click()
+    await page.getByText('Unpinned needs a reply', { exact: true }).waitFor({ state: 'hidden' })
     await page.getByText('Parent needs a reply', { exact: true }).waitFor()
+    await attentionHeader.click()
+    await page.getByText('Unpinned needs a reply', { exact: true }).waitFor()
     await page.evaluate(() => {
       window.store.snapshot.questions = []
       window.renderList(false)
