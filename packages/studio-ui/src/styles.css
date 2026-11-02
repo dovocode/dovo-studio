@@ -1244,15 +1244,16 @@ textarea {
 .studio-browser-tab-source {
   grid-column: 1;
   grid-row: 1 / span 2;
+  align-self: center;
 }
 .studio-browser-tab:not([data-pinned]) {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 24px max-content minmax(0, 1fr) auto;
   column-gap: 8px;
   padding: 6px 4px 6px 8px;
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-select {
-  grid-column: 1 / span 2;
+  grid-column: 1 / span 3;
   grid-row: 1 / span 2;
   display: grid;
   grid-template-columns: subgrid;
@@ -1261,22 +1262,28 @@ textarea {
   width: 100%;
 }
 .studio-browser-tab-title {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-column: 2 / span 2;
+  grid-row: 1;
   align-self: center;
 }
-.studio-browser-tab:has(.studio-browser-tab-activity) .studio-browser-tab-title {
-  grid-row: 1;
-}
-.studio-browser-tab:not([data-pinned]) .studio-browser-tab-activity {
+.studio-browser-tab:not([data-pinned]) .studio-browser-tab-profile {
   grid-column: 2;
   grid-row: 2;
 }
+.studio-browser-tab:not([data-pinned]) .studio-browser-tab-activity {
+  grid-column: 3 / span 2;
+  grid-row: 2;
+  align-self: center;
+}
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-actions {
-  grid-column: 3;
-  grid-row: 1 / span 2;
+  grid-column: 4;
+  grid-row: 1;
 }
 .studio-browser-tab-favicon > :is(img, svg) {
+  width: 24px;
+  height: 24px;
+}
+.studio-browser-tab[data-pinned] .studio-browser-tab-favicon > :is(img, svg) {
   width: 32px;
   height: 32px;
 }

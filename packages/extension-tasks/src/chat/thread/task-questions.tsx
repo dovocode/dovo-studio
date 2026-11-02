@@ -90,10 +90,15 @@ function QuestionCard({ pending }: { pending: PendingQuestion }) {
           />
         ) : null
       }
-      onAnswer={async (answers) => {
+      onAnswer={async (answers, outcomes) => {
         await request(
           '/api/tasks/answer',
-          { id: pending.id, answers, ...(answers ? { attachmentIdsByQuestion: ids } : {}) },
+          {
+            id: pending.id,
+            answers,
+            outcomes,
+            ...(answers && !outcomes ? { attachmentIdsByQuestion: ids } : {}),
+          },
           responses.ok,
         )
       }}

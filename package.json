@@ -74,7 +74,7 @@
     "test:mobile-task-panes:browser": "node scripts/check-mobile-task-panes-browser.mjs",
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
     "test:task-project-panel:browser": "node scripts/check-task-project-panel-browser.mjs",
-    "test:agent-interactions:browser": "node scripts/check-agent-interactions-browser.mjs",
+    "test:agent-interactions:browser": "node scripts/check-agent-interactions-browser.mjs && node scripts/check-provider-diagnostics-browser.mjs",
     "test:input-preview:browser": "node scripts/check-input-preview-browser.mjs",
     "test:native-tool-images:browser": "node scripts/check-native-tool-images-browser.mjs",
     "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs && node scripts/check-task-waiting-sync-browser.mjs",
@@ -215,20 +215,20 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.6.5",
-    "effect": "4.1.0",
-    "electron-builder": "^26.15.3",
+    "@types/node": "^26.6.6",
+    "effect": "4.1.1",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
-    "fallow": "^3.35.0",
-    "googleapis": "187.0.0",
+    "fallow": "^3.38.1",
+    "googleapis": "189.0.0",
     "playwright": "^1.64.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "engines": {
     "node": ">=24.11.0"
   },
-  "packageManager": "pnpm@12.3.4"
+  "packageManager": "pnpm@12.16.1"
 }

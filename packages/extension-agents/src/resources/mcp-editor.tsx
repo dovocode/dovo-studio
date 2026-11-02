@@ -176,6 +176,7 @@ export function McpEditor({
                   setDraft({
                     ...draft,
                     transport: value === 'http' ? 'http' : 'stdio',
+                    ...(value !== 'http' ? { acpTransport: undefined } : {}),
                   })
                 }
               >
@@ -234,6 +235,14 @@ export function McpEditor({
                     }
                   />
                 </FormField>
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={draft.acpTransport ?? false}
+                    onChange={(event) => setDraft({ ...draft, acpTransport: event.target.checked })}
+                  />
+                  Prefer MCP-over-ACP when supported (requires a native MCP 2026-07-28 server)
+                </label>
                 <FormField
                   label="Bearer token variable (optional)"
                   error={fieldError('bearerTokenEnv')}

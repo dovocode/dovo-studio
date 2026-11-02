@@ -53,7 +53,7 @@ window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];wind
 const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
 window.request=async(path,input)=>{if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
 const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
-function App(){const[connected,setConnected]=useState(true);window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[pending],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <><TaskQuestions taskId="task"/><textarea aria-label="Normal message" defaultValue={task.draft}/></>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <><TaskQuestions taskId="task"/><textarea aria-label="Normal message" defaultValue={task.draft}/></>};createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -167,6 +167,44 @@ function App(){const[connected,setConnected]=useState(true);window.connect=setCo
       'File-only response remains distinct from typed text',
     )
     if (mobile) await page.waitForFunction(() => window.acknowledged.length === 2)
+    await page.evaluate(() => window.setQuestion('replied'))
+    await page.getByRole('button', { name: 'I replied in chat', exact: true }).click()
+    await page.waitForFunction(() => window.answers.at(-1)?.id === 'replied')
+    const replied = await page.evaluate(() => window.answers.at(-1))
+    assert.deepEqual(replied.answers, {})
+    assert.deepEqual(
+      replied.outcomes,
+      Object.fromEntries(
+        ['design', 'notes', 'secret', 'number'].map((id) => [id, 'replied_in_chat']),
+      ),
+    )
+    assert.equal(
+      replied.attachmentIdsByQuestion,
+      undefined,
+      'Reply-in-chat never reattaches old files',
+    )
+    await page.evaluate(() => window.setQuestion('skipped'))
+    await page.getByRole('button', { name: 'Send answers', exact: true }).click()
+    await page.waitForFunction(() => window.answers.at(-1)?.id === 'skipped')
+    assert.ok(
+      Object.values((await page.evaluate(() => window.answers.at(-1))).answers).every(
+        (values) => values.length === 0,
+      ),
+    )
+    await page.evaluate(() => window.setQuestion('dismissed'))
+    await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
+    await page.waitForFunction(() => window.answers.at(-1)?.id === 'dismissed')
+    assert.equal((await page.evaluate(() => window.answers.at(-1))).answers, null)
+    await page.evaluate(() => window.setQuestion('legacy'))
+    await page.getByRole('button', { name: 'Decline', exact: true }).waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'I replied in chat', exact: true }).count(),
+      0,
+    )
+    assert.equal(
+      await page.getByRole('textbox', { name: 'Normal message', exact: true }).inputValue(),
+      'Untouched message',
+    )
     assert.deepEqual(errors, [])
     await page.close()
   }

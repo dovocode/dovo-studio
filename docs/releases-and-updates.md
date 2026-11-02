@@ -117,10 +117,10 @@ it is private staging within one build, rather than a persistent dependency cach
 
 The signed macOS job uses macOS 26 and Xcode 26.2 for the Icon Composer asset. Its preflight
 compiles the real icon and verifies both `Assets.car` and the legacy `.icns` output; checking the
-compiler version alone does not detect incompatible host frameworks. The pnpm patch for
-`app-builder-lib@26.15.3` fixes its signing keychain permissions command to use the generated
-keychain password rather than the certificate-export password. Keep the signing regression test when
-replacing the patch with an upstream fix.
+compiler version alone does not detect incompatible host frameworks. `app-builder-lib@26.18.0`
+includes the upstream signing fix that uses the generated keychain password for permissions rather
+than the certificate-export password. The local backport is retired; the signing regression test
+continues to verify this behavior.
 
 On macOS, local packaging uses an available Developer ID Application identity so updates keep the
 same Keychain identity. Set `CSC_NAME` to select a specific identity. Without one, local builds fall

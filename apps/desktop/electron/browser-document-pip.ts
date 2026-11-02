@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { DOCUMENT_PIP_HEADER_HEIGHT } from './browser-document-pip-controls.js'
 import { enterAutomaticVideoPip } from './browser-video-pip.js'
-export { createDocumentPipWindow } from './browser-document-pip-controls.js'
+export {
+  createDocumentPipWindow,
+  dismissDocumentPipWindow,
+} from './browser-document-pip-controls.js'
 
 /** A regular same-origin window avoids Electron's broken native Document PiP owner. */
 export const DOCUMENT_PIP_NAME = '__dovo_document_picture_in_picture__'
@@ -94,14 +97,18 @@ export function installDocumentPictureInPicture(
   automaticAllowed: () => Promise<boolean>,
   authorize: (automatic: boolean) => Promise<string | null>,
   enterVideo: () => Promise<boolean>,
+  pipName: string,
 ) {
+  // Capture the guest identity before a site replaces its document or window name.
+  const pipGuest = !!window.opener && window.name.startsWith(`${pipName}:`)
   if (
     window !== window.top ||
     !window.isSecureContext ||
-    window.opener ||
-    !/^https?:$/.test(location.protocol)
+    (!/^https?:$/.test(location.protocol) && !(pipGuest && location.href === 'about:blank'))
   )
     return
+  // Chromium exposes the interface in PiP too, but forbids opening another window.
+  // Sites use this presence check to register their call-return/close lifecycle.
   type Options = {
     width?: number
     height?: number
@@ -144,6 +151,11 @@ export function installDocumentPictureInPicture(
     }
     async requestWindow(options: Options = {}) {
       if (this !== api) throw new TypeError('Illegal invocation')
+      if (pipGuest)
+        throw new DOMException(
+          'Opening a PiP window from a PiP window is not allowed.',
+          'NotAllowedError',
+        )
       const revision = automaticRevision
       if (!navigator.userActivation.isActive && !automaticActive())
         throw new DOMException('Document PiP requires a user gesture.', 'NotAllowedError')
@@ -206,6 +218,7 @@ export function installDocumentPictureInPicture(
     DocumentPictureInPictureEvent: { value: DocumentPictureInPictureEvent, configurable: true },
     documentPictureInPicture: { value: api, configurable: true },
   })
+  if (pipGuest) return
   add(window, 'pagehide', () => {
     if (current && !current.closed) apply(close, current, [])
     current = null
@@ -306,6 +319,7 @@ contextBridge.executeInMainWorld({
     () => ipcRenderer.invoke('browser:document-pip-auto'),
     (automatic) => ipcRenderer.invoke('browser:document-pip-authorize', navigator.userActivation.isActive, automatic),
     () => ipcRenderer.invoke('browser:video-pip-auto'),
+    ${JSON.stringify(DOCUMENT_PIP_NAME)},
   ],
 })
 }

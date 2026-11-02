@@ -7,12 +7,16 @@ import type { AgentRun } from '../../execution/types.js'
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 const mocks = vi.hoisted(() => ({
+  prewarm: vi.fn<(input: unknown) => Promise<unknown>>(async () => {
+    throw new Error('No spare in this fixture')
+  }),
   query:
     vi.fn<
       (input: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }) => unknown
     >(),
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: mocks.query }))
+vi.mock('@anthropic-ai/claude-agent-sdk/core', () => ({ prewarm: mocks.prewarm }))
 vi.mock('../../configuration/claude-command.js', () => ({
   claudeCommand: async () => '/bin/claude',
 }))
@@ -207,7 +211,7 @@ it('keeps a streaming Claude connection across turns', async () => {
         prompts.push(
           typeof content === 'string'
             ? content
-            : (content.find((block) => block.type === 'text')?.text ?? ''),
+            : content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join(''),
         )
         yield {
           type: 'stream_event',
@@ -725,3 +729,107 @@ it.each([true, false])(
     }
   },
 )
+
+it.each([
+  'success',
+  'refused',
+  'option_not_applied',
+  'different-environment',
+  'cancelled',
+] as const)('handles a prewarmed new thread with %s without duplicate prompts', async (mode) => {
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const adapter = createClaudeAdapter()
+  const delivered: string[] = []
+  const order: string[] = []
+  let resolveExit = () => {}
+  const exited = new Promise<void>((resolve) => {
+    resolveExit = resolve
+  })
+  const streamFor = (prompt: string | AsyncIterable<SDKUserMessage>) => ({
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt === 'string') throw new Error('Expected queued input')
+      for await (const message of prompt) {
+        order.push('prompt')
+        delivered.push(
+          typeof message.message.content === 'string'
+            ? message.message.content
+            : message.message.content
+                .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+                .join(''),
+        )
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+      }
+    },
+    setMcpServers: vi.fn<() => Promise<{ errors: Record<string, string> }>>(async () => {
+      order.push('tools')
+      return { errors: {} }
+    }),
+    close: vi.fn<() => void>(),
+  })
+  const controller = new AbortController()
+  const claim = vi.fn<
+    (input: {
+      prompt: string | AsyncIterable<SDKUserMessage>
+      options?: unknown
+    }) => ReturnType<typeof streamFor>
+  >(({ prompt }) => {
+    if (mode === 'cancelled') controller.abort(new Error('Stopped'))
+    if (mode === 'refused' || mode === 'option_not_applied' || mode === 'cancelled')
+      throw new Error(mode + ': fixture')
+    return streamFor(prompt)
+  })
+  const close = vi.fn<() => void>(resolveExit)
+  mocks.prewarm.mockResolvedValueOnce({
+    claim,
+    claimed: Promise.resolve({ cwd: '/tmp', sessionId: 'session', sdkMcpSettled: true }),
+    exited,
+    close,
+  })
+  mocks.query.mockClear().mockImplementation(({ prompt }) => streamFor(prompt))
+  try {
+    const first = nativeRun(vi.fn())
+    await adapter.run(first)
+    await vi.waitFor(() => expect(mocks.prewarm).toHaveBeenCalled())
+    // Let prewarm install its resolved spare before starting another task.
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    const second = {
+      ...first,
+      taskId: 'second-thread',
+      prompt: 'Second',
+      signal: controller.signal,
+      ...(mode === 'different-environment'
+        ? { agent: { ...first.agent, env: { CLAUDE_CONFIG_DIR: '/different/config' } } }
+        : {}),
+    }
+    const rejection = await adapter.run(second).then(
+      () => undefined,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
+    const rejected = mode === 'cancelled' || mode === 'option_not_applied'
+    expect(rejection).toBe(
+      mode === 'cancelled'
+        ? 'Stopped'
+        : mode === 'option_not_applied'
+          ? 'option_not_applied: fixture'
+          : undefined,
+    )
+    expect(claim).toHaveBeenCalledTimes(mode === 'different-environment' ? 0 : 1)
+    expect(mocks.query).toHaveBeenCalledTimes(mode === 'success' || rejected ? 1 : 2)
+    expect(delivered).toEqual(rejected ? ['First'] : ['First', 'Second'])
+    expect(order).toEqual(
+      mode === 'success'
+        ? ['prompt', 'tools', 'prompt']
+        : rejected
+          ? ['prompt']
+          : ['prompt', 'prompt'],
+    )
+    const expectedOptions = expect.objectContaining({ cwd: '/tmp', permissionMode: 'default' })
+    expect(claim.mock.calls.map(([input]) => input.options)).toEqual(
+      mode === 'different-environment' ? [] : [expectedOptions],
+    )
+  } finally {
+    await adapter.dispose?.()
+    close()
+    pressure.mockRestore()
+  }
+})

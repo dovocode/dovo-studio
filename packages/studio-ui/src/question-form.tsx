@@ -6,6 +6,7 @@ import {
   questionDraftAnswers,
   toggleQuestionChoice,
   type QuestionAnswers,
+  type QuestionOutcomes,
   type QuestionAttachmentIds,
   type AgentQuestion,
   type QuestionDraft,
@@ -24,7 +25,7 @@ export function QuestionForm({
 }: {
   request: PendingQuestion
   connected: boolean
-  onAnswer: (answers: QuestionAnswers | null) => Promise<void>
+  onAnswer: (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => Promise<void>
   attachmentIdsByQuestion?: QuestionAttachmentIds
   renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
   attachmentsBusy?: boolean
@@ -72,7 +73,7 @@ export function QuestionForm({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [request, connected, busy])
-  const submit = async (answers: QuestionAnswers | null) => {
+  const submit = async (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => {
     if (submitting.current || !connected || attachmentsBusy) return
     const invalid =
       answers && questionAnswerError(request.prompt.questions, answers, attachmentIdsByQuestion)
@@ -84,7 +85,7 @@ export function QuestionForm({
     setError('')
     setBusy(true)
     try {
-      await onAnswer(answers)
+      await onAnswer(answers, outcomes)
     } catch (error) {
       setError(String(error))
       submitting.current = false
@@ -152,8 +153,25 @@ export function QuestionForm({
           disabled={busy || !connected || attachmentsBusy}
           onClick={() => void submit(null)}
         >
-          Decline
+          {request.prompt.unanswered ? 'Dismiss' : 'Decline'}
         </Button>
+        {request.prompt.unanswered && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={busy || !connected || attachmentsBusy}
+            onClick={() =>
+              void submit(
+                {},
+                Object.fromEntries(request.prompt.questions.map((q) => [q.id, 'replied_in_chat'])),
+              )
+            }
+          >
+            I replied in chat
+          </Button>
+        )}
         {!connected && (
           <span className="text-[0.625rem] text-muted-foreground">Reconnect to answer</span>
         )}

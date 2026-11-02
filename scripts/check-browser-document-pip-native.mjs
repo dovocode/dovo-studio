@@ -21,6 +21,10 @@ window.entered = 0;
 documentPictureInPicture.onenter = event => { window.eventWindow = event.window; entered++ };
 document.getElementById('open').onclick = async () => {
   const child = await documentPictureInPicture.requestWindow({width: 420, height: 280, disallowReturnToOpener: !!window.disallowReturn});
+  window.childPagehideSync = false;
+  window.childPagehideMicrotask = false;
+  // Teams gates its return-to-call and close cleanup on API presence in the child.
+  child.eval("if (window.documentPictureInPicture) window.addEventListener('pagehide', () => {opener.childPagehideSync = true;Promise.resolve().then(() => {opener.childPagehideMicrotask = true})})");
   const video = document.getElementById('call');
   child.document.body.append(video);
   child.addEventListener('pagehide', () => {window.callClosedWhileHidden=document.hidden;if(!document.hidden)document.body.append(video)}, {once: true});
@@ -39,9 +43,10 @@ try {
 import { createBrowserMedia } from './electron/browser-media';
 import { createBrowserVisibility } from './electron/browser-visibility';
 import { browserPermissions } from './electron/browser-permissions';
-import { authorizeDocumentPip, createDocumentPipWindow } from './electron/browser-document-pip';
+import { authorizeDocumentPip, createDocumentPipWindow, dismissDocumentPipWindow } from './electron/browser-document-pip';
 app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))});
 app.whenReady().then(async () => {
+  globalThis.dismissPip = dismissDocumentPipWindow;
   const owner = new BrowserWindow({show:true, webPreferences:{backgroundThrottling:false,sandbox:true,contextIsolation:true,nodeIntegration:false,disableBlinkFeatures:'DocumentPictureInPictureAPI'}});
   const tab = {key:'call',profileId:'work',windowId:owner.id,contents:owner.webContents};
   const media = createBrowserMedia({tabFor: contents => contents.id === owner.webContents.id ? tab : undefined, tabs: () => [tab], canFullscreen: () => false, prepareFullscreen: () => {}});
@@ -57,14 +62,14 @@ app.whenReady().then(async () => {
   globalThis.reportPipVisibility = visible => {globalThis.pipHostVisible=visible;visibility.report(owner.webContents)};
   const pipOptions = authorizeDocumentPip(owner.webContents, () => globalThis.pipAutoAllowed && !globalThis.pipHostVisible);
   owner.webContents.setWindowOpenHandler(details => {
-    if (details.frameName === 'consume-activation') return {action:'allow',overrideBrowserWindowOptions:{show:false}};
+    if (details.frameName === 'consume-activation' || details.frameName === 'login-redirect') return {action:'allow',overrideBrowserWindowOptions:{show:false,webPreferences:{disableBlinkFeatures:'DocumentPictureInPictureAPI'}}};
     const options = pipOptions(details);
     if (!options) return {action:'deny'};
     return {action:'allow',overrideBrowserWindowOptions:options,createWindow: options => {
       const pip = createDocumentPipWindow(options, owner.webContents.getURL(), async () => { globalThis.pipReturned = true; owner.show(); owner.focus(); globalThis.reportPipVisibility(true); if (!(await owner.webContents.executeJavaScript('document.visibilityState === "visible"'))) throw Error('Call tab still hidden') }, !details.features.includes('dovo-disallow-return=1'));
       const child = pip.window;
       pip.contents.on('will-navigate', event => event.preventDefault());
-      owner.webContents.once('did-navigate', () => {if (!child.isDestroyed()) child.close()});
+      owner.webContents.once('did-navigate', () => dismissDocumentPipWindow(child));
       owner.once('closed', () => {if (!child.isDestroyed()) child.destroy()});
       return pip.contents;
     }};
@@ -155,6 +160,20 @@ app.whenReady().then(async () => {
     if (message.type() === 'error') console.error(message.text())
   })
   await owner.waitForFunction(() => !!window.documentPictureInPicture)
+  const [login] = await Promise.all([
+    app.waitForEvent('window', { predicate: (page) => page !== owner }),
+    owner.evaluate(() => {
+      window.open(location.href, 'login-redirect')
+    }),
+  ])
+  await login.waitForLoadState('domcontentloaded')
+  assert.equal(await login.evaluate(() => !!window.opener), true)
+  assert.equal(
+    await login.evaluate(() => typeof documentPictureInPicture?.requestWindow),
+    'function',
+    'An ordinary tab that retains its login opener must still expose Document PiP',
+  )
+  await login.evaluate(() => window.close())
   assert.equal(
     await owner.evaluate(
       async () => (await navigator.permissions.query({ name: 'clipboard-read' })).state,
@@ -211,9 +230,30 @@ app.whenReady().then(async () => {
     await popup.evaluate(() => document.getElementById('call').srcObject.getTracks()[0].readyState),
     'live',
   )
-  assert.equal(
-    await popup.evaluate(() => !!window.opener && !window.documentPictureInPicture),
-    true,
+  assert.deepEqual(
+    await popup.evaluate(() => ({
+      opener: !!window.opener,
+      api: typeof window.documentPictureInPicture,
+      window: window.documentPictureInPicture?.window,
+    })),
+    { opener: true, api: 'object', window: null },
+    'The PiP guest exposes the same interface as native Chromium',
+  )
+  assert.deepEqual(
+    await popup.evaluate(async () => {
+      window.name = 'Meeting compact view'
+      try {
+        await documentPictureInPicture.requestWindow()
+        return { allowed: true }
+      } catch (error) {
+        return { name: error.name, message: error.message }
+      }
+    }),
+    {
+      name: 'NotAllowedError',
+      message: 'Opening a PiP window from a PiP window is not allowed.',
+    },
+    'Renaming a PiP guest must not permit nested PiP windows',
   )
   const header = await headerPage()
   assert.equal(await header.locator('.domain').textContent(), new URL(origin).hostname)
@@ -299,6 +339,53 @@ app.whenReady().then(async () => {
     'live',
     'Closing PiP keeps the call media alive',
   )
+  // macOS Window > Close / Cmd+W closes the native header, bypassing its HTML buttons.
+  await owner.click('#open')
+  await headerPage()
+  await owner.evaluate(() => {
+    window.callClosedWhileHidden = undefined
+  })
+  await app.evaluate(({ BrowserWindow }) => {
+    globalThis.pipReturned = false
+    globalThis.reportPipVisibility(false)
+    BrowserWindow.getAllWindows()
+      .find((w) => w.isAlwaysOnTop())
+      .close()
+  })
+  await owner.waitForFunction(() => !documentPictureInPicture.window)
+  assert.equal(
+    await app.evaluate(() => globalThis.pipReturned),
+    true,
+    'Native window dismissal must restore the call just like the Close header button',
+  )
+  assert.equal(
+    await owner.evaluate(() => window.callClosedWhileHidden),
+    false,
+    'Native close must deliver pagehide to the call document',
+  )
+  assert.equal(
+    await owner.evaluate(() => !!document.getElementById('call')),
+    true,
+    'Native close must return the live call content to its owner',
+  )
+  assert.equal(await owner.evaluate(() => window.childPagehideSync), true)
+  assert.equal(
+    await owner.evaluate(() => window.childPagehideMicrotask),
+    true,
+    'The closing child must finish its pagehide microtasks',
+  )
+  // App cleanup and replacing a PiP window must not behave like a user returning.
+  await owner.click('#open')
+  await headerPage()
+  await app.evaluate(({ BrowserWindow }) => {
+    globalThis.pipReturned = false
+    globalThis.reportPipVisibility(false)
+    globalThis.dismissPip(BrowserWindow.getAllWindows().find((w) => w.isAlwaysOnTop()))
+  })
+  await owner.waitForFunction(() => !documentPictureInPicture.window)
+  assert.equal(await app.evaluate(() => globalThis.pipReturned), false)
+  assert.equal(await owner.evaluate(() => document.hidden), true)
+  await app.evaluate(() => globalThis.reportPipVisibility(true))
   await owner.reload({ waitUntil: 'domcontentloaded' })
   await owner.waitForFunction(() => !!documentPictureInPicture)
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
@@ -309,6 +396,8 @@ app.whenReady().then(async () => {
         const child = await documentPictureInPicture.requestWindow();
         // Call applications can replace the initial about:blank document before rendering.
         child.document.open(); child.document.write('<!doctype html><title>Floating call</title>'); child.document.close();
+        if (!child.documentPictureInPicture || child.documentPictureInPicture.window !== null)
+          throw new Error('PiP interface was lost when replacing the document');
         const video = document.getElementById('call');
         child.document.body.append(video);
         child.addEventListener('pagehide', () => {window.callClosedWhileHidden=document.hidden;document.body.append(video)}, {once: true});

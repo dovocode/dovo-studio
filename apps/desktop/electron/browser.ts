@@ -10,6 +10,7 @@ import {
   DOCUMENT_PIP_NAME,
   authorizeDocumentPip,
   createDocumentPipWindow,
+  dismissDocumentPipWindow,
 } from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
@@ -417,7 +418,7 @@ export function registerBrowser(
         })
   }
   const closePopups = (entry: Entry) => {
-    for (const popup of entry.popups) if (!popup.isDestroyed()) popup.close()
+    for (const popup of entry.popups) dismissDocumentPipWindow(popup)
     entry.popups.clear()
   }
   /** Extension-opened and extension-closed tabs, drained by any `status` in that window. */
@@ -858,7 +859,7 @@ export function registerBrowser(
       } catch (error) {
         created.navigationError = error instanceof Error ? error.message : String(error)
       }
-      if (created.documentPip && !created.documentPip.isDestroyed()) created.documentPip.close()
+      if (created.documentPip) dismissDocumentPipWindow(created.documentPip)
       created.videoPictureInPicture = false
       syncBackgroundThrottling(created)
     })
@@ -1213,7 +1214,7 @@ export function registerBrowser(
                 click: () => {
                   void returnFromPip(created)
                     .then(() => {
-                      if (!popup.isDestroyed()) popup.close()
+                      dismissDocumentPipWindow(popup)
                     })
                     .catch((error) => console.error('Could not return the call to its tab.', error))
                 },
@@ -1249,7 +1250,7 @@ export function registerBrowser(
       const pipOptions = pipWindowOptions(details)
       if (pipOptions) {
         for (const entry of views.values())
-          if (entry.documentPip && !entry.documentPip.isDestroyed()) entry.documentPip.close()
+          if (entry.documentPip) dismissDocumentPipWindow(entry.documentPip)
         return {
           action: 'allow',
           overrideBrowserWindowOptions: pipOptions,

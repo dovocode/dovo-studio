@@ -7,6 +7,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
+  McpOverAcpProvider,
 } from '@agentclientprotocol/sdk/unstable'
 import type {
   InitializeResponse,
@@ -53,7 +54,9 @@ export function openAcpConnection(
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', onStderr)
   } else child.stderr.resume()
+  const mcp = new McpOverAcpProvider()
   const app = acpClient({ name: 'dovo-studio' })
+    .onRequest(methods.client.mcp.message, mcp.handleRequest)
     .onRequest(methods.client.session.requestPermission, ({ params }) =>
       client.requestPermission(params),
     )
@@ -147,6 +150,7 @@ export function openAcpConnection(
   signal?.addEventListener('abort', abort, { once: true })
   return {
     rpc,
+    mcp,
     signal: active.signal,
     closed: active.closed,
     exited,

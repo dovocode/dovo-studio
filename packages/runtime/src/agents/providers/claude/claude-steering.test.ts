@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
     >(),
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: mocks.query }))
+vi.mock('@anthropic-ai/claude-agent-sdk/core', () => ({
+  prewarm: vi.fn<() => Promise<never>>(async () => {
+    throw new Error('No spare in this fixture')
+  }),
+}))
 vi.mock('../../configuration/claude-command.js', () => ({
   claudeCommand: async () => '/bin/claude',
 }))

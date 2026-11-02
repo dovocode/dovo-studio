@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
+import { MCP_PROTOCOL_VERSION, withMcpRequestMeta } from '@agentclientprotocol/sdk/unstable'
+import { acpMcpHttp } from '../providers/acp/acp-mcp.js'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { open, realpath } from 'node:fs/promises'
@@ -68,6 +72,7 @@ export function parseSkillDocument(text: string) {
 }
 export async function testMcpServer(input: unknown) {
   const server = decode(mcpServerSchema, input)
+  if (server.acpTransport) return testNativeMcpServer(server)
   const client = new Client({
     name: 'dovo-studio',
     version: '0.1.0',
@@ -119,4 +124,52 @@ export async function testMcpServer(input: unknown) {
     await client.close()
     await transport.close()
   }
+}
+
+async function testNativeMcpServer(server: typeof mcpServerSchema.Type) {
+  const signal = AbortSignal.timeout(15000)
+  const headers = mcpHeaders(server)
+  const request = async (method: string, params?: Record<string, unknown>) => {
+    const outcome = await acpMcpHttp(server.url, headers, {
+      method,
+      requestId: randomUUID(),
+      signal,
+      params: withMcpRequestMeta(params, { clientInfo: { name: 'dovo-studio', version: '0.1.0' } }),
+      notify: async () => {},
+    })
+    if ('error' in outcome) throw new Error(outcome.error.message)
+    return outcome.result
+  }
+  const discovery = z
+    .object({
+      supportedVersions: z.array(z.string()),
+      capabilities: z.object({ tools: z.unknown().optional() }),
+      _meta: z.record(z.string(), z.unknown()).optional(),
+    })
+    .parse(await request('server/discover'))
+  if (!discovery.supportedVersions.includes(MCP_PROTOCOL_VERSION))
+    throw new Error('This server does not support MCP 2026-07-28; use regular HTTP instead')
+  const info = z
+    .object({ name: z.string() })
+    .safeParse(discovery._meta?.['io.modelcontextprotocol/serverInfo'])
+  const tools: string[] = []
+  if (discovery.capabilities.tools !== undefined) {
+    const cursors = new Set<string>()
+    let cursor: string | undefined
+    do {
+      const page = z
+        .object({
+          tools: z.array(z.object({ name: z.string() })),
+          nextCursor: z.string().optional(),
+        })
+        .parse(await request('tools/list', cursor ? { cursor } : undefined))
+      tools.push(...page.tools.map((tool) => tool.name))
+      cursor = page.nextCursor
+      if (cursor !== undefined) {
+        if (cursors.has(cursor)) throw new Error('MCP tools/list repeated a pagination cursor')
+        cursors.add(cursor)
+      }
+    } while (cursor !== undefined)
+  }
+  return decode(mcpTestResultSchema, { server: info.success ? info.data.name : server.name, tools })
 }

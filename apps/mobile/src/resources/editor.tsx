@@ -155,6 +155,7 @@ export function ResourceEditor({
               setServer({
                 ...server,
                 transport: transport === 'http' ? 'http' : 'stdio',
+                ...(transport !== 'http' ? { acpTransport: undefined } : {}),
               })
             }
           />
@@ -213,6 +214,16 @@ export function ResourceEditor({
                     bearerTokenEnv,
                   })
                 }
+              />
+              <Choice
+                label="MCP-over-ACP (MCP 2026-07-28 servers only)"
+                value={server.acpTransport ? 'true' : 'false'}
+                disabled={busy}
+                items={[
+                  { id: 'false', name: 'Use HTTP' },
+                  { id: 'true', name: 'Prefer when agent supports it' },
+                ]}
+                onChange={(value) => setServer({ ...server, acpTransport: value === 'true' })}
               />
               <Field
                 label="Header bindings (JSON)"

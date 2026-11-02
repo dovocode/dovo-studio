@@ -4,6 +4,8 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   questionPromptSchema,
   questionAnswersSchema,
+  questionOutcomesSchema,
+  type QuestionOutcomes,
   questionAnswerError,
   questionAllowsAttachments,
   questionAttachmentIdsSchema,
@@ -21,19 +23,37 @@ import { HttpError } from '../../errors.js'
 type ResponseReceipt = { id: string; fingerprint: string; attachments?: Attachment[] }
 type Pending = {
   info: PendingQuestion
-  finish: (answers: QuestionAnswers | null, status: string, receipt?: ResponseReceipt) => void
+  finish: (
+    answers: QuestionAnswers | null,
+    status: string,
+    receipt?: ResponseReceipt,
+    outcomes?: QuestionOutcomes,
+  ) => void
   validate?: (answers: QuestionAnswers) => void
 }
 function answerFingerprint(
   answers: QuestionAnswers | null,
   attachments: QuestionAttachmentIds = {},
+  outcomes?: QuestionOutcomes,
 ) {
   const files = Object.entries(attachments)
     .filter(([, ids]) => ids.length)
     .sort(([a], [b]) => a.localeCompare(b))
   const sorted = answers && Object.entries(answers).sort(([a], [b]) => a.localeCompare(b))
   return createHash('sha256')
-    .update(JSON.stringify(files.length ? { answers: sorted, attachments: files } : sorted))
+    .update(
+      JSON.stringify(
+        outcomes && Object.keys(outcomes).length
+          ? {
+              answers: sorted,
+              attachments: files,
+              outcomes: Object.entries(outcomes).sort(([a], [b]) => a.localeCompare(b)),
+            }
+          : files.length
+            ? { answers: sorted, attachments: files }
+            : sorted,
+      ),
+    )
     .digest('hex')
 }
 export class Questions {
@@ -101,6 +121,7 @@ export class Questions {
     validate?: (answers: QuestionAnswers) => void,
     onResponse?: (answers: QuestionAnswers | null, receipt: ResponseReceipt) => void,
     requestId?: string,
+    onUnanswered?: (outcomes: QuestionOutcomes) => void,
   ) {
     if (signal.aborted) return Promise.resolve(null)
     const prompt = decode(questionPromptSchema, value),
@@ -147,11 +168,22 @@ export class Questions {
         answers: QuestionAnswers | null,
         status: string,
         receipt?: ResponseReceipt,
+        outcomes?: QuestionOutcomes,
       ) => {
         if (!this.requests.has(id)) return
         // Admission must succeed before resolving or remembering the response.
-        const accepted = receipt ?? { id, fingerprint: answerFingerprint(answers) }
+        const accepted = receipt ?? { id, fingerprint: answerFingerprint(answers, {}, outcomes) }
         if (status !== 'cancelled') onResponse?.(answers, accepted)
+        const unanswered: QuestionOutcomes =
+          status !== 'cancelled' && prompt.unanswered
+            ? Object.fromEntries(
+                prompt.questions.flatMap((q) =>
+                  answers?.[q.id]?.length
+                    ? []
+                    : [[q.id, outcomes?.[q.id] ?? (answers ? 'skipped' : 'dismissed')]],
+                ),
+              )
+            : {}
         const logged =
           answers &&
           Object.fromEntries(
@@ -166,6 +198,7 @@ export class Questions {
             {
               ...info,
               answers: logged,
+              ...(status !== 'cancelled' && prompt.unanswered ? { outcomes: unanswered } : {}),
               status,
               resolvedAt: new Date().toISOString(),
             },
@@ -178,6 +211,7 @@ export class Questions {
           this.answered.set(id, accepted.fingerprint)
           if (this.answered.size > 256) this.answered.delete(this.answered.keys().next().value!)
         }
+        if (status !== 'cancelled') onUnanswered?.(unanswered)
         this.requests.delete(id)
         signal.removeEventListener('abort', abort)
         resolve(answers)
@@ -210,45 +244,49 @@ export class Questions {
       }
     })
   }
-  respond(id: string, value: QuestionAnswers | null) {
+  respond(id: string, value: QuestionAnswers | null, outcomes?: QuestionOutcomes) {
     if (this.responding.has(id)) throw new HttpError(409, 'This question is already being answered')
     const request = this.requests.get(id)
     const answers = value === null ? null : decode(questionAnswersSchema, value)
     const receipt = this.receipts?.questionResponse(id)
     if (receipt) {
-      if (receipt !== answerFingerprint(answers))
+      if (receipt !== answerFingerprint(answers, {}, outcomes))
         throw new HttpError(409, 'This question was already answered differently')
-      if (request) request.finish(answers, answers ? 'answered' : 'declined')
+      if (request) request.finish(answers, answers ? 'answered' : 'declined', undefined, outcomes)
       return
     }
     if (!request) {
-      if (this.answered.get(id) === answerFingerprint(answers)) return
+      if (this.answered.get(id) === answerFingerprint(answers, {}, outcomes)) return
       throw new HttpError(409, 'This question was already answered or cancelled')
     }
+    this.validateOutcomes(request.info, answers, outcomes)
     if (answers) {
       const error = questionAnswerError(request.info.prompt.questions, answers)
       if (error) throw new HttpError(400, error)
       request.validate?.(answers)
     }
-    request.finish(answers, answers ? 'answered' : 'declined')
+    request.finish(answers, answers ? 'answered' : 'declined', undefined, outcomes)
   }
   async respondWithAttachments(
     id: string,
     value: QuestionAnswers | null,
     files: QuestionAttachmentIds = {},
+    rawOutcomes?: QuestionOutcomes,
   ) {
+    const outcomes = rawOutcomes && decode(questionOutcomesSchema, rawOutcomes)
     const ids = decode(questionAttachmentIdsSchema, files)
-    if (!Object.values(ids).some((values) => values.length)) return this.respond(id, value)
+    if (!Object.values(ids).some((values) => values.length))
+      return this.respond(id, value, outcomes)
     if (value === null) throw new HttpError(400, 'Declined answers cannot contain files')
     const answers = decode(questionAnswersSchema, value)
-    const fingerprint = answerFingerprint(answers, ids)
+    const fingerprint = answerFingerprint(answers, ids, outcomes)
     const previous = this.responding.get(id)
     if (previous) {
       if (previous.fingerprint !== fingerprint)
         throw new HttpError(409, 'This question is already being answered differently')
       return previous.promise
     }
-    const promise = this.respondFiles(id, answers, ids, fingerprint)
+    const promise = this.respondFiles(id, answers, ids, fingerprint, outcomes)
     this.responding.set(id, { fingerprint, promise })
     try {
       await promise
@@ -261,6 +299,7 @@ export class Questions {
     answers: QuestionAnswers,
     ids: QuestionAttachmentIds,
     fingerprint: string,
+    outcomes?: QuestionOutcomes,
   ) {
     const replay = () => {
       const previous = this.receipts?.questionResponse(id) ?? this.answered.get(id)
@@ -275,6 +314,7 @@ export class Questions {
       if (accepted) return
       throw new HttpError(409, 'This question was already answered or cancelled')
     }
+    this.validateOutcomes(request.info, answers, outcomes, ids)
     const invalid = questionAnswerError(request.info.prompt.questions, answers, ids)
     if (invalid) throw new HttpError(400, invalid)
     const storage = this.attachments
@@ -309,11 +349,35 @@ export class Questions {
       throw new HttpError(409, 'This question was already answered or cancelled')
     const resolved = Object.fromEntries(result)
     request.validate?.(resolved)
-    request.finish(resolved, 'answered', {
-      id,
-      fingerprint,
-      attachments: attached.flatMap((group) => group.files),
-    })
+    request.finish(
+      resolved,
+      'answered',
+      {
+        id,
+        fingerprint,
+        attachments: attached.flatMap((group) => group.files),
+      },
+      outcomes,
+    )
+  }
+  private validateOutcomes(
+    info: PendingQuestion,
+    answers: QuestionAnswers | null,
+    outcomes?: QuestionOutcomes,
+    files: QuestionAttachmentIds = {},
+  ) {
+    if (!outcomes || !Object.keys(outcomes).length) return
+    if (!info.prompt.unanswered)
+      throw new HttpError(400, 'This question does not support unanswered outcomes')
+    for (const [id, outcome] of Object.entries(decode(questionOutcomesSchema, outcomes))) {
+      if (
+        !info.prompt.questions.some((q) => q.id === id) ||
+        answers?.[id]?.length ||
+        files[id]?.length ||
+        (outcome === 'dismissed' && answers !== null)
+      )
+        throw new HttpError(400, 'Invalid unanswered question outcome')
+    }
   }
   respondNotification(input: NotificationAnswer) {
     const request = this.requests.get(input.id)

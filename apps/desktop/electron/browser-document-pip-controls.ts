@@ -5,6 +5,16 @@ import { EventEmitter } from 'node:events'
 
 export const DOCUMENT_PIP_HEADER_HEIGHT = 36
 
+const dismissals = new WeakMap<BrowserWindow, () => void>()
+
+/** App lifecycle cleanup must not be mistaken for a user returning to the call. */
+export function dismissDocumentPipWindow(window: BrowserWindow) {
+  if (window.isDestroyed()) return
+  const dismiss = dismissals.get(window)
+  if (dismiss) dismiss()
+  else window.close()
+}
+
 const PRELOAD = `
 const { ipcRenderer } = require('electron')
 window.addEventListener('DOMContentLoaded', () => {
@@ -63,29 +73,45 @@ export function createDocumentPipWindow(
   contents.on('will-navigate', (event) => event.preventDefault())
   contents.on('will-redirect', (event) => event.preventDefault())
   let returning = false
-  contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
-    if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
-    if (action !== 'close' && action !== 'return') return
-    if (action === 'return' && !showReturnToTab) return
+  let dismissing = false
+  const dismiss = () => {
+    if (popup.isDestroyed()) return
+    dismissing = true
+    popup.close()
+  }
+  dismissals.set(popup, dismiss)
+  const returnToCall = () => {
+    if (returning || popup.isDestroyed()) return
     if (!returnToTab) {
-      if (action === 'close') popup.close()
+      dismiss()
       return
     }
-    if (returning) return
-    // Restore visibility before pagehide: Teams otherwise leaves the call in the closed child.
-    // Only trusted user controls return to the tab; site/automatic closes must not steal focus.
     returning = true
     void Promise.resolve()
       .then(returnToTab)
-      .then(() => {
-        if (!popup.isDestroyed()) popup.close()
-      })
+      .then(dismiss)
       .catch((error) => console.error('Could not return the call to its tab.', error))
       .finally(() => {
         returning = false
       })
+  }
+  // Cmd+W and Window > Close bypass the HTML header. Restore the owner before
+  // closing its guest, just as the trusted Close button does.
+  popup.on('close', (event) => {
+    if (dismissing || guest.isDestroyed() || !returnToTab) return
+    event.preventDefault()
+    returnToCall()
+  })
+  contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
+    if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
+    if (action !== 'close' && action !== 'return') return
+    if (action === 'return' && !showReturnToTab) return
+    // Restore visibility before pagehide: Teams otherwise leaves the call in the closed child.
+    // Only trusted user controls return to the tab; site/automatic closes must not steal focus.
+    returnToCall()
   })
   popup.once('closed', () => {
+    dismissals.delete(popup)
     popup.removeListener('resize', layout)
     if (!guest.isDestroyed()) guest.close()
   })

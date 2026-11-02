@@ -130,15 +130,20 @@ function QuestionCard({
           />
         ) : null
       }
-      onAnswer={(answers) =>
+      onAnswer={(answers, outcomes) =>
         runClientEffect(
           mobileWorkflow(function* () {
             yield* callEffect(
               '/api/tasks/answer',
-              { id: pending.id, answers, ...(answers ? { attachmentIdsByQuestion: ids } : {}) },
+              {
+                id: pending.id,
+                answers,
+                outcomes,
+                ...(answers && !outcomes ? { attachmentIdsByQuestion: ids } : {}),
+              },
               responses.ok,
             )
-            if (answers && profile)
+            if (answers && !outcomes && profile)
               for (const file of Object.values(files).flat()) {
                 yield* finishAttachmentEffect(profile, file.id).pipe(
                   Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),

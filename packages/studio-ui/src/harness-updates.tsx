@@ -1,14 +1,23 @@
-import { adapterDiagnosticsSchema, type AdapterDiagnostic } from '@dovo/protocol'
+import {
+  adapterDiagnosticsSchema,
+  codexNetworkDiagnosticSchema,
+  type CodexNetworkDiagnostic,
+  type AdapterDiagnostic,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { Button } from './components/ui/button'
 import { useCallback, useEffect, useRef } from 'react'
 export function HarnessUpdates() {
   const { providerUpdateChecks } = useAppPreferences()
-  const { connected, request } = useWorkspace()
+  const { connected, request, workspace } = useWorkspace()
   const [items, setItems] = useApplicationState<AdapterDiagnostic[]>([])
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const [network, setNetwork] = useApplicationState<CodexNetworkDiagnostic | undefined>(undefined)
+  const [networkAgentId, setNetworkAgentId] = useApplicationState('')
+  const codexAgents = workspace.agents.filter((agent) => agent.provider === 'codex')
+  const [networkBusy, setNetworkBusy] = useApplicationState(false)
   const generation = useRef(0)
   const check = useCallback(async () => {
     const attempt = ++generation.current
@@ -58,6 +67,56 @@ export function HarnessUpdates() {
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
+      )}
+      <select
+        aria-label="Codex diagnostic profile"
+        className="h-8 rounded-md border bg-background px-2 text-xs"
+        value={networkAgentId}
+        disabled={!connected || networkBusy}
+        onChange={(event) => {
+          setNetworkAgentId(event.target.value)
+          setNetwork(undefined)
+        }}
+      >
+        <option value="">Default Codex executable</option>
+        {codexAgents.map((agent) => (
+          <option key={agent.id} value={agent.id}>
+            {agent.name}
+          </option>
+        ))}
+      </select>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!connected || networkBusy}
+        onClick={async () => {
+          const attempt = generation.current
+          setNetworkBusy(true)
+          setError('')
+          try {
+            const result = await request(
+              '/api/agents/codex/network-diagnostics',
+              networkAgentId ? { agentId: networkAgentId } : {},
+              codexNetworkDiagnosticSchema,
+            )
+            if (attempt === generation.current) setNetwork(result)
+          } catch (error) {
+            if (attempt === generation.current) setError(String(error))
+          } finally {
+            setNetworkBusy(false)
+          }
+        }}
+      >
+        {networkBusy ? 'Testing Codex network…' : 'Test Codex network'}
+      </Button>
+      {network && (
+        <div role="status" className="space-y-2 text-xs">
+          <p>
+            {network.ok ? 'Network diagnostic completed' : 'Network diagnostic failed'} ·{' '}
+            {(network.durationMs / 1000).toFixed(1)}s
+          </p>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap">{network.output}</pre>
+        </div>
       )}
       {items.map((item) => (
         <details key={item.id} className="text-sm">

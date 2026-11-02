@@ -11,6 +11,7 @@ import { claudeQuestions } from './claude-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import {
   query,
+  type Options,
   type AccountInfo,
   type SDKMessage,
   type SDKUserMessage,
@@ -21,6 +22,7 @@ import {
   claudeEffectiveEnvironment,
   claudeSubscriptionEnvironment,
 } from '../../configuration/claude-settings.js'
+import { ClaudePrewarmer, type ClaudeBinding } from './claude-prewarm.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
@@ -74,210 +76,204 @@ function claudeToolDisposition(run: AgentRun, name: string) {
   )
 }
 
-function claudeStream(
+function claudeOptions(
   run: AgentRun,
   controller: AbortController,
-  prompt: string | AsyncIterable<SDKUserMessage>,
-  activeRun: (
-    agentId?: string,
-    signal?: AbortSignal,
-    sessionRequest?: boolean,
-  ) => AgentRun | undefined,
+  binding: ClaudeBinding,
   command: string,
   mcpConfigPath?: string,
-) {
-  return query({
-    prompt,
-    options: {
-      cwd: run.cwd,
-      ...(run.linkedDirectories?.length
-        ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
-        : {}),
-      env: processEnvironment({
-        ...(run.tools === 'none'
-          ? claudeEffectiveEnvironment(run.agent.env, run.cwd, run.agent.args)
-          : run.agent.env),
-        ...(run.tools === 'none' || run.agent.cloudIntegrations !== undefined
-          ? {
-              ENABLE_CLAUDEAI_MCP_SERVERS: String(
-                run.tools !== 'none' && run.agent.cloudIntegrations,
-              ),
-            }
-          : {}),
-      }),
-      extraArgs: {
-        ...Object.fromEntries(
-          Object.entries(claudeLaunchFlags(run.agent.args)).filter(
-            ([key]) =>
-              run.tools !== 'none' ||
-              !['settings', 'setting-sources', 'managed-settings'].includes(key),
-          ),
-        ),
-        ...(mcpConfigPath ? { 'mcp-config': mcpConfigPath } : {}),
-      },
-      abortController: controller,
-      ...(run.sessionId
+): Options {
+  return {
+    cwd: run.cwd,
+    ...(run.linkedDirectories?.length
+      ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
+      : {}),
+    env: processEnvironment({
+      ...(run.tools === 'none'
+        ? claudeEffectiveEnvironment(run.agent.env, run.cwd, run.agent.args)
+        : run.agent.env),
+      ...(run.tools === 'none' || run.agent.cloudIntegrations !== undefined
         ? {
-            resume: run.sessionId,
-          }
-        : {}),
-      ...(run.agent.model
-        ? {
-            model: run.agent.model,
-          }
-        : {}),
-      ...(run.agent.reasoning
-        ? {
-            effort: decode(
-              Schema.Literals(['low', 'medium', 'high', 'xhigh', 'max']),
-              run.agent.reasoning,
+            ENABLE_CLAUDEAI_MCP_SERVERS: String(
+              run.tools !== 'none' && run.agent.cloudIntegrations,
             ),
           }
         : {}),
-      pathToClaudeCodeExecutable: command,
-      ...(run.ephemeral ? { persistSession: false } : {}),
-      ...(run.outputSchema
-        ? { outputFormat: { type: 'json_schema' as const, schema: run.outputSchema } }
-        : {}),
-      systemPrompt:
-        run.tools === 'none'
-          ? run.agent.instructions
-          : {
-              type: 'preset',
-              preset: 'claude_code',
-              append: run.agent.instructions,
-            },
-      permissionMode:
-        run.agent.permission === 'read-only'
-          ? 'default'
-          : run.agent.approvalPolicy === 'on-request'
-            ? 'default'
-            : run.agent.approvalPolicy === 'never' || run.agent.permission === 'full-access'
-              ? 'bypassPermissions'
-              : run.agent.permission === 'auto'
-                ? 'auto'
-                : run.agent.permission === 'workspace-write'
-                  ? 'acceptEdits'
-                  : 'default',
-      ...((run.agent.approvalPolicy === 'never' && run.agent.permission !== 'read-only') ||
-      (!run.agent.approvalPolicy && run.agent.permission === 'full-access')
-        ? {
-            allowDangerouslySkipPermissions: true,
-          }
-        : {}),
-      ...(run.tools === 'none'
-        ? {
-            tools: [],
-            strictMcpConfig: true,
-            mcpServers: {},
-          }
-        : {}),
-      // Coding sessions inherit Claude settings; text-only utilities stay isolated.
-      settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
-      includePartialMessages: true,
-      ...(run.tools === 'none'
-        ? {}
-        : {
-            hooks: {
-              // Settings allow rules can skip canUseTool. A pre-use deny still
-              // enforces Studio's read-only policy before the tool executes.
-              PreToolUse: [
-                {
-                  hooks: [
-                    async (input, _toolUseId, options) => {
-                      if (input.hook_event_name !== 'PreToolUse') return {}
-                      const current = activeRun(input.agent_id, options.signal)
-                      if (current && claudeToolDisposition(current, input.tool_name) !== 'deny')
-                        return {}
-                      return {
-                        hookSpecificOutput: {
-                          hookEventName: 'PreToolUse',
-                          permissionDecision: 'deny',
-                          permissionDecisionReason: 'Permission denied in Dovo Studio',
-                        },
-                      }
-                    },
-                  ],
-                },
-              ],
-              PostToolUse: [
-                {
-                  matcher: 'TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet',
-                  hooks: [
-                    async (input, _toolUseId, options) => {
-                      if (input.hook_event_name === 'PostToolUse' && !input.agent_id)
-                        activeRun(undefined, options.signal)?.onEvent?.('claude/checklist', input)
-                      return {}
-                    },
-                  ],
-                },
-              ],
-            },
-          }),
-      onElicitation: async (request, options) => {
-        const current = activeRun(undefined, options.signal, true)
-        if (!current) return { action: 'decline' }
-        if (request.mode !== 'form' && request.mode !== undefined) {
-          current.onActivity('This Claude MCP input request is not a supported form')
-          return {
-            action: 'cancel',
-          }
-        }
-        const content = await formQuestions(
-          request.message,
-          request.requestedSchema,
-          current,
-          options.signal,
-        )
-        return content
-          ? {
-              action: 'accept',
-              content,
-            }
-          : {
-              action: 'decline',
-            }
-      },
-      ...(run.tools !== 'none' && run.agent.permission === 'read-only'
-        ? {
-            tools: ['Read', 'Glob', 'Grep', 'ToolSearch', 'AskUserQuestion'],
-          }
-        : {}),
-      canUseTool: async (name, input, options) => {
-        if (run.tools === 'none')
-          return {
-            behavior: 'deny',
-            message: 'Tools are disabled for text cleanup',
-          }
-        const current = activeRun(options.agentID, options.signal)
-        if (!current)
-          return { behavior: 'deny', message: 'This Claude request has no active owner' }
-        if (name === 'AskUserQuestion') return claudeQuestions(input, current, options.signal)
-        const disposition = claudeToolDisposition(current, name)
-        const allowed =
-          disposition === 'allow' ||
-          (disposition === 'ask' &&
-            (await current.approve(
-              name,
-              JSON.stringify(input, null, 2),
-              ['WebFetch', 'WebSearch'].includes(name)
-                ? 'web'
-                : name === 'Bash'
-                  ? 'command'
-                  : undefined,
-            )) !== 'deny')
-        return allowed
-          ? {
-              behavior: 'allow',
-              updatedInput: input,
-            }
-          : {
-              behavior: 'deny',
-              message: 'Permission denied in Dovo Studio',
-            }
-      },
+    }),
+    extraArgs: {
+      ...Object.fromEntries(
+        Object.entries(claudeLaunchFlags(run.agent.args)).filter(
+          ([key]) =>
+            run.tools !== 'none' ||
+            !['settings', 'setting-sources', 'managed-settings'].includes(key),
+        ),
+      ),
+      ...(mcpConfigPath ? { 'mcp-config': mcpConfigPath } : {}),
     },
-  })
+    abortController: controller,
+    ...(run.sessionId
+      ? {
+          resume: run.sessionId,
+        }
+      : {}),
+    ...(run.agent.model
+      ? {
+          model: run.agent.model,
+        }
+      : {}),
+    ...(run.agent.reasoning
+      ? {
+          effort: decode(
+            Schema.Literals(['low', 'medium', 'high', 'xhigh', 'max']),
+            run.agent.reasoning,
+          ),
+        }
+      : {}),
+    pathToClaudeCodeExecutable: command,
+    ...(run.ephemeral ? { persistSession: false } : {}),
+    ...(run.outputSchema
+      ? { outputFormat: { type: 'json_schema' as const, schema: run.outputSchema } }
+      : {}),
+    systemPrompt:
+      run.tools === 'none'
+        ? run.agent.instructions
+        : {
+            type: 'preset',
+            preset: 'claude_code',
+            append: run.agent.instructions,
+          },
+    permissionMode:
+      run.agent.permission === 'read-only'
+        ? 'default'
+        : run.agent.approvalPolicy === 'on-request'
+          ? 'default'
+          : run.agent.approvalPolicy === 'never' || run.agent.permission === 'full-access'
+            ? 'bypassPermissions'
+            : run.agent.permission === 'auto'
+              ? 'auto'
+              : run.agent.permission === 'workspace-write'
+                ? 'acceptEdits'
+                : 'default',
+    ...((run.agent.approvalPolicy === 'never' && run.agent.permission !== 'read-only') ||
+    (!run.agent.approvalPolicy && run.agent.permission === 'full-access')
+      ? {
+          allowDangerouslySkipPermissions: true,
+        }
+      : {}),
+    ...(run.tools === 'none'
+      ? {
+          tools: [],
+          strictMcpConfig: true,
+          mcpServers: {},
+        }
+      : {}),
+    // Coding sessions inherit Claude settings; text-only utilities stay isolated.
+    settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
+    includePartialMessages: true,
+    ...(run.tools === 'none'
+      ? {}
+      : {
+          hooks: {
+            // Settings allow rules can skip canUseTool. A pre-use deny still
+            // enforces Studio's read-only policy before the tool executes.
+            PreToolUse: [
+              {
+                hooks: [
+                  async (input, _toolUseId, options) => {
+                    if (input.hook_event_name !== 'PreToolUse') return {}
+                    const current = binding.activeRun(input.agent_id, options.signal)
+                    if (current && claudeToolDisposition(current, input.tool_name) !== 'deny')
+                      return {}
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: 'PreToolUse',
+                        permissionDecision: 'deny',
+                        permissionDecisionReason: 'Permission denied in Dovo Studio',
+                      },
+                    }
+                  },
+                ],
+              },
+            ],
+            PostToolUse: [
+              {
+                matcher: 'TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet',
+                hooks: [
+                  async (input, _toolUseId, options) => {
+                    if (input.hook_event_name === 'PostToolUse' && !input.agent_id)
+                      binding
+                        .activeRun(undefined, options.signal)
+                        ?.onEvent?.('claude/checklist', input)
+                    return {}
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+    onElicitation: async (request, options) => {
+      const current = binding.activeRun(undefined, options.signal, true)
+      if (!current) return { action: 'decline' }
+      if (request.mode !== 'form' && request.mode !== undefined) {
+        current.onActivity('This Claude MCP input request is not a supported form')
+        return {
+          action: 'cancel',
+        }
+      }
+      const content = await formQuestions(
+        request.message,
+        request.requestedSchema,
+        current,
+        options.signal,
+      )
+      return content
+        ? {
+            action: 'accept',
+            content,
+          }
+        : {
+            action: 'decline',
+          }
+    },
+    ...(run.tools !== 'none' && run.agent.permission === 'read-only'
+      ? {
+          tools: ['Read', 'Glob', 'Grep', 'ToolSearch', 'AskUserQuestion'],
+        }
+      : {}),
+    canUseTool: async (name, input, options) => {
+      if (run.tools === 'none')
+        return {
+          behavior: 'deny',
+          message: 'Tools are disabled for text cleanup',
+        }
+      const current = binding.activeRun(options.agentID, options.signal)
+      if (!current) return { behavior: 'deny', message: 'This Claude request has no active owner' }
+      if (name === 'AskUserQuestion')
+        return claudeQuestions(input, current, options.signal, binding.capabilities.unanswered)
+      const disposition = claudeToolDisposition(current, name)
+      const allowed =
+        disposition === 'allow' ||
+        (disposition === 'ask' &&
+          (await current.approve(
+            name,
+            JSON.stringify(input, null, 2),
+            ['WebFetch', 'WebSearch'].includes(name)
+              ? 'web'
+              : name === 'Bash'
+                ? 'command'
+                : undefined,
+          )) !== 'deny')
+      return allowed
+        ? {
+            behavior: 'allow',
+            updatedInput: input,
+          }
+        : {
+            behavior: 'deny',
+            message: 'Permission denied in Dovo Studio',
+          }
+    },
+  }
 }
 function handleMessage(
   run: AgentRun,
@@ -392,6 +388,7 @@ export function createClaudeAdapter(): AgentAdapter {
     (session) => session.nativeAgents.some(nativeAgentWorking),
   )
   const active = new Set<WarmClaude>()
+  const spares = new ClaudePrewarmer()
   const publish = (session: WarmClaude, owner: AgentRun) => {
     if (session.sessionId)
       owner.onNativeSession?.(
@@ -466,6 +463,7 @@ export function createClaudeAdapter(): AgentAdapter {
         signal?: AbortSignal,
         sessionRequest = false,
       ): AgentRun | undefined => {
+        if (!session) return run.signal.aborted || signal?.aborted ? undefined : run
         if (session.closed || session.controller.signal.aborted || signal?.aborted) return
         if (session.turn) return session.turn.run
         const owner = session.owner
@@ -495,21 +493,71 @@ export function createClaudeAdapter(): AgentAdapter {
               kind,
               options,
             ),
-          ask: (prompt, questionSignal, validate) =>
+          ask: (prompt, questionSignal, validate, onUnanswered) =>
             interactions.ask(
               prompt,
               AbortSignal.any([session.controller.signal, questionSignal ?? signal]),
               validate,
+              onUnanswered,
             ),
         }
       }
+      const capabilities = { unanswered: false }
       const configFile = claudeMcpConfigFile(run.agent.resources?.mcpServers ?? [])
-      let stream: ReturnType<typeof query>
+      let stream: ReturnType<typeof query> | undefined
+      const abortStartup = () => {
+        controller.abort()
+        stream?.close()
+      }
+      run.signal.addEventListener('abort', abortStartup, { once: true })
       try {
-        stream = claudeStream(run, controller, input, currentRun, command, configFile.path)
+        const binding = { activeRun: currentRun, capabilities }
+        const options = claudeOptions(run, controller, binding, command, configFile.path)
+        // Only an empty input queue is claimed. No prompt runs before MCP ownership is rebound.
+        const claimed =
+          !run.sessionId && !run.compact
+            ? await spares.claim(options, binding, input, run.signal)
+            : undefined
+        if (run.signal.aborted) {
+          claimed?.close()
+          run.signal.throwIfAborted()
+        }
+        stream = claimed ?? query({ prompt: input, options })
+        if (claimed) {
+          const result = await stream.setMcpServers(mcpServers)
+          if (Object.keys(result.errors).length) {
+            stream.close()
+            throw new Error('Claude prewarm MCP binding failed')
+          }
+        }
+        if (!run.compact)
+          spares.remember(() => {
+            let owner: ClaudeBinding = {
+              activeRun: () => undefined,
+              capabilities: { unanswered: false },
+            }
+            const parked: ClaudeBinding = {
+              activeRun: (...args) => owner.activeRun(...args),
+              capabilities: owner.capabilities,
+            }
+            return {
+              options: claudeOptions(run, new AbortController(), parked, command),
+              bind: (next) => {
+                owner = next
+                parked.capabilities = next.capabilities
+              },
+            }
+          })
       } catch (error) {
-        configFile.dispose()
+        try {
+          stream?.close()
+        } finally {
+          controller.abort()
+          configFile.dispose()
+        }
         throw error
+      } finally {
+        run.signal.removeEventListener('abort', abortStartup)
       }
       session = {
         stream,
@@ -533,6 +581,9 @@ export function createClaudeAdapter(): AgentAdapter {
       session.consumer = (async () => {
         try {
           for await (const message of stream) {
+            if (message.type === 'system' && message.subtype === 'init')
+              capabilities.unanswered =
+                message.capabilities?.includes('ask_user_question_unanswered_v1') ?? false
             if (session.closed) break
             const turn = session.turn
             session.backgroundTasks.accept(message)
@@ -699,6 +750,7 @@ export function createClaudeAdapter(): AgentAdapter {
       if (session.sessionId && !session.closed && !session.controller.signal.aborted) {
         idle.set(run.taskId, session)
         await idle.prune(releaseIdleProvider())
+        spares.prepare()
       } else await close(session)
     } catch (error) {
       session.turn = undefined
@@ -742,17 +794,23 @@ export function createClaudeAdapter(): AgentAdapter {
         run.tools === 'none' ? [] : (run.agent.resources?.mcpServers ?? []),
       )
       let stream: ReturnType<typeof query> | undefined
+      const capabilities = { unanswered: false }
       try {
-        stream = claudeStream(
-          run,
-          controller,
-          run.attachments?.length ? claudeInput(run) : run.prompt,
-          () => run,
-          command,
-          configFile.path,
-        )
+        stream = query({
+          prompt: run.attachments?.length ? claudeInput(run) : run.prompt,
+          options: claudeOptions(
+            run,
+            controller,
+            { activeRun: () => run, capabilities },
+            command,
+            configFile.path,
+          ),
+        })
         let compacted = false
         for await (const message of stream) {
+          if (message.type === 'system' && message.subtype === 'init')
+            capabilities.unanswered =
+              message.capabilities?.includes('ask_user_question_unanswered_v1') ?? false
           handleMessage(run, message, () => (compacted = true))
         }
         if (run.compact && !compacted)
@@ -767,7 +825,7 @@ export function createClaudeAdapter(): AgentAdapter {
       }
     },
     dispose: async () => {
-      await Promise.all([...active].map(close))
+      await Promise.all([spares.dispose(), ...[...active].map(close)])
     },
   }
 }

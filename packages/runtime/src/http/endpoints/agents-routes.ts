@@ -16,6 +16,7 @@ import { approvalDecisionSchema, linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
 import { decodeResult } from '@dovo/protocol'
+import { codexNetworkDiagnostics } from '../../agents/execution/codex-network-diagnostics.js'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
 import { canChangeTaskCheckout, taskFamilyIds, taskSchema } from '@dovo/protocol'
@@ -114,6 +115,19 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         ].includes(path)
       )
         return yield* scopedSettingsRoute(request, path)
+      if (method === 'POST' && path === '/api/agents/codex/network-diagnostics') {
+        const { agentId } = decode(
+          mutableStruct({ agentId: Schema.optional(idSchema) }),
+          yield* serviceResult(body(request)),
+        )
+        const agent = agentId ? s.store.get().agents.find((item) => item.id === agentId) : undefined
+        if (agentId && (!agent || agent.provider !== 'codex'))
+          throw new HttpError(400, 'Choose a configured Codex agent')
+        const configured = agent
+          ? yield* serviceResult(s.agents.secretReferences.resolve(s.agents.configure(agent)))
+          : undefined
+        return yield* serviceResult(codexNetworkDiagnostics(s.commands.get(), configured))
+      }
       if (method === 'POST' && path === '/api/agents/updates') {
         const { checkUpdates } = decode(
           mutableStruct({ checkUpdates: Schema.Boolean }),
@@ -545,6 +559,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.id,
             input.answers,
             input.attachmentIdsByQuestion,
+            input.outcomes,
           ),
         )
         return yield* serviceResult({

@@ -98,6 +98,29 @@ export function BrowserTabRow({
   const keepsAwake = category === 'active' && tab.kind === 'web' && browserTabKeepsAwake(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
+  const identity = (
+    <span
+      className={cn(
+        'studio-browser-tab-profile flex min-w-0 shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground',
+        tab.pinned && 'absolute inset-x-0 bottom-0 justify-center',
+      )}
+      aria-label={`${computer} · ${profile}`}
+    >
+      <span className="studio-browser-tab-identity" title={computer}>
+        <RuntimeIcon
+          icon={owner?.snapshot?.runtimeIcon}
+          className="size-2 shrink-0"
+          aria-hidden="true"
+        />
+      </span>
+      <span
+        className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+        title={`${profile} · ${computer}`}
+      >
+        {emoji ?? initials}
+      </span>
+    </span>
+  )
   return (
     <ContextMenu.Root
       onOpenChange={(open) => {
@@ -114,8 +137,13 @@ export function BrowserTabRow({
           onDragOver={reorder?.onDragOver}
           onDrop={reorder?.onDrop}
           onDragEnd={reorder?.onDragEnd}
+          onClick={(event) => {
+            // Action buttons own their clicks; the rest of the tile selects the page.
+            if (event.target instanceof Element && event.target.closest('button')) return
+            onSelect()
+          }}
           className={cn(
-            'studio-browser-tab group relative flex min-w-0 items-center rounded-lg transition-colors',
+            'studio-browser-tab group relative flex cursor-pointer min-w-0 items-center rounded-lg transition-colors',
             tab.pinned && 'flex-col',
             reorder?.dragging && 'opacity-40',
             reorder?.edge &&
@@ -165,8 +193,18 @@ export function BrowserTabRow({
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
             className={`studio-browser-tab-select min-w-0 text-left text-xs ${tab.pinned ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
           >
-            <span className="studio-browser-tab-source relative inline-flex h-10 w-8 shrink-0 items-start justify-center">
-              <span className="studio-browser-tab-favicon relative inline-flex size-8 items-center justify-center">
+            <span
+              className={cn(
+                'studio-browser-tab-source relative inline-flex shrink-0 justify-center',
+                tab.pinned ? 'h-10 w-8 items-start' : 'size-6 items-center',
+              )}
+            >
+              <span
+                className={cn(
+                  'studio-browser-tab-favicon relative inline-flex items-center justify-center',
+                  tab.pinned ? 'size-8' : 'size-6',
+                )}
+              >
                 <BrowserFavicon tab={tab} />
                 {badge !== undefined && (
                   <span
@@ -189,30 +227,13 @@ export function BrowserTabRow({
                   />
                 )}
               </span>
-              <span
-                className="studio-browser-tab-profile absolute inset-x-0 bottom-0 flex shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
-                aria-label={`${computer} · ${profile}`}
-              >
-                <span className="studio-browser-tab-identity" title={computer}>
-                  <RuntimeIcon
-                    icon={owner?.snapshot?.runtimeIcon}
-                    className="size-2 shrink-0"
-                    aria-hidden="true"
-                  />
-                </span>
-                <span
-                  className={cn(
-                    'studio-browser-tab-identity overflow-hidden',
-                    emoji && 'text-[9px]',
-                  )}
-                  title={`${profile} · ${computer}`}
-                >
-                  {emoji ?? initials}
-                </span>
-              </span>
+              {tab.pinned && identity}
             </span>
             {!tab.pinned && (
-              <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
+              <>
+                <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
+                {identity}
+              </>
             )}
           </button>
           {(state?.camera ||

@@ -245,3 +245,54 @@ it('keeps secret questions human-controlled and falls back to a human if parent 
   next.abort()
   await regular
 })
+
+it('validates and receipts unanswered outcomes without weakening ordinary questions', async () => {
+  const { vi } = await import('vite-plus/test')
+  const token = 'owner-token-at-least-thirty-two-characters'
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  const outcomes = vi.fn()
+  const optional = {
+    ...prompt,
+    unanswered: true,
+    questions: [{ ...prompt.questions[0], required: false }],
+  }
+  const pending = r.services.questions.request(
+    'task',
+    optional,
+    new AbortController().signal,
+    undefined,
+    undefined,
+    undefined,
+    outcomes,
+  )
+  const id = r.services.questions.list()[0].id
+  const call = (answers: unknown, outcome: unknown) =>
+    fetch(`http://127.0.0.1:${r.port}/api/tasks/answer`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, answers, outcomes: outcome }),
+    })
+  expect((await call({}, { unknown: 'skipped' })).status).toBe(400)
+  expect((await call({ choice: ['existing'] }, { choice: 'replied_in_chat' })).status).toBe(400)
+  expect((await call({}, { choice: 'invented' })).status).toBe(400)
+  expect((await call({}, { choice: 'replied_in_chat' })).status).toBe(200)
+  expect(await pending).toEqual({})
+  expect(outcomes).toHaveBeenCalledWith({ choice: 'replied_in_chat' })
+  expect((await call({}, { choice: 'replied_in_chat' })).status).toBe(200)
+  expect((await call({}, { choice: 'skipped' })).status).toBe(409)
+  const cancelled = vi.fn()
+  const controller = new AbortController()
+  const stopped = r.services.questions.request(
+    'task',
+    optional,
+    controller.signal,
+    undefined,
+    undefined,
+    undefined,
+    cancelled,
+  )
+  controller.abort()
+  expect(await stopped).toBeNull()
+  expect(cancelled).not.toHaveBeenCalled()
+})

@@ -9,6 +9,7 @@ import {
   questionAnswerError,
   questionDraftAnswers,
   type QuestionAnswers,
+  type QuestionOutcomes,
   type QuestionAttachmentIds,
   type AgentQuestion,
   type QuestionDraft,
@@ -31,7 +32,7 @@ export function QuestionForm({
 }: {
   request: PendingQuestion
   connected: boolean
-  onAnswer: (answers: QuestionAnswers | null) => Promise<void>
+  onAnswer: (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => Promise<void>
   attachmentIdsByQuestion?: QuestionAttachmentIds
   renderAttachments?: (question: AgentQuestion, disabled: boolean) => ReactNode
   attachmentsBusy?: boolean
@@ -71,7 +72,7 @@ export function QuestionForm({
       disposed = true
     }
   }, [runtimeId, request.id])
-  const submit = (answers: QuestionAnswers | null) => {
+  const submit = (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => {
     return runClientEffect(
       mobileWorkflow(function* () {
         if (submitting.current || !connected || attachmentsBusy) return
@@ -86,7 +87,7 @@ export function QuestionForm({
         setError('')
         setBusy(true)
         return yield* mobileWorkflow(function* () {
-          yield* nativeEffect(() => onAnswer(answers))
+          yield* nativeEffect(() => onAnswer(answers, outcomes))
           if (runtimeId)
             yield* nativeEffect(() =>
               clearNotificationAnswerDraft(runtimeId, request.id).catch(() => {
@@ -166,10 +167,23 @@ export function QuestionForm({
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <Action
           secondary
-          label="Decline"
+          label={request.prompt.unanswered ? 'Dismiss' : 'Decline'}
           disabled={busy || !connected || attachmentsBusy}
           onPress={() => void submit(null)}
         />
+        {request.prompt.unanswered && (
+          <Action
+            label="I replied in chat"
+            secondary
+            disabled={busy || !connected || attachmentsBusy}
+            onPress={() =>
+              void submit(
+                {},
+                Object.fromEntries(request.prompt.questions.map((q) => [q.id, 'replied_in_chat'])),
+              )
+            }
+          />
+        )}
         <Action
           label="Send answers"
           disabled={busy || !connected || attachmentsBusy}

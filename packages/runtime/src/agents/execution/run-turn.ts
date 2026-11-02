@@ -1605,7 +1605,7 @@ ${
                           options,
                         )
                       : Promise.resolve('deny' as const),
-                  ask: (prompt, signal, validate) =>
+                  ask: (prompt, signal, validate, onUnanswered) =>
                     acceptsNativeInteractions()
                       ? this.questions.request(
                           id,
@@ -1620,6 +1620,8 @@ ${
                               kind: 'answer',
                               state: 'dispatched',
                             }),
+                          undefined,
+                          onUnanswered,
                         )
                       : Promise.resolve(null),
                 },
@@ -1627,7 +1629,7 @@ ${
                   acceptsProviderEvents()
                     ? this.approvals.request(id, title, detail, questionSignal, kind, options)
                     : Promise.resolve('deny' as const),
-                ask: (prompt, signal, validate) =>
+                ask: (prompt, signal, validate, onUnanswered) =>
                   acceptsProviderEvents()
                     ? this.questions.request(
                         id,
@@ -1642,6 +1644,8 @@ ${
                             kind: 'answer',
                             state: 'dispatched',
                           }),
+                        undefined,
+                        onUnanswered,
                       )
                     : Promise.resolve(null),
               },

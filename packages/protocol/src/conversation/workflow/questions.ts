@@ -31,6 +31,8 @@ export const questionPromptSchema = refine(
     title: maxValue(minValue(Schema.String, 1), 12000),
     /** Older harnesses block by default; Astra can ask while continuing its turn. */
     blocking: Schema.optional(Schema.Boolean),
+    /** This provider preserves explicit unanswered outcomes. */
+    unanswered: Schema.optional(Schema.Boolean),
     questions: maxValue(minValue(mutableArray(agentQuestionSchema), 1), 20),
   }),
   (v) => new Set(v.questions.map((q) => q.id)).size === v.questions.length,
@@ -60,10 +62,16 @@ export const questionAttachmentIdsSchema = refine(
 )
 export type QuestionAttachmentIds = Schema.Schema.Type<typeof questionAttachmentIdsSchema>
 export type QuestionAttachments = Record<string, Attachment[]>
+export const questionOutcomesSchema = Schema.Record(
+  maxValue(minValue(Schema.String, 1), 200),
+  Schema.mutableKey(Schema.Literals(['skipped', 'replied_in_chat', 'dismissed'])),
+)
+export type QuestionOutcomes = typeof questionOutcomesSchema.Type
 export const questionReplySchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 200),
   answers: Schema.NullOr(questionAnswersSchema),
   attachmentIdsByQuestion: Schema.optional(questionAttachmentIdsSchema),
+  outcomes: Schema.optional(questionOutcomesSchema),
 })
 export type AgentQuestion = Schema.Schema.Type<typeof agentQuestionSchema>
 export type QuestionPrompt = Schema.Schema.Type<typeof questionPromptSchema>

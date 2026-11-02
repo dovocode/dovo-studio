@@ -45,10 +45,18 @@ overrides:
   compression@<1.8.2: 1.8.2
   prosemirror-view@<1.42.6: 1.42.6
   katex@<0.18.2: 0.18.2
+  # Update vulnerable transitive releases, retaining legacy v1 body-parser and glob APIs.
+  node-forge@<1.4.2: 1.4.2
+  zod@>=4.0.0 <4.6.6: 4.6.7
+  body-parser@>=2.0.0 <2.4.0: 2.4.0
+  fast-uri@>=3.0.0 <3.1.9: 3.1.9
+  seroval@<1.6.11: 1.6.11
+  minimatch@>=9.0.0 <11.0.1: 11.0.1
+  glob@>=9.0.0 <14.0.2: 14.0.2
   # Preserve TanStack Start's npm alias during pnpm dependency resolution.
   h3-v2: npm:h3@2.0.1-rc.20
   # OpenCode protocol/schema still pin a v4 RC; keep their codecs on the application runtime.
-  effect: 4.1.0
+  effect: 4.1.1
   # Shiki grammars and editor state must share the same TextMate INITIAL identity.
   '@shikijs/vscode-textmate': 10.1.0
   # Runtime hosts install Claude CLI themselves; retain only the Agent SDK.
@@ -74,21 +82,19 @@ overrides:
   vite@*: 'catalog:'
 
 patchedDependencies:
-  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   braces@3.0.3: patches/braces@3.0.3.patch
   electron-chrome-extensions@4.10.0: patches/electron-chrome-extensions@4.10.0.patch
-  expo-modules-autolinking@58.0.14: patches/expo-modules-autolinking@58.0.14.patch
-  node-forge@1.4.0: patches/node-forge@1.4.0.patch
+  expo-modules-autolinking@58.0.16: patches/expo-modules-autolinking@58.0.16.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
   react-native-enriched-markdown@1.1.1: patches/react-native-enriched-markdown@1.1.1.patch
   react-native-tcp-socket@6.4.3: patches/react-native-tcp-socket@6.4.3.patch
   react-native-webrtc@155.0.1: patches/react-native-webrtc@155.0.1.patch
   react-native-webview@14.0.1: patches/react-native-webview@14.0.1.patch
   sprintf-js@1.1.3: patches/sprintf-js@1.1.3.patch
-  werift@0.25.1: patches/werift@0.25.1.patch
+  werift@0.26.0: patches/werift@0.26.0.patch
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.3.0
-  vite-plus: 1.3.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
 peerDependencyRules:
   allowAny:
     - vite

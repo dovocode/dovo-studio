@@ -182,6 +182,9 @@ const mocks = vi.hoisted(() => {
 vi.mock('./browser-document-pip-controls.js', () => ({
   DOCUMENT_PIP_HEADER_HEIGHT: 36,
   createDocumentPipWindow: mocks.pipWindow,
+  dismissDocumentPipWindow: (window: { isDestroyed: () => boolean; close: () => void }) => {
+    if (!window.isDestroyed()) window.close()
+  },
 }))
 vi.mock('./browser-permissions.js', () => ({
   forgetPrivateBrowserPermissions: () => {},

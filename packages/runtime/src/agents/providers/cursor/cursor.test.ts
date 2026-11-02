@@ -70,7 +70,8 @@ function sdkFixture() {
     },
   )
   const dispose = vi.fn<() => Promise<void>>(async () => {})
-  const agent = { agentId: 'session', send, [Symbol.asyncDispose]: dispose }
+  const summarize = vi.fn<import('@cursor/sdk').SDKAgent['summarize']>(async () => sdkRun)
+  const agent = { agentId: 'session', send, summarize, [Symbol.asyncDispose]: dispose }
   const factory = {
     create: vi.fn<(options: AgentOptions) => Promise<typeof agent>>(async (_options) => agent),
     resume: vi.fn<(id: string, options: AgentOptions) => Promise<typeof agent>>(
@@ -87,6 +88,7 @@ function sdkFixture() {
     cancel,
     steer,
     send,
+    summarize,
     options: () => sendOptions,
     result: (value: Promise<RunResult>) => {
       result = value
@@ -318,7 +320,12 @@ it('honors cancellation while SDK creation is still pending', async () => {
   )
   const pending = f.session.run(input)
   await f.session.cancel()
-  resolve({ agentId: 'late', send: f.send, [Symbol.asyncDispose]: f.dispose })
+  resolve({
+    agentId: 'late',
+    send: f.send,
+    summarize: f.summarize,
+    [Symbol.asyncDispose]: f.dispose,
+  })
   await expect(pending).rejects.toThrow('cancelled')
   expect(f.send).not.toHaveBeenCalled()
   expect(f.dispose).toHaveBeenCalledOnce()
@@ -421,9 +428,11 @@ it('cancels an admitted worker turn and rejects unexpected worker closure', asyn
   ).rejects.toThrow('Stopped')
   await expect(f.adapter.run({ ...f.run, prompt: 'disconnect' })).rejects.toThrow(/exited|closed/)
 })
-it('rejects unsupported modes and manual compaction before launching SDK work', async () => {
+it('rejects unsupported modes and compaction without a session before launching SDK work', async () => {
   const f = await wireFixture()
-  await expect(f.adapter.run({ ...f.run, compact: true })).rejects.toThrow('no manual compaction')
+  await expect(f.adapter.run({ ...f.run, sessionId: undefined, compact: true })).rejects.toThrow(
+    'existing local session',
+  )
   await expect(
     f.adapter.run({ ...f.run, agent: { ...f.run.agent, permission: 'ask' } }),
   ).rejects.toThrow('native mode')
@@ -464,4 +473,42 @@ it('starts the real SDK worker and reports configuration errors without running 
   await expect(
     createCursorAdapter().run({ ...f.run, agent: { ...f.run.agent, model: '' } }),
   ).rejects.toThrow('Choose a Cursor model')
+})
+
+it.each([false, true])(
+  'compacts an existing local session with fallback=%s without a prompt',
+  async (fallback) => {
+    const f = sdkFixture()
+    f.messages.push({
+      type: 'summary',
+      agent_id: 'session',
+      run_id: 'run',
+      status: 'completed',
+      fallback,
+    })
+    await f.session.run({ ...input, sessionId: 'session', compact: true })
+    expect(f.summarize).toHaveBeenCalledOnce()
+    expect(f.send).not.toHaveBeenCalled()
+    expect(f.events).toContainEqual({ type: 'accepted', steer: false })
+    expect(f.events).toContainEqual({
+      type: 'event',
+      name: 'dovo/compaction/completed',
+      payload: { fallback },
+    })
+    expect(
+      f.events.some((event) => event.type === 'text' && event.text.includes('trimmed transcript')),
+    ).toBe(fallback)
+    expect(f.dispose).toHaveBeenCalledOnce()
+  },
+)
+it('requires successful summary and run acknowledgements before recording compaction', async () => {
+  const f = sdkFixture()
+  await expect(f.session.run({ ...input, sessionId: 'session', compact: true })).rejects.toThrow(
+    'did not report',
+  )
+  expect(
+    f.events.some((event) => event.type === 'event' && event.name === 'dovo/compaction/completed'),
+  ).toBe(false)
+  expect(f.cancel).toHaveBeenCalledOnce()
+  expect(f.dispose).toHaveBeenCalledOnce()
 })

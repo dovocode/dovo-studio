@@ -2893,17 +2893,56 @@ try {
   )
   const regularTab = compactSidebar.locator('[data-browser-tab-id="compact-4"]')
   const regularTitle = await regularTab.locator('.studio-browser-tab-title').boundingBox()
+  const regularIdentity = await regularTab.locator('.studio-browser-tab-profile').boundingBox()
+  const regularFavicon = await regularTab.locator('.studio-browser-tab-favicon').boundingBox()
+  assert.ok(
+    regularIdentity.y >= regularTitle.y + regularTitle.height &&
+      Math.abs(regularIdentity.x - regularTitle.x) < 1,
+    'Regular tab identity badges sit below and align with the title',
+  )
+  assert.equal(regularFavicon.width, 24, 'Regular tabs use a smaller favicon than pinned tabs')
+  assert.equal(
+    await regularTab.locator('.studio-browser-tab-source .studio-browser-tab-profile').count(),
+    0,
+    'Only pinned tabs overlay identity badges on the icon',
+  )
   const regularActivity = await regularTab.getByLabel('Tab activity', { exact: true }).boundingBox()
   assert.ok(
-    regularActivity.y >= regularTitle.y + regularTitle.height &&
-      Math.abs(regularActivity.x - regularTitle.x) < 1,
-    'Regular tab activity sits below and aligns with the title',
+    regularActivity.x >= regularIdentity.x + regularIdentity.width &&
+      Math.abs(
+        regularActivity.y +
+          regularActivity.height / 2 -
+          (regularIdentity.y + regularIdentity.height / 2),
+      ) < 1,
+    'Regular tab activity shares one row with the identity badges below the title',
   )
   assert.equal(
     await regularTab.locator('button button').count(),
     0,
     'Mute remains a separate control',
   )
+  await firstTile.getByRole('img', { name: 'Camera on in Website 0', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-0',
+  )
+  await regularTab.getByRole('img', { name: 'Microphone on in Website 4', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-4',
+  )
+  await firstTile.click({ position: { x: 3, y: 3 } })
+  await controlsPage.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'compact-0',
+  )
+  await regularTab.getByRole('button', { name: 'Settle tab Website 4', exact: true }).click()
+  assert.equal(
+    await controlsPage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+    ),
+    'compact-0',
+    'Settle never selects another tab',
+  )
+  // Restore the selection used by the remaining page-permission checks.
+  await regularTab.locator('[data-browser-tab-select]').dispatchEvent('click')
   await pins.first().hover()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-refined.png' })
   const awakeIcon = await pins.first().getByLabel('Kept awake').boundingBox()
@@ -3165,6 +3204,18 @@ try {
     await remoteIconRow.locator('img').count(),
     0,
     'A definitive missing icon clears the remote favicon',
+  )
+  await firstTile.locator('[data-browser-tab-select]').click()
+  await remoteIconRow
+    .locator('..')
+    .getByRole('button', { name: /^Close tab / })
+    .click()
+  assert.equal(
+    await controlsPage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+    ),
+    'compact-0',
+    'Close never selects another tab',
   )
   await controlsPage.close()
 
