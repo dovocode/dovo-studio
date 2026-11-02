@@ -312,6 +312,12 @@
 .task-composer [data-composer-stop]::after {
   inset: -1px;
   opacity: 1;
+  background: conic-gradient(
+    color-mix(in srgb, var(--destructive) 40%, var(--background)) 0deg,
+    color-mix(in srgb, var(--destructive) 75%, var(--background)) 200deg,
+    var(--destructive) 285deg,
+    color-mix(in srgb, var(--destructive) 40%, var(--background)) 360deg
+  );
   mask-image: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
   filter: none;
 }

@@ -22,6 +22,7 @@ const mocks = {
     window.setContextVisible=value=>{preferences.showContextUsage=value};
     window.setSendOptions=value=>{preferences.showSendOptions=value};
     window.setMinimalComposer=value=>{preferences.minimalComposer=value};
+    window.setSourceToggle=value=>{preferences.showMarkdownSourceToggle=value};
     window.setRichText=value=>{preferences.richTextComposer=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
@@ -551,12 +552,17 @@ try {
               transform: style.transform,
               filter: style.filter,
               mask: style.maskImage,
+              background: style.backgroundImage,
             }
           }, pseudo)
         assert.equal((await glow()).animation, 'studio-stop-glow')
         assert.notEqual((await glow()).display, 'none')
         assert.equal((await glow('::after')).animation, 'studio-stop-glow')
         assert.equal((await glow('::after')).filter, 'none', 'Border stays sharp')
+        assert.ok(
+          !(await glow('::after')).background.includes('rgba(0, 0, 0, 0)'),
+          'The entire rotating border stays visible',
+        )
         assert.notEqual((await glow('::after')).mask, 'none')
         const firstBorder = (await glow('::after')).transform
         const firstGlow = (await glow()).transform
@@ -761,9 +767,27 @@ try {
     .first()
     .click({ position: { x: 20, y: 20 } })
   await settleComposer()
+  assert.equal(
+    await page.locator('.composer-mode-toggle').count(),
+    0,
+    'Markdown source toolbar toggle is hidden by default',
+  )
   await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Markdown source', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Stashed drafts', exact: true }).waitFor()
   await page.keyboard.press('Escape')
+  await input.focus()
+  await settleComposer()
+  await page.evaluate(() => {
+    window.setSourceToggle(true)
+    window.setTask({})
+  })
+  await page.locator('.composer-mode-toggle').waitFor()
+  await page.evaluate(() => {
+    window.setSourceToggle(false)
+    window.setTask({})
+  })
+  await page.locator('.composer-mode-toggle').waitFor({ state: 'detached' })
   const mainCount = await page.evaluate(
     () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
   )

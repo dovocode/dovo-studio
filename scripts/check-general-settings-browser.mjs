@@ -599,6 +599,25 @@ try {
     false,
   )
   await minimalComposer.click()
+  const sourceToggle = page.getByRole('switch', {
+    name: 'Show Markdown source toggle',
+    exact: true,
+  })
+  assert.equal(await sourceToggle.getAttribute('aria-checked'), 'false')
+  await sourceToggle.click()
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).showMarkdownSourceToggle,
+    ),
+    true,
+  )
+  await sourceToggle.click()
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).showMarkdownSourceToggle,
+    ),
+    false,
+  )
   await page.getByRole('switch', { name: 'Formatted composer preview', exact: true }).click()
   assert.equal(
     await page

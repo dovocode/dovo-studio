@@ -75,6 +75,11 @@ export default function ConversationSettings() {
               'Format messages as you type. Turn off, or press ⌘/Ctrl+Shift+M, to edit the exact Markdown source.',
             ],
             [
+              'showMarkdownSourceToggle',
+              'Show Markdown source toggle',
+              'Show the Markdown source button in the composer toolbar. It is always available in the + menu and with ⌘/Ctrl+Shift+M.',
+            ],
+            [
               'markdownComposerPreview',
               'Formatted composer preview',
               'Show rendered Markdown above the message as you type.',

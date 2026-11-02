@@ -1074,6 +1074,15 @@ export function Composer({
   const extraActions = !pendingQuestion && (
     <>
       {!preferences.showPlanButton && planControl}
+      <ComposerModeToggle
+        input={input}
+        disabled={!!task.archivedAt}
+        menu
+        onToggle={() => {
+          setAddOpen(false)
+          input.current?.focus()
+        }}
+      />
       <DraftStash
         key={JSON.stringify(['draft-stash', stashRuntimeId, task.id])}
         scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
@@ -1227,7 +1236,9 @@ export function Composer({
                   </Popover.Portal>
                 </Popover.Root>
               </div>
-              <ComposerModeToggle input={input} disabled={!!task.archivedAt} />
+              {preferences.showMarkdownSourceToggle && (
+                <ComposerModeToggle input={input} disabled={!!task.archivedAt} />
+              )}
               {preferences.showPlanButton && planControl}
               {!startup && !projectSettings && (
                 <Popover.Root open={infoOpen} onOpenChange={setInfoOpen}>

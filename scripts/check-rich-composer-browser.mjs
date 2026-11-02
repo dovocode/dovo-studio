@@ -21,11 +21,12 @@ const history = () => messages;
 const command = id => window.commands.push(id);
 const alternative = () => window.alternatives++;
 function Composer() {
+  const [menu, setMenu] = useState(false); window.setMenuMode = setMenu;
   const [tick, setTick] = useState(0); window.runtimeTick = () => setTick(value => value + 1);
   const input = useRef(null);
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   return <form data-runtime-tick={tick} onSubmit={event => { event.preventDefault(); window.submits.push(controller.text) }}>
-    <ComposerModeToggle input={input} />
+    <ComposerModeToggle input={input} menu={menu} />
     <ComposerEditor controller={controller} taskId="task" input={input} resources={resources}
       messages={history} onCommand={command} onAlternativeSubmit={alternative}
       autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
@@ -65,6 +66,7 @@ export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
 export const useResolvedTheme = () => 'dark';`
             : `export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
+export const Button = ({ children, variant, ...props }) => <button {...props}>{children}</button>;
 export const IconButton = ({ label, children, ...props }) => <button aria-label={label} {...props}>{children}</button>;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
           loader: 'tsx',
@@ -165,6 +167,20 @@ try {
   await editor.waitFor()
   await page.keyboard.type('X')
   assert.equal(await text(), '# TiXtle\n\nSome **bold** words')
+
+  // The + menu action preserves the draft and supports switching back with the shortcut.
+  await page.evaluate(() => window.setMenuMode(true))
+  await editor.focus()
+  const beforeMenu = await text()
+  const menuToggle = page.getByRole('button', { name: 'Markdown source', exact: true })
+  await menuToggle.click()
+  await source.waitFor()
+  assert.equal(await source.inputValue(), beforeMenu)
+  assert.equal(await menuToggle.getAttribute('aria-pressed'), 'true')
+  await source.press('ControlOrMeta+Shift+m')
+  await editor.waitFor()
+  assert.equal(await text(), beforeMenu)
+  await page.evaluate(() => window.setMenuMode(false))
 
   // History recall works from the start of the rich editor.
   await setDraft('')

@@ -1,7 +1,7 @@
 import type { RefObject } from 'react'
 import { Pilcrow } from 'lucide-react'
 import { readAppPreferences, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
-import { IconButton } from '@dovo/studio-ui'
+import { Button, IconButton } from '@dovo/studio-ui'
 import { composerSelection } from './composer-input'
 
 /** The rich editor loads on demand, so Markdown source users never download it. */
@@ -45,11 +45,33 @@ export function takeModeCaret(input: RefObject<HTMLElement | null>) {
 export function ComposerModeToggle({
   input,
   disabled,
+  menu = false,
+  onToggle,
 }: {
   input: RefObject<HTMLElement | null>
   disabled?: boolean
+  menu?: boolean
+  onToggle?: () => void
 }) {
   const { richTextComposer } = useAppPreferences()
+  if (menu)
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        aria-pressed={!richTextComposer}
+        className="h-9 w-full justify-start gap-2 rounded-md px-2 text-xs"
+        disabled={disabled}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => {
+          onToggle?.()
+          void toggleComposerMode(input)
+        }}
+      >
+        <Pilcrow className="size-3.5" />
+        Markdown source
+      </Button>
+    )
   return (
     <IconButton
       type="button"
