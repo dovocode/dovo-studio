@@ -75,13 +75,19 @@ try {
   await page.getByRole('button', { name: /TEAM-1 · Fix login/ }).click()
   await page.getByRole('heading', { name: 'Preview TEAM-1' }).waitFor()
   await page.getByRole('button', { name: 'Close preview', exact: true }).click()
-  assert.equal(await page.getByRole('complementary', { name: 'Jira issue preview' }).count(), 0)
+  // A view transition captures the old panel before committing its removal.
+  await page
+    .getByRole('complementary', { name: 'Jira issue preview' })
+    .waitFor({ state: 'detached' })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'List', exact: true }).click()
   await page.getByRole('button', { name: /TEAM-1 · Fix login/ }).click()
   await page.getByRole('heading', { name: 'Preview TEAM-1' }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Filters', exact: true }).isVisible(), false)
   await page.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await page
+    .getByRole('complementary', { name: 'Jira issue preview' })
+    .waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Filters', exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() => document.activeElement?.getAttribute('data-work-item')),
@@ -105,6 +111,9 @@ try {
   await page.getByRole('heading', { name: 'Preview TEAM-1', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.currentRuntime), 'local')
   await page.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await page
+    .getByRole('complementary', { name: 'Jira issue preview' })
+    .waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'My issues', exact: true }).click()
   await page.getByText('No matching issues', { exact: true }).waitFor()
   assert.equal(await page.getByRole('heading', { name: 'Preview TEAM-1' }).count(), 0)
