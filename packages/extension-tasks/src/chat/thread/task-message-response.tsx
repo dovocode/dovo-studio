@@ -1,3 +1,4 @@
+import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { selectConversationConnection } from './workspace-selection'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import {
@@ -272,16 +273,26 @@ export function TaskMessageResponse({
 }
 
 function RemoteChatImage({ uri, label }: { uri: string; label: string }) {
+  const [open, setOpen] = useState(false)
   return (
     <span className="inline-flex max-w-full flex-col items-start gap-1">
-      <a href={uri} target="_blank" rel="noreferrer">
+      <button type="button" aria-label={`Preview ${label}`} onClick={() => setOpen(true)}>
         <img
           loading="lazy"
           src={uri}
           alt={label}
           className="max-h-96 max-w-full rounded-lg object-contain"
         />
-      </a>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogTitle>{label}</DialogTitle>
+          <ImageViewer src={uri} alt={label} className="h-[55dvh] min-h-48" />
+          <a href={uri} target="_blank" rel="noreferrer" className="text-xs underline">
+            Open original
+          </a>
+        </DialogContent>
+      </Dialog>
       <EditChatImage source={{ uri }} label={label} />
     </span>
   )

@@ -1,3 +1,4 @@
+import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
 import { useContext, useEffect, useRef } from 'react'
@@ -181,8 +182,8 @@ export function MessageAttachments({
             {preview?.attachment.mime} · {preview?.attachment.size} bytes
           </DialogDescription>
           {preview && isImageAttachment(preview.attachment) ? (
-            <img
-              className="max-h-[60dvh] object-contain"
+            <ImageViewer
+              className="h-[55dvh] min-h-48"
               alt={preview.attachment.name}
               src={`data:${preview.attachment.mime};base64,${preview.data}`}
             />

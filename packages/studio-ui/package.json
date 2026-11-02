@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./human-input-shortcuts": "./src/human-input-shortcuts.ts",
+    "./image-viewer": "./src/image-viewer.tsx",
     "./clipboard": "./src/clipboard.ts",
     "./sharing-people": "./src/sharing-people.tsx",
     "./code-themes": "./src/code-themes.ts",

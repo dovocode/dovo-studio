@@ -1,3 +1,4 @@
+import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import {
   createRuntimeClient,
   filePreviewSchema,
@@ -97,17 +98,14 @@ export function ProjectImagePreview({
           </Button>
         </div>
       ) : current?.uri ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-          <img
-            src={current.uri}
-            alt={path}
-            referrerPolicy="no-referrer"
-            className="max-h-full max-w-full object-contain"
-            onError={() =>
-              setResult({ key, error: 'Could not load this image. Retry or open the original.' })
-            }
-          />
-        </div>
+        <ImageViewer
+          src={current.uri}
+          alt={path}
+          className="min-h-48 flex-1 p-2"
+          onError={() =>
+            setResult({ key, error: 'Could not load this image. Retry or open the original.' })
+          }
+        />
       ) : (
         <p role="status" className="p-4 text-xs text-muted-foreground">
           Loading image…

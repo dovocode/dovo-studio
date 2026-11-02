@@ -3367,7 +3367,9 @@ try {
   const beforeViewport = await orderPage.evaluate(() => window.calls.length)
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
   await orderPage.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('phone')
-  await orderPage.keyboard.press('Escape')
+  await orderPage
+    .getByRole('combobox', { name: 'Viewport', exact: true })
+    .waitFor({ state: 'hidden' })
   await orderPage.waitForFunction(
     (start) => window.calls.slice(start).some((call) => call.action === 'show' && call.viewport),
     beforeViewport,
@@ -3380,6 +3382,21 @@ try {
     false,
     'Viewport reconfiguration must not leave the page',
   )
+  const portrait = await orderPage.evaluate(
+    () => window.calls.findLast((call) => call.action === 'show').viewport,
+  )
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('button', { name: 'Rotate', exact: true }).click()
+  await orderPage.waitForFunction(({ width, height }) => {
+    const last = window.calls.findLast((call) => call.action === 'show')
+    return last?.viewport?.width === height && last?.viewport?.height === width
+  }, portrait)
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('fill')
+  await orderPage.waitForFunction(() => {
+    const last = window.calls.findLast((call) => ['show', 'hide'].includes(call.action))
+    return last?.action === 'show' && !last.viewport
+  })
   const beforeLeave = await orderPage.evaluate(() => window.calls.length)
   await orderPage.evaluate(() => {
     window.fixtureNavigatedAway = true

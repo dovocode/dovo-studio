@@ -393,6 +393,7 @@ function BrowserContent({
   }, [browser, shared, tabs])
   const browserKey = nativeKey(activeTab)
   const [findOpen, setFindOpen] = useState(false)
+  const [optionsOpen, setOptionsOpen] = useState(false)
   const [findRequest, setFindRequest] = useState(0)
   const [pageRevision, setPageRevision] = useState(0)
   const [zoomFactor, setZoomFactor] = useState(1)
@@ -1935,7 +1936,7 @@ function BrowserContent({
     if (mode === 'remote' && remoteOnline) remote.current?.viewport(preset, landscape)
   }, [mode, activeTab, preset, landscape, remoteOnline])
   const browserOptions = (pageActions?: ReactNode) => (
-    <Popover.Root>
+    <Popover.Root open={optionsOpen} onOpenChange={setOptionsOpen}>
       <Popover.Trigger asChild>
         <IconButton
           type="button"
@@ -2251,7 +2252,10 @@ function BrowserContent({
                       aria-label="Viewport"
                       className="w-full"
                       value={preset}
-                      onChange={(e) => setPreset(e.target.value)}
+                      onChange={(e) => {
+                        setPreset(e.target.value)
+                        setOptionsOpen(false)
+                      }}
                     >
                       {previewPresets.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -2267,7 +2271,10 @@ function BrowserContent({
                     variant="ghost"
                     className="studio-browser-rotate"
                     disabled={preset === 'fill'}
-                    onClick={() => setLandscape((v) => !v)}
+                    onClick={() => {
+                      setLandscape((v) => !v)
+                      setOptionsOpen(false)
+                    }}
                   >
                     <Rotate3D size={17} /> Rotate
                   </Button>

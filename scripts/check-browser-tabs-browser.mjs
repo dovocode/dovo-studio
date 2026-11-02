@@ -148,7 +148,7 @@ try {
     throw new Error('Browser options submitted the address form')
   if (!(await page.evaluate(() => window.preferences.length)))
     throw new Error('Agent browser access control stopped working')
-  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'Viewport', exact: true }).waitFor({ state: 'hidden' })
   await input.press('Enter')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
   const shown = await page.evaluate(() => window.calls.find((call) => call.action === 'show'))
@@ -431,7 +431,7 @@ try {
   await page.waitForFunction(() =>
     window.browserViewports.some((viewport) => viewport.preset === 'tablet'),
   )
-  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'Viewport', exact: true }).waitFor({ state: 'hidden' })
   if (await page.getByText('Choose a device', { exact: true }).count())
     throw new Error('Device panel leaked into remote browser')
   const first = await page.getByRole('tab', { name: /Page/ }).textContent()
