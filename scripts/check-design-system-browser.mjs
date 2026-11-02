@@ -561,6 +561,8 @@ try {
 
     await openStory('dovo-composers-production-task-composer--full-production-composer')
     await page.getByRole('button', { name: 'New task', exact: true }).click()
+    // A toolbar click from the empty focused editor must survive focus leaving the editor.
+    await page.getByRole('textbox', { name: 'Message task', exact: true }).focus()
     await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
     await page.getByRole('combobox').waitFor()
     await page.keyboard.press('Escape')

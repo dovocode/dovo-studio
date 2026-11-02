@@ -191,6 +191,7 @@ export function Composer({
   const machineMoving = workspaceMoving || localMachineMoving
   const [asideCreating, setAsideCreating] = useState(false)
   const [asideBusy, setAsideBusy] = useState(false)
+  const composerRoot = useRef<HTMLDivElement>(null)
   const [editorFocused, setEditorFocused] = useState(false)
   const syncEditorFocus = useCallback(
     () => setEditorFocused(document.activeElement === input.current),
@@ -357,7 +358,8 @@ export function Composer({
     if (composingDuringSend) input.current?.focus()
   }, [composingDuringSend])
   useLayoutEffect(() => {
-    if (editorFocused && document.activeElement !== input.current) setEditorFocused(false)
+    if (editorFocused && !composerRoot.current?.contains(document.activeElement))
+      setEditorFocused(false)
   })
   const appliedInsert = useRef<string | null>(null)
   useEffect(() => {
@@ -1121,8 +1123,15 @@ export function Composer({
   return (
     <div
       className="task-composer shrink-0"
-      onFocusCapture={() => setEditorFocused(document.activeElement === input.current)}
-      onBlurCapture={() => setEditorFocused(false)}
+      ref={composerRoot}
+      onFocusCapture={() => {
+        if (document.activeElement === input.current) setEditorFocused(true)
+      }}
+      onBlurCapture={(event) => {
+        // Moving from the editor to a toolbar button must not move that button
+        // between pointer-down and click by collapsing the composer.
+        if (!event.currentTarget.contains(event.relatedTarget)) setEditorFocused(false)
+      }}
     >
       {meter && meter.level !== 'ok' && !pendingQuestion && (
         <div className="mx-auto mb-1 flex max-w-[var(--chat-max)] justify-end">
@@ -1191,11 +1200,6 @@ export function Composer({
                       type="button"
                       variant="ghost"
                       aria-label="More composer actions"
-                      // Keep editor focus until click opens the menu. Blurring on mouse-down
-                      // collapses the compact composer and moves the button before mouse-up.
-                      onMouseDown={(event) => {
-                        if (event.button === 0) event.preventDefault()
-                      }}
                       aria-pressed={!preferences.showPlanButton && plan}
                       className={cn(
                         'composer-add-menu',
