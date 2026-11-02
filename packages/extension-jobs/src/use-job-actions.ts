@@ -57,6 +57,12 @@ export function useJobActions() {
         acknowledgeAutomationStart(connection, id, requestId)
         select(run.id)
       }),
+    remove: (id: string, onDeleted: () => void) =>
+      act(async () => {
+        if (!connection) throw new Error('Connect to this computer before deleting an automation.')
+        await request('/api/jobs/delete', { id }, responses.ok)
+        onDeleted()
+      }),
     retry: (id: string, select: (id: string) => void) =>
       act(async () => {
         const run = await request(

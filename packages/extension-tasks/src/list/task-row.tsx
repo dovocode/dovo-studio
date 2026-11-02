@@ -366,8 +366,7 @@ function TaskRowView({
                     highlighted || unread
                       ? 'text-foreground'
                       : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
-                    editable &&
-                      'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
+                    compact && editable && 'pr-24',
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate" data-thread-title>

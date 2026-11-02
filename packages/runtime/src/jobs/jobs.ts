@@ -182,6 +182,23 @@ export class Jobs {
     this.revision++
     return run
   }
+  remove(id: string) {
+    const reservation = this.reserveDeletion([id])
+    try {
+      this.requireIdle(id, undefined, reservation)
+      this.store.transaction(() => {
+        this.store.update((workspace) => ({
+          ...workspace,
+          automations: workspace.automations.filter((flow) => flow.id !== id),
+        }))
+        this.db.prepare('DELETE FROM documents WHERE id=?').run(`webhook:${id}`)
+      })
+      this.next.delete(id)
+      this.scheduleErrors.delete(id)
+    } finally {
+      this.releaseDeletion([id], reservation)
+    }
+  }
   reserveDeletion(ids: readonly string[]) {
     const reservation = Symbol('automation deletion')
     for (const id of ids) {

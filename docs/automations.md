@@ -34,6 +34,14 @@ desktop edits are reported instead of overwritten.
 The mobile editor supports a single ordered path. Existing branching graphs remain visible and
 runnable, and their connections are preserved. Edit those in the desktop/web canvas.
 
+## Delete an automation
+
+On desktop/web, open the automation’s **Automation actions → Delete automation** menu. On mobile,
+open the automation and choose **Delete automation**. Confirm while connected to its computer.
+Deletion is blocked until active runs and their threads have stopped. It removes the saved
+configuration, future triggers and webhook credential; existing threads and stored run history
+remain.
+
 ## GitHub event triggers
 
 Select **GitHub event** on the trigger node (desktop/web) or in the mobile editor. Enter the GitHub

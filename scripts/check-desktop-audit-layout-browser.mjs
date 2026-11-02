@@ -46,7 +46,7 @@ window.sources=['MacBook Pro','Linux workstation with an unusually long saved co
 window.store={workspace,snapshot,connected:true,activeRuntimeId:'0',runtimes:window.sources,connection:window.sources[0].profile.connection,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 window.owner={name:'MacBook Pro',online:true,repositories:[repo],agents:[{id:'agent',name:'Agent',provider:'codex',model:'',endpoint:''}],acpInstallations:[]};window.workSource={key:'repo',scope:'0',connected:true,repository:repo,name:repo.name,runtimeName:'MacBook Pro',request:async()=>({issues:true,pipelineActions:['run']})};
 const baseTask={id:'task',repositoryId:'repo',title:'Short title',status:'draft',files:[],linkedCheckouts:[],turns:[]};
-function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false),[archived,setArchived]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread);setArchived(!!options.archived)};const task={...baseTask,archived,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={{...task,agentId:'agent',linkedPullRequests:[{number:42,title:'Fixture PR',url:'https://github.com/o/r/pull/42',repositoryUrl:'https://github.com/o/r'}],subagents:[{id:'child',name:'Child',provider:'codex',status:'working',startedAt:'2026-10-24T09:00:00Z',updatedAt:'2026-10-24T09:00:00Z'}]}} owner={window.owner} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={false} disabled={false}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false),[archived,setArchived]=useState(false),[editable,setEditable]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread);setArchived(!!options.archived);setEditable(!!options.editable)};const task={...baseTask,archived,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={{...task,agentId:'agent',linkedPullRequests:[{number:42,title:'Fixture PR',url:'https://github.com/o/r/pull/42',repositoryUrl:'https://github.com/o/r'}],subagents:[{id:'child',name:'Child',provider:'codex',status:'working',startedAt:'2026-10-24T09:00:00Z',updatedAt:'2026-10-24T09:00:00Z'}]}} owner={window.owner} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={editable} disabled={false}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
   write: false,
@@ -153,6 +153,32 @@ try {
   const tools = await page.getByRole('group', { name: 'Task workspace' }).boundingBox()
   assert.ok(title.y + title.height <= tools.y)
   await page.screenshot({ path: '/tmp/dovo-desktop-audit-task-pane-320.png' })
+  for (const width of [240, 320, 390, 976]) {
+    await setWidth(width)
+    await show('rows', { editable: true })
+    const row = page.locator('.studio-thread-row')
+    await page.mouse.move(width - 1, 699)
+    const titleWidth = await row
+      .locator('[data-thread-title]')
+      .evaluate((node) => node.getBoundingClientRect().width)
+    await row.hover()
+    assert.equal(
+      await row
+        .locator('[data-thread-title]')
+        .evaluate((node) => node.getBoundingClientRect().width),
+      titleWidth,
+      'Hover controls do not shorten the thread title',
+    )
+    assert.equal(
+      await row
+        .locator('.studio-thread-card-context')
+        .first()
+        .evaluate((node) => getComputedStyle(node).paddingRight),
+      '96px',
+      'Project metadata still makes room for hover controls',
+    )
+    await page.mouse.move(width - 1, 699)
+  }
   for (const width of [240, 320, 390, 976]) {
     await setWidth(width)
     for (const archived of [false, true]) {
