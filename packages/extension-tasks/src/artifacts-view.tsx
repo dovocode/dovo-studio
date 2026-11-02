@@ -1,3 +1,4 @@
+import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
@@ -89,6 +90,7 @@ const savedTime = (value: string) =>
   })
 
 export default function ArtifactsView() {
+  const { transition, style: detailStyle } = useDetailTransition()
   const { runtimes, readRuntime, runtimeReadCache } = useWorkspace()
   const [sidebarVisible] = useLeftSidebar()
   const [search, setSearch] = useState(remembered.search)
@@ -219,9 +221,11 @@ export default function ArtifactsView() {
         sameArtifact(artifact, { taskId: selection.taskId, id: selection.artifactId }),
     )
   const selectedSource = selection && sources.find((source) => source.owner === selection.owner)
-  const back = () => setSelection(null)
+  const back = () => transition(() => setSelection(null), 'close')
   const open = ({ source, artifact }: Entry) =>
-    setSelection({ owner: source.owner, taskId: artifact.taskId, artifactId: artifact.id })
+    transition(() =>
+      setSelection({ owner: source.owner, taskId: artifact.taskId, artifactId: artifact.id }),
+    )
   const removed = ({ source, artifact }: Entry) => {
     const saved = stateOf(source)?.saved
     if (saved) {
@@ -637,7 +641,7 @@ export default function ArtifactsView() {
           </div>
         </nav>
         {selection && (
-          <div className="min-h-0 min-w-0 flex-1">
+          <div className="studio-detail-transition min-h-0 min-w-0 flex-1" style={detailStyle}>
             {selected ? (
               <ArtifactDetail
                 key={JSON.stringify([

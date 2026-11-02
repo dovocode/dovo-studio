@@ -632,6 +632,81 @@ textarea {
 .studio-header-layout[data-inline-header='true'] .studio-navigation[aria-label='Main navigation'] {
   margin-top: calc(var(--studio-header-height, 52px) + 8px);
 }
+/* Inline headers begin beside the activity rail. Continue their divider across it. */
+.studio-header-layout[data-inline-header='true'] .studio {
+  position: relative;
+}
+.studio-header-layout[data-inline-header='true']
+  .studio:has(.studio-navigation[aria-label='Main navigation'])::before {
+  content: '';
+  position: absolute;
+  top: calc(var(--studio-header-height) - 1px);
+  left: 0;
+  width: calc(var(--studio-navigation-width) - 4px);
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* Only detail navigation opts in: background refreshes and chat updates stay immediate. */
+.studio-detail-transition {
+  view-transition-class: studio-detail-panel;
+}
+@keyframes studio-detail-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes studio-detail-out {
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@keyframes studio-detail-close {
+  to {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+:root:active-view-transition-type(studio-detail)::view-transition {
+  pointer-events: none;
+}
+:root:active-view-transition-type(studio-detail)::view-transition-group(root),
+:root:active-view-transition-type(studio-detail)::view-transition-new(root) {
+  animation: none;
+}
+:root:active-view-transition-type(studio-detail)::view-transition-old(root) {
+  display: none;
+}
+:root:active-view-transition-type(studio-detail)::view-transition-group(.studio-detail-panel) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+:root:active-view-transition-type(studio-detail)::view-transition-old(.studio-detail-panel) {
+  animation: studio-detail-out 150ms ease-out both;
+  mix-blend-mode: normal;
+}
+:root:active-view-transition-type(studio-detail)::view-transition-new(.studio-detail-panel) {
+  animation: studio-detail-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  mix-blend-mode: normal;
+}
+:root:active-view-transition-type(studio-detail-close)::view-transition-old(.studio-detail-panel) {
+  animation-name: studio-detail-close;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:active-view-transition-type(studio-detail)::view-transition-group(*),
+  :root:active-view-transition-type(studio-detail)::view-transition-old(*),
+  :root:active-view-transition-type(studio-detail)::view-transition-new(*) {
+    animation: none;
+  }
+}
 .studio-pull-header .studio-titlebar-task {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1974,6 +2049,21 @@ select:focus-visible,
 }
 .studio-overview-pane {
   margin: 8px;
+}
+/* Match the 4px gap between the right viewer and its tools rail. Keep the brand
+   anchored while removing the duplicate gutter between the left rail and overview. */
+.studio-header-layout[data-compact='false'] .studio-navigation[aria-label='Main navigation'] {
+  margin-right: 4px;
+}
+.studio-header-layout[data-compact='false']
+  .studio-body:has(> .studio-navigation[aria-label='Main navigation'])
+  .studio-overview-pane {
+  margin-left: 0;
+}
+.studio-header-layout[data-compact='false']
+  .studio:has(.studio-navigation[aria-label='Main navigation'])
+  .studio-titlebar[data-sidebar-brand='true'] {
+  padding-left: calc(var(--studio-brand-inset) + 4px);
 }
 .studio-thread-tools-panel,
 .studio-overview-pane {

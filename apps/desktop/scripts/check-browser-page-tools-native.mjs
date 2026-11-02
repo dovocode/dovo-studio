@@ -54,7 +54,7 @@ const server = createServer((request,response) => {
     "const gathered=peer=>new Promise(resolve=>{if(peer.iceGatheringState==='complete')return resolve();const ready=()=>{if(peer.iceGatheringState==='complete'){peer.removeEventListener('icegatheringstatechange',ready);resolve()}};peer.addEventListener('icegatheringstatechange',ready)});" +
     "await sender.setLocalDescription(await sender.createOffer());await gathered(sender);await receiver.setRemoteDescription(sender.localDescription);" +
     "await receiver.setLocalDescription(await receiver.createAnswer());await gathered(receiver);await sender.setRemoteDescription(receiver.localDescription)})();" +
-    "navigator.mediaSession.setActionHandler('enterpictureinpicture',async()=>{const child=await documentPictureInPicture.requestWindow({width:420,height:280});child.document.body.append(document.getElementById('call'));child.addEventListener('pagehide',()=>{window.closedWhileHidden=document.hidden;if(!document.hidden)document.body.append(child.document.getElementById('call'))},{once:true})});</script>")
+    "navigator.mediaSession.setActionHandler('enterpictureinpicture',async()=>{const child=await documentPictureInPicture.requestWindow({width:420,height:280,disallowReturnToOpener:!!window.disallowReturn});child.document.body.append(document.getElementById('call'));child.addEventListener('pagehide',()=>{window.closedWhileHidden=document.hidden;if(!document.hidden)document.body.append(child.document.getElementById('call'))},{once:true})});</script>")
   else if (request.url === '/frame') response.end('<!doctype html><p>frame world</p>')
   else response.end('<!doctype html><p>Hello <b>world</b> world</p><p hidden>world hidden</p><div id="shadow"></div><iframe src="http://localhost:'+port+'/frame"></iframe><script>document.getElementById("shadow").attachShadow({mode:"open"}).innerHTML="<p>shadow world</p>"</script>')
 })
@@ -229,10 +229,16 @@ try {
     assert.fail('PiP did not paint the incoming '+color+' WebRTC frame')
   }
   for (let cycle=0;cycle<2;cycle++) {
+    await callPage.executeJavaScript('window.disallowReturn='+String(cycle===1))
+    const control=cycle===1?'close':'return'
     await call({action:'hide',key:'call'})
     let header
-    for(let i=0;i<100;i++){header=BrowserWindow.getAllWindows().find(window=>window.isAlwaysOnTop());if(header && !header.webContents.isLoading() && (await header.webContents.executeJavaScript("!!document.querySelector('[data-action=return]')")))break;await wait(20)}
+    for(let i=0;i<100;i++){header=BrowserWindow.getAllWindows().find(window=>window.isAlwaysOnTop());if(header && !header.webContents.isLoading() && (await header.webContents.executeJavaScript("!!document.querySelector('[data-action="+control+"]')")))break;await wait(20)}
     assert.ok(header,'Automatic call PiP opens when leaving its tab')
+    if(cycle===1) {
+      assert.equal(await header.webContents.executeJavaScript("!!document.querySelector('[data-action=return]')"),false,'Teams-style restricted PiP only exposes Close')
+      await call({action:'show',key:'page',url:origin+'/invalid',workspaceBrowser:true,bounds:{x:0,y:40,width:1000,height:760}})
+    }
     const pipPage=header.contentView.children.find(child=>child instanceof WebContentsView).webContents
     assert.equal(pipPage.getBackgroundThrottling(),false,'The adopted PiP guest itself must be unthrottled')
     assert.equal(callPage.getBackgroundThrottling(),false,'The hidden call owner must remain unthrottled')
@@ -241,13 +247,19 @@ try {
     studio.hide()
     await expectVideoColor(pipPage,'red',2)
     assert.ok(await pipPage.executeJavaScript('document.getElementById("call").getVideoPlaybackQuality().totalVideoFrames')>frames,'Incoming video keeps decoding while the main window is hidden')
-    studio.show()
-    const point = await header.webContents.executeJavaScript("(()=>{const rect=document.querySelector('[data-action=return]').getBoundingClientRect();return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}})()")
+    if(cycle===0) studio.show()
+    const point = await header.webContents.executeJavaScript("(()=>{const rect=document.querySelector('[data-action="+control+"]').getBoundingClientRect();return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}})()")
     header.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point})
     header.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point})
     for(let i=0;i<100 && !(await callPage.executeJavaScript('!document.hidden && !!document.getElementById("call")'));i++)await wait(20)
-    assert.equal(await callPage.executeJavaScript('window.closedWhileHidden'),false,'Production Back to tab makes Teams visible before the PiP pagehide')
+    assert.equal(await callPage.executeJavaScript('window.closedWhileHidden'),false,'Production PiP dismissal makes Teams visible before the PiP pagehide')
     assert.equal(await callPage.executeJavaScript('document.getElementById("call").srcObject.getTracks()[0].readyState'),'live')
+    const callView=studio.contentView.children.find(child=>child instanceof WebContentsView && child.webContents===callPage)
+    assert.equal(studio.isVisible(),true,'Closing PiP also restores a hidden main window')
+    assert.equal(callView.getVisible(),true,'Closing PiP must actually reveal the native call view, not only change document.visibilityState')
+    assert.equal(studio.contentView.children.at(-1),callView,'The restored call must paint above retained pages')
+    if(cycle===1) assert.equal(view.getVisible(),false,'Returning to the call hides the previously selected page')
+    assert.equal((await call({action:'status',key:'call',tabCount:2})).focusedTabKey,'call','The renderer must select the restored call tab')
   }
   await call({action:'close',key:'call'})
   await call({action:'close',key:'page'})

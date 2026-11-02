@@ -3,6 +3,7 @@
   "version": "0.0.9",
   "private": true,
   "scripts": {
+    "test:detail-transitions:browser": "node scripts/check-detail-transitions-browser.mjs",
     "test:plan-mode:browser": "node scripts/check-plan-mode-browser.mjs",
     "test:task-notifications:browser": "node packages/studio-shell/src/task-notifications.browser.mjs",
     "test:question-attachments:browser": "node scripts/check-question-attachments-browser.mjs",

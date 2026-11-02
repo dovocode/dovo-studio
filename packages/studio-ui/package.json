@@ -12,6 +12,7 @@
     "./styles.css": "./src/styles.css",
     "./runtime-icon": "./src/runtime-icon.tsx",
     "./search-field": "./src/search-field.tsx",
+    "./detail-transition": "./src/detail-transition.ts",
     "./suggestion": "./src/suggestion.ts"
   },
   "scripts": {

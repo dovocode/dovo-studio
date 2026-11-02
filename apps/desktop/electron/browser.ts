@@ -322,16 +322,23 @@ export function registerBrowser(
   }
   const returnFromPip = async (entry: Entry) => {
     focusTab(entry)
+    activeViews.set(entry.windowId, { key: JSON.stringify([entry.windowId, entry.key]) })
     for (const other of views.values())
       if (other.windowId === entry.windowId && other !== entry) setVisible(other, false)
+    // Restore the native view too: changing document.visibilityState alone leaves
+    // the live call in a hidden view until the renderer catches up with tab selection.
+    if (entry.window.contentView.children.at(-1) !== entry.view)
+      entry.window.contentView.addChildView(entry.view)
+    entry.inactiveAt = undefined
+    entry.restoreFocus = false
+    setVisible(entry, true)
     // Teams restores its call on pagehide only when the owner is already visible.
-    // Deliver that state before closing the child; renderer tab selection follows the focus request.
-    entry.foreground = true
-    reportVisibility(entry)
     const visible: unknown = await entry.contents.executeJavaScript(
       'document.visibilityState === "visible"',
     )
     if (visible !== true) throw new Error('The call tab could not be restored.')
+    if (!entry.contents.isDestroyed() && entry.foreground && entry.view.getVisible())
+      entry.contents.focus()
   }
   const callTabs = (windowId: number) => {
     const captures = media.snapshot(windowId).captures ?? []

@@ -1,3 +1,4 @@
+import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
   pipelineSignal,
@@ -79,6 +80,7 @@ function WorkView({
 }) {
   const { activeRuntimeId, runtimes } = useWorkspace()
   const host = useStudioHost()
+  const { transition, style: detailStyle } = useDetailTransition()
   const [sidebarVisible] = useLeftSidebar()
 
   const isJira = mode === 'issues' && sourceKind === 'jira'
@@ -253,11 +255,7 @@ function WorkView({
     returnScroll.current = compact ? (list.current?.scrollTop ?? null) : null
     try {
       if (context !== openContext.current) return
-      setSelected({
-        source,
-        id,
-        url,
-      })
+      transition(() => setSelected({ source, id, url }))
     } catch (error) {
       setError(String(error))
     } finally {
@@ -373,11 +371,12 @@ function WorkView({
     state !== defaultState ||
     linked !== 'all' ||
     (isJira && (!!project || hasJiraIssueFilters(jiraFilters)))
-  const closePreview = () => {
-    if (selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
-    setSelected(null)
-    if (entityId && !host.goBack?.()) host.navigate({ viewId: isJira ? 'jira' : mode })
-  }
+  const closePreview = () =>
+    transition(() => {
+      if (selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
+      setSelected(null)
+      if (entityId && !host.goBack?.()) host.navigate({ viewId: isJira ? 'jira' : mode })
+    }, 'close')
   const detail = selected ? (
     selectedSource ? (
       <WorkspaceRuntimeScope runtimeId={selectedSource.runtimeId}>
@@ -975,9 +974,10 @@ function WorkView({
       {selected && (
         <aside
           ref={preview}
+          style={detailStyle}
           tabIndex={-1}
           aria-label={isJira ? 'Jira issue preview' : `${mode} detail`}
-          className="flex min-h-0 min-w-0 flex-1 flex-col bg-background outline-none"
+          className="studio-detail-transition flex min-h-0 min-w-0 flex-1 flex-col bg-background outline-none"
         >
           {detail}
         </aside>

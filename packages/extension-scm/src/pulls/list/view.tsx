@@ -1,3 +1,4 @@
+import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
   uniquePulls,
@@ -51,6 +52,7 @@ const personalCache = createPullStateCache<'all' | 'authored' | 'assigned' | 'in
 export default function PullRequestsView({ entityId, pullTarget, navigationKey }: StudioViewProps) {
   const [sidebarVisible] = useLeftSidebar()
   const host = useStudioHost()
+  const { transition, style: detailStyle } = useDetailTransition()
   const { activeRuntimeId, runtimes } = useWorkspace()
   // This is a merged collection, independent of the computer selected for task execution.
   const listKey = 'merged-pulls'
@@ -110,33 +112,34 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   }))
   const parseTarget = (url: string) => forgePullTarget(url, bindings)
   const detailTarget = parseTarget(selectedNavigation ?? urlSelection ?? '')
-  const open = (source: RepositorySource, number: number, url?: string, replace = false) => {
-    const pull = pages
-      .find((page) => page.source.key === source.key)
-      ?.pulls.find((pull) => pull.number === number)
-    const target = parseTarget(url ?? pull?.url ?? '')
-    const navigationUrl = target?.navigationUrl ?? url ?? pull?.url
-    setUrlSelection(null)
-    setSelectedNavigation(navigationUrl ?? null)
-    setSelected({ source: { key: source.key, scope: source.scope }, number })
-    setLinkChoices(null)
-    setOpenError('')
-    host.navigate(
-      {
-        viewId: 'pulls',
-        entityId: navigationUrl,
-        pullTarget: {
-          runtimeId: source.runtimeId,
-          repositoryId: source.repository.id,
-          number,
-          url: navigationUrl,
-          tab: target && (target.tab !== 'overview' || target.fragment) ? target.tab : undefined,
-          fragment: target?.fragment,
+  const open = (source: RepositorySource, number: number, url?: string, replace = false) =>
+    transition(() => {
+      const pull = pages
+        .find((page) => page.source.key === source.key)
+        ?.pulls.find((pull) => pull.number === number)
+      const target = parseTarget(url ?? pull?.url ?? '')
+      const navigationUrl = target?.navigationUrl ?? url ?? pull?.url
+      setUrlSelection(null)
+      setSelectedNavigation(navigationUrl ?? null)
+      setSelected({ source: { key: source.key, scope: source.scope }, number })
+      setLinkChoices(null)
+      setOpenError('')
+      host.navigate(
+        {
+          viewId: 'pulls',
+          entityId: navigationUrl,
+          pullTarget: {
+            runtimeId: source.runtimeId,
+            repositoryId: source.repository.id,
+            number,
+            url: navigationUrl,
+            tab: target && (target.tab !== 'overview' || target.fragment) ? target.tab : undefined,
+            fragment: target?.fragment,
+          },
         },
-      },
-      { replace },
-    )
-  }
+        { replace },
+      )
+    })
   const selectedSource = sources.find(
     (source) => source.key === selected?.source.key && source.scope === selected.source.scope,
   )
@@ -262,16 +265,17 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     setUrlOwnerId(owner ?? null)
     setChooseRuntime(!owner)
   }, [entityId, pullTarget, navigationKey, sources])
-  const back = () => {
-    setSelected(null)
-    setUrlSelection(null)
-    setSelectedNavigation(null)
-    setUrlOwnerId(null)
-    setLinkChoices(null)
-    setChooseRuntime(false)
-    if ((entityId || pullTarget) && host.goBack?.()) return
-    host.navigate({ viewId: 'pulls' })
-  }
+  const back = () =>
+    transition(() => {
+      setSelected(null)
+      setUrlSelection(null)
+      setSelectedNavigation(null)
+      setUrlOwnerId(null)
+      setLinkChoices(null)
+      setChooseRuntime(false)
+      if ((entityId || pullTarget) && host.goBack?.()) return
+      host.navigate({ viewId: 'pulls' })
+    }, 'close')
   const hasDetail = !!selected || !!urlSelection
   const statusColumn = pulls.some(
     (pull) =>
@@ -724,70 +728,77 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             </div>
           </div>
         </nav>
-        {urlSelection && detailTarget && urlRuntimeId ? (
-          <WorkspaceRuntimeScope runtimeId={urlRuntimeId}>
-            <UrlPullDetail
-              key={JSON.stringify([urlRuntimeId, detailTarget.url, pullTarget?.connectionId])}
-              target={{
-                runtimeId: urlRuntimeId,
-                number: detailTarget.number,
-                url: detailTarget.url,
-                tab: pullTarget?.tab ?? detailTarget.tab,
-                fragment: pullTarget?.fragment ?? detailTarget.fragment,
-                connectionId: pullTarget?.connectionId,
-              }}
-              onBack={back}
-            />
-          </WorkspaceRuntimeScope>
-        ) : selected && selectedSource ? (
-          <WorkspaceRuntimeScope runtimeId={selectedSource.runtimeId}>
-            <PullDetail
-              key={JSON.stringify([
-                selectedSource.scope,
-                selectedSource.repository.id,
-                selected.number,
-              ])}
-              repositoryId={selectedSource.repository.id}
-              number={selected.number}
-              connectionId={pullTarget?.connectionId}
-              initialTab={
-                pullTarget?.tab ??
-                (detailTarget && (detailTarget.tab !== 'overview' || detailTarget.fragment)
-                  ? detailTarget.tab
-                  : undefined)
-              }
-              initialFragment={pullTarget?.fragment ?? detailTarget?.fragment}
-              onBack={back}
-              onChanged={refresh}
-              onTabChange={(tab) =>
-                host.navigate(
-                  {
-                    viewId: 'pulls',
-                    entityId: selectedNavigation ?? undefined,
-                    pullTarget: {
-                      runtimeId: selectedSource.runtimeId,
-                      repositoryId: selectedSource.repository.id,
-                      number: selected.number,
-                      connectionId: pullTarget?.connectionId,
-                      url: selectedNavigation ?? undefined,
-                      tab,
-                      fragment: detailTarget?.fragment,
-                    },
-                  },
-                  { replace: true },
-                )
-              }
-              onSelect={(next) => open(selectedSource, next)}
-            />
-          </WorkspaceRuntimeScope>
-        ) : selected ? (
-          <div className="p-5 text-sm">
-            <p>This project connection changed. Open the PR again from the list.</p>
-            <Button variant="ghost" onClick={back}>
-              Back to PRs
-            </Button>
+        {hasDetail && (
+          <div
+            className="studio-detail-transition flex min-h-0 min-w-0 flex-1 flex-col"
+            style={detailStyle}
+          >
+            {urlSelection && detailTarget && urlRuntimeId ? (
+              <WorkspaceRuntimeScope runtimeId={urlRuntimeId}>
+                <UrlPullDetail
+                  key={JSON.stringify([urlRuntimeId, detailTarget.url, pullTarget?.connectionId])}
+                  target={{
+                    runtimeId: urlRuntimeId,
+                    number: detailTarget.number,
+                    url: detailTarget.url,
+                    tab: pullTarget?.tab ?? detailTarget.tab,
+                    fragment: pullTarget?.fragment ?? detailTarget.fragment,
+                    connectionId: pullTarget?.connectionId,
+                  }}
+                  onBack={back}
+                />
+              </WorkspaceRuntimeScope>
+            ) : selected && selectedSource ? (
+              <WorkspaceRuntimeScope runtimeId={selectedSource.runtimeId}>
+                <PullDetail
+                  key={JSON.stringify([
+                    selectedSource.scope,
+                    selectedSource.repository.id,
+                    selected.number,
+                  ])}
+                  repositoryId={selectedSource.repository.id}
+                  number={selected.number}
+                  connectionId={pullTarget?.connectionId}
+                  initialTab={
+                    pullTarget?.tab ??
+                    (detailTarget && (detailTarget.tab !== 'overview' || detailTarget.fragment)
+                      ? detailTarget.tab
+                      : undefined)
+                  }
+                  initialFragment={pullTarget?.fragment ?? detailTarget?.fragment}
+                  onBack={back}
+                  onChanged={refresh}
+                  onTabChange={(tab) =>
+                    host.navigate(
+                      {
+                        viewId: 'pulls',
+                        entityId: selectedNavigation ?? undefined,
+                        pullTarget: {
+                          runtimeId: selectedSource.runtimeId,
+                          repositoryId: selectedSource.repository.id,
+                          number: selected.number,
+                          connectionId: pullTarget?.connectionId,
+                          url: selectedNavigation ?? undefined,
+                          tab,
+                          fragment: detailTarget?.fragment,
+                        },
+                      },
+                      { replace: true },
+                    )
+                  }
+                  onSelect={(next) => open(selectedSource, next)}
+                />
+              </WorkspaceRuntimeScope>
+            ) : selected ? (
+              <div className="p-5 text-sm">
+                <p>This project connection changed. Open the PR again from the list.</p>
+                <Button variant="ghost" onClick={back}>
+                  Back to PRs
+                </Button>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        )}
       </div>
       {linkChoices && (
         <SourcePicker
