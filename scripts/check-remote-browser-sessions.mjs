@@ -48,6 +48,7 @@ const wait = async (condition, message = 'Browser state did not arrive') => {
   throw new Error(message)
 }
 try {
+  console.log('Remote browsers: checking capture lifecycle')
   await browsers.open(
     'capture-lifecycle',
     'capture-lifecycle',
@@ -198,6 +199,7 @@ try {
     if (id === 'first') firstListener = receive
     await browsers.input(id, { type: 'navigate', url: `http://127.0.0.1:${address.port}/${id}` })
   }
+  console.log('Remote browsers: checking independent tabs and visibility')
   await wait(
     () => states.get('first')?.title === '/first' && states.get('second')?.title === '/second',
   )
@@ -217,6 +219,7 @@ try {
   await browsers.input('other', { type: 'status' })
   await browsers.dispose()
   browsers = new RemoteBrowsers(profileDirectory)
+  console.log('Remote browsers: checking navigation recovery')
   const origin = `http://127.0.0.1:${address.port}`
   const unavailable = createServer()
   unavailable.listen(0, '127.0.0.1')
@@ -261,8 +264,11 @@ try {
     )
     await browsers.close('agent-unavailable')
     const session = await browsers.sessions.get('unavailable')
-    const closed = new Promise((resolve) => session.page.once('close', resolve))
-    await session.cdp.send('Page.crash').catch(() => {})
+    console.log('Remote browsers: checking crash cleanup')
+    const closed = once(session.page, 'close', { signal: AbortSignal.timeout(10000) })
+    // Destroying the target can prevent its command reply from ever arriving.
+    // The close event verifies production crash cleanup without awaiting that reply.
+    void session.cdp.send('Page.crash').catch(() => {})
     await closed
     assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
     await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
@@ -278,6 +284,7 @@ try {
     await new Promise((resolve) => recovered.close(resolve))
   }
   await browsers.open('dialog-recovery', 'recovery', 'default', origin)
+  console.log('Remote browsers: checking dialog reconnect')
   const dialogMessages = []
   const firstDialogViewer = await browsers.attach('dialog-recovery', (message) =>
     dialogMessages.push(message),
@@ -315,6 +322,7 @@ try {
     await browsers.close('dialog-recovery')
   }
   await browsers.open('work-login', 'profiles', 'work', origin + '/login')
+  console.log('Remote browsers: checking profile persistence')
   await browsers.open('work-check', 'profiles', 'work', origin + '/profile-state')
   dispose.push(await browsers.attach('work-check', listener('work-check')))
   await browsers.open('personal-check', 'profiles', 'personal', origin + '/profile-state')
@@ -332,6 +340,7 @@ try {
   await wait(() => states.get('restart-check')?.title === 'profileLogin=work|work')
   await browsers.close('restart-check')
   const privateId = 'private-00000000-0000-4000-8000-000000000002'
+  console.log('Remote browsers: checking private tabs and popups')
   const privateResource = JSON.stringify([STUDIO_BROWSER_SCOPE, 'private-tab', privateId])
   await browsers.open(privateResource, STUDIO_BROWSER_SCOPE, privateId, origin + '/login')
   const privatePage = (await browsers.sessions.get(privateResource)).page
@@ -370,7 +379,10 @@ try {
       if (message.type === 'closed') closedMessage = message
     }),
   )
-  await child.evaluate(() => window.close())
+  const childClosed = once(child, 'close', { signal: AbortSignal.timeout(10000) })
+  // Observe the popup closing, rather than a reply from its destroyed execution context.
+  void child.evaluate(() => window.close()).catch(() => {})
+  await childClosed
   await wait(() => !browsers.sessions.has(childResource))
   assert.equal(closedMessage?.byPage, true)
   assert.equal(parent.isClosed(), false)
@@ -378,6 +390,10 @@ try {
   console.log(
     'Real Chromium: active/idle capture, authorized input, hidden capture, viewport caps, resize/detail frames, unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
   )
+} catch (error) {
+  // Print the assertion before cleanup, which can itself be blocked by a broken browser.
+  console.error('Remote browser session check failed:', error)
+  throw error
 } finally {
   for (const detach of dispose) detach()
   await browsers.dispose()

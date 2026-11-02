@@ -174,7 +174,7 @@
     "test:task-selection:browser": "node scripts/check-task-selection-browser.mjs",
     "test:tool-details:browser": "node scripts/check-tool-details-browser.mjs",
     "test:usage-overview:browser": "pnpm --filter @dovo/desktop build && node scripts/check-usage-overview-browser.mjs && node scripts/check-mobile-usage-browser.mjs",
-    "test:remote-browser-sessions:browser": "node scripts/check-remote-browser-sessions.mjs",
+    "test:remote-browser-sessions:browser": "node --test --test-timeout=120000 scripts/check-remote-browser-sessions.mjs",
     "test:mobile-registry-recovery:browser": "node scripts/check-mobile-registry-recovery-browser.mjs",
     "test:workspace-recovery:browser": "node scripts/check-workspace-recovery-browser.mjs && node scripts/check-error-diagnostics-browser.mjs",
     "test:browser-apis:native": "node scripts/check-browser-visibility-native.mjs && node scripts/check-browser-document-pip-native.mjs && node scripts/check-browser-tab-activity-native.mjs && node apps/desktop/scripts/check-browser-page-tools-native.mjs",
