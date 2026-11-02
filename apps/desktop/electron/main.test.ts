@@ -50,7 +50,10 @@ vi.mock('electron', () => ({
     isPackaged: true,
     getVersion: () => '0.0.7',
     getPath: () => '/tmp/dovo-startup-unit-test',
-    commandLine: { hasSwitch: () => true },
+    commandLine: {
+      hasSwitch: () => true,
+      appendSwitch: vi.fn<(switchName: string, value?: string) => void>(),
+    },
     setName: vi.fn<(...args: unknown[]) => void>(),
     setPath: vi.fn<(...args: unknown[]) => void>(),
     on: vi.fn<(name: string, listener: (...args: unknown[]) => void) => void>((name, listener) => {

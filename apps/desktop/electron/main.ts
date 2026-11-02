@@ -73,6 +73,9 @@ import {
   runDesktop,
 } from './runtime.js'
 
+// Electron uses BCP 47 language tags (en_US is en-US). Set before app readiness.
+app.commandLine.appendSwitch('lang', 'en-US')
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const startupProfile =
   process.env.DOVO_STARTUP_PROFILE === '1'
