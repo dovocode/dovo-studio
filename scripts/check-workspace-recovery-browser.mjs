@@ -107,6 +107,7 @@ window.readDeviceHub=()=>window.workspaceContext.request('/api/device-hosts',und
     conditions: ['development'],
     alias: {
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
+      '@dovo/studio-ui/image-viewer': root + 'packages/studio-ui/src/image-viewer.tsx',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },
     nodePaths: [

@@ -49,7 +49,10 @@ window.changeUnrelatedWorkspace=()=>window.workspace.setWorkspace(value=>({...va
     format: 'iife',
     jsx: 'automatic',
     conditions: ['development'],
-    alias: { '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts' },
+    alias: {
+      '@dovo/studio-ui/image-viewer': root + 'packages/studio-ui/src/image-viewer.tsx',
+      '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
+    },
     plugins: [
       {
         name: 'count-chat-renders',

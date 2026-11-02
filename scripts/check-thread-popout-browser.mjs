@@ -65,6 +65,7 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
       '@dovo/studio-ui/code-themes': root + 'packages/studio-ui/src/code-themes.ts',
       '@dovo/studio-ui/search-field': root + 'packages/studio-ui/src/search-field.tsx',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
+      '@dovo/studio-ui/image-viewer': root + 'packages/studio-ui/src/image-viewer.tsx',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },
     nodePaths: [
