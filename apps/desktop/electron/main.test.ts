@@ -1,4 +1,4 @@
-import { afterAll, expect, it, vi } from 'vite-plus/test'
+import { afterAll, beforeAll, expect, it, vi } from 'vite-plus/test'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -24,6 +24,10 @@ const fixture = vi.hoisted(() => {
     browserQuitting: vi.fn<(ready: boolean) => void>(),
     stop: vi.fn<() => Promise<void>>(async () => {}),
     error: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
+    startupErrors: [] as unknown[][],
+    startupIpc: [] as string[],
+    startupUpdates: 0,
+    startupQuits: 0,
     choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
     start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
       Promise.reject(new Error('Runtime protocol is incompatible')),
@@ -92,6 +96,7 @@ vi.mock('./linux-desktop.js', () => ({
   registerLinuxDesktop: vi.fn<typeof import('./linux-desktop.js').registerLinuxDesktop>(),
 }))
 vi.mock('./task-launcher.js', () => ({ registerTaskLauncher: () => ({ dispose: () => {} }) }))
+vi.mock('./terminal-ports.js', () => ({ registerTerminalPorts: () => ({ dispose: () => {} }) }))
 vi.mock('./updates.js', () => ({ registerUpdates: fixture.updates }))
 vi.mock('./browser.js', () => ({
   registerBrowser: vi.fn<(...args: unknown[]) => { dispose: () => Promise<void> }>(() => ({
@@ -135,21 +140,40 @@ vi.mock('./windows-runtime.js', () => ({
   windowsRuntimeStatus: vi.fn<() => Promise<unknown>>(() => Promise.resolve({})),
 }))
 
-it('opens the recovery UI and registers updates when the installed runtime is incompatible', async () => {
+// The first import transforms the complete main-process dependency graph. Keep
+// that shared setup out of the recovery assertion's budget on cold Windows CI.
+beforeAll(async () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => {})
   try {
     await import('./main')
-    await vi.waitFor(() => expect(fixture.windows).toBe(1))
-    expect(fixture.ipc).toHaveBeenCalledWith('app:info', expect.any(Function))
-    expect(fixture.updates).toHaveBeenCalledOnce()
-    expect(fixture.quit).not.toHaveBeenCalled()
-    expect(log).toHaveBeenCalledWith(
-      'Local runtime needs attention:',
-      'Runtime protocol is incompatible',
+    await vi.waitUntil(() =>
+      log.mock.calls.some(
+        ([message, detail]) =>
+          message === 'Local runtime needs attention:' &&
+          detail === 'Runtime protocol is incompatible',
+      ),
     )
+    fixture.startupErrors = log.mock.calls.map((args) => [...args])
+    // The runner clears mock calls between setup and tests; retain startup
+    // observations independently of the mocks used by subsequent scenarios.
+    fixture.startupIpc = fixture.ipc.mock.calls.map(([channel]) => channel)
+    fixture.startupUpdates = fixture.updates.mock.calls.length
+    fixture.startupQuits = fixture.quit.mock.calls.length
   } finally {
     log.mockRestore()
   }
+})
+
+it('opens the recovery UI and registers updates when the installed runtime is incompatible', () => {
+  expect(fixture.windows).toBe(1)
+  expect(fixture.startupIpc).toContain('app:info')
+  expect(fixture.handlers.get('app:info')).toEqual(expect.any(Function))
+  expect(fixture.startupUpdates).toBe(1)
+  expect(fixture.startupQuits).toBe(0)
+  expect(fixture.startupErrors).toContainEqual([
+    'Local runtime needs attention:',
+    'Runtime protocol is incompatible',
+  ])
 })
 
 it('rejects untrusted senders before returning runtime credentials or activating extensions', async () => {
