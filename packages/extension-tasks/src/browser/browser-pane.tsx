@@ -1899,9 +1899,13 @@ function BrowserContent({
                               runtimeId: store.localRuntimeId ?? undefined,
                             },
                           ]
-                      currentTabs.current = next
-                      setTabs(next)
-                      selectTab(next[0])
+                      // Commit and persist the source workspace before navigation unmounts it.
+                      // Otherwise its saved tab list still contains pages owned by the new window.
+                      flushSync(() => {
+                        currentTabs.current = next
+                        setTabs(next)
+                        selectTab(next[0])
+                      })
                       if (!browserWindowId) navigateStudio({ viewId: 'tasks' })
                     })
                   }

@@ -117,7 +117,7 @@ export const useSettingsTarget=()=>{
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
-export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -427,7 +427,11 @@ async function checkAwakeDefaultsAndDetaching() {
       .getByRole('complementary', { name: 'Recent browser tabs' })
       .getByRole('button', { name: 'New browser tab', exact: true })
       .click()
+    await page.evaluate(() => {
+      window.unmountOnDetach = true
+    })
     await page.getByRole('menuitem', { name: 'Detach browser', exact: true }).click()
+    await page.getByText('Studio threads', { exact: true }).waitFor()
     await page.waitForFunction(() => window.calls.some((c) => c.action === 'detach-tabs'))
     await page.waitForFunction(
       () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 1,
@@ -444,7 +448,28 @@ async function checkAwakeDefaultsAndDetaching() {
     assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.pinned, true)
     assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.keepAwake, false)
     assert.ok(detached.tabs.find((item) => item.tab.id === 'outlook').tab.settledAt)
-    await page.evaluate(async () => {
+    await page.evaluate(() => {
+      const detach = window.calls.findIndex((c) => c.action === 'detach-tabs')
+      const navigate = window.calls.findIndex(
+        (c, index) => index > detach && c.navigate?.viewId === 'tasks',
+      )
+      window.sourceSavedBeforeNavigation = window.calls
+        .slice(detach + 1, navigate)
+        .some(
+          (c) => c.action === 'sync-tabs' && c.persisted && c.tabs.every((item) => !item.tab.url),
+        )
+      window.fixtureNavigatedAway = false
+      window.unmountOnDetach = false
+      window.renderBrowser()
+    })
+    assert.equal(
+      await page.evaluate(() => window.sourceSavedBeforeNavigation),
+      true,
+      'Source sync completes before Browser unmounts',
+    )
+    await page.getByRole('complementary', { name: 'Recent browser tabs' }).waitFor()
+    assert.equal(await row('teams').count(), 0, 'Remounting does not resurrect detached tabs')
+    await page.evaluate(() => {
       const detached = window.calls.findLast((c) => c.action === 'detach-tabs')
       window.movedTabs.push(...detached.tabs)
       window.focusedTabKey = detached.tabs.find((item) => item.tab.id === detached.activeId).key
