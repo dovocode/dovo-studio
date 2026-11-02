@@ -51,7 +51,11 @@ try {
           name: 'mocks',
           setup(b) {
             b.onResolve({ filter: /.*/ }, ({ path }) => {
-              if (path === '../runtime/connection/provider' || path === '../connection/provider')
+              if (
+                path === '../runtime/connection/provider' ||
+                path === '../connection/provider' ||
+                path === '../../runtime/connection/provider'
+              )
                 return { path: 'native-runtime', namespace: 'mock' }
               if (mocks[path]) return { path, namespace: 'mock' }
               if (/(harness-updates|acp-registry|title-settings|provider-check)$/.test(path))

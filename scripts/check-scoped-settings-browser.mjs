@@ -10,6 +10,7 @@ const mocks = {
   '@dovo/studio-core/state': state,
   '../state/application-state': state,
   '../connection/provider': `export const useRuntime=()=>window.store;export const RuntimeScope=({children})=>children;`,
+  '../../runtime/connection/provider': `export const useRuntime=()=>window.store;`,
   'react-native': controls,
   'expo-router': 'export const router={push:()=>{}};',
   'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
