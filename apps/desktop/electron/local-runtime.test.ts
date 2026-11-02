@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { afterEach, beforeAll, expect, it, vi } from 'vite-plus/test'
 import {
   existsSync,
   mkdirSync,
@@ -42,6 +42,12 @@ vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
   spawn: vi.fn<typeof import('node:child_process').spawn>(),
 }))
+// Cold Windows CI transforms the runtime dependency graph on its first import.
+// Keep that shared setup outside the first behavior test's budget; afterEach
+// still resets module state so later scenarios get independent lifecycles.
+beforeAll(async () => {
+  await import('./local-runtime')
+})
 afterEach(() => {
   fixture.packaged = false
   fixture.dialog.mockReset()
