@@ -265,11 +265,34 @@ try {
     await browsers.close('agent-unavailable')
     const session = await browsers.sessions.get('unavailable')
     console.log('Remote browsers: checking crash cleanup')
-    const closed = once(session.page, 'close', { signal: AbortSignal.timeout(10000) })
-    // Destroying the target can prevent its command reply from ever arriving.
-    // The close event verifies production crash cleanup without awaiting that reply.
-    void session.cdp.send('Page.crash').catch(() => {})
-    await closed
+    const context = session.page.context()
+    assert.deepEqual(context.pages(), [session.page], 'Crash injection owns the only profile tab')
+    const browser = context.browser()
+    assert.ok(browser, 'The persistent profile must expose its Chromium instance')
+    const browserCdp = await browser.newBrowserCDPSession()
+    const { processInfo } = await browserCdp
+      .send('SystemInfo.getProcessInfo')
+      .finally(() => browserCdp.detach())
+    const renderers = processInfo.filter((info) => info.type === 'renderer')
+    assert.ok(renderers.length, 'Chromium must have a renderer to terminate')
+    const signal = AbortSignal.timeout(10000)
+    // Observe both events before injection: production closes the page on a real crash.
+    const crashedAndClosed = Promise.all([
+      once(session.page, 'crash', { signal }),
+      once(session.page, 'close', { signal }),
+    ])
+    // Page.crash can stall inside Chromium's deliberate-crash/reporting path on CI.
+    // SIGKILL exercises actual renderer loss without waiting for a crash report.
+    // This browser belongs to this profile; include spare renderers, never other browsers.
+    for (const renderer of renderers) {
+      try {
+        process.kill(renderer.id, 'SIGKILL')
+      } catch (error) {
+        // Spare renderers can exit between the process snapshot and fault injection.
+        if (error.code !== 'ESRCH') throw error
+      }
+    }
+    await crashedAndClosed
     assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
     await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
     dispose.push(
