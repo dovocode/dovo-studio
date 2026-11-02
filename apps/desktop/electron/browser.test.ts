@@ -3179,6 +3179,7 @@ const placeholderState = {
 
 it('detaches and returns pinned, sleeping and remote tabs without replacing the live page', async () => {
   const target = workspaceTarget(2)
+  const minimized = vi.spyOn(target, 'isMinimized').mockReturnValue(true)
   const create = vi.fn<() => Promise<import('electron').BrowserWindow>>(async () => {
     mocks.windowFor = target
     await call(event, placeholderState)
@@ -3233,10 +3234,20 @@ it('detaches and returns pinned, sleeping and remote tabs without replacing the 
   ]
   await call(event, { ...placeholderState, tabs, activeId: 'pinned' })
   await call(event, { ...workspaceShow, keepAwake: true })
+  expect(
+    await call(event, { action: 'focus-detached-browser', key: 'workspace' }),
+  ).not.toHaveProperty('focusedWindowId')
   const loads = mocks.contents.loadURL.mock.calls.length
   mocks.media.keepAlive.mockReturnValue(true)
   await call(event, { action: 'detach-tabs', key: 'workspace', tabs, activeId: 'pinned' })
   expect(create).toHaveBeenCalledOnce()
+  expect(await call(event, { action: 'focus-detached-browser', key: 'workspace' })).toMatchObject({
+    focusedWindowId: 2,
+  })
+  expect(target.restore).toHaveBeenCalled()
+  minimized.mockRestore()
+  expect(target.show).toHaveBeenCalled()
+  expect(target.focus).toHaveBeenCalled()
   expect(mocks.create).toHaveBeenCalledOnce()
   expect(mocks.media.moveTab).toHaveBeenCalledWith(mocks.contents, 2)
   expect(mocks.contents.close).not.toHaveBeenCalled()
@@ -3271,6 +3282,9 @@ it('detaches and returns pinned, sleeping and remote tabs without replacing the 
     persisted: true,
   })
   await returning
+  expect(
+    await call(event, { action: 'focus-detached-browser', key: 'workspace' }),
+  ).not.toHaveProperty('focusedWindowId')
   const closed = target.once.mock.calls.find(([name]) => name === 'closed')![1]
   closed()
   expect(mocks.contents.close).not.toHaveBeenCalled()

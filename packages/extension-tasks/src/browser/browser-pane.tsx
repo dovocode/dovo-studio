@@ -242,6 +242,7 @@ function BrowserContent({
       openBrowserWindow,
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
+      navigate: navigateStudio,
     } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
@@ -1901,6 +1902,7 @@ function BrowserContent({
                       currentTabs.current = next
                       setTabs(next)
                       selectTab(next[0])
+                      if (!browserWindowId) navigateStudio({ viewId: 'tasks' })
                     })
                   }
                 >

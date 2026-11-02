@@ -542,17 +542,23 @@ try {
       assert.equal(stopStyle.icon, true)
       if (device.name === 'desktop' && project === 'dovo-studio') {
         await settleComposer()
-        const glow = () =>
-          stop.evaluate((button) => {
-            const style = getComputedStyle(button, '::before')
+        const glow = (pseudo = '::before') =>
+          stop.evaluate((button, pseudo) => {
+            const style = getComputedStyle(button, pseudo)
             return {
               display: style.display,
               animation: style.animationName,
               transform: style.transform,
+              filter: style.filter,
+              mask: style.maskImage,
             }
-          })
+          }, pseudo)
         assert.equal((await glow()).animation, 'studio-stop-glow')
         assert.notEqual((await glow()).display, 'none')
+        assert.equal((await glow('::after')).animation, 'studio-stop-glow')
+        assert.equal((await glow('::after')).filter, 'none', 'Border stays sharp')
+        assert.notEqual((await glow('::after')).mask, 'none')
+        const firstBorder = (await glow('::after')).transform
         const firstGlow = (await glow()).transform
         await page.waitForFunction(
           (first) =>
@@ -560,19 +566,34 @@ try {
               .transform !== first,
           firstGlow,
         )
+        assert.notEqual(
+          (await glow('::after')).transform,
+          firstBorder,
+          'Red border rotates with glow',
+        )
         for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
           assert.equal(
             await page.locator(selector).evaluate((node) => getComputedStyle(node).transform),
             'none',
-            'Only the glow rotates',
+            'Button and stop icon remain still',
           )
         await page.emulateMedia({ reducedMotion: 'reduce' })
         assert.equal((await glow()).display, 'none', 'OS reduced motion keeps the glow still')
+        assert.equal(
+          (await glow('::after')).display,
+          'none',
+          'OS reduced motion keeps border still',
+        )
         await page.emulateMedia({ reducedMotion: 'no-preference' })
         await page.evaluate(() => {
           document.documentElement.dataset.motion = 'reduce'
         })
         assert.equal((await glow()).display, 'none', 'App reduced motion keeps the glow still')
+        assert.equal(
+          (await glow('::after')).display,
+          'none',
+          'App reduced motion keeps border still',
+        )
         await page.evaluate(() => {
           delete document.documentElement.dataset.motion
         })

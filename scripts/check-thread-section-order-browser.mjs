@@ -78,7 +78,7 @@ try {
       files: [],
       messages: [],
       turns: [],
-      status: 'completed',
+      status: 'done',
     }
     window.source = {
       runtimeId: 'runtime',
@@ -366,6 +366,44 @@ try {
   )
   await openSummary.click()
   await page.getByText('Active thread', { exact: true }).waitFor()
+  await page.evaluate(async () => {
+    const base = window.source.workspace.tasks[0]
+    window.source.workspace.tasks = [
+      { ...base, id: 'attention', title: 'Attention thread' },
+      ...['running', 'waiting', 'snoozed', 'settled', 'attention'].map((state) => ({
+        ...base,
+        id: 'pin-' + state,
+        title: 'Pinned ' + state,
+        pinned: true,
+        status: state === 'running' ? 'running' : 'done',
+        waitingForFeedback: state === 'waiting',
+        snoozedUntil: state === 'snoozed' ? new Date(Date.now() + 3600000).toISOString() : null,
+        archived: state === 'settled',
+      })),
+    ]
+    window.source.snapshot = { questions: [{ taskId: 'attention' }, { taskId: 'pin-attention' }] }
+    await window.remount()
+  })
+  for (const grouping of ['status', 'project', 'none']) {
+    await page.evaluate((grouping) => window.groupBy(grouping), grouping)
+    await pinnedSummary.waitFor()
+    if (!(await pinnedSummary.locator('..').evaluate((element) => element.open)))
+      await pinnedSummary.click()
+    assert.equal((await names())[0], 'Pinned')
+    for (const state of ['running', 'waiting', 'snoozed', 'settled', 'attention']) {
+      const row = page.getByRole('button', { name: 'Pinned ' + state, exact: true })
+      assert.equal(await row.count(), 1, 'Pinned rows are never duplicated')
+      assert.equal(
+        await row.locator('xpath=ancestor::details').getAttribute('data-section'),
+        'pinned',
+      )
+    }
+    assert.equal(
+      (await page.evaluate(() => window.keyboardOrder)).filter((id) => id.startsWith('pin-'))
+        .length,
+      5,
+    )
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Thread categories: overview organizer, live reordering, collapse state, keyboard task order, cold-start persistence, hidden/empty sections, boundaries and reset verified.',

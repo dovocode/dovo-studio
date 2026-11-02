@@ -7,7 +7,12 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@
 export function SectionOrderDialog() {
   const [open, setOpen] = useState(false)
   const preferences = useAppPreferences()
-  const order = preferences.threadSectionOrder ?? defaultThreadSectionOrder
+  const order = [
+    'pinned' as const,
+    ...(preferences.threadSectionOrder ?? defaultThreadSectionOrder).filter(
+      (id) => id !== 'pinned',
+    ),
+  ]
   return (
     <>
       <Button
@@ -24,8 +29,9 @@ export function SectionOrderDialog() {
         <DialogContent className="max-w-sm">
           <DialogTitle>Organize sections</DialogTitle>
           <DialogDescription>
-            Needs input always stays first. Change the order of other thread categories. Empty
-            sections stay hidden. With project or no grouping, those threads use Open’s position.
+            Pinned threads stay first, followed by Needs input. Change the order of other thread
+            categories. Empty sections stay hidden. With project or no grouping, those threads use
+            Open’s position.
           </DialogDescription>
           <ol className="space-y-1" aria-label="Thread section order">
             {order.map((id, index) => (
@@ -38,7 +44,7 @@ export function SectionOrderDialog() {
                   variant="ghost"
                   className="size-8"
                   aria-label={`Move ${id === 'active' ? 'open' : id} up`}
-                  disabled={index === 0}
+                  disabled={id === 'pinned' || index <= 1}
                   onClick={() =>
                     updateAppPreferences({ threadSectionOrder: moveThreadSection(order, id, -1) })
                   }
@@ -50,7 +56,7 @@ export function SectionOrderDialog() {
                   variant="ghost"
                   className="size-8"
                   aria-label={`Move ${id === 'active' ? 'open' : id} down`}
-                  disabled={index === order.length - 1}
+                  disabled={id === 'pinned' || index === order.length - 1}
                   onClick={() =>
                     updateAppPreferences({ threadSectionOrder: moveThreadSection(order, id, 1) })
                   }

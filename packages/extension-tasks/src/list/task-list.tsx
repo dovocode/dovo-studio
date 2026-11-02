@@ -445,8 +445,12 @@ export function TaskList({
       sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean; total?: number }[],
     ) => orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder)
 
+    const pinned = tasks.filter(({ task }) => task.pinned)
+    const pinnedGroups = pinned.length
+      ? [{ id: 'pinned', name: 'Pinned', tasks: pinned, open: true }]
+      : []
     const attention = tasks.filter(
-      ({ task, needsInput }) => needsInput && !task.archived && !task.archivedAt,
+      ({ task, needsInput }) => !task.pinned && needsInput && !task.archived && !task.archivedAt,
     )
     const attentionGroups = attention.length
       ? [
@@ -460,19 +464,22 @@ export function TaskList({
       : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
+        !task.pinned &&
         !needsInput &&
         !task.archived &&
         !task.archivedAt &&
         !isSnoozed(task, now) &&
         (!task.waitingForFeedback || taskIsWorking(task)),
     )
-    const settledTasks = tasks.filter(({ task }) => task.archived || !!task.archivedAt)
+    const settledTasks = tasks.filter(
+      ({ task }) => !task.pinned && (task.archived || !!task.archivedAt),
+    )
     const statusGroups = [
       ...attentionGroups,
       {
         id: 'pinned',
         name: 'Pinned',
-        tasks: active.filter(({ task }) => task.pinned),
+        tasks: pinned,
         open: true,
       },
       {
@@ -501,6 +508,7 @@ export function TaskList({
         name: 'Waiting',
         tasks: tasks.filter(
           ({ task, needsInput }) =>
+            !task.pinned &&
             task.waitingForFeedback &&
             !taskIsWorking(task) &&
             !needsInput &&
@@ -515,7 +523,11 @@ export function TaskList({
         name: 'Snoozed',
         tasks: tasks.filter(
           ({ task, needsInput }) =>
-            !needsInput && !task.archived && !task.archivedAt && isSnoozed(task, now),
+            !task.pinned &&
+            !needsInput &&
+            !task.archived &&
+            !task.archivedAt &&
+            isSnoozed(task, now),
         ),
         open: false,
       },
@@ -548,6 +560,7 @@ export function TaskList({
     )
     if (grouping === 'none')
       return ordered([
+        ...pinnedGroups,
         ...attentionGroups,
         ...(visibleActive.length
           ? [
@@ -590,6 +603,7 @@ export function TaskList({
       byProject.set(key, group)
     }
     return ordered([
+      ...pinnedGroups,
       ...attentionGroups,
       ...[...byProject.values()]
         .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))

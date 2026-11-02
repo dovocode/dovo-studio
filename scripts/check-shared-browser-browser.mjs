@@ -435,6 +435,10 @@ async function checkAwakeDefaultsAndDetaching() {
     const detached = await page.evaluate(() =>
       window.calls.findLast((c) => c.action === 'detach-tabs'),
     )
+    assert.ok(
+      await page.evaluate(() => window.calls.some((c) => c.navigate?.viewId === 'tasks')),
+      'Detaching returns the main window to Threads',
+    )
     assert.equal(detached.tabs.length, 4)
     assert.equal(detached.activeId, 'gmail')
     assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.pinned, true)

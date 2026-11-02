@@ -53,7 +53,7 @@ it('orders categories without changing task or project ordering', () => {
   )
 })
 
-it('keeps Needs input first with every saved order, including project and ungrouped views', () => {
+it('keeps Pinned above Needs input with every saved order, including project and ungrouped views', () => {
   const groups = [
     { id: 'pinned' },
     { id: 'waiting' },
@@ -62,5 +62,18 @@ it('keeps Needs input first with every saved order, including project and ungrou
     { id: 'needs-input' },
   ]
   for (const order of [defaultThreadSectionOrder, [...defaultThreadSectionOrder].reverse()])
-    expect(orderThreadSections(groups, (group) => group.id, order)[0]?.id).toBe('needs-input')
+    expect(orderThreadSections(groups, (group) => group.id, order).slice(0, 2)).toEqual([
+      { id: 'pinned' },
+      { id: 'needs-input' },
+    ])
+})
+
+it('keeps Pinned fixed when reorganizing categories and normalizes saved positions', () => {
+  expect(moveThreadSection(defaultThreadSectionOrder, 'pinned', 1)).toEqual(
+    defaultThreadSectionOrder,
+  )
+  expect(moveThreadSection(defaultThreadSectionOrder, 'active', -1)).toEqual(
+    defaultThreadSectionOrder,
+  )
+  expect(moveThreadSection([...defaultThreadSectionOrder].reverse(), 'pinned', 1)[0]).toBe('pinned')
 })

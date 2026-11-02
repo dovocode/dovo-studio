@@ -246,6 +246,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 projectMembers.has(runtimeResourceKey(runtimeId, task.repositoryId))))) &&
           (archived ? !!task.archivedAt : !task.archivedAt) &&
           (!car ||
+            task.pinned ||
             (!task.archived &&
               !isSnoozed(task, now) &&
               (!task.waitingForFeedback || taskIsWorking(task) || needsInput))) &&
@@ -269,6 +270,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       .sort((a, b) => {
         if (archived)
           return (
+            Number(!!b.task.pinned) - Number(!!a.task.pinned) ||
             (b.task.archivedAt ?? '').localeCompare(a.task.archivedAt ?? '') ||
             a.key.localeCompare(b.key)
           )
@@ -302,7 +304,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           return items.filter((item) => item.kind === 'task')
         return collapsed.has('active') ? items.filter((item) => item.kind === 'group') : items
       })
-    const attention = tasks.filter(({ task, needsInput }) => needsInput && !task.archived)
+    const pinned = tasks.filter(({ task }) => task.pinned)
+    const pinnedItems: TaskListItem[] = pinned.length
+      ? [
+          { kind: 'group', key: 'pinned', name: 'Pinned', count: pinned.length },
+          ...(collapsed.has('pinned')
+            ? []
+            : pinned.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+        ]
+      : []
+    const attention = tasks.filter(
+      ({ task, needsInput }) => !task.pinned && needsInput && !task.archived,
+    )
     const attentionItems: TaskListItem[] = attention.length
       ? [
           { kind: 'group', key: 'needs-input', name: 'Needs input', count: attention.length },
@@ -313,6 +326,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
+        !task.pinned &&
         !needsInput &&
         !task.archived &&
         !isSnoozed(task, now) &&
@@ -333,6 +347,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       : []
     const waiting = tasks.filter(
       ({ task, needsInput }) =>
+        !task.pinned &&
         task.waitingForFeedback &&
         !taskIsWorking(task) &&
         !needsInput &&
@@ -348,9 +363,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ]
       : []
     const snoozed = tasks.filter(
-      ({ task, needsInput }) => !needsInput && !task.archived && isSnoozed(task, now),
+      ({ task, needsInput }) =>
+        !task.pinned && !needsInput && !task.archived && isSnoozed(task, now),
     )
-    const settled = tasks.filter(({ task }) => task.archived)
+    const settled = tasks.filter(({ task }) => !task.pinned && task.archived)
     const snoozedItems: TaskListItem[] = snoozed.length
       ? [
           { kind: 'group', key: 'snoozed', name: 'Snoozed', count: snoozed.length },
@@ -393,6 +409,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           ]
         : []
     const otherSections = [
+      { key: 'pinned', items: pinnedItems },
       { key: 'needs-input', items: attentionItems },
       { key: 'working', items: workingItems },
       { key: 'waiting', items: waitingItems },
@@ -414,10 +431,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ])
     const groups: { key: string; name: string; tasks: RuntimeTask[] }[] = []
     if (grouping === 'status') {
-      groups.push(
-        { key: 'pinned', name: 'Pinned', tasks: unsettled.filter(({ task }) => task.pinned) },
-        { key: 'active', name: 'Open', tasks: unsettled.filter(({ task }) => !task.pinned) },
-      )
+      groups.push({
+        key: 'active',
+        name: 'Open',
+        tasks: unsettled.filter(({ task }) => !task.pinned),
+      })
     } else {
       const identities = new Map(
         projectGroups.flatMap((group) =>

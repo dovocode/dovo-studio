@@ -30,10 +30,10 @@ export function moveThreadSection(
   section: ThreadSection,
   direction: -1 | 1,
 ): ThreadSection[] {
-  const next = [...order]
+  const next: ThreadSection[] = ['pinned', ...order.filter((id) => id !== 'pinned')]
   const index = next.indexOf(section)
   const target = index + direction
-  if (index < 0 || target < 0 || target >= next.length) return next
+  if (section === 'pinned' || index < 0 || target < 1 || target >= next.length) return next
   const other = next[target]
   if (!other) return next
   next[index] = other
@@ -48,7 +48,8 @@ export function orderThreadSections<T>(
 ): T[] {
   const rank = (id: string) => order.findIndex((section) => section === id)
   const position = (group: T) => {
-    // Attention stays above the user-configurable section order and project groups.
+    // Pinning takes priority over status and saved section ordering.
+    if (key(group) === 'pinned') return -2
     if (key(group) === 'needs-input') return -1
     const index = rank(key(group))
     return index < 0 ? rank('active') : index

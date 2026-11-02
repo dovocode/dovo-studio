@@ -292,7 +292,8 @@
   --composer-accent: var(--destructive);
   position: relative;
 }
-.task-composer [data-composer-stop]::before {
+.task-composer [data-composer-stop]::before,
+.task-composer [data-composer-stop]::after {
   content: '';
   position: absolute;
   inset: -5px;
@@ -308,22 +309,31 @@
   filter: blur(2px);
   animation: studio-stop-glow 2.4s linear infinite;
 }
+.task-composer [data-composer-stop]::after {
+  inset: -1px;
+  opacity: 1;
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+  filter: none;
+}
 @keyframes studio-stop-glow {
   to {
     transform: rotate(360deg);
   }
 }
 :root[data-theme-glow='0'] .task-composer [data-composer-stop]::before,
-:root[data-motion='reduce'] .task-composer [data-composer-stop]::before {
+:root[data-motion='reduce'] .task-composer [data-composer-stop]::before,
+:root[data-motion='reduce'] .task-composer [data-composer-stop]::after {
   display: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .task-composer [data-composer-stop]::before {
+  .task-composer [data-composer-stop]::before,
+  .task-composer [data-composer-stop]::after {
     display: none;
   }
 }
 @media (forced-colors: active) {
-  .task-composer [data-composer-stop]::before {
+  .task-composer [data-composer-stop]::before,
+  .task-composer [data-composer-stop]::after {
     display: none;
   }
 }

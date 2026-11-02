@@ -261,7 +261,7 @@ export const browserCommandSchema = Schema.Union([
     profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
   }),
   mutableStruct({
-    action: Schema.Literal('browser-windows'),
+    action: Schema.Literals(['browser-windows', 'focus-detached-browser']),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
   mutableStruct({
@@ -589,6 +589,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       find?: BrowserFindResult
       documentRevision?: number
       sitePermissions?: BrowserSitePermissions
+      focusedWindowId?: number
       windows?: { id: number; title: string }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]
       /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */

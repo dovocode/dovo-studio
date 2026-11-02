@@ -19,7 +19,7 @@ const mocks = {
     export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
     export const useStudioHost=()=>useContext(Host);
     export const SettingsTargetProvider=({children})=>children;
-    export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true});
+    export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const updateAppPreferences=()=>{};
     export const useConfirmSettingsNavigation=()=>()=>window.allowSettings;
     export function WorkspaceProvider({children}) {
@@ -73,8 +73,8 @@ const built = await build({
       function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const [closing,setClosing]=useState(false);const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output><button onClick={()=>setClosing(true)}>Close terminal tab</button>{closing&&<TerminalCloseDialog labels={['Terminal 1']} onCancel={()=>setClosing(false)} onConfirm={()=>setClosing(false)} onRestoreFocus={()=>document.querySelector('[aria-label="Message"]')?.focus()}/ >}{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
       function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
-      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions}/>);window.restart();
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:()=> <p>Embedded browser</p>})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
+      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
     `,
   },
   bundle: true,
@@ -278,6 +278,40 @@ try {
   )
   await page.evaluate(() => window.restart())
   await selected('fresh')
+  await page.evaluate(() => {
+    window.detachedBrowser = true
+  })
+  await section('Browser')
+  await page.waitForFunction(() => window.browserFocusCalls > 0)
+  await selected('fresh')
+  assert.equal(
+    await page.getByText('Embedded browser', { exact: true }).count(),
+    0,
+    'Detached focus preserves the Threads view',
+  )
+  await page.evaluate(() => {
+    window.detachedBrowser = false
+  })
+  await section('Browser')
+  await page.getByText('Embedded browser', { exact: true }).waitFor()
+  await section('Threads')
+  await selected('fresh')
+  await page.evaluate(() => {
+    window.holdBrowserFocus = true
+  })
+  await section('Browser')
+  await page.waitForFunction(() => typeof window.finishBrowserFocus === 'function')
+  await section('PRs')
+  await page.evaluate(() => {
+    window.holdBrowserFocus = false
+    window.finishBrowserFocus()
+  })
+  await page.getByText('PR section', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByText('Embedded browser', { exact: true }).count(),
+    0,
+    'Late browser response preserves newer navigation',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Actual workbench navigation restores thread and real composer drafts across sections, keeps computer selections separate, respects settings cancellation and preserves fresh startup/New thread.',

@@ -369,12 +369,28 @@ function WorkbenchContent({
     },
     [setCollapsedSections, target.viewId, compact, threadWindow],
   )
-  const navigateSection = (viewId: string) =>
-    navigate({
-      viewId,
-      entityId:
-        viewId === 'tasks' ? threadSelections.current.get(runtimeRegistry.activeId) : undefined,
-    })
+  const navigateSection = (viewId: string) => {
+    const open = () =>
+      navigate({
+        viewId,
+        entityId:
+          viewId === 'tasks' ? threadSelections.current.get(runtimeRegistry.activeId) : undefined,
+      })
+    if (viewId === 'browser' && browser && !browserWindowId) {
+      const attempt = ++navigationAttempt.current
+      void browser({ action: 'focus-detached-browser', key: 'studio:browser:main' })
+        .then((result) => {
+          if (mounted.current && attempt === navigationAttempt.current && !result?.focusedWindowId)
+            open()
+        })
+        .catch((cause) => {
+          if (mounted.current && attempt === navigationAttempt.current)
+            setSwitchError(cause instanceof Error ? cause.message : String(cause))
+        })
+      return
+    }
+    open()
+  }
   // Section history is local to this session and computer; explicit navigation
   // to a fresh composer still clears it. Ignore an old computer's pending target.
   useEffect(() => {

@@ -176,6 +176,9 @@ function createTranscriptUsage(
           lastRowId = undefined
         }
         if (!usage) {
+          // Codex can repeat a cumulative snapshot with zero request counters and a
+          // context-size total. It contains no new billable usage; keep the accepted row.
+          if (duplicate) return
           inconsistent()
           if (!duplicate && lastTotal)
             invalidTotalAt = Math.min(invalidTotalAt ?? Infinity, Date.parse(timestamp))
@@ -386,13 +389,35 @@ function acceptText(scan: TranscriptScan, text: string) {
     scan.incomplete = true
   }
 }
+/** Recognize only the canonical Codex envelope, before any unbounded message content.
+ * Unknown layouts and usage-bearing events still report the size limit. */
+function irrelevantCodexRow(prefix: string) {
+  const envelope =
+    /^\s*\{\s*(?:"timestamp"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*)?(?:"ordinal"\s*:\s*\d+\s*,\s*)?"type"\s*:\s*"(response_item|event_msg|compacted)"\s*,\s*"payload"\s*:\s*/.exec(
+      prefix,
+    )
+  if (!envelope) return false
+  if (envelope[1] === 'response_item' || envelope[1] === 'compacted') return true
+  return /^\{\s*"type"\s*:\s*"(?:item_completed|agent_message|agent_reasoning|user_message)"\s*[,}]/.test(
+    prefix.slice(envelope[0].length),
+  )
+}
 function appendLine(scan: TranscriptScan, chunk: Buffer, limit: number) {
   if (scan.droppingLine) return
   if (scan.trailingBytes + chunk.length > limit) {
+    // Inspect a bounded header, never parse or retain the oversized message body.
+    const irrelevant =
+      scan.provider === 'codex' &&
+      irrelevantCodexRow(
+        Buffer.concat(
+          [...scan.trailing, chunk],
+          Math.min(scan.trailingBytes + chunk.length, 4096),
+        ).toString('utf8'),
+      )
     scan.trailing = []
     scan.trailingBytes = 0
     scan.droppingLine = true
-    scan.oversized = true
+    if (!irrelevant) scan.oversized = true
     return
   }
   if (chunk.length) {

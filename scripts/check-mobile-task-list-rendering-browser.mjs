@@ -965,6 +965,7 @@ try {
   assert.equal(pin.origin, 'http://mobile-owner.lan:8787')
   assert.equal(pin.method, 'PATCH')
   assert.deepEqual(pin.body.changes, { pinned: { before: true, after: false } })
+  await page.evaluate(() => window.publish({ 'task-4': { pinned: false } }))
   const luminance = (color) => {
     const rgb = color
       .match(/[\d.]+/g)
@@ -1358,13 +1359,13 @@ try {
     window.pushSnapshot(window.snapshot)
   })
   const workingHeader = page.getByRole('button', { name: /^Working,/ })
-  const openHeader = page.getByRole('button', { name: /^Open,/ })
+  const openHeader = page.getByRole('button', { name: /^Pinned, \d+ tasks$/ })
   const waitingHeader = page.getByRole('button', { name: /^Waiting,/ })
   await waitingHeader.waitFor()
   assert.equal(
     await workingHeader.evaluate(
       (element, open) =>
-        !!(element.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING),
+        !!(element.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_PRECEDING),
       await openHeader.elementHandle(),
     ),
     true,
@@ -1452,6 +1453,50 @@ try {
     'false',
     'Another section toggle preserves the project choice',
   )
+  await page.evaluate(() => {
+    const base = window.snapshot.workspace.tasks[0]
+    window.setListPreferences({ collapsedThreadSections: ['waiting', 'snoozed', 'settled'] })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: [
+          { ...base, id: 'ordinary', title: 'Ordinary', pinned: false },
+          ...['running', 'waiting', 'snoozed', 'settled'].map((state) => ({
+            ...base,
+            id: 'pin-' + state,
+            title: 'Pinned ' + state,
+            pinned: true,
+            status: state === 'running' ? 'running' : 'done',
+            turns: [],
+            subagents: [],
+            waitingForFeedback: state === 'waiting',
+            archived: state === 'settled',
+            snoozedUntil: state === 'snoozed' ? new Date(Date.now() + 3600000).toISOString() : null,
+          })),
+        ],
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  for (const grouping of ['status', 'project', 'none']) {
+    await page.evaluate((taskGrouping) => window.setListPreferences({ taskGrouping }), grouping)
+    await page.getByTestId('Task pin-settled').waitFor()
+    assert.equal(await page.getByTestId('Task ordinary').count(), 1)
+    for (const state of ['running', 'waiting', 'snoozed', 'settled']) {
+      const row = page.getByTestId('Task pin-' + state)
+      assert.equal(await row.count(), 1)
+      assert.equal(
+        await row.evaluate(
+          (element, ordinary) =>
+            !!(element.compareDocumentPosition(ordinary) & Node.DOCUMENT_POSITION_FOLLOWING),
+          await page.getByTestId('Task ordinary').elementHandle(),
+        ),
+        true,
+      )
+    }
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Mobile task-list status and project sections persist collapse and expansion through full reloads using real preferences and a storage adapter.',

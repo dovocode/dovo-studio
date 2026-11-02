@@ -372,6 +372,45 @@ it('reports excluded standalone request-only history, then counts its paired sna
     await rm(directory, { recursive: true, force: true })
   }
 })
+it('ignores Codex context-size notifications with unchanged totals without hiding new inconsistent usage', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-context-count-'))
+  const path = join(directory, 'sessions', 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  const reader = new UsageTranscripts()
+  const request = codexCounters()
+  const contextOnly = {
+    ...codexCounters(0, 0),
+    cached_input_tokens: 0,
+    cache_write_input_tokens: 0,
+    reasoning_output_tokens: 0,
+    total_tokens: 23061,
+  }
+  const event = (last: unknown, total: unknown) =>
+    JSON.stringify(codexCounted(last, total, new Date().toISOString())) + '\n'
+  try {
+    await mkdir(join(directory, 'sessions'))
+    await writeFile(path, event(request, request) + event(contextOnly, request))
+    const result = await reader.read([agent], new Set(), true)
+    expect(result.records.map((row) => row.turn.tokens)).toEqual([120])
+    expect(result.notices).toEqual([])
+    await appendFile(path, event(contextOnly, request))
+    expect(await reader.read([agent], new Set(), true)).toEqual(result)
+    await appendFile(path, event(request, addCodexCounters(request, request)))
+    const next = await reader.read([agent], new Set(), true)
+    expect(next.records.map((row) => row.turn.tokens)).toEqual([120, 120])
+    expect(next.notices).toEqual([])
+    expect(await new UsageTranscripts().read([agent], new Set(), true)).toEqual(next)
+    await appendFile(
+      path,
+      event(contextOnly, addCodexCounters(request, addCodexCounters(request, request))),
+    )
+    expect((await reader.read([agent], new Set(), true)).notices).toContain(
+      'codex: skipped inconsistent token counters in CLI history.',
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 it('keeps reconciliation state across appends and previews without committing an unterminated row', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-reconciliation-'))
   const source = join(directory, 'sessions')
@@ -678,6 +717,66 @@ it('discards oversized partial and complete rows, then resumes at the next line 
     expect(next).toEqual(
       await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true),
     )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it.each(['item_completed', 'agent_message', 'response_item', 'compacted'])(
+  'skips oversized non-usage Codex %s rows without claiming lost usage',
+  async (type) => {
+    const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-nonusage-size-'))
+    const path = join(directory, 'sessions', 'session.jsonl')
+    const agent = cliAgent('codex', directory)
+    const reader = new UsageTranscripts(smallTranscriptLimits)
+    const event = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      ordinal: 42,
+      type: type === 'response_item' || type === 'compacted' ? type : 'event_msg',
+      payload: { type: type === 'response_item' ? 'message' : type, text: '🙂'.repeat(3000) },
+    })
+    const usage = JSON.stringify(codexEvent(15)) + '\n'
+    try {
+      await mkdir(join(directory, 'sessions'))
+      // Keep the size guard and discard state through an append in the middle of the row.
+      await writeFile(path, event.slice(0, -100))
+      expect((await reader.read([agent], new Set(), true)).notices).toEqual([])
+      const scan = reader['cache'].get(await realpath(path))!
+      expect(scan.trailingBytes).toBe(0)
+      expect(scan.droppingLine).toBe(true)
+      await appendFile(path, event.slice(-100) + '\n' + usage)
+      const result = await reader.read([agent], new Set(), true)
+      expect(result.records.map((row) => row.turn.tokens)).toEqual([15])
+      expect(result.notices).not.toContainEqual(expect.stringContaining('exceeding'))
+      expect(
+        await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true),
+      ).toEqual(result)
+      const { zstdCompressSync } = await import('node:zlib')
+      await rm(path)
+      await writeFile(path + '.zst', zstdCompressSync(event + '\n' + usage))
+      expect(await reader.read([agent], new Set(), true)).toEqual(result)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  },
+)
+it('still warns for oversized Codex usage and unknown envelopes, including misleading text', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-usage-size-warning-'))
+  const path = join(directory, 'sessions', 'session.jsonl')
+  const agent = cliAgent('codex', directory)
+  try {
+    await mkdir(join(directory, 'sessions'))
+    for (const row of [
+      {
+        ...codexEvent(15),
+        payload: { ...codexEvent(15).payload, text: 'item_completed'.repeat(200) },
+      },
+      { text: 'response_item'.repeat(200), ...codexEvent(15) },
+    ]) {
+      await writeFile(path, JSON.stringify(row) + '\n')
+      expect(
+        (await new UsageTranscripts(smallTranscriptLimits).read([agent], new Set(), true)).notices,
+      ).toContain('codex: skipped a transcript row exceeding 1024 bytes; usage may be incomplete.')
+    }
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

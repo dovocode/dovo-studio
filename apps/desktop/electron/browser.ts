@@ -233,6 +233,7 @@ export function registerBrowser(
   const tabCounts = new Map<number, number>()
   // Renderer-owned metadata also covers unloaded and remote tabs during a window handoff.
   const workspaceStates = new Map<number, BrowserWorkspaceState>()
+  const detachedWindows = new Map<number, BrowserWindow>()
   const workspaceWaiters = new Map<number, Set<() => void>>()
   const adoptionWaiters = new Map<number, Set<{ keys: Set<string>; done: () => void }>>()
   const persistedKeys = new Map<number, Set<string>>()
@@ -620,6 +621,9 @@ export function registerBrowser(
   reap.unref()
   const releaseWindow = (window: BrowserWindow, detach: boolean) => {
     workspaces.delete(window)
+    detachedWindows.delete(window.id)
+    for (const [source, target] of detachedWindows)
+      if (target === window) detachedWindows.delete(source)
     tabCounts.delete(window.id)
     workspaceStates.delete(window.id)
     persistedKeys.delete(window.id)
@@ -1756,6 +1760,7 @@ export function registerBrowser(
         await waitForWorkspace(target)
         if (window.isDestroyed()) return
         moveWorkspace(window, target, command)
+        detachedWindows.set(window.id, target)
       }
       return
     }
@@ -1828,6 +1833,17 @@ export function registerBrowser(
     }
     if (command.action === 'status' && command.tabCount !== undefined)
       tabCounts.set(window.id, command.tabCount)
+    if (command.action === 'focus-detached-browser') {
+      const target = detachedWindows.get(window.id)
+      if (!target || target.isDestroyed()) {
+        detachedWindows.delete(window.id)
+        return { url: '', back: false, forward: false }
+      }
+      if (target.isMinimized()) target.restore()
+      target.show()
+      target.focus()
+      return { url: '', back: false, forward: false, focusedWindowId: target.id }
+    }
     if (command.action === 'browser-windows') {
       const windows = [...new Set([...workspaces, ...(browserWindows?.list() ?? [])])]
         .filter((other) => other !== window && !other.isDestroyed())
@@ -2386,6 +2402,7 @@ export function registerBrowser(
         await waitForWorkspace(target)
         const state = workspaceState(window)
         moveWorkspace(window, target, state)
+        if (detachedWindows.get(target.id) === window) detachedWindows.delete(target.id)
         const keys = new Set(state.tabs.map(({ key }) => key))
         pendingReturns.set(window.id, { target, keys })
         await waitForAdoption(target, keys)
@@ -2432,6 +2449,7 @@ export function registerBrowser(
       activeViews.clear()
       windowTabs.clear()
       workspaceStates.clear()
+      detachedWindows.clear()
       persistedKeys.clear()
       pendingReturns.clear()
       profileWindows.clear()
