@@ -12,7 +12,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { RuntimeDefaults } from '../../storage/runtime-defaults.js'
 import { runClientEffect } from '@dovo/client-runtime'
 import { maxValue, minValue, mutableStruct, taskTranscript } from '@dovo/protocol'
-import { decode, decodeResult } from '@dovo/protocol'
+import { decode, decodeResult, sharedProjectPresentation } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -261,9 +261,16 @@ export class TitleGeneration {
           before.delegation
         )
           throw new HttpError(409, 'Choose Scope before sending the first prompt.')
+        const projectDefaults = new RuntimeDefaults(this.db).get()
+        // Archived projects leave automatic new-thread choices just as they leave the pickers.
         const projects = this.store
           .get()
-          .repositories.filter((repo) => repo.kind !== 'scratch' && !repo.gitIdentityError)
+          .repositories.filter(
+            (repo) =>
+              repo.kind !== 'scratch' &&
+              !repo.gitIdentityError &&
+              !sharedProjectPresentation(projectDefaults, repo).archived,
+          )
         let selection: typeof projectSelectionSchema.Type = {
           status: 'selected',
           repositoryId: null,

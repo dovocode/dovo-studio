@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import {
   canChangeTaskCheckout,
   agentTurnSettings,
@@ -384,7 +384,10 @@ it('edits a queued message in place, preserves attachments and order, and reject
     expect(store.task('task').queue?.[0]).toMatchObject({ text: 'Updated', attachments: [file] })
     expect(new WorkspaceStore(db).task('task').queue?.[0]?.text).toBe('Updated')
     expect(() => queue.edit('task', 'first', 'Conflict', 'Original')).toThrow('changed')
+    const historyRead = vi.spyOn(store, 'task')
     expect(queue.accepted('task', 'first', 'Original', [file])).toBe(true)
+    expect(historyRead).not.toHaveBeenCalled()
+    historyRead.mockRestore()
     queue.change('task', 'restore', 'first')
     expect(store.task('task')).toMatchObject({ draft: 'Updated', draftAttachments: [file] })
     expect(() => queue.edit('task', 'first', 'Too late', 'Updated')).toThrow('already started')

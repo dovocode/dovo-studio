@@ -1,5 +1,7 @@
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
+import { ManagedPolicy } from '@dovo/runtime/managed-policy'
+import { decode, managedPolicySchema } from '@dovo/protocol'
 const f = vi.hoisted(() => ({
   token: vi.fn<() => Promise<string | undefined>>(async () => undefined),
   githubFetch: vi.fn<typeof fetch>(async (input, init) => fetch(input, init)),
@@ -123,6 +125,56 @@ const snapshot = {
     automations: [],
   },
 }
+it('disables all update entry points under managed policy', async () => {
+  vi.spyOn(ManagedPolicy, 'load').mockReturnValue(
+    new ManagedPolicy(
+      decode(managedPolicySchema, {
+        schemaVersion: 1,
+        organization: 'Example',
+        limits: { updates: { mode: 'off' } },
+      }),
+    ),
+  )
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  expect(updates.supported).toBe(false)
+  expect(await updates.refresh()).toBe(false)
+  await expect(updates.install()).rejects.toThrow('Example')
+  await expect(updates.remote('download', '1.0.0')).rejects.toThrow('Example')
+  await expect(updates.setChannel('nightly')).rejects.toThrow('Example')
+  expect(f.checks).not.toHaveBeenCalled()
+  expect(f.downloads).not.toHaveBeenCalled()
+})
+it('forces stable updates and honors a managed HTTP desktop feed', async () => {
+  vi.mocked(readLocalSettingsSection).mockReturnValue('nightly')
+  vi.spyOn(ManagedPolicy, 'load').mockReturnValue(
+    new ManagedPolicy(
+      decode(managedPolicySchema, {
+        schemaVersion: 1,
+        organization: 'Example',
+        limits: {
+          updates: {
+            mode: 'auto',
+            allowNightly: false,
+            feedUrl: 'http://updates.internal/releases/',
+          },
+        },
+      }),
+    ),
+  )
+  f.notes = undefined
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => async () => {})
+  expect(updates.state().channel).toBe('stable')
+  await expect(updates.setChannel('nightly')).rejects.toThrow('Example')
+  await expect(updates.remote('download', '1.0.0-nightly.1')).rejects.toThrow('Example')
+  await updates.refresh()
+  expect(f.feed).toHaveBeenCalledWith({
+    provider: 'generic',
+    url: 'http://updates.internal/releases/',
+  })
+  expect(f.githubFetch).not.toHaveBeenCalled()
+})
 it('publishes update notes and downloads directly from the sidebar action', async () => {
   vi.stubGlobal(
     'fetch',

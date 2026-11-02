@@ -53,6 +53,19 @@ const value = (db: ReturnType<typeof openDatabase>, id: string) =>
     mutableStruct({ value: Schema.String }),
     db.prepare('SELECT value FROM documents WHERE id = ?').get(id),
   ).value
+it('reads a single message from an uncached history without retaining the conversation', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const writer = new WorkspaceStore(db)
+    writer.update(() => workspace)
+    const reader = new WorkspaceStore(db)
+    expect(reader.taskMessage('thread', 'm199')).toEqual(task.messages[199])
+    expect(reader.taskMessage('thread', 'missing')).toBeUndefined()
+    expect(reader.retainedHistories().tasks).toEqual([])
+  } finally {
+    db.close()
+  }
+})
 it('migrates legacy history intact and writes only the changed message in an audited runtime', () => {
   const db = openDatabase(':memory:')
   try {

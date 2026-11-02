@@ -51,15 +51,18 @@ export class SharedThreads {
     private feeds: () => ArtifactFeeds,
     private mcp: McpApps,
     private artifactsEnabled: () => boolean,
+    private policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     db.exec(
       `CREATE TABLE IF NOT EXISTS shared_thread_writers(id TEXT PRIMARY KEY,task TEXT NOT NULL,device TEXT NOT NULL,config TEXT,fingerprint TEXT NOT NULL,error TEXT NOT NULL);`,
     )
   }
   preview(taskId: string) {
+    this.policy?.require('sharing')
     return sharedThreadContent(this.store.task(taskId))
   }
   private authorize(taskId: string, device: string) {
+    this.policy?.require('sharing')
     if (
       device !== 'owner' &&
       !this.devices.list().some((value) => value.id === device && !value.revokedAt)
@@ -176,7 +179,7 @@ export class SharedThreads {
     this.timer.unref()
   }
   async tick() {
-    if (this.closed) return
+    if (this.closed || this.policy?.summary?.disabledCapabilities.includes('sharing')) return
     const rows = this.db
       .prepare(
         'SELECT id,task,device,config,fingerprint FROM shared_thread_writers WHERE config IS NOT NULL LIMIT 16',

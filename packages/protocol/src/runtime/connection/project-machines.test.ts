@@ -5,7 +5,9 @@ import {
   taskProjectGroups,
   preferredProjectEntry,
   projectDefaultServer,
+  projectOrganization,
 } from './project-machines'
+import { updateSharedSettingsEntry } from './scoped-settings'
 import { runtimeDefaultsSchema } from './runtime-setup'
 import { taskMachineDraft } from '../../tasks/task-machine-draft'
 import { decode } from '../../shared/schema'
@@ -357,4 +359,83 @@ it('groups General across computers without treating it as a Git project', () =>
     'No Project',
     'No Project',
   ])
+})
+
+it('sorts pinned projects first and leaves archived projects out of new-thread choices', () => {
+  const repository = (
+    id: string,
+    name: string,
+    flags: { pinned?: boolean; archived?: boolean },
+  ) => ({
+    id,
+    name,
+    path: `/${id}`,
+    branch: 'main',
+    ...flags,
+  })
+  const entries = [
+    { runtimeId: 'one', repository: repository('a', 'Alpha', {}) },
+    { runtimeId: 'one', repository: repository('z', 'Zulu', { pinned: true }) },
+    { runtimeId: 'one', repository: repository('old', 'Old', { archived: true }) },
+    {
+      runtimeId: 'one',
+      repository: { ...repository('none', 'No project', {}), kind: 'scratch' as const },
+    },
+  ]
+  expect(projectMachineGroups(entries).map((group) => group.name)).toEqual([
+    'Zulu',
+    'Alpha',
+    'No Project',
+    'Old',
+  ])
+  expect(taskProjectGroups(entries).map((group) => group.name)).toEqual([
+    'No Project',
+    'Zulu',
+    'Alpha',
+  ])
+})
+
+it('resolves organization from the newest shared revision, even from an offline cached copy', () => {
+  const key = 'project:github.com/team/app'
+  const base = {
+    id: 'app',
+    name: 'App',
+    path: '/app',
+    branch: 'main',
+    gitIdentity: 'github.com/team/app',
+  }
+  const pinned = updateSharedSettingsEntry(
+    key,
+    undefined,
+    { projectPinned: true },
+    {
+      updatedAt: 1,
+      changeId: 'a',
+    },
+  )
+  const unpinned = updateSharedSettingsEntry(
+    key,
+    pinned,
+    { projectPinned: false },
+    {
+      updatedAt: 2,
+      changeId: 'b',
+    },
+  )
+  const defaults = (entry: typeof pinned) =>
+    decode(runtimeDefaultsSchema, { scopedSettings: { environment: {}, shared: [entry] } })
+  // The offline computer still reports its stale pinned projection.
+  expect(
+    projectOrganization([
+      { runtimeId: 'offline', repository: { ...base, pinned: true }, defaults: defaults(pinned) },
+      { runtimeId: 'online', repository: base, defaults: defaults(unpinned) },
+    ]),
+  ).toEqual({ pinned: false, archived: false })
+  // Without shared revisions, a group stays visible until every copy is archived.
+  expect(
+    projectOrganization([
+      { runtimeId: 'one', repository: { ...base, gitIdentity: undefined, archived: true } },
+      { runtimeId: 'two', repository: { ...base, gitIdentity: undefined } },
+    ]),
+  ).toEqual({ pinned: false, archived: false })
 })

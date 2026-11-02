@@ -63,6 +63,7 @@ import { fileURLToPath } from 'node:url'
 
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { Effect } from 'effect'
+import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 
 import {
   activateExtension,
@@ -73,6 +74,21 @@ import {
 } from './runtime.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const startupProfile =
+  process.env.DOVO_STARTUP_PROFILE === '1'
+    ? (() => {
+        let previous = process.uptime() * 1000
+        return (phase: string) => {
+          const now = process.uptime() * 1000
+          console.error(
+            `[dovo startup] desktop ${phase}: +${(now - previous).toFixed(1)}ms, total ${now.toFixed(1)}ms`,
+          )
+          previous = now
+        }
+      })()
+    : undefined
+startupProfile?.('modules loaded')
+let startupWindowPending = true
 const rendererPath = join(__dirname, '../dist/index.html')
 const nightly = app.isPackaged && /-nightly\.\d+$/.test(app.getVersion())
 const appName = !app.isPackaged
@@ -261,6 +277,10 @@ function createWindow(): void {
       preload: join(__dirname, 'preload.mjs'),
     },
   })
+  if (startupProfile && startupWindowPending) {
+    startupWindowPending = false
+    window.webContents.once('did-finish-load', () => startupProfile('window loaded'))
+  }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void offerLink(window, url)
@@ -523,10 +543,15 @@ ipcMain.handle('runtime:activate', async (event, id: unknown) => {
 })
 
 const startup = Effect.gen(function* () {
+  yield* Effect.try({
+    try: () => ManagedPolicy.load().requireClient('desktop'),
+    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+  })
   yield* Effect.tryPromise({
     try: () => app.whenReady(),
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   })
+  startupProfile?.('Electron ready')
   // Show the window immediately; the renderer renders its loading state and awaits
   // runtime:connection itself. Booting the runtime in the background removes the runtime
   // cold-start latency from time-to-first-pixel.
@@ -576,6 +601,7 @@ const startup = Effect.gen(function* () {
       await updates.install()
     })
     createWindow()
+    startupProfile?.('window created')
     const checkUpdates = () =>
       void updates
         .refresh()
@@ -594,6 +620,7 @@ const startup = Effect.gen(function* () {
       }),
     ),
   )
+  startupProfile?.('local runtime attempt finished')
   yield* activateOnStartup
 
   app.on('activate', () => {

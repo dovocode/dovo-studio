@@ -7,6 +7,12 @@
   ],
   "type": "module",
   "exports": {
+    "./managed-policy": {
+      "types": "./src/policy/managed-policy.ts",
+      "development": "./src/policy/managed-policy.ts",
+      "import": "./dist/policy/managed-policy.js",
+      "default": "./dist/policy/managed-policy.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "development": "./src/index.ts",

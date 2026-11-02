@@ -69,6 +69,7 @@ const modelCaches = new WeakMap<object, ModelCatalogCache>()
 const availabilityCaches = new WeakMap<object, HarnessAvailabilityCache>()
 export function agentsRoute(request: IncomingMessage, path: string) {
   if (path.startsWith('/api/tasks/codex-sessions/')) return codexSessionRoute(request, path)
+  if (path.startsWith('/api/tasks/pi-sessions/')) return codexSessionRoute(request, path)
   if (path.startsWith('/api/tasks/commits/')) return localCommitRoute(request, path)
   return routeProgram(
     Effect.gen(function* () {

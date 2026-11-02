@@ -25,6 +25,7 @@ import { SettingsChoice as Choice } from '../../screens/settings-controls'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
+import { ProjectOrganizationSettings } from '../../scm/connections/project-organization'
 
 const Context = createContext<{
   draftFlags: number
@@ -165,7 +166,10 @@ export function ScopedSettings({
           ...(target.projectId && !projects.some((project) => project.id === target.projectId)
             ? [{ id: target.projectId, name: 'Project unavailable' }]
             : []),
-          ...projects,
+          ...projects.map((project) => ({
+            id: project.id,
+            name: project.archived ? `${project.name} · Archived` : project.name,
+          })),
         ]}
         onChange={(projectId) => setTarget({ ...target, projectId })}
       />
@@ -222,6 +226,7 @@ export function ScopedSettings({
               This computer is offline. Reconnect to make changes.
             </Text>
           )}
+          {repository && <ProjectOrganizationSettings repository={repository} compact />}
           {children({ scope, repository })}
         </RuntimeScope>
       )}

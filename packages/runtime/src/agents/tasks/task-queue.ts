@@ -79,7 +79,7 @@ export class TaskQueue {
     turnSettings?: TurnSettings,
     plan = false,
   ) {
-    const task = this.store.task(id)
+    this.store.taskSummary(id)
     const receipt = this.store.taskSubmission(id, messageId)
     if (receipt) {
       if (receipt !== fingerprint(text, attachments, turnSettings, plan))
@@ -89,6 +89,7 @@ export class TaskQueue {
         )
       return true
     }
+    const task = this.store.task(id)
     const existing = [...task.messages, ...(task.queue ?? [])].find((m) => m.id === messageId)
     if (existing) {
       if (

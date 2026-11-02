@@ -245,6 +245,7 @@ export function route(
         segments[1] === 'webhooks' &&
         segments.length === 3
       ) {
+        s.policy.require('webhookTasks')
         const id = segments[2],
           row = decode(
             Schema.UndefinedOr(
@@ -397,6 +398,7 @@ export function route(
         if (!s.preferences.get().enableArtifacts)
           throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
         if (path.startsWith('/api/artifacts/feed/')) {
+          if (!path.endsWith('/status') && !path.endsWith('/stop')) s.policy.require('sharing')
           if (agentDeviceAccess || s.peers.internet.contains(device.id))
             throw new HttpError(403, 'A separately paired human client must approve artifact feeds')
           const input = yield* serviceResult(body(request, 32 * 1024))
@@ -1317,6 +1319,7 @@ export function route(
         if (method === 'GET' && action === 'status')
           return yield* serviceResult(desktopUpdate('status', undefined, true))
         if (method === 'POST' && (action === 'start' || action === 'restart')) {
+          s.policy.require('updates')
           const input = decode(
             mutableStruct({
               version: maxValue(minValue(Schema.String, 1), 80),
@@ -1325,6 +1328,7 @@ export function route(
             }),
             yield* serviceResult(body(request)),
           )
+          if (input.version.includes('-')) s.policy.require('nightlyUpdates')
           return yield* serviceResult(
             desktopUpdate(
               action === 'start' ? 'download' : 'restart',
@@ -1346,6 +1350,7 @@ export function route(
         method === 'POST' &&
         ['/api/runtime/update/start', '/api/runtime/update/restart'].includes(path)
       ) {
+        s.policy.require('updates')
         const input = decode(
           mutableStruct({
             version: maxValue(minValue(Schema.String, 1), 80),
@@ -1354,6 +1359,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
+        if (input.version.includes('-')) s.policy.require('nightlyUpdates')
         if (
           !(
             process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop' &&
@@ -1378,6 +1384,8 @@ export function route(
           )
         if (path.endsWith('/restart'))
           throw new HttpError(409, 'Server updates restart automatically after installation')
+        if (s.policy.document?.limits?.updates?.feedUrl)
+          throw new HttpError(403, 'The managed update feed is not supported by the server updater')
         return yield* serviceResult(startServerUpdate(input.version))
       }
       if (method === 'POST' && path === '/api/runtime/cancel-restart') {

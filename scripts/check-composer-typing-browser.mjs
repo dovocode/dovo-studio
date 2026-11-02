@@ -41,8 +41,8 @@ window.controller = controller;
         }))
         builder.onLoad({ filter: /.*/, namespace: 'editor-environment' }, ({ path }) => ({
           contents: path.endsWith('studio-core')
-            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; export const useAppPreferences=()=>({sendWith:'enter'}); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
-            : `export {cn} from '../studio-ui/src/lib/utils'; export {ComposerTextarea} from '../studio-ui/src/composer-surface';`,
+            ? `const workspace = {connected:false,request:()=>Promise.reject(new Error('Unexpected discovery'))}; export const useWorkspace = () => workspace; const preferences={sendWith:'enter'}; export const useAppPreferences=()=>preferences; export const readAppPreferences=()=>preferences; export const updateAppPreferences=value=>Object.assign(preferences,value); export const useWorkspaceSelector=select=>select(workspace); export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key])); export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes';`
+            : `export {cn} from '../studio-ui/src/lib/utils'; export {ComposerTextarea} from '../studio-ui/src/composer-surface'; export const IconButton=()=>null;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
           loader: 'js',
         }))

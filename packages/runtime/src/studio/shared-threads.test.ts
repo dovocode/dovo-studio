@@ -11,6 +11,7 @@ import {
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { SharedThreads } from './shared-threads.js'
+import { ManagedPolicy } from '../policy/managed-policy.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -169,6 +170,42 @@ it('still authorizes unchanged shared threads on every tick', async () => {
     expect(s.packets).toHaveLength(1)
   } finally {
     await threads.dispose()
+    await s.runtime.close()
+  }
+})
+
+it('pauses a persisted writer under policy and resumes it after policy removal', async () => {
+  const s = await setup()
+  const writer = s.writer()
+  const { db, store, devices, artifacts, artifactFeeds, mcpApps } = s.runtime.services
+  const blocked = new SharedThreads(
+    db,
+    store,
+    devices,
+    artifacts,
+    () => artifactFeeds,
+    mcpApps,
+    () => false,
+    new ManagedPolicy({ schemaVersion: 1, organization: 'Test', limits: { sharing: false } }),
+  )
+  try {
+    await writer.enable(s.config, 'owner')
+    await s.settled(1)
+    await writer.dispose()
+    s.store.updateTask('task', (task) => ({ ...task, title: 'After policy' }))
+    await blocked.tick()
+    expect(s.packets).toHaveLength(1)
+    expect(blocked.status('task', s.config.id).enabled).toBe(true)
+    const resumed = s.writer()
+    try {
+      await resumed.tick()
+      expect(s.published()).toMatchObject({ title: 'After policy' })
+    } finally {
+      await resumed.dispose()
+    }
+  } finally {
+    await writer.dispose()
+    await blocked.dispose()
     await s.runtime.close()
   }
 })

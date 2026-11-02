@@ -235,7 +235,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     configured.add(`${agent.provider}\0${command}`)
     result.push({
       id: `${agent.provider}-executable-${result.length}`,
-      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : agent.provider === 'vibe' ? 'Mistral Vibe' : 'ACP'} executable (${command})`,
+      name: `${agent.provider === 'pi' ? 'Pi' : agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : agent.provider === 'vibe' ? 'Mistral Vibe' : 'ACP'} executable (${command})`,
       provider: agent.provider,
       kind: 'executable',
       ...(agent.provider === 'claude'

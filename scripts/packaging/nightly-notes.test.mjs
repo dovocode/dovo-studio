@@ -60,6 +60,27 @@ await test('nightly notes include commits since the last published ancestor, ski
         releases: [{ tagName: 'v1.0.0-nightly.3', isDraft: false }],
       }).includes('No new commits'),
     )
+    await commit('Update Homebrew distribution definitions')
+    await commit('Fix browser fixture for composer')
+    await commit('ci: update release jobs')
+    for (let index = 0; index < 9; index++) await commit(`Add useful feature ${index}`)
+    git('commit', '--allow-empty', '-m', 'Add useful feature 8')
+    const latest = git('rev-parse', 'HEAD')
+    const withHighlights = nightlyNotes({
+      cwd,
+      target: latest,
+      repository: 'dovocode/dovo-studio',
+      releases: [{ tagName: 'v1.0.0-nightly.3', isDraft: false }],
+    })
+    const [highlights, complete] = withHighlights.split('## Changes')
+    assert.equal(highlights.split('\n').filter((line) => line.startsWith('- ')).length, 7)
+    assert.ok(highlights.includes('Add useful feature 8'))
+    assert.equal(highlights.match(/Add useful feature 8/g).length, 1)
+    assert.ok(!highlights.includes('Homebrew'))
+    assert.ok(!highlights.includes('fixture'))
+    assert.ok(!highlights.includes('ci:'))
+    assert.ok(complete.includes('Homebrew'))
+    assert.ok(complete.includes('Add useful feature 0'))
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }

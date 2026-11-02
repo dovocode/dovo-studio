@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from 'vite-plus/test'
 import {
   chmod,
+  mkdir,
   lstat,
   readFile,
   rename,
@@ -18,6 +19,39 @@ import { safeFile } from '../repositories/paths.js'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
+})
+it('keeps repository-root checkpoint paths from subfolders with diff.relative enabled', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const nested = join(f.directory, 'nested')
+  await mkdir(nested)
+  await writeFile(join(nested, 'inside.txt'), 'before\n')
+  await git.command(f.directory, ['add', '.'])
+  await git.commit(f.directory, 'Add nested file')
+  await git.command(f.directory, ['config', 'diff.relative', 'true'])
+  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/relative/before')
+  await writeFile(join(f.directory, 'hello.txt'), 'outside edit\n')
+  await writeFile(join(nested, 'inside.txt'), 'inside edit\n')
+  const after = await git.snapshot(f.directory, 'refs/dovo/checkpoints/relative/after')
+  const changes = await git.checkpointChanges(nested, before, after)
+  expect(changes.files).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'hello.txt', before: 'original\n', after: 'outside edit\n' }),
+      expect.objectContaining({
+        path: 'nested/inside.txt',
+        before: 'before\n',
+        after: 'inside edit\n',
+      }),
+    ]),
+  )
+  expect(changes.files).toHaveLength(2)
+  await git.restoreSnapshot(nested, before, 'refs/dovo/checkpoints/relative/undo')
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+  expect(await readFile(join(nested, 'inside.txt'), 'utf8')).toBe('before\n')
+  expect(
+    (await git.checkpointFilePreview(nested, before, after, 'nested/inside.txt')).after,
+  ).toMatchObject({ kind: 'text', text: 'inside edit\n' })
 })
 it('captures same-size edits when the source index considers the file racily clean', async () => {
   const f = await fixture()

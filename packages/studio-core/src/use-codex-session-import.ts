@@ -13,6 +13,7 @@ export function useCodexSessionImport(
   request: WorkspaceRequest,
   repositoryId: string,
   open: boolean,
+  provider: 'codex' | 'pi' = 'codex',
 ) {
   const [agentId, setAgentId] = useState('')
   const [selected, setSelected] = useState('')
@@ -30,7 +31,7 @@ export function useCodexSessionImport(
   }>()
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
-  const owner = JSON.stringify([repositoryId, agentId, revision])
+  const owner = JSON.stringify([repositoryId, agentId, revision, provider])
   const detailOwner = JSON.stringify([owner, selected])
   const currentOwner = useRef(detailOwner)
   const mounted = useRef(false)
@@ -54,7 +55,7 @@ export function useCodexSessionImport(
     if (!open) return
     let active = true
     void request(
-      '/api/tasks/codex-sessions/list',
+      `/api/tasks/${provider}-sessions/list`,
       { repositoryId, agentId },
       codexSessionListSchema,
     ).then(
@@ -73,12 +74,12 @@ export function useCodexSessionImport(
     return () => {
       active = false
     }
-  }, [request, repositoryId, agentId, open, owner])
+  }, [request, repositoryId, agentId, open, owner, provider])
   useEffect(() => {
     if (!open || !selected) return
     let active = true
     void request(
-      '/api/tasks/codex-sessions/preview',
+      `/api/tasks/${provider}-sessions/preview`,
       { repositoryId, agentId, key: selected },
       codexSessionPreviewSchema,
     ).then(
@@ -96,7 +97,7 @@ export function useCodexSessionImport(
     return () => {
       active = false
     }
-  }, [request, repositoryId, agentId, selected, open, detailOwner])
+  }, [request, repositoryId, agentId, selected, open, detailOwner, provider])
   return {
     agentId,
     setAgentId: (id: string) => {
@@ -125,7 +126,7 @@ export function useCodexSessionImport(
       setImportError('')
       try {
         const result = await request(
-          '/api/tasks/codex-sessions/import',
+          `/api/tasks/${provider}-sessions/import`,
           {
             repositoryId,
             agentId,

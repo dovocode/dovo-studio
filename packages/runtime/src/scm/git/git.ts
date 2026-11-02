@@ -1514,11 +1514,15 @@ export class GitService {
     only?: string[],
     signal?: AbortSignal,
   ) {
+    // Snapshot paths belong to the repository tree, even for a thread started in a subfolder.
+    cwd = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).trim()
     const current = await this.snapshot(cwd, backupRef, signal)
     if (current === target) return current
     const names = (
       await this.command(cwd, [
         '--literal-pathspecs',
+        '-c',
+        'diff.relative=false',
         'diff',
         '--name-only',
         '--no-renames',
@@ -1581,8 +1585,18 @@ export class GitService {
       await this.command(
         cwd,
         before
-          ? ['diff', '--name-only', '--no-renames', '-z', before, after, '--']
-          : ['ls-tree', '-r', '--name-only', '-z', after, '--'],
+          ? [
+              '-c',
+              'diff.relative=false',
+              'diff',
+              '--name-only',
+              '--no-renames',
+              '-z',
+              before,
+              after,
+              '--',
+            ]
+          : ['ls-tree', '--full-tree', '-r', '--name-only', '-z', after, '--'],
       )
     )
       .split('\0')
@@ -1667,6 +1681,7 @@ export class GitService {
       const output = await this.command(cwd, [
         '--literal-pathspecs',
         'ls-tree',
+        '--full-tree',
         '-z',
         '-l',
         tree,

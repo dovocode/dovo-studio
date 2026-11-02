@@ -208,6 +208,8 @@
     "test:t3-adoptions:browser": "node scripts/check-t3-adoptions-browser.mjs",
     "test:reading-position:browser": "node scripts/check-reading-position-browser.mjs",
     "test:attachment-media:browser": "node scripts/check-attachment-media-browser.mjs",
+    "test:rich-composer:browser": "node scripts/check-rich-composer-browser.mjs",
+    "test:project-organization:browser": "node scripts/check-project-organization-browser.mjs && node scripts/check-project-menu-browser.mjs",
     "test:codex-session-import:browser": "node scripts/check-codex-session-import-browser.mjs",
     "benchmark:markdown-parts": "node scripts/benchmark-markdown-parts-cache.mjs",
     "test:prompt-queue:browser": "node scripts/check-desktop-stage-first-browser.mjs && node scripts/check-desktop-queue-handoff-browser.mjs && node scripts/check-mobile-queue-actions-browser.mjs && node scripts/check-mobile-queue-staging-browser.mjs",

@@ -38,14 +38,18 @@ export function ComposerSurface({
     const elements = () => [
       form,
       ...form.querySelectorAll<HTMLElement>(
-        ':scope > textarea, [data-composer-leading], [data-composer-controls], [data-composer-actions], [data-composer-footer] button',
+        ':scope > textarea, :scope > [data-composer-input], [data-composer-leading], [data-composer-controls], [data-composer-actions], [data-composer-footer] button',
       ),
     ]
     const measure = () =>
       elements().map((element) => ({
         element,
         bounds: element.getBoundingClientRect(),
-        padding: element.tagName === 'TEXTAREA' ? getComputedStyle(element).padding : undefined,
+        // Inputs animate their padding and height: a textarea, or a rich editor's host.
+        padding:
+          element.tagName === 'TEXTAREA' || element.hasAttribute('data-composer-input')
+            ? getComputedStyle(element).padding
+            : undefined,
         parent: element.matches('button')
           ? element.closest<HTMLElement>(
               '[data-composer-leading], [data-composer-controls], [data-composer-actions]',

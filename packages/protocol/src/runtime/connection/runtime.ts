@@ -1,3 +1,4 @@
+import { managedPolicySummarySchema } from './managed-policy.js'
 import {
   projectDirectorySchema,
   projectContentSearchSchema,
@@ -127,6 +128,7 @@ export const internetStatusSchema = mutableStruct({
   error: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  managedPolicy: Schema.optional(managedPolicySummarySchema),
   olderSettled: Schema.optional(
     mutableStruct({
       limit: Schema.Number.pipe(
@@ -179,6 +181,8 @@ export const snapshotSchema = mutableStruct({
   /** Queued model/reasoning choices become thread defaults when their turn starts. */
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
+  /** Stores project pin/archive categories and the local-only repository flags. */
+  projectOrganizationSupported: Schema.optional(Schema.Literal(true)),
   projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),
   projectTransfers: Schema.optional(mutableArray(projectTransferSchema)),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),

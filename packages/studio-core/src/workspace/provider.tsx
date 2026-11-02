@@ -4,6 +4,7 @@ import {
   runtimeHasCustomName,
   mergeSharedSettings,
   pendingSharedSettings,
+  projectOrganizationCategories,
   sharedSettingsSyncSchema,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
@@ -1973,6 +1974,7 @@ export function WorkspaceProvider({
       const pending = pendingSharedSettings(
         shared,
         entry.snapshot.defaults?.scopedSettings?.shared ?? [],
+        entry.snapshot.projectOrganizationSupported ? [] : projectOrganizationCategories,
       )
       if (!pending.length) {
         failedSettingsRequests.current.delete(entry.profile.id)

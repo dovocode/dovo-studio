@@ -63,6 +63,16 @@ const searchTriggers = `
  * search read only the records they return. */
 export class Conversations {
   private readonly deferredSearch = new Map<string, number>()
+  message(taskId: string, messageId: string) {
+    const row = this.db
+      .prepare(
+        "SELECT value FROM conversation_items WHERE task_id = ? AND kind = 'message' AND item_id = ?",
+      )
+      .get(taskId, messageId)
+    if (!row) return undefined
+    const { value } = decode(mutableStruct({ value: Schema.String }), row)
+    return decode(messageSchema, JSON.parse(value))
+  }
   constructor(private readonly db: Database.Database) {
     const hadSearch = !!db
       .prepare(

@@ -1,3 +1,4 @@
+import { ManagedPolicy } from './policy/managed-policy.js'
 import { taskInputOwner, taskRemoteHumanInputs } from '@dovo/protocol'
 import { indexTaskFamilyWorking, taskIsWorking } from '@dovo/protocol'
 import { PeerConnections } from './http/peer-connections.js'
@@ -73,7 +74,11 @@ import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
 import { errorMessage } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
-export function createServices(db: Database.Database, ownerToken: string): Services {
+export function createServices(
+  db: Database.Database,
+  ownerToken: string,
+  policy = ManagedPolicy.load(),
+): Services {
   db.prepare("INSERT OR IGNORE INTO documents (id, value) VALUES ('runtime-identity', ?)").run(
     JSON.stringify(randomUUID()),
   )
@@ -88,7 +93,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   const activity = new Activity(db)
   const threadServers = new ThreadServers(runtimeId)
   const commands = new Commands(db)
-  const preferences = new RuntimePreferences(db, () => store.update((workspace) => workspace))
+  const preferences = new RuntimePreferences(
+    db,
+    () => store.update((workspace) => workspace),
+    policy,
+  )
   const deviceHostUploads = new DeviceHostUploads()
   const deviceHosts = new DeviceHosts(
     db,
@@ -185,6 +194,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     agents = new AgentRegistry(
       () => commands.get(),
       (id) => acpInstallations.launch(id),
+      policy,
     ),
     approvals = new Approvals(activity, store, preferences),
     questions = new Questions(activity, store),
@@ -251,7 +261,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => enabledStudioTools(preferences.get()),
       () => preferences.get().enableLinkedProjectsTool,
     ),
-    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
+    jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git, policy)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
@@ -469,6 +479,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     }
   })
   const services: Services = {
+    policy,
     projectTransfers: new ProjectTransfers(() => services, db),
     threadWatch,
     remoteDesktop: new RemoteDesktop(
@@ -488,7 +499,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     instanceId: randomUUID(),
     runtimeId,
     runtimeAddresses: () => [],
-    peers: (peerConnections = new PeerConnections(db, devices)),
+    peers: (peerConnections = new PeerConnections(db, devices, policy)),
     mcpApps,
     artifacts,
     artifactFeeds: new ArtifactFeeds(
@@ -502,6 +513,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         if (!peerConnections) throw new Error('Runtime connections are not initialized')
         return peerConnections.internet.origin
       },
+      policy,
     ),
     sharedThreads: new SharedThreads(
       db,
@@ -511,6 +523,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => services.artifactFeeds,
       mcpApps,
       () => preferences.get().enableArtifacts,
+      policy,
     ),
     memory,
     scratch,
@@ -562,6 +575,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   return services
 }
 export interface Services {
+  policy: ManagedPolicy
   projectTransfers: ProjectTransfers
   remoteDesktop: RemoteDesktop
   threadWatch: ThreadWatch

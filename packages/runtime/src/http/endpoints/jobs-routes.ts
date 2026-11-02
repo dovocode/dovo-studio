@@ -57,6 +57,7 @@ export function jobsRoute(request: IncomingMessage, path: string, owner: () => v
         })
       }
       if (method === 'POST' && path === '/api/jobs/webhook-secret') {
+        s.policy.require('webhookTasks')
         owner()
         const { id } = decode(
           mutableStruct({

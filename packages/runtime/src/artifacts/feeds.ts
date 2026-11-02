@@ -52,11 +52,13 @@ export class ArtifactFeeds {
     private workspace: WorkspaceStore,
     private enabled: () => boolean,
     private connectOrigin = () => process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
+    private policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS artifact_feeds(publication TEXT PRIMARY KEY,task TEXT NOT NULL,
       artifact TEXT NOT NULL,revision INTEGER NOT NULL,device TEXT NOT NULL,config TEXT,next INTEGER NOT NULL,error TEXT NOT NULL);`)
   }
   private authorize(ref: Reference, device: string) {
+    this.policy?.require('sharing')
     if (this.closed || !this.enabled())
       throw new FeedAccessError(403, 'Artifact data feeds are disabled')
     if (this.deletingTasks.has(ref.taskId))
@@ -290,7 +292,7 @@ export class ArtifactFeeds {
     this.timer.unref()
   }
   tick() {
-    if (this.closed) return
+    if (this.closed || this.policy?.summary?.disabledCapabilities.includes('sharing')) return
     const rows = this.db
       .prepare(
         'SELECT publication,task,config FROM artifact_feeds WHERE config IS NOT NULL AND next<=? ORDER BY next LIMIT 16',

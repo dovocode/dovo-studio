@@ -481,7 +481,10 @@ it('keeps children working after a reply and delivers completion once without es
         permission: 'full-access',
       }).id
       await childStarted.promise
+      const historyRead = vi.spyOn(s.store, 'task')
       expect((await s.tasks.subagentWait(taskId(run), childId, 0)).running).toBe(true)
+      expect(historyRead.mock.calls.some(([id]) => id === childId)).toBe(false)
+      historyRead.mockRestore()
       run.onText('Finishing parent')
     },
   })

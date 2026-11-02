@@ -47,6 +47,7 @@ export const providerSchema = Schema.Literals([
   'grok',
   'muse',
   'cursor',
+  'pi',
   'acp',
 ])
 export const agentIconSchema = Schema.Literals([
@@ -200,6 +201,10 @@ export const scopedSettingsValueSchema = mutableStruct({
   projectName: Schema.optional(Schema.NullOr(maxValue(minValue(Schema.String, 1), 200))),
   /** Null resets custom icons across computers without resurrecting local overrides. */
   projectIcon: Schema.optional(Schema.NullOr(projectIconSchema)),
+  /** Favorites sort first. False is a revisioned unpin, never an absent value. */
+  projectPinned: Schema.optional(Schema.Boolean),
+  /** Hidden from new-thread project choices; threads, settings and files are untouched. */
+  projectArchived: Schema.optional(Schema.Boolean),
   agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   taskDefaults: Schema.optional(projectTaskDefaultsSchema),
   taskBehavior: Schema.optional(taskBehaviorSchema),
@@ -223,6 +228,8 @@ export const sharedSettingsEntrySchema = mutableStruct({
     mutableStruct({
       projectName: Schema.optional(settingsRevisionSchema),
       projectIcon: Schema.optional(settingsRevisionSchema),
+      projectPinned: Schema.optional(settingsRevisionSchema),
+      projectArchived: Schema.optional(settingsRevisionSchema),
       agents: Schema.optional(settingsRevisionSchema),
       taskDefaults: Schema.optional(settingsRevisionSchema),
       taskBehavior: Schema.optional(settingsRevisionSchema),
@@ -257,6 +264,9 @@ export const repositorySchema = mutableStruct({
   kind: Schema.optional(Schema.Literals(['folder', 'scratch'])),
   /** User-selected project icon, stored as a small PNG for every client. */
   iconOverride: Schema.optional(projectIconSchema),
+  /** Stored for this computer; snapshots project the shared Git-identity value when present. */
+  pinned: Schema.optional(Schema.Boolean),
+  archived: Schema.optional(Schema.Boolean),
   /** Derived from files in the project checkout by the runtime. */
   discoveredIcon: Schema.optional(
     maxValue(
@@ -926,6 +936,18 @@ export const taskSchema = mutableStruct({
       importedAt: Schema.String,
     }),
   ),
+  importedPiSession: Schema.optional(
+    mutableStruct({
+      key: Schema.String,
+      sessionId: Schema.String,
+      directory: Schema.String,
+      transcriptPath: Schema.String,
+      /** Runtime-owned copy; the terminal's original file is never used for continuation. */
+      privatePath: Schema.optional(Schema.String),
+      cwd: Schema.String,
+      importedAt: Schema.String,
+    }),
+  ),
   error: Schema.optional(Schema.String),
   activity: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String),
@@ -1235,7 +1257,7 @@ export function defaultTaskHarness(provider: TaskHarness['provider']): TaskHarne
     model: '',
     reasoning: '',
     instructions: '',
-    permission: 'full-access',
+    permission: provider === 'pi' ? 'read-only' : 'full-access',
     endpoint: '',
   }
 }

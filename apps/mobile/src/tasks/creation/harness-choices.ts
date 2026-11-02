@@ -18,6 +18,7 @@ import {
 } from '@dovo/protocol'
 export const harnessNames: Record<Agent['provider'], string> = {
   codex: 'Codex',
+  pi: 'Pi',
   claude: 'Claude',
   vibe: 'Vibe',
   opencode: 'OpenCode',

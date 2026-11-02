@@ -22,6 +22,7 @@ const mocks = {
     window.setContextVisible=value=>{preferences.showContextUsage=value};
     window.setSendOptions=value=>{preferences.showSendOptions=value};
     window.setMinimalComposer=value=>{preferences.minimalComposer=value};
+    window.setRichText=value=>{preferences.richTextComposer=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
   `,
@@ -674,7 +675,23 @@ try {
       await closeInfo()
       assert.equal(await input.inputValue(), '')
       await checkIdle(project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined)
-      if (project === 'dovo-studio') await checkFullComposer()
+      if (project === 'dovo-studio') {
+        // The rich text editor takes the textarea's place in the single idle row.
+        await page.evaluate(() => {
+          window.setRichText(true)
+          window.setTask({})
+        })
+        await page
+          .locator('.studio-composer [contenteditable][aria-label="Message task"]')
+          .waitFor()
+        await checkIdle(device.name + '-idle-thread-rich.png')
+        await page.evaluate(() => {
+          window.setRichText(false)
+          window.setTask({})
+        })
+        await page.locator('.studio-composer textarea[aria-label="Message task"]').waitFor()
+        await checkFullComposer()
+      }
       const startedSurface = await page.locator('.studio-composer').boundingBox()
       assert.ok(
         device.height - startedSurface.y - startedSurface.height >= 19,

@@ -43,6 +43,7 @@ export { AgentAvatar, agentIconChoices } from './agent-avatar'
 export { ProjectIcon } from './project-icon'
 
 export { TaskDefaultSettings } from './task-default-settings'
+export { ProjectOrganizationSettings } from './project-organization'
 export {
   SettingsPage,
   SettingsGroup,

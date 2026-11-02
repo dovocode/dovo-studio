@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import type { ManagedPolicy } from '../../policy/managed-policy.js'
 import { SecretReferences } from './secret-references.js'
 import { join } from 'node:path'
 import { Effect } from 'effect'
@@ -21,10 +22,12 @@ export class AgentRegistry {
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private acpLaunch?: (id: string) => AcpLaunch,
+    private policy?: ManagedPolicy,
   ) {
     const providers = [
       ['vibe', () => import('../providers/vibe/vibe.js').then((m) => m.createVibeAdapter())],
       ['codex', () => import('../providers/codex/codex.js').then((m) => m.createCodexAdapter())],
+      ['pi', () => import('../providers/pi/pi.js').then((m) => m.createPiAdapter())],
       [
         'opencode',
         () => import('../providers/opencode/opencode.js').then((m) => m.createOpenCodeAdapter()),
@@ -69,6 +72,7 @@ export class AgentRegistry {
       })
   }
   configure<T extends AgentDiscovery>(agent: T): T {
+    agent = this.policy?.configure(agent) ?? agent
     if (agent.provider === 'cursor') return { ...agent, endpoint: '' }
     return {
       ...agent,
@@ -77,17 +81,20 @@ export class AgentRegistry {
       (agent.provider === 'codex' ||
         agent.provider === 'claude' ||
         agent.provider === 'hermes' ||
+        agent.provider === 'pi' ||
         agent.provider === 'vibe')
         ? {
             env: {
               ...agent.env,
-              [agent.provider === 'vibe'
-                ? 'VIBE_HOME'
-                : agent.provider === 'hermes'
-                  ? 'HERMES_HOME'
-                  : agent.provider === 'codex'
-                    ? 'CODEX_HOME'
-                    : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
+              [agent.provider === 'pi'
+                ? 'PI_CODING_AGENT_DIR'
+                : agent.provider === 'vibe'
+                  ? 'VIBE_HOME'
+                  : agent.provider === 'hermes'
+                    ? 'HERMES_HOME'
+                    : agent.provider === 'codex'
+                      ? 'CODEX_HOME'
+                      : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
             },
           }
         : {}),
@@ -98,6 +105,9 @@ export class AgentRegistry {
           (agent.provider === 'opencode' ? '' : this.settings()[agent.provider]),
       ),
     }
+  }
+  authorize(agent: Agent) {
+    return this.policy?.agent(agent) ?? agent
   }
   launch(agent: AgentDiscovery): AcpLaunch | undefined {
     if (agent.provider !== 'acp' || !agent.acpInstallationId) return undefined
@@ -132,7 +142,8 @@ export class AgentRegistry {
             }
           : {}),
         run: async (run) => {
-          const agent = await this.secretReferences.resolve(this.configure(run.agent), run.signal)
+          const managed = this.policy?.agent(run.agent) ?? run.agent
+          const agent = await this.secretReferences.resolve(this.configure(managed), run.signal)
           return adapter.run({ ...run, agent, acpLaunch: this.launch(agent) })
         },
         probe: (agent) => {

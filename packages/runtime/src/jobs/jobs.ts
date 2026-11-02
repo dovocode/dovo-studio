@@ -58,6 +58,7 @@ export class Jobs {
     private activity?: Pick<Activity, 'add'>,
     private generateTitle?: (text: string) => Promise<{ title: string }>,
     git?: Pick<GitService, 'githubAccount'>,
+    private policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     if (git)
       this.githubTriggers = new GithubTriggers(
@@ -220,6 +221,7 @@ export class Jobs {
     return this.start(id, key)
   }
   start(id: string, key?: string, triggerPayload?: unknown) {
+    if (key?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     const flow = this.store.get().automations.find((flow) => flow.id === id)
     if (!flow) throw new HttpError(404, 'Automation not found')
     try {
@@ -264,6 +266,7 @@ export class Jobs {
   retry(id: string) {
     const existing = this.runs.get(id)
     if (!existing) throw new HttpError(404, 'Job not found')
+    if (existing.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     if (this.active.has(id))
       throw new HttpError(409, 'Wait for the current step to stop before retrying')
     if (!['failed', 'cancelled'].includes(existing.status))
@@ -311,6 +314,7 @@ export class Jobs {
     const run = this.runs.get(id)
     if (!run || run.status !== 'waiting' || !run.waitingNodeId)
       throw new HttpError(409, 'Job is not waiting for review')
+    if (allow && run.deliveryKey?.startsWith('webhook:')) this.policy?.require('webhookTasks')
     if (!allow) {
       this.finish(id, 'cancelled')
       return

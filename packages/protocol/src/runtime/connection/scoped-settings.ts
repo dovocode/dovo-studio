@@ -81,16 +81,20 @@ const newerEntry = (entry: Revision | undefined, current: Revision | undefined) 
     entry.updatedAt > current.updatedAt ||
     (entry.updatedAt === current.updatedAt && entry.changeId > current.changeId))
 
+/** Categories an older runtime drops on decode; comparing them would resend forever. */
+export const projectOrganizationCategories = ['projectPinned', 'projectArchived'] as const
 export function pendingSharedSettings(
   shared: readonly SharedSettingsEntry[],
   known: readonly SharedSettingsEntry[],
+  unsupported: readonly (keyof ScopedSettingsValue)[] = [],
 ) {
   const byKey = new Map(known.map((entry) => [entry.key, entry]))
+  const compared = categories.filter((key) => !unsupported.includes(key))
   return shared.filter((entry) => {
     const current = byKey.get(entry.key)
     return (
       !current ||
-      categories.some((key) =>
+      compared.some((key) =>
         newerEntry(categoryRevision(entry, key), categoryRevision(current, key)),
       )
     )
@@ -181,6 +185,43 @@ export function canonicalSharedSettings(
   })
   return changed ? mergeSharedSettings(entries) : shared
 }
+export type ProjectOrganizationChange = Pick<
+  ScopedSettingsValue,
+  'projectPinned' | 'projectArchived'
+>
+/**
+ * Confirmed Git identities share pin/archive across paired computers; local-only projects keep
+ * them on their own computer. Both use the category CAS of the scoped settings save route.
+ */
+export function projectOrganizationScope(repository: Repository) {
+  return {
+    scope: sharedProjectKey(repository) ? ('project' as const) : ('environment-project' as const),
+    repositoryId: repository.id,
+  }
+}
+export function projectOrganizationSave(
+  repository: Repository,
+  current: ScopedSettingsValue,
+  change: ProjectOrganizationChange,
+) {
+  return {
+    ...projectOrganizationScope(repository),
+    projectKey: sharedProjectKey(repository),
+    before: current,
+    after: { ...current, ...change },
+  }
+}
+/** Explains why pin/archive cannot be changed for this copy, if anything blocks it. */
+export function projectOrganizationBlocked(
+  repository: Repository,
+  supported: boolean | undefined,
+): string | undefined {
+  if (repository.kind === 'scratch') return 'Conversations without a project cannot be organized.'
+  if (!supported) return 'Update this computer to pin or archive projects.'
+  if (repository.gitIdentityError)
+    return 'Reconnect this checkout to confirm its Git remote before pinning or archiving.'
+  return undefined
+}
 export function settingsAtScope(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,
@@ -189,6 +230,8 @@ export function settingsAtScope(
   if (scope === 'environment') return environmentSettings(runtime)
   if (scope === 'environment-project')
     return {
+      projectPinned: repository?.pinned,
+      projectArchived: repository?.archived,
       taskDefaults: repository?.taskDefaults,
       taskBehavior: repository?.taskBehavior,
       resources: repository?.resources,
@@ -414,13 +457,21 @@ export function settingsProjectChoices(
   sources: readonly SettingsTargetSource[],
   environmentId: string,
 ) {
-  const projects = new Map<string, { id: string; name: string }>()
+  const projects = new Map<string, { id: string; name: string; archived: boolean }>()
   for (const source of sources) {
     if (environmentId && source.profile.id !== environmentId) continue
     for (const repository of source.snapshot?.workspace.repositories ?? []) {
       if (!environmentId && !repository.gitIdentity) continue
       const id = settingsProjectId(repository, source.profile.id)
-      if (!projects.has(id)) projects.set(id, { id, name: projectDisplayName(repository) })
+      const current = projects.get(id)
+      // Archived projects stay configurable here; a copy still in use keeps the project open.
+      if (current) current.archived &&= !!repository.archived
+      else
+        projects.set(id, {
+          id,
+          name: projectDisplayName(repository),
+          archived: !!repository.archived,
+        })
     }
   }
   return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))

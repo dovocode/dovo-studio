@@ -10,6 +10,7 @@ import { ValidationError, safeValidationIssues, safeValidationMessage } from '@d
 import { decode } from '@dovo/protocol'
 import { completeRequest } from './support/request-activity.js'
 import { createServer, type IncomingMessage } from 'node:http'
+import { isIP } from 'node:net'
 import type { Socket } from 'node:net'
 import { WebSocketServer, WebSocket } from 'ws'
 
@@ -33,6 +34,35 @@ export function createRuntimeServer(
   advertise = true,
   tunnel?: (socket: Socket) => PeerOrigin | undefined,
 ) {
+  const requireClientAccess = (request: IncomingMessage, peer?: PeerOrigin) => {
+    const address = request.socket.remoteAddress?.toLowerCase()
+    const ipv4 = address?.replace(/^::ffff:/, '')
+    const remote =
+      peer || !(address === '::1' || (ipv4 && isIP(ipv4) === 4 && ipv4.startsWith('127.')))
+    if (remote) services.policy.require('remoteClients')
+    if (peer) services.policy.require('connect')
+    if (
+      !remote &&
+      request.headers.origin &&
+      request.headers.origin !== 'null' &&
+      request.headers.origin !== 'file://'
+    ) {
+      let desktopDevelopmentOrigin: string | undefined
+      if (process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop' && process.env.VITE_DEV_SERVER_URL) {
+        try {
+          const url = new URL(process.env.VITE_DEV_SERVER_URL)
+          if (url.protocol === 'http:' || url.protocol === 'https:')
+            desktopDevelopmentOrigin = url.origin
+        } catch {
+          // An invalid development URL does not grant an exemption.
+        }
+      }
+      // Origin is a browser classification signal, not authentication. Packaged Electron's
+      // file renderer can send an opaque `null` or file origin; the desktop enforces its own policy.
+      if (request.headers.origin !== desktopDevelopmentOrigin)
+        services.policy.requireClient('local-browser')
+    }
+  }
   let stopping = false
   let closing: Promise<void> | undefined
   const connections = new Set<Socket>()
@@ -69,6 +99,13 @@ export function createRuntimeServer(
       return
     }
     if (request.method === 'OPTIONS') {
+      try {
+        requireClientAccess(request, peer)
+      } catch (error) {
+        return json(request, response, error instanceof HttpError ? error.status : 500, {
+          error: errorMessage(error),
+        })
+      }
       response.writeHead(204)
       response.end()
       return
@@ -82,6 +119,7 @@ export function createRuntimeServer(
     if (expensive) void finished.then(memoryAttribution(services).begin(expensive))
     const handled = Promise.resolve()
       .then(() => {
+        requireClientAccess(request, peer)
         let url: URL
         try {
           url = new URL(request.url ?? '/', 'http://runtime.local')
@@ -232,6 +270,7 @@ export function createRuntimeServer(
         throw new HttpError(403, 'This internet connection belongs to another device')
     }
     try {
+      requireClientAccess(request, peer)
       if (tunnel && !peer?.deviceId)
         throw new HttpError(403, 'Internet connection is not authorized')
       const url = new URL(request.url ?? '/', 'http://runtime.local')

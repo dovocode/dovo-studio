@@ -1,9 +1,15 @@
 import { reconcileComposerDraft } from './draft-reconciliation'
 
-/** Own pending persistence independently of React renders and request completion. */
+/**
+ * Own pending persistence independently of React renders and request completion.
+ *
+ * `write` receives `expected` when the write is a send acknowledgement: it must only replace a
+ * persisted draft that still holds the submitted text. A delayed acknowledgement can arrive
+ * after this controller's thread was left and reopened, when a newer composer owns the draft.
+ */
 export function createComposerDraft(
   initial: string,
-  write: (text: string) => void,
+  write: (text: string, expected?: string) => void,
   onError: (cause: unknown) => void = () => {},
 ) {
   const listeners = new Set<() => void>()
@@ -13,6 +19,7 @@ export function createComposerDraft(
   let revision = 0
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  let expected: string | undefined
   const consumed = new Set<string>()
   const cancel = () => {
     clearTimeout(timer)
@@ -21,11 +28,13 @@ export function createComposerDraft(
   const flush = () => {
     cancel()
     if (!dirty) return
-    write(text)
+    if (expected === undefined) write(text)
+    else write(text, expected)
     dirty = false
+    expected = undefined
   }
   return {
-    rebind(writer: (text: string) => void) {
+    rebind(writer: (text: string, expected?: string) => void) {
       write = writer
     },
     subscribe: (listener: () => void) => {
@@ -44,6 +53,7 @@ export function createComposerDraft(
       text = value
       revision++
       dirty = true
+      expected = undefined
       publish()
       cancel()
       timer = setTimeout(() => {
@@ -74,6 +84,9 @@ export function createComposerDraft(
       cancel()
       consumed.add(submitted.trim())
       if (text.trim() === submitted.trim() && revision === expectedRevision) {
+        // A persisted send clears only the submitted text; another composer may since have
+        // saved a newer draft. Unpersisted local text keeps the unconditional write.
+        if (!dirty) expected = text
         text = ''
         revision++
       }

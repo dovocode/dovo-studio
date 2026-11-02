@@ -11,6 +11,7 @@ import { useSettingsTarget, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
 import { SettingsPage } from './settings-layout'
+import { ProjectOrganizationSettings } from './project-organization'
 
 /** Retained across scoped settings pages; app-only preferences have no target header. The
  * target bar stays visible above the scrolling page. */
@@ -85,6 +86,7 @@ export function SettingsScopePage({
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
+                  {project.archived ? ' · Archived' : ''}
                 </option>
               ))}
             </ChoicePicker>
@@ -149,6 +151,7 @@ export function SettingsScopePage({
               {source.name} is offline. Reconnect to make changes.
             </p>
           )}
+          {repository && <ProjectOrganizationSettings repository={repository} compact />}
           {children({ scope, repository })}
         </WorkspaceScope>
       )}

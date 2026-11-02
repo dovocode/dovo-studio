@@ -16,6 +16,7 @@ import { selectedEntrypoint, sourceEntrypoint, updateServer } from './server-upd
 import { recoverServerUpdate, packagedServiceWarning } from './server-update-recovery.js'
 import { serverDoctor } from './server-doctor.js'
 import { protectionReportText } from './server-service-protection.js'
+import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { runRemoteServerUpdate } from './server-remote-update.js'
 import {
   installService,
@@ -58,12 +59,27 @@ async function main() {
   const packaged = process.env.DOVO_SERVER_DISTRIBUTION === 'archive'
   const cliName = packaged ? 'dovo-server' : 'pnpm server'
   const [command = 'status', ...args] = positionals
+  if (
+    !values.help &&
+    (command === 'update' ||
+      command === 'remote-update' ||
+      (command === 'service' && args[0] === 'update'))
+  ) {
+    const policy = ManagedPolicy.load()
+    policy.require('updates')
+    if (values.version?.includes('-') || process.env.DOVO_RELEASE_CHANNEL === 'nightly')
+      policy.require('nightlyUpdates')
+    if (policy.document?.limits?.updates?.feedUrl)
+      throw new Error(
+        'This server cannot use the managed desktop update feed. Ask your administrator to update its distribution.',
+      )
+  }
   if (command === 'update' && packaged && !values.help)
     throw new Error(
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | studio-tools | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove | service protect preview|status|enable|disable> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | studio-tools | doctor | policy show|check <file> | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove | service protect preview|status|enable|disable> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
@@ -104,6 +120,7 @@ Build first: pnpm --filter @dovo/api... -r build`
       'connect',
       'studio-tools',
       'doctor',
+      'policy',
       'backup',
       'backups',
       'restore',
@@ -112,7 +129,9 @@ Build first: pnpm --filter @dovo/api... -r build`
       'service',
       'remote-update',
     ].includes(command) ||
-    (command !== 'pair' && command !== 'connect' && command !== 'service' && args.length) ||
+    (!['pair', 'connect', 'service', 'policy'].includes(command) && args.length) ||
+    (command === 'policy' &&
+      !((args[0] === 'show' && args.length === 1) || (args[0] === 'check' && args.length === 2))) ||
     (command === 'service' &&
       (args[0] === 'protect'
         ? args.length !== 2 || !['preview', 'status', 'enable', 'disable'].includes(args[1])
@@ -122,6 +141,17 @@ Build first: pnpm --filter @dovo/api... -r build`
     throw new Error(`Invalid command. Run ${cliName} --help.`)
   if (command === 'studio-tools') {
     await startStudioMcp()
+    return
+  }
+  if (command === 'policy') {
+    const policy = ManagedPolicy.load(args[0] === 'check' ? resolve(args[1]) : undefined)
+    const report = { managed: !!policy.summary, policy: policy.summary ?? null }
+    if (values.json) console.log(JSON.stringify(report))
+    else if (policy.summary)
+      console.log(
+        `${args[0] === 'check' ? 'Valid policy' : 'Installed policy'}: ${policy.summary.organization}\nFingerprint: ${policy.summary.fingerprint}\n${JSON.stringify(policy.summary, null, 2)}\nRestart the runtime after changing its policy file.`,
+      )
+    else console.log('This runtime is unmanaged. No administrator policy file is installed.')
     return
   }
   if (

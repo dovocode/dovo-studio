@@ -4,6 +4,7 @@ import { defaultTaskHarness, type Repository, type SharedSettingsEntry } from '.
 import { runtimeDefaultsSchema, resolveTaskDefaults } from './runtime-setup'
 import {
   pendingSharedSettings,
+  projectOrganizationCategories,
   scopeEditorValue,
   mergeSharedSettings,
   resolveScopedSettings,
@@ -280,7 +281,9 @@ it('selects one settings layer and shares project identity across computers with
   }
   const sources = [mac, linux, empty]
   const projectId = settingsProjectId(project, 'mac')
-  expect(settingsProjectChoices(sources, '')).toEqual([{ id: projectId, name: project.name }])
+  expect(settingsProjectChoices(sources, '')).toEqual([
+    { id: projectId, name: project.name, archived: false },
+  ])
   expect(
     resolveSettingsTarget(sources, { environmentId: '', projectId: '' }, 'empty'),
   ).toMatchObject({ scope: 'global', source: empty })
@@ -312,7 +315,7 @@ it('selects one settings layer and shares project identity across computers with
     },
   }
   expect(settingsProjectChoices([generalSource], 'linux')).toEqual([
-    { id: settingsProjectId(local, 'linux'), name: 'No Project' },
+    { id: settingsProjectId(local, 'linux'), name: 'No Project', archived: false },
   ])
   expect(
     resolveSettingsTarget([localSource], {
@@ -426,4 +429,36 @@ it('reviews scoped edits as labeled values without confusing explicit inheritanc
   ])
   for (const value of ['', '1', '365']) expect(validSettingsDays(value)).toBe(true)
   for (const value of ['0', '366', '-1', '1.5', 'abc']) expect(validSettingsDays(value)).toBe(false)
+})
+
+it('skips project organization categories for runtimes that cannot store them', () => {
+  const revision = { updatedAt: 2, changeId: 'pin' }
+  const known: SharedSettingsEntry = {
+    key: 'project:github.com/team/app',
+    updatedAt: 1,
+    changeId: 'old',
+    value: {},
+    revisions: {},
+  }
+  const pinned: SharedSettingsEntry = {
+    ...known,
+    ...revision,
+    value: { projectPinned: true },
+    revisions: { projectPinned: revision },
+  }
+  expect(pendingSharedSettings([pinned], [known])).toEqual([pinned])
+  expect(pendingSharedSettings([pinned], [known], projectOrganizationCategories)).toEqual([])
+})
+
+it('marks a settings project archived only when every copy is archived', async () => {
+  const { settingsProjectChoices } = await import('./scoped-settings')
+  const source = (id: string, archived: boolean) => ({
+    profile: { id },
+    connected: true,
+    snapshot: { workspace: { repositories: [{ ...project, id, archived }] } },
+  })
+  expect(settingsProjectChoices([source('a', true), source('b', true)], '')[0].archived).toBe(true)
+  expect(settingsProjectChoices([source('a', true), source('b', false)], '')[0].archived).toBe(
+    false,
+  )
 })

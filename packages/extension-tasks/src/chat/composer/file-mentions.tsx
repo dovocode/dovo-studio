@@ -1,5 +1,4 @@
-import { useAppPreferences } from '@dovo/studio-core'
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { Schema } from 'effect'
 import { FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
@@ -14,8 +13,11 @@ import {
   resourceSuggestions,
   type ResourceSettings,
 } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
 import { cn } from '@dovo/studio-ui'
+import { sameWorkspaceFields, useAppPreferences, useWorkspaceSelector } from '@dovo/studio-core'
+import { composerSelection, selectComposerInput } from './composer-input'
+import { selectConversationConnection } from '../thread/workspace-selection'
+import type { RichComposerHandle } from './rich-composer-editor'
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
@@ -28,6 +30,13 @@ type Suggestion = {
 }
 export type ComposerCommandId = ReturnType<typeof commandSuggestions>[number]['id']
 const icons = { file: FileText, skill: Sparkles, mcp: Plug, command: SquareSlash, prompt: Hash }
+type MentionKey = {
+  key: string
+  keyCode: number
+  preventDefault(): void
+  nativeEvent?: { isComposing: boolean }
+  isComposing?: boolean
+}
 
 /** Composer mentions like other agent apps: "@" for files and MCP servers, "$" for skills
  * anywhere, and "/" for skills at the start of a line. Arrow keys and Enter or Tab pick;
@@ -37,6 +46,7 @@ export function useFileMentions({
   draft,
   setDraft,
   input,
+  rich,
   resources,
   onCommand,
   onSideChat,
@@ -46,7 +56,9 @@ export function useFileMentions({
   taskId: string
   draft: string
   setDraft: (value: string) => void
-  input: RefObject<HTMLTextAreaElement | null>
+  input: RefObject<HTMLElement | null>
+  /** In rich mode, mentions use the text before the caret in the current block. */
+  rich?: RefObject<RichComposerHandle | null> | null
   resources: ResourceSettings
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
@@ -55,8 +67,14 @@ export function useFileMentions({
   prompts?: readonly SavedPrompt[]
   onManagePrompts?: () => void
 }) {
-  const { request, connected, connection } = useWorkspace()
+  // Streaming and terminal updates replace the workspace; lookups need only the connection.
+  const { request, connected, connection } = useWorkspaceSelector(
+    selectConversationConnection,
+    sameWorkspaceFields,
+  )
   const [caret, setCaret] = useState(0)
+  const [richText, setRichText] = useState('')
+  const source = rich ? richText : draft
   const [lookup, setLookup] = useState<{ key: string; files: string[]; error: string }>()
   const [retry, setRetry] = useState(0)
   const list = useRef<HTMLDivElement>(null)
@@ -64,7 +82,7 @@ export function useFileMentions({
   const [activeKey, setActiveKey] = useState('')
   const [dismissed, setDismissed] = useState<number | null>(null)
   const { showSkillsInSlashMenu } = useAppPreferences()
-  const mention = composerMention(draft, caret)
+  const mention = composerMention(source, caret)
   const trigger = mention?.trigger
   const query = mention?.query
   const resourceItems: Suggestion[] = mention
@@ -170,45 +188,58 @@ export function useFileMentions({
     if (open)
       list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [open, activeKey, lookup, trigger, query])
-  const track = () => setCaret(input.current?.selectionStart ?? draft.length)
+  const track = () => {
+    if (rich) {
+      const context = rich.current?.mentionContext()
+      setRichText(context?.text ?? '')
+      setCaret(context?.caret ?? 0)
+    } else setCaret(composerSelection(input.current, draft.length).start)
+  }
+  /** Replace the typed mention; rich mode inserts at the caret instead of rewriting the draft. */
+  const apply = (next: { text: string; caret: number }, markdown = false) => {
+    if (!mention) return
+    if (rich) {
+      rich.current?.replaceBeforeCaret(
+        mention.start,
+        caret,
+        next.text.slice(mention.start, next.caret),
+        markdown,
+      )
+      track()
+      return
+    }
+    setDraft(next.text)
+    requestAnimationFrame(() => {
+      input.current?.focus()
+      selectComposerInput(input.current, next.caret)
+      setCaret(next.caret)
+    })
+  }
   const choose = (item: Suggestion | undefined) => {
     if (!mention || !item) return
     if (item.kind === 'prompt') {
       const prompt = prompts.find((entry) => entry.id === item.value)
       if (!prompt) return
-      const next = insertPrompt(draft, mention.start, caret, prompt.text)
-      setDraft(next.text)
-      requestAnimationFrame(() => {
-        input.current?.focus()
-        input.current?.setSelectionRange(next.caret, next.caret)
-        setCaret(next.caret)
-      })
+      // Saved prompts are Markdown and keep their formatting in rich mode.
+      apply(insertPrompt(source, mention.start, caret, prompt.text), true)
       return
     }
     if (item.kind === 'command') {
-      const text = draft.slice(0, mention.start) + draft.slice(caret)
-      setDraft(text)
       setLookup(undefined)
-      requestAnimationFrame(() => {
-        input.current?.focus()
-        input.current?.setSelectionRange(mention.start, mention.start)
-        setCaret(mention.start)
+      apply({
+        text: source.slice(0, mention.start) + source.slice(caret),
+        caret: mention.start,
       })
       if (item.value === 'sidechat') onSideChat?.()
       else onCommand?.(item.value as ComposerCommandId)
       return
     }
-    const next = insertMention(draft, mention.start, caret, item.value, mention.trigger)
-    setDraft(next.text)
     setLookup(undefined)
-    requestAnimationFrame(() => {
-      input.current?.focus()
-      input.current?.setSelectionRange(next.caret, next.caret)
-      setCaret(next.caret)
-    })
+    apply(insertMention(source, mention.start, caret, item.value, mention.trigger))
   }
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!open || event.nativeEvent.isComposing || event.keyCode === 229) return
+  const onKeyDown = (event: MentionKey) => {
+    if (!open || event.nativeEvent?.isComposing || event.isComposing || event.keyCode === 229)
+      return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const step = event.key === 'ArrowDown' ? 1 : -1

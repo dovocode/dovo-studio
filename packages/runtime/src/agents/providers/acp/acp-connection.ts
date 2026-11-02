@@ -100,7 +100,9 @@ export function openAcpConnection(
       new ReadableStream<Uint8Array>({
         start: (controller) => {
           child.stdout.on('data', (chunk: Buffer) => {
-            if (!inputClosed) controller.enqueue(new Uint8Array(chunk))
+            // Buffer is already a Uint8Array; copying each stdout chunk doubles transient
+            // allocation for large ACP messages before the SDK's framing buffer sees it.
+            if (!inputClosed) controller.enqueue(chunk)
           })
           child.stdout.on('end', () => {
             if (!inputClosed) controller.close()

@@ -81,6 +81,7 @@ export class AccountInternet {
     private readonly devices: Devices,
     private readonly peers: PeerConnections,
     private readonly identity: ReturnType<typeof peerRelayIdentity>,
+    private readonly policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS account_internet(id INTEGER PRIMARY KEY CHECK(id=1),secret TEXT NOT NULL,state TEXT);
       CREATE TABLE IF NOT EXISTS account_service_settings(id INTEGER PRIMARY KEY CHECK(id=1),origin TEXT NOT NULL);
@@ -102,14 +103,16 @@ export class AccountInternet {
     )
     this.privateKey = internetBytes(saved.secret)
     this.publicKey = internetPublicKey(this.privateKey)
-    for (const item of db
-      .prepare("SELECT device FROM account_internet_devices WHERE answer='{}'")
-      .all()) {
-      const { device } = decode(Schema.Struct({ device: Schema.String }), item)
-      devices.revoke(device)
-      db.prepare('DELETE FROM peer_connections WHERE device_id=?').run(device)
+    if (!policy?.summary?.disabledCapabilities.includes('connect')) {
+      for (const item of db
+        .prepare("SELECT device FROM account_internet_devices WHERE answer='{}'")
+        .all()) {
+        const { device } = decode(Schema.Struct({ device: Schema.String }), item)
+        devices.revoke(device)
+        db.prepare('DELETE FROM peer_connections WHERE device_id=?').run(device)
+      }
+      db.prepare("DELETE FROM account_internet_devices WHERE answer='{}'").run()
     }
-    db.prepare("DELETE FROM account_internet_devices WHERE answer='{}'").run()
     if (saved.state) this.state = decode(stateSchema, JSON.parse(saved.state))
   }
   status() {
@@ -139,7 +142,8 @@ export class AccountInternet {
   }
   start() {
     this.running = true
-    if (this.state) void this.poll()
+    if (this.state && !this.policy?.summary?.disabledCapabilities.includes('connect'))
+      void this.poll()
   }
   prepareSetup(
     deviceId: string,
@@ -148,6 +152,7 @@ export class AccountInternet {
     name: string,
     origin?: string,
   ) {
+    this.policy?.require('connect')
     if (!this.running) throw new HttpError(409, 'Internet connections are not running')
     if (this.state || this.enabling)
       throw new HttpError(409, 'Dovo Connect is already enabled or being configured')
@@ -181,6 +186,7 @@ export class AccountInternet {
     return { id: setup.id, registration: setup.registration }
   }
   async completeSetup(deviceId: string, id: string, grant: string, validate: () => void) {
+    this.policy?.require('connect')
     const setup = this.setups.get(deviceId)
     if (!setup || setup.id !== id || Date.now() - setup.registration.timestamp >= 60000)
       throw new HttpError(404, 'Dovo Connect setup expired. Confirm setup again.')
@@ -228,6 +234,7 @@ export class AccountInternet {
     void this.poll()
   }
   async enable(token: string, runtimeId: string, name: string, origin?: string) {
+    this.policy?.require('connect')
     if (!this.running) throw new Error('Internet connections are not running')
     if (this.state || this.enabling)
       throw new HttpError(

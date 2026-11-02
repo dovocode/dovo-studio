@@ -107,7 +107,8 @@ test('failed clear persistence still consumes text and cleanup retries the empty
   expect(draft.text).toBe('')
   expect(draft.receive('sent')).toBe('')
   draft.flush()
-  expect(write).toHaveBeenLastCalledWith('')
+  // The retry is still a conditional clear of the submitted text.
+  expect(write).toHaveBeenLastCalledWith('', 'sent')
 })
 
 test('subscriptions publish edits, accepted clears and external changes, and detach on cleanup', () => {
@@ -121,4 +122,15 @@ test('subscriptions publish edits, accepted clears and external changes, and det
   detach()
   draft.update('After cleanup')
   expect(seen).toEqual(['Send this', '', 'External draft'])
+})
+
+test('a send acknowledgement clears only the text that was submitted', () => {
+  const write = vi.fn<(text: string, expected?: string) => void>()
+  const draft = createComposerDraft('sent', write)
+  draft.accept('sent')
+  expect(write).toHaveBeenLastCalledWith('', 'sent')
+  // Later typing writes unconditionally again.
+  draft.update('next')
+  draft.flush()
+  expect(write).toHaveBeenLastCalledWith('next')
 })

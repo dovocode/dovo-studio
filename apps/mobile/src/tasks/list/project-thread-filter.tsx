@@ -5,6 +5,7 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { RepositoryCheckouts } from '../../scm/connections/repository-checkouts'
 import { ProjectIconSettings } from '../../scm/connections/project-icon-settings'
+import { ProjectOrganizationSettings } from '../../scm/connections/project-organization'
 import { SearchField } from '../../ui/controls/field'
 import { ProjectIcon } from '../../scm/connections/project-icon'
 import { Icon } from '../../ui/controls/icon'
@@ -29,22 +30,91 @@ export function ProjectThreadFilter({
   const [open, setOpen] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
   const [settings, setSettings] = useApplicationState<string | null>(null)
+  const [showArchived, setShowArchived] = useApplicationState(false)
   const groups = projectMachineGroups(
     overviews.flatMap((entry) =>
       (entry.snapshot?.workspace.repositories ?? []).map((repository) => ({
         repository,
         runtimeId: entry.profile.id,
         entry,
+        defaults: entry.snapshot?.defaults,
       })),
     ),
   )
   const selected = groups.find((group) => group.key === value)
   const managed = groups.find((group) => group.key === settings)
+  const visible = groups.filter((group) =>
+    `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  )
+  const archived = visible.filter((group) => group.archived)
+  const organizer =
+    managed?.entries.find(
+      ({ entry, repository }) =>
+        entry.connected &&
+        !repository.gitIdentityError &&
+        entry.snapshot?.projectOrganizationSupported,
+    ) ?? managed?.entries.find(({ entry }) => entry.connected)
   const choose = (key: string) => {
     onChange(key)
     setOpen(false)
     setQuery('')
   }
+  const row = (group: (typeof groups)[number]) => (
+    <View
+      key={group.key}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: 10,
+        backgroundColor: value === group.key ? colors.elevated : 'transparent',
+      }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: value === group.key }}
+        onPress={() => choose(group.key)}
+        style={({ pressed }) => ({
+          minHeight: 52,
+          flex: 1,
+          minWidth: 0,
+          paddingHorizontal: 8,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          opacity: pressed ? 0.7 : 1,
+        })}
+      >
+        {group.entries[0].repository.kind === 'scratch' ? (
+          <Icon name="noProject" size={18} color={colors.muted} />
+        ) : (
+          <ProjectIcon repository={group.entries[0].repository} />
+        )}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={styles.text}>
+            {group.name}
+            {group.pinned ? ' · Pinned' : ''}
+          </Text>
+          <Text numberOfLines={1} style={styles.muted}>
+            {group.entries[0].repository.kind === 'scratch'
+              ? 'Conversations without a project'
+              : (group.identity ?? 'Local repository')}
+          </Text>
+        </View>
+      </Pressable>
+      <Icon name="device" size={15} color={colors.muted} />
+      <IconButton
+        label={`Settings for ${group.name}`}
+        icon="settings"
+        variant="plain"
+        onPress={() => {
+          setOpen(false)
+          setSettings(group.key)
+        }}
+      />
+    </View>
+  )
   return (
     <>
       <Pressable
@@ -102,74 +172,39 @@ export function ProjectThreadFilter({
             <Text style={[styles.text, { flex: 1 }]}>All projects</Text>
             {!value && <Icon name="check" size={16} color={colors.muted} />}
           </Pressable>
-          {groups
-            .filter((group) =>
-              `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
-                .toLowerCase()
-                .includes(query.trim().toLowerCase()),
-            )
-            .map((group) => (
-              <View
-                key={group.key}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  borderRadius: 10,
-                  backgroundColor: value === group.key ? colors.elevated : 'transparent',
-                }}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: value === group.key }}
-                  onPress={() => choose(group.key)}
-                  style={({ pressed }) => ({
-                    minHeight: 52,
-                    flex: 1,
-                    minWidth: 0,
-                    paddingHorizontal: 8,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                >
-                  {group.entries[0].repository.kind === 'scratch' ? (
-                    <Icon name="noProject" size={18} color={colors.muted} />
-                  ) : (
-                    <ProjectIcon repository={group.entries[0].repository} />
-                  )}
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={1} style={styles.text}>
-                      {group.name}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.muted}>
-                      {group.entries[0].repository.kind === 'scratch'
-                        ? 'Conversations without a project'
-                        : (group.identity ?? 'Local repository')}
-                    </Text>
-                  </View>
-                </Pressable>
-                <Icon name="device" size={15} color={colors.muted} />
-                <IconButton
-                  label={`Settings for ${group.name}`}
-                  icon="settings"
-                  variant="plain"
-                  onPress={() => {
-                    setOpen(false)
-                    setSettings(group.key)
-                  }}
-                />
-              </View>
-            ))}
-          {!groups.some((group) =>
-            `${group.name} ${group.identity ?? ''} ${group.entries.map(({ entry }) => runtimeComputerName(entry)).join(' ')}`
-              .toLowerCase()
-              .includes(query.trim().toLowerCase()),
-          ) && <Text style={styles.muted}>No matching projects.</Text>}
+          {visible.filter((group) => !group.archived).map(row)}
+          {archived.length > 0 && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showArchived || !!query.trim() }}
+              onPress={() => setShowArchived(!showArchived)}
+              style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+            >
+              <Icon name="archive" size={18} color={colors.muted} />
+              <Text style={[styles.muted, { flex: 1 }]}>Archived ({archived.length})</Text>
+              <Icon
+                name={showArchived || query.trim() ? 'down' : 'next'}
+                size={13}
+                color={colors.muted}
+              />
+            </Pressable>
+          )}
+          {(showArchived || !!query.trim()) && archived.map(row)}
+          {!visible.length && <Text style={styles.muted}>No matching projects.</Text>}
         </Sheet>
       )}
       {managed && (
         <Sheet title={`${managed.name} settings`} onClose={() => setSettings(null)}>
+          {managed.entries[0].repository.kind !== 'scratch' &&
+            (organizer ? (
+              <RuntimeScope runtimeId={organizer.entry.profile.id}>
+                <ProjectOrganizationSettings repository={organizer.repository} />
+              </RuntimeScope>
+            ) : (
+              <Text style={styles.muted}>
+                Reconnect a computer with this project to pin or archive it.
+              </Text>
+            ))}
           {managed.entries.map(({ repository, entry }) => (
             <RuntimeScope key={`${entry.profile.id}:${repository.id}`} runtimeId={entry.profile.id}>
               <View style={{ gap: 8 }}>

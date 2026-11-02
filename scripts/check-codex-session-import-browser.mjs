@@ -6,7 +6,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
   '@dovo/studio-core': `export {useCodexSessionImport} from '${root}/packages/studio-core/src/use-codex-session-import';export const useAppPreferences=()=>({});export const projectActivity=()=>0;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>window.navigation=target});`,
-  '@dovo/studio-ui': `export const DialogHeader=({children})=><div>{children}</div>;export const DropdownMenu=()=>null;export const Popover=()=>null;export const Input=()=>null;export const ProjectIcon=()=>null;export const TaskDefaultSettings=()=>null;export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Dialog=({open,children})=>open?<section role="dialog">{children}</section>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
+  '@dovo/studio-ui': `export const ProjectOrganizationSettings=()=>null;export const DialogHeader=({children})=><div>{children}</div>;export const DropdownMenu=()=>null;export const Popover=()=>null;export const Input=()=>null;export const ProjectIcon=()=>null;export const TaskDefaultSettings=()=>null;export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Dialog=({open,children})=>open?<section role="dialog">{children}</section>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   'react-native': `const flat=s=>Object.assign({},...(Array.isArray(s)?s.flat(Infinity):[s]));export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={flat(style)}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;export const Image=()=>null;`,
   'expo-router': `export const router={push:target=>window.navigation=target};`,
@@ -44,7 +44,7 @@ import {ProjectSettings} from '${root}/packages/extension-scm/src/connections/pr
 import {RepositoryCheckouts} from '${root}/apps/mobile/src/scm/connections/repository-checkouts';
 window.calls=[];window.navigation=null;window.activeSession=false;
 const repository={id:'repo',name:'Project',path:'/project',branch:'main'};window.repository=repository;
-const agents=[{id:'custom',name:'Custom home',provider:'codex'}];
+const agents=[{id:'custom',name:'Custom home',provider:'codex'},{id:'pi-custom',name:'Custom Pi home',provider:'pi'}];
 const workspace={repositories:[repository],agents,tasks:[]};
 const session={key:'session-key',sessionId:'native-session',title:'Terminal task',cwd:'/project',updatedAt:'2026-10-01T10:00:00Z',model:'gpt-6-sol'};
 const request=async(path,input)=>{window.calls.push({path,input});
@@ -114,6 +114,9 @@ try {
       window.repository.kind = 'scratch'
       window.show(mode)
     }, mode)
+    await page
+      .getByRole('button', { name: 'Import Codex terminal session', exact: true })
+      .waitFor({ state: 'detached' })
     assert.equal(
       await page
         .getByRole('button', { name: 'Import Codex terminal session', exact: true })
@@ -219,11 +222,34 @@ try {
       delete window.finishImport
     })
     assert.equal(await page.evaluate(() => window.navigation), null)
+    await page.evaluate((mode) => {
+      window.activeSession = false
+      window.existing = false
+      window.show(mode)
+    }, mode)
+    await page.getByRole('button', { name: 'Import Pi terminal session', exact: true }).click()
+    await page.getByText(/leaves the terminal source untouched/).waitFor()
+    await page.getByText(/@earendil-works\/pi-coding-agent 1\.4/).waitFor()
+    await page.getByText(/npm install -g --ignore-scripts/).waitFor()
+    await page.getByLabel('Pi configuration').selectOption('pi-custom')
+    await page.getByRole('button', { name: /Terminal task/ }).click()
+    await page.getByText('Historical answer', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Import session', exact: true }).click()
+    await page.waitForFunction(() => window.navigation)
+    assert.deepEqual(
+      await page.evaluate(
+        () => window.calls.find((call) => call.path === '/api/tasks/pi-sessions/import')?.input,
+      ),
+      {
+        repositoryId: 'repo',
+        agentId: 'pi-custom',
+        key: 'session-key',
+        revision: 'preview-revision',
+      },
+    )
   }
   assert.deepEqual(errors, [])
-  console.log(
-    'Desktop and mobile Codex picker preview, activity blocking, explicit import, existing-thread and late-navigation checks passed.',
-  )
+  console.log('Desktop and mobile Codex and Pi picker preview, selection and import checks passed.')
 } finally {
   await browser.close()
 }

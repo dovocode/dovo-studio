@@ -115,14 +115,15 @@ export class PeerConnections {
   constructor(
     private readonly db: Database.Database,
     private readonly devices: Devices,
+    private readonly policy?: import('../policy/managed-policy.js').ManagedPolicy,
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS peer_connections (device_id TEXT PRIMARY KEY, config TEXT NOT NULL)',
     )
     this.identity = peerRelayIdentity(db)
     this.relay = new RuntimeRelaySettings(db)
-    this.internet = new AccountInternet(db, devices, this, this.identity)
-    this.upgrades = new PeerUpgrades(devices)
+    this.internet = new AccountInternet(db, devices, this, this.identity, policy)
+    this.upgrades = new PeerUpgrades(devices, undefined, policy)
   }
   /** Keep current tunnels alive so the client changing policy can receive confirmation.
    * New negotiations immediately use the saved mode; pairings and relay credentials survive. */
@@ -181,6 +182,7 @@ export class PeerConnections {
   }
   start(port: number) {
     this.port = port
+    if (this.policy?.summary?.disabledCapabilities.includes('connect')) return
     for (const row of this.db
       .prepare('SELECT device_id AS deviceId, config FROM peer_connections')
       .all()) {
@@ -254,6 +256,7 @@ export class PeerConnections {
     })
   }
   async invitation(expiresAt: string, relay?: PeerRelayProvider) {
+    this.policy?.require('connect')
     if (this.relay.connectionMode() === 'lan')
       throw new HttpError(409, 'This computer allows LAN / VPN connections only')
     if (!this.port) throw new Error('Internet connections are not running on this computer')
@@ -265,6 +268,7 @@ export class PeerConnections {
     return config
   }
   async enable(deviceId: string, relay?: PeerRelayProvider, accountGrant?: string) {
+    this.policy?.require('connect')
     if (this.relay.connectionMode() === 'lan')
       throw new HttpError(409, 'This computer allows LAN / VPN connections only')
     if (!this.port || deviceId === 'owner' || !this.active().has(deviceId))

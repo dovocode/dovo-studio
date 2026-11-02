@@ -1,5 +1,6 @@
 import { HookEvents, type HookTool } from './hook-events.js'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
+import { requireImportedPiSession } from '../providers/pi/session-import.js'
 import { noStudioTools, type StudioTools } from '@dovo/protocol'
 import { deviceHubAgentInstructions } from '../../agent-tools/device-guidance.js'
 import { runCredentials } from '../../auth/run-credentials.js'
@@ -256,6 +257,7 @@ export class TaskTurnRunner {
           )
         const selectedAgent = defaultAgent && applyTurnSettings(defaultAgent, settings)
         if (!selectedAgent) throw new HttpError(400, 'Choose a harness or agent first')
+        this.registry.authorize(selectedAgent)
         if (task.sideThread) {
           const parent = this.store
             .get()
@@ -396,7 +398,9 @@ ${
         const currentMessages = conversation.messages
         const importedPrefix = task.importedCodexSession
           ? `codex:${task.importedCodexSession.sessionId}:`
-          : undefined
+          : task.importedPiSession
+            ? `pi:${task.importedPiSession.sessionId}:`
+            : undefined
         const importedMessageIds = new Set(
           importedPrefix
             ? currentMessages
@@ -434,11 +438,14 @@ ${
                 nativeAgentWorking(child),
             ) === true
         const importedResume =
-          !task.sessionAgentId &&
-          agent.provider === 'codex' &&
-          task.importedCodexSession !== undefined &&
-          agent.env?.CODEX_HOME === task.importedCodexSession.home &&
-          task.importedCodexSession.sessionId === task.sessionId
+          (!task.sessionAgentId &&
+            agent.provider === 'codex' &&
+            task.importedCodexSession !== undefined &&
+            agent.env?.CODEX_HOME === task.importedCodexSession.home &&
+            task.importedCodexSession.sessionId === task.sessionId) ||
+          (!task.sessionAgentId &&
+            agent.provider === 'pi' &&
+            task.importedPiSession?.privatePath === task.sessionId)
         const resumeId =
           task.sessionAgentId === fingerprint || importedResume ? task.sessionId : undefined
         const compactRequested =
@@ -733,8 +740,7 @@ ${
         })
         const seenTools = new Set<string>()
         const textOffset = () =>
-          (this.store.task(id).messages.find((message) => message.id === assistantId)?.text
-            .length ?? 0) + buffer.length
+          (this.store.taskMessage(id, assistantId)?.text.length ?? 0) + buffer.length
         const reasoningOffsets = new Map<string, { offset: number; messageId: string }>()
         const reasoning = new ReasoningEvents(agent.provider, (row) => {
           const position = reasoningOffsets.get(row.toolId) ?? {
@@ -1090,6 +1096,8 @@ ${
             !this.ownsNativeSession(id, sessionId)
           )
             yield* runtimeOperation(() => requireImportedCodexSession(task))
+          if (task.importedPiSession && sessionId === task.importedPiSession.privatePath)
+            yield* runtimeOperation(() => requireImportedPiSession(task))
           const recoveringAdapter = recoverContext(
             journaledAdapter,
             async (input) => {

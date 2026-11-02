@@ -36,7 +36,15 @@ import {
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
-import { useEffect, useLayoutEffect, useRef, useState, useMemo, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useMemo,
+  type ReactNode,
+} from 'react'
 import { Schema } from 'effect'
 import { mutableStruct, replacePullReviewHandoff } from '@dovo/protocol'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
@@ -44,6 +52,7 @@ import { useComposerDraft } from './use-composer-draft'
 import { ComposerCommandDialog } from './composer-command-dialog'
 import type { ComposerCommandId } from './file-mentions'
 import { ComposerEditor } from './composer-editor'
+import { ComposerModeToggle } from './composer-mode'
 import { SavedPromptsDialog } from '../../dialogs/saved-prompts-dialog'
 import { REVIEW_PROMPT, contextMeter, taskResources } from '@dovo/protocol'
 import { ContextMeter } from '../thread/context-meter'
@@ -183,6 +192,10 @@ export function Composer({
   const [asideCreating, setAsideCreating] = useState(false)
   const [asideBusy, setAsideBusy] = useState(false)
   const [editorFocused, setEditorFocused] = useState(false)
+  const syncEditorFocus = useCallback(
+    () => setEditorFocused(document.activeElement === input.current),
+    [],
+  )
   const asideRequest = useRef<'saving' | null>(null)
   const asideAttempt = useRef<{ text: string; childId: string } | null>(null)
   const [dictating, setDictating] = useState(false)
@@ -288,7 +301,15 @@ export function Composer({
     text: string
     revision: number
   } | null>(null)
-  const input = useRef<HTMLTextAreaElement>(null)
+  // A textarea in Markdown source mode, the rich editor's element otherwise.
+  const input = useRef<HTMLElement>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const [awaitingQueuedSubmission, setAwaitingQueuedSubmission] = useState<string | null>(null)
   const [stagingGap, setStagingGap] = useState<{
     ids: string[]
@@ -445,6 +466,16 @@ export function Composer({
     ],
   )
   const [managingPrompts, setManagingPrompts] = useState(false)
+  // The memoized editor gets stable props, so streamed replies and terminal or other runtime
+  // updates re-render this composer without re-rendering the editor on every token.
+  const repository = workspace.repositories.find((item) => item.id === task.repositoryId)
+  const prompts = useMemo(
+    () => projectPrompts(repository, snapshot?.defaults),
+    [repository, snapshot?.defaults],
+  )
+  const historyMessages = useCommittedCallback(() => task.messages)
+  const runEditorCommand = useCommittedCallback(runCommand)
+  const managePrompts = useCallback(() => setManagingPrompts(true), [])
   const pendingQuestion = !!snapshot?.questions.some(
     (question) => question.taskId === task.id && question.prompt.blocking !== false,
   )
@@ -793,7 +824,9 @@ export function Composer({
           updateTask(w, task.id, (current) => ({
             ...current,
             ...selected,
-            ...(composerDraft.controller.revision !== submittedRevision
+            // Keep newer draft fields: from later typing here, or from a remounted composer
+            // after the thread was left while this selection was pending.
+            ...(composerDraft.controller.revision !== submittedRevision || !mounted.current
               ? {
                   draft: current.draft,
                   draftTurnSettings: current.draftTurnSettings,
@@ -901,6 +934,8 @@ export function Composer({
       setComposingDuringSend(null)
     }
   }
+  const sendInBackground = useCommittedCallback(() => void send('queue', true))
+  const sendAlternative = useCommittedCallback(() => void send(other))
   const startFork = async () => {
     if (plan) {
       setError('Turn off plan mode before forking. Fork uses this thread’s configuration.')
@@ -1183,6 +1218,7 @@ export function Composer({
                   </Popover.Portal>
                 </Popover.Root>
               </div>
+              <ComposerModeToggle input={input} disabled={!!task.archivedAt} />
               {preferences.showPlanButton && planControl}
               {!startup && !projectSettings && (
                 <Popover.Root open={infoOpen} onOpenChange={setInfoOpen}>
@@ -1593,27 +1629,25 @@ export function Composer({
         <ComposerEditor
           onAlternativeSubmit={
             hasBackgroundAction
-              ? () => void send('queue', true)
+              ? sendInBackground
               : !editing && task.status === 'running' && !turnSettings && !plan
-                ? () => void send(other)
+                ? sendAlternative
                 : undefined
           }
           controller={editorController}
-          messages={task.messages}
+          messages={historyMessages}
           historyBefore={task.historyBefore}
           historyRevision={task.historyRevision}
           historyScope={JSON.stringify([activeRuntimeId, connection?.address, connection?.token])}
           loadHistory={loadComposerHistory}
+          onInputElement={syncEditorFocus}
           taskId={task.id}
           input={input}
           resources={resources}
-          prompts={projectPrompts(
-            workspace.repositories.find((repository) => repository.id === task.repositoryId),
-            snapshot?.defaults,
-          )}
+          prompts={prompts}
           onCommand={
             !editing && (task.messages.length || task.queue?.length || task.turns?.length)
-              ? runCommand
+              ? runEditorCommand
               : undefined
           }
           onSideChat={
@@ -1628,7 +1662,7 @@ export function Composer({
               ? askAside
               : undefined
           }
-          onManagePrompts={task.repositoryId ? () => setManagingPrompts(true) : undefined}
+          onManagePrompts={task.repositoryId ? managePrompts : undefined}
           autoFocus={firstMessage}
           hidden={pendingQuestion}
           disabled={machineMoving || !!task.archivedAt || pendingQuestion}

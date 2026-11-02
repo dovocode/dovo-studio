@@ -6,7 +6,13 @@ import { homedir } from 'node:os'
 import { discoverNetworks, resolveBindHost } from './network.js'
 import { publishConnection } from './connection.js'
 import { writeListenAddress } from './listen-address.js'
-import { RuntimeHost, runtimeLayer, initializeAgentDefaults, recordLastCrash } from '@dovo/runtime'
+import {
+  RuntimeHost,
+  runtimeLayer,
+  initializeAgentDefaults,
+  recordLastCrash,
+  startupProfile,
+} from '@dovo/runtime'
 import { shutdownSignal } from './shutdown-signal.js'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
@@ -71,9 +77,12 @@ process.on('uncaughtException', (error) => {
 })
 
 // Agents are spawned by name (codex, claude, gh); resolve them like the user's terminal does.
+const profile = startupProfile('server')
+profile?.('modules loaded')
 const shutdown = shutdownSignal(process)
 if (process.env.DOVO_LOGIN_PATH !== 'off')
   process.env.PATH = mergePath(process.env.PATH, loginShellPath(), knownToolDirectories())
+profile?.('login path resolved')
 
 const program = Effect.scoped(
   Effect.gen(function* () {
@@ -119,6 +128,7 @@ const program = Effect.scoped(
     const bindHost = yield* attempt('resolve bind address', () =>
       resolveBindHost(requestedHost, networks),
     )
+    profile?.('environment and network ready')
     const desktopDualListener = process.env.DOVO_DESKTOP_DUAL_LISTENER === '1'
     const externalPort = Number(process.env.PORT ?? 8787)
     yield* Effect.gen(function* () {
@@ -128,6 +138,7 @@ const program = Effect.scoped(
         catch: (cause) =>
           new RuntimeProcessError({ operation: 'initialize agent defaults', cause }),
       })
+      profile?.('runtime and agent defaults ready')
       const clientHost =
         desktopDualListener || ['0.0.0.0', '::'].includes(bindHost) ? '127.0.0.1' : bindHost
       const address = `http://${clientHost.includes(':') ? `[${clientHost}]` : clientHost}:${runtime.port}`
@@ -151,6 +162,7 @@ const program = Effect.scoped(
             bindHost,
           })
         console.log(`Dovo runtime listening on ${clientHost}:${runtime.port}`)
+        profile?.('connection published')
         process.send?.({ type: 'ready', port: runtime.port, address })
       })
       yield* Effect.never

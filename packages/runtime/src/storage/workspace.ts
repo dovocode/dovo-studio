@@ -1143,6 +1143,14 @@ export class WorkspaceStore {
   task(id: string): Task {
     return this.complete(this.taskSummary(id))
   }
+  /** Read one message without materializing the conversation. */
+  taskMessage(id: string, messageId: string) {
+    const summary = this.taskSummary(id)
+    const retained = this.seed?.get(id) ?? this.histories.peek(summary)
+    return retained
+      ? retained.messages.find((message) => message.id === messageId)
+      : this.conversations.message(id, messageId)
+  }
   /** Attachments referenced by any committed message, without loading histories. */
   messageAttachmentIds() {
     return this.histories.attachmentIds()
@@ -1436,6 +1444,7 @@ export class WorkspaceStore {
           record.example === true ||
           record.sessionId !== undefined ||
           record.importedCodexSession !== undefined ||
+          record.importedPiSession !== undefined ||
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
           record.worktreeSetupComplete !== undefined ||

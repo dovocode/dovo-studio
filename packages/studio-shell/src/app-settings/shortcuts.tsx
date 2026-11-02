@@ -44,6 +44,10 @@ export default function KeyboardShortcuts() {
       [
         ['Send message', sendWith === 'enter' ? 'Enter' : `${mod}+Enter`],
         ['New line', sendWith === 'enter' ? 'Shift+Enter' : 'Enter'],
+        ['Switch rich text and Markdown source', `${mod}+Shift+M`],
+        ['Bold (rich text)', `${mod}+B`],
+        ['Italic (rich text)', `${mod}+I`],
+        ['Inline code (rich text)', `${mod}+E`],
       ],
     ],
     [

@@ -9,7 +9,8 @@ import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
 export function RuntimeDiagnosticsPanel() {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot } = useWorkspace()
+  const policy = snapshot?.managedPolicy
   const [status, setStatus] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -49,6 +50,42 @@ export function RuntimeDiagnosticsPanel() {
   }
   return (
     <article className="space-y-3 rounded-md border p-4 text-xs">
+      {policy && (
+        <section
+          aria-label="Managed runtime policy"
+          className="space-y-2 rounded-md border bg-muted/30 p-3"
+        >
+          <p className="font-medium">Managed by {policy.organization}</p>
+          <p className="break-all text-muted-foreground">
+            Policy fingerprint: {policy.fingerprint}
+          </p>
+          <p>
+            This computer enforces these rules for desktop, web, mobile and agents. Changes require
+            an administrator and a runtime restart.
+          </p>
+          {policy.maxPermission && <p>Maximum access: {policy.maxPermission}.</p>}
+          {policy.allowedClients && <p>Allowed clients: {policy.allowedClients.join(', ')}.</p>}
+          {policy.allowedProviders && (
+            <p>Allowed providers: {policy.allowedProviders.join(', ')}.</p>
+          )}
+          {!!policy.lockedSettings.length && (
+            <p>Locked settings: {policy.lockedSettings.join(', ')}.</p>
+          )}
+          {!!policy.disabledCapabilities.length && (
+            <p>Unavailable: {policy.disabledCapabilities.join(', ')}.</p>
+          )}
+          {Object.entries(policy.lockedProviderFields).map(([provider, fields]) => (
+            <p key={provider}>
+              Managed {provider} fields: {fields.join(', ')}.
+            </p>
+          ))}
+          {policy.supportUrl && (
+            <a className="underline" href={policy.supportUrl} target="_blank" rel="noreferrer">
+              Contact your administrator
+            </a>
+          )}
+        </section>
+      )}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium">Runtime readiness & recovery</h2>
         <Button

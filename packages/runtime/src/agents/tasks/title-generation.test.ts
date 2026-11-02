@@ -756,6 +756,27 @@ it('continues in General without calling a utility model when there are no disco
     s.db.close()
   }
 })
+it('leaves archived projects out of automatic Scope choices', async () => {
+  const s = autoFixture()
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repository) =>
+      repository.kind === 'scratch' ? repository : { ...repository, archived: true },
+    ),
+  }))
+  const get = vi.spyOn(s.registry, 'get')
+  try {
+    const result = await runClientEffect(
+      s.titles.selectProjectsEffect({ id: 'auto', text: 'Fix the billing API' }),
+    )
+    expect(result).toMatchObject({ repositoryId: 'scratch', linkedCheckouts: [] })
+    expect(get).not.toHaveBeenCalled()
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
 it('keeps general conversations projectless and refuses a stale selection', async () => {
   const s = autoFixture()
   let changeDraft = false

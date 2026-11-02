@@ -87,16 +87,37 @@ it('does not follow redirects or retry a tool request', async () => {
   await expect(acpMcpHttp(url, {}, context())).rejects.toThrow('fetch failed')
   expect(calls).toBe(1)
 })
+it('handles concurrent fragmented large SSE responses independently', async () => {
+  const payload = 'é'.repeat(512 * 1024)
+  const url = await endpoint(async (request, response) => {
+    const buffers: Buffer[] = []
+    for await (const chunk of request) buffers.push(chunk)
+    const input = JSON.parse(Buffer.concat(buffers).toString())
+    const bytes = Buffer.from(
+      `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: input.id, result: { text: payload } })}\n\n`,
+    )
+    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    for (let offset = 0; offset < bytes.length; offset += 8191)
+      response.write(bytes.subarray(offset, offset + 8191))
+    response.end()
+  })
+  const calls = Array.from({ length: 3 }, (_, index) => ({ ...context(), requestId: `r${index}` }))
+  const results = await Promise.all(calls.map((call) => acpMcpHttp(url, {}, call)))
+  expect(results).toEqual(calls.map(() => ({ result: { text: payload } })))
+})
 it('cancels an outstanding HTTP tool when its ACP caller disconnects', async () => {
-  const received = Promise.withResolvers<void>()
+  let resolveReceived!: () => void
+  const received = new Promise<void>((resolve) => {
+    resolveReceived = resolve
+  })
   const url = await endpoint(() => {
-    received.resolve()
+    resolveReceived()
   })
   const controller = new AbortController()
   const call = acpMcpHttp(url, {}, context(controller.signal))
   await Promise.all([
     expect(call).rejects.toThrow('Stopped'),
-    received.promise.then(() => controller.abort(new Error('Stopped'))),
+    received.then(() => controller.abort(new Error('Stopped'))),
   ])
 })
 

@@ -1,6 +1,6 @@
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
-import { projectMachineGroups } from '@dovo/protocol'
+import { pinnedFirst, projectMachineGroups } from '@dovo/protocol'
 import {
   Button,
   Dialog,
@@ -60,26 +60,31 @@ export function ProjectSelectionDialog({
                   repository,
                   runtimeId: source.runtimeId,
                   source,
+                  defaults: source.snapshot?.defaults,
                 })),
             ),
             preferences.projectGrouping,
-          ).sort((a, b) => {
-            const activity = (group: typeof a) =>
-              Math.max(
-                0,
-                ...group.entries.map((entry) =>
-                  projectActivity(
-                    entry.source.workspace.tasks,
-                    entry.repository.id,
-                    preferences.projectOrder,
+          )
+            // Archived projects keep their threads but leave new-task choices.
+            .filter((group) => !group.archived)
+            .sort((a, b) => {
+              const activity = (group: typeof a) =>
+                Math.max(
+                  0,
+                  ...group.entries.map((entry) =>
+                    projectActivity(
+                      entry.source.workspace.tasks,
+                      entry.repository.id,
+                      preferences.projectOrder,
+                    ),
                   ),
-                ),
+                )
+              return (
+                pinnedFirst(a, b) ||
+                (preferences.projectOrder === 'name' ? 0 : activity(b) - activity(a)) ||
+                a.name.localeCompare(b.name)
               )
-            return (
-              (preferences.projectOrder === 'name' ? 0 : activity(b) - activity(a)) ||
-              a.name.localeCompare(b.name)
-            )
-          })
+            })
         : [],
     [
       sources,

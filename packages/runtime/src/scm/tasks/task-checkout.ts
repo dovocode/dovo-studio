@@ -85,8 +85,8 @@ export class TaskCheckout {
     if (visited.has(id)) return undefined
     visited.add(id)
     const task = this.store.taskSummary(id)
-    if (!checkoutId && task.importedCodexSession) {
-      const cwd = task.importedCodexSession.cwd
+    if (!checkoutId && (task.importedCodexSession || task.importedPiSession)) {
+      const cwd = (task.importedCodexSession ?? task.importedPiSession)!.cwd
       return (
         await stat(cwd).catch((error: unknown) => {
           if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
@@ -153,7 +153,7 @@ export class TaskCheckout {
     if (visited.has(id)) return undefined
     visited.add(id)
     const task = this.store.taskSummary(id)
-    if (!checkoutId && task.importedCodexSession) return undefined
+    if (!checkoutId && (task.importedCodexSession || task.importedPiSession)) return undefined
     if (task.delegation && !checkoutId)
       return this.branchBase(task.delegation.parentTaskId, task.delegation.checkoutId, visited)
     if (checkoutId) {
@@ -180,9 +180,9 @@ export class TaskCheckout {
     if (visited.has(id)) throw new HttpError(400, 'Invalid child agent ancestry')
     visited.add(id)
     const task = this.store.taskSummary(id)
-    if (!checkoutId && task.importedCodexSession) {
+    if (!checkoutId && (task.importedCodexSession || task.importedPiSession)) {
       const directory = await this.reviewDirectory(id)
-      if (!directory) throw new HttpError(404, 'The imported Codex checkout is missing')
+      if (!directory) throw new HttpError(404, 'The imported checkout is missing')
       return directory
     }
     if (task.delegation && !checkoutId)
@@ -258,7 +258,7 @@ export class TaskCheckout {
   private async resolve(id: string, signal?: AbortSignal) {
     signal?.throwIfAborted()
     const task = this.store.taskSummary(id)
-    if (task.importedCodexSession) return this.fileDirectory(id)
+    if (task.importedCodexSession || task.importedPiSession) return this.fileDirectory(id)
     const repo = this.store.get().repositories.find((r) => r.id === task.repositoryId)
     if (!repo) throw new HttpError(404, 'Repository not found')
     if (repo.kind) {

@@ -47,7 +47,8 @@ function settingsLocation(path: string, local: boolean): { icon: IconName; descr
 export default function SettingsScreen({ categorySlug }: { categorySlug?: string } = {}) {
   const { colors, styles } = useTheme()
 
-  const { profiles, overviews } = useRuntime()
+  const { profiles, overviews, snapshot } = useRuntime()
+  const policy = snapshot?.managedPolicy
   const [query, setQuery] = useApplicationState('')
   const [crash, setCrash] = useApplicationState<CrashRecord | null>(null)
   useEffect(() => {
@@ -381,6 +382,42 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           value={query}
           onChangeText={setQuery}
         />
+        {policy && (
+          <View
+            style={[styles.card, { gap: 6 }]}
+            accessibilityLabel={`Managed by ${policy.organization}`}
+          >
+            <Text style={[styles.text, { fontWeight: '600' }]}>
+              Managed by {policy.organization}
+            </Text>
+            <Text style={styles.muted} selectable>
+              Policy fingerprint: {policy.fingerprint}
+            </Text>
+            <Text style={styles.muted}>
+              Rules are enforced on this computer for every client and agent. Ask your administrator
+              to change them.
+            </Text>
+            {policy.maxPermission && (
+              <Text style={styles.muted}>Maximum access: {policy.maxPermission}</Text>
+            )}
+            {policy.allowedClients && (
+              <Text style={styles.muted}>Allowed clients: {policy.allowedClients.join(', ')}</Text>
+            )}
+            {policy.allowedProviders && (
+              <Text style={styles.muted}>
+                Allowed providers: {policy.allowedProviders.join(', ')}
+              </Text>
+            )}
+            {!!policy.lockedSettings.length && (
+              <Text style={styles.muted}>Locked settings: {policy.lockedSettings.join(', ')}</Text>
+            )}
+            {!!policy.disabledCapabilities.length && (
+              <Text style={styles.muted}>
+                Unavailable: {policy.disabledCapabilities.join(', ')}
+              </Text>
+            )}
+          </View>
+        )}
         {!category && !needle && crash && (
           <View accessibilityRole="alert" style={[styles.card, { gap: 6 }]}>
             <Text style={[styles.text, { fontWeight: '600' }]}>

@@ -1,6 +1,7 @@
 import { isAbsolute, relative, sep } from 'node:path'
 import { taskInputOwner, planModeAgent, planModeRequested } from '@dovo/protocol'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
+import { requireImportedPiSession } from '../providers/pi/session-import.js'
 import {
   type TurnSettings,
   noStudioTools,
@@ -1751,7 +1752,11 @@ export class Tasks {
         : nextQueuedMessage(next)
       if (directMessageId && (!firstMessage || firstMessage.paused))
         return Effect.fail(new HttpError(409, 'The message changed before it could be sent.'))
-      if (next.importedCodexSession && !firstMessage && !next.subagentInbox?.length) {
+      if (
+        (next.importedCodexSession || next.importedPiSession) &&
+        !firstMessage &&
+        !next.subagentInbox?.length
+      ) {
         const history = this.store.task(id)
         if (
           !history.messages.some(
@@ -1760,7 +1765,7 @@ export class Tasks {
           )
         )
           return Effect.fail(
-            new HttpError(409, 'Send a new message to continue this imported Codex session'),
+            new HttpError(409, 'Send a new message to continue this imported session'),
           )
       }
       if (next.subagents?.some(nativeAgentWorking) && !this.nativeSessions.has(id))
@@ -1791,6 +1796,9 @@ export class Tasks {
           this.nativeSessions.has(id)
             ? Effect.void
             : runtimeOperation(() => requireImportedCodexSession(this.store.taskSummary(id))),
+        ),
+        Effect.flatMap(() =>
+          runtimeOperation(() => requireImportedPiSession(this.store.taskSummary(id))),
         ),
         Effect.flatMap(() => runtimeOperation(() => this.store.task(id))),
         Effect.flatMap((task) => {
@@ -1982,7 +1990,7 @@ export class Tasks {
             )
               throw new HttpError(400, 'The primary checkout is already part of this thread')
             const primaryDirectory =
-              task.importedCodexSession && hasGit
+              (task.importedCodexSession || task.importedPiSession) && hasGit
                 ? (yield* runtimeOperation(() => this.git.inspect(cwd))).path
                 : cwd
             const directories = [
@@ -2328,6 +2336,7 @@ export class Tasks {
   requireCheckoutReferencesAvailable(task: TaskMetadata) {
     const paths = [
       task.importedCodexSession?.cwd,
+      task.importedPiSession?.cwd,
       task.existingWorktreePath,
       ...(task.linkedCheckouts ?? []).map((link) => link.existingWorktreePath),
       ...(task.pendingLinkedCheckouts ?? []).map((link) => link.existingWorktreePath),
@@ -3046,7 +3055,7 @@ export class Tasks {
         result: includeResult ? (native?.result ?? savedNative?.text) : undefined,
       }
     }
-    const child = this.store.task(id)
+    const child = this.store.taskSummary(id)
     if (child.delegation?.parentTaskId !== taskId)
       throw new HttpError(403, 'This child belongs to another thread')
     if (
@@ -3085,7 +3094,9 @@ export class Tasks {
         .filter((question) => question.taskId === child.id && question.routing === 'parent'),
       subagent: record,
       result:
-        !includeResult || this.hasWorkingFamily(child.id) ? undefined : delegatedAnswer(child),
+        !includeResult || this.hasWorkingFamily(child.id)
+          ? undefined
+          : delegatedAnswer(this.store.task(id)),
     }
   }
   async subagentSend(

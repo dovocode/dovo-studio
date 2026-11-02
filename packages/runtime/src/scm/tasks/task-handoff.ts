@@ -53,10 +53,10 @@ async function applyStash(s: HandoffServices, cwd: string, ref: string) {
 export async function handoffTask(s: HandoffServices, id: string, target: 'worktree' | 'main') {
   const task = s.store.taskSummary(id)
   if (task.sideThread) throw new HttpError(409, 'Side threads keep their isolated worktree.')
-  if (task.importedCodexSession)
+  if (task.importedCodexSession || task.importedPiSession)
     throw new HttpError(
       409,
-      'Imported Codex sessions keep their original checkout. Start a new thread to use another checkout.',
+      'Imported sessions keep their original checkout. Start a new thread to use another checkout.',
     )
   if ((task.execution ?? 'main') === target) return { ok: true }
   if (task.existingWorktreePath)

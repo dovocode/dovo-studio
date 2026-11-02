@@ -226,6 +226,11 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         stored,
       )
       validatePrompts(after)
+      if (
+        (input.scope === 'global' || input.scope === 'environment') &&
+        (after.projectPinned !== undefined || after.projectArchived !== undefined)
+      )
+        throw new HttpError(400, 'Pin and archive apply to one project.')
       if (input.scope === 'global' || input.scope === 'project') {
         after = prepareShared(after)
         validateShared(after)
@@ -266,6 +271,8 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
             repo.id === id
               ? {
                   ...repo,
+                  pinned: after.projectPinned,
+                  archived: after.projectArchived,
                   taskDefaults: after.taskDefaults,
                   taskBehavior: after.taskBehavior,
                   resources: after.resources,
@@ -277,6 +284,8 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         }))
         repository = {
           ...repository,
+          pinned: after.projectPinned,
+          archived: after.projectArchived,
           taskDefaults: after.taskDefaults,
           taskBehavior: after.taskBehavior,
           resources: after.resources,

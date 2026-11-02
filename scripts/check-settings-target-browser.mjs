@@ -22,6 +22,7 @@ try {
       '@dovo/studio-core/state': state,
       '../state/application-state': state,
       '../connection/provider': nativeRuntime,
+      '../../runtime/connection/provider': nativeRuntime,
       'react-native': controls,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
     }

@@ -1299,3 +1299,48 @@ current files and unsent drafts. Queued messages remain paused; retry does not u
 automatically resubmit other prompts. Offline and already-running tasks cannot be retried. **Try
 again** in a turn’s menu remains the separate operation that reruns a request from scratch and
 undoes that turn’s edits.
+
+## Project organization and managed runtimes
+
+Project settings now include **Pin project** and **Archive project**. Pinned projects sort first.
+Archived projects stay available in settings for restoration and retain their threads and files, but
+disappear from normal new-thread project choices. Organization follows confirmed repository identity
+across paired computers; a computer can be offline when you change it.
+
+Administrators can optionally deploy a runtime JSON policy for provider, permission, sharing,
+Connect, webhook, client and update controls. Unconfigured runtimes behave as before. See
+[Managed runtime policy](managed-policy.md) for validation commands, deployment paths and supported
+controls. Runtime diagnostics and mobile Settings show the active organization and restrictions.
+HTTP over LAN/VPN and device-token pairing remain supported.
+
+For opt-in runtime/server/desktop startup timings and measured cache experiments, see
+[Startup profiling](startup-profiling.md). Nightly release notes include a short list of user-facing
+highlights followed by the complete changelog.
+
+The desktop/web composer supports rich editing and a **Markdown source** toggle (`Mod+Shift+M`).
+Formatting controls operate on the Markdown draft sent to the agent. Unedited blocks retain their
+original source; unsupported constructs stay editable in source mode. The preferred mode is saved in
+conversation settings. Draft recovery checks that the submitted draft is still current before a late
+send acknowledgement can clear it.
+
+## Import terminal Pi sessions
+
+In project checkout settings, choose **Import Pi session**, preview a session from that project's
+checkout or worktrees, then import it as a thread. Repeating the import opens the existing thread.
+Import requires a stable transcript and refuses a known active terminal Pi process. If activity
+cannot be determined, the preview explains that the copied snapshot may omit recent terminal work.
+
+Dovo copies the transcript into its own private storage before continuing; the terminal's original
+file is left untouched. Continuation requires Pi 1.4 or newer from `@earendil-works/pi-coding-agent`
+(the renamed current distribution). Older `@mariozechner/pi-coding-agent` releases do not provide
+the completion event required by this adapter. Preserve the adjacent
+`<database filename>.pi-sessions` directory when moving or backing up the runtime database; the
+SQLite-only backup does not include these native session files. Dovo's saved transcript history
+remains in SQLite, but native continuation requires its private Pi session file and project
+checkout.
+
+Imported Pi threads start in **Text only** mode. Built-in read, shell, edit and write tools require
+explicit **Full access**, approvals set to **Never**, and no stricter sandbox or read-only linked
+checkout. Extensions, external MCP servers, skills and prompt templates remain disabled. This
+adapter does not support attachments or custom launch arguments. Configure model credentials using
+Pi's own setup; importing or previewing a session does not call a model.

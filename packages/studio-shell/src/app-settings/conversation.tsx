@@ -70,6 +70,11 @@ export default function ConversationSettings() {
               'Include skills in the / menu. Skills always appear when you type $.',
             ],
             [
+              'richTextComposer',
+              'Rich text composer',
+              'Format messages as you type. Turn off, or press ⌘/Ctrl+Shift+M, to edit the exact Markdown source.',
+            ],
+            [
               'markdownComposerPreview',
               'Formatted composer preview',
               'Show rendered Markdown above the message as you type.',
