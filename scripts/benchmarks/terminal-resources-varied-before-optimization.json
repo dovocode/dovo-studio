@@ -1,0 +1,643 @@
+{
+  "metadata": {
+    "timestamp": "2026-11-02T17:09:29.123Z",
+    "platform": "linux",
+    "kernel": "6.12.105+deb13-amd64",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700T",
+    "logicalCpus": 24,
+    "node": "v26.8.1",
+    "chromium": "156.0.8078.4",
+    "repeats": 3,
+    "content": "varied",
+    "scope": "Isolated production browser terminal client; whole-browser CPU and PSS; software GPU; no PTY/server/React/native mobile",
+    "geometry": {
+      "cols": 109,
+      "rows": 18,
+      "dpr": 1
+    },
+    "replayLines": 16000,
+    "replayBytes": 692902,
+    "stream": {
+      "chunks": 96,
+      "intervalMs": 32,
+      "bytesPerChunk": 16359
+    },
+    "gpu": {
+      "devices": [
+        {
+          "vendorId": 65535,
+          "deviceId": 65535,
+          "vendorString": "Google Inc. (Google)",
+          "deviceString": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+          "driverVendor": "SwANGLE",
+          "driverVersion": "5.0.0"
+        }
+      ],
+      "auxAttributes": {
+        "amdSwitchable": false,
+        "canSupportThreadedTextureMailbox": false,
+        "directRenderingVersion": "",
+        "displayType": "ANGLE_SWIFTSHADER",
+        "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_compressed_texture_etc GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_image GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_object_flags GL_ANGLE_memory_size GL_ANGLE_multi_draw GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_read_only_depth_stencil_feedback_loops GL_ANGLE_relaxed_vertex_attribute_type GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_rgbx_internal_format GL_ANGLE_robust_client_memory GL_ANGLE_robust_fragment_shader_output GL_ANGLE_robust_resource_initialization GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_ANGLE_vulkan_image GL_ANGLE_yuv_internal_format GL_APPLE_clip_distance GL_ARM_rgba8 GL_ARM_shader_framebuffer_fetch GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_array GL_EXT_EGL_image_external_wrap_modes GL_EXT_EGL_image_storage GL_EXT_base_instance GL_EXT_blend_minmax GL_EXT_buffer_storage GL_EXT_clear_texture GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_compressed_ETC1_RGB8_sub_texture GL_EXT_conservative_depth GL_EXT_copy_image GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_memory_object GL_EXT_memory_object_fd GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_robustness GL_EXT_sRGB GL_EXT_sRGB_write_control GL_EXT_semaphore GL_EXT_semaphore_fd GL_EXT_separate_shader_objects GL_EXT_shader_framebuffer_fetch GL_EXT_shader_framebuffer_fetch_non_coherent GL_EXT_shader_non_constant_global_initializers GL_EXT_shader_texture_lod GL_EXT_shadow_samplers GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_lod_bias GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_rg GL_EXT_texture_sRGB_R8 GL_EXT_texture_sRGB_RG8 GL_EXT_texture_sRGB_decode GL_EXT_texture_shadow_lod GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_blend_equation_advanced GL_KHR_debug GL_KHR_robust_buffer_access_behavior GL_KHR_robustness GL_KHR_texture_compression_astc_ldr GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_polygon_mode GL_NV_read_depth GL_NV_read_depth_stencil GL_NV_read_stencil GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_EGL_sync GL_OES_compressed_ETC1_RGB8_texture GL_OES_compressed_paletted_texture GL_OES_copy_image GL_OES_depth24 GL_OES_depth32 GL_OES_depth_texture GL_OES_depth_texture_cube_map GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_shading GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_3D GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OES_vertex_half_float GL_OES_vertex_type_10_10_10_2 GL_OVR_multiview GL_OVR_multiview2 GL_QCOM_texture_lod_bias ",
+        "glImplementationParts": "(gl=egl-angle,angle=swiftshader)",
+        "glRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+        "glResetNotificationStrategy": 33362,
+        "glVendor": "Google Inc. (Google)",
+        "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28967 git hash: dfeede58b618)",
+        "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_surface_orientation EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_EXT_image_gl_colorspace EGL_KHR_gl_colorspace EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_fence_sync EGL_KHR_wait_sync EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_KHR_swap_buffers_with_damage EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_IMG_context_priority EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_EXT_buffer_age EGL_ANGLE_create_surface_swap_interval EGL_ANGLE_vulkan_image EGL_KHR_partial_update EGL_ANGLE_global_fence_sync EGL_ANGLE_memory_usage_report ",
+        "glWsVendor": "Google Inc. (Google)",
+        "glWsVersion": "1.5 (ANGLE 2.1.28967 git hash: dfeede58b618)",
+        "hardwareSupportsVulkan": false,
+        "inProcessGpu": false,
+        "initializationTime": 0.007882,
+        "isAsan": false,
+        "isClangCoverage": false,
+        "jpegDecodeAcceleratorSupported": false,
+        "maxMsaaSamples": "4",
+        "optimus": false,
+        "passthroughCmdDecoder": true,
+        "pixelShaderVersion": "3.00",
+        "processCrashCount": 0,
+        "sandboxed": false,
+        "skiaBackendType": "None",
+        "subpixelFontRendering": true,
+        "targetCpuBits": 64,
+        "vertexShaderVersion": "3.00",
+        "visibilityCallbackCallCount": 0
+      },
+      "featureStatus": {
+        "2d_canvas": "unavailable_software",
+        "direct_rendering_display_compositor": "disabled_off_ok",
+        "gpu_compositing": "disabled_software",
+        "multiple_raster_threads": "enabled_on",
+        "opengl": "disabled_off",
+        "rasterization": "disabled_software",
+        "raw_draw": "disabled_off_ok",
+        "skia_graphite": "disabled_off",
+        "trees_in_viz": "disabled_off",
+        "video_decode": "disabled_software",
+        "video_encode": "disabled_software",
+        "vulkan": "disabled_off",
+        "webgl": "unavailable_software",
+        "webgpu": "unavailable_software",
+        "webgpu_on_vk_via_gl_interop": "disabled_off",
+        "webnn": "unavailable_software"
+      },
+      "driverBugWorkarounds": [],
+      "videoDecoding": [],
+      "videoEncoding": []
+    },
+    "provenance": {
+      "productionWorkerSha256": "96a2d9b9f1db8d41ab8abd672c4c2aa5d34207ebbebcd3073b8b6687a6008f10",
+      "description": "Measured the preserved pre-optimization production bundle with the varied server workload. Fixture socket port was rebound and its absent-frame guard repaired; the terminal worker and client bundle were unchanged."
+    }
+  },
+  "results": [
+    {
+      "repeat": 0,
+      "variant": "canvas2d",
+      "baselinePssMiB": 144.9755859375,
+      "replayStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 188.11579800000004,
+          "cpuSeconds": 0.15,
+          "oneCorePercent": 79.73811960226752,
+          "pssMiB": 184.669921875
+        },
+        {
+          "name": "replay",
+          "wallMs": 110.563762,
+          "cpuSeconds": 0.12,
+          "oneCorePercent": 108.53465713295827,
+          "pssMiB": 200.697265625
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3145.828705,
+          "cpuSeconds": 1.1500000000000001,
+          "oneCorePercent": 36.55634517455394,
+          "pssMiB": 210.08203125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.7222140000003,
+          "cpuSeconds": 0.019999999999999976,
+          "oneCorePercent": 0.999139633867298,
+          "pssMiB": 210.07421875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3072.8369980000007,
+          "cpuSeconds": 0.16999999999999987,
+          "oneCorePercent": 5.532346821866789,
+          "pssMiB": 210.087890625
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 227.13537899999938,
+          "cpuSeconds": 0.32,
+          "oneCorePercent": 140.88514145566063,
+          "pssMiB": 278.5224609375
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3135.0368610000005,
+          "cpuSeconds": 2.0100000000000007,
+          "oneCorePercent": 64.11407868929679,
+          "pssMiB": 289.7412109375
+        }
+      ],
+      "disposedPssMiB": 198.7529296875
+    },
+    {
+      "repeat": 0,
+      "variant": "webgl2",
+      "baselinePssMiB": 145.857421875,
+      "replayStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 228.5566629999994,
+          "cpuSeconds": 0.31,
+          "oneCorePercent": 135.63376185624517,
+          "pssMiB": 227.4267578125
+        },
+        {
+          "name": "replay",
+          "wallMs": 102.36507399999937,
+          "cpuSeconds": 0.18,
+          "oneCorePercent": 175.84122490841077,
+          "pssMiB": 249.068359375
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3135.547305,
+          "cpuSeconds": 5.719999999999999,
+          "oneCorePercent": 182.4242929098465,
+          "pssMiB": 272.263671875
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.8344240000006,
+          "cpuSeconds": 0.010000000000000009,
+          "oneCorePercent": 0.4997914809966307,
+          "pssMiB": 272.2861328125
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.8434930000003,
+          "cpuSeconds": 0.1800000000000001,
+          "oneCorePercent": 5.853956482981233,
+          "pssMiB": 272.3447265625
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 242.57690899999943,
+          "cpuSeconds": 0.34000000000000025,
+          "oneCorePercent": 140.1617332010777,
+          "pssMiB": 360.6103515625
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3138.1965920000002,
+          "cpuSeconds": 6.519999999999994,
+          "oneCorePercent": 207.76263719809666,
+          "pssMiB": 369.5634765625
+        }
+      ],
+      "disposedPssMiB": 254.505859375
+    },
+    {
+      "repeat": 1,
+      "variant": "webgl2",
+      "baselinePssMiB": 146.1513671875,
+      "replayStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 213.03889999999956,
+          "cpuSeconds": 0.27,
+          "oneCorePercent": 126.73741743878728,
+          "pssMiB": 227.2431640625
+        },
+        {
+          "name": "replay",
+          "wallMs": 103.40046799999982,
+          "cpuSeconds": 0.19,
+          "oneCorePercent": 183.75158611467825,
+          "pssMiB": 248.205078125
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3139.867909999997,
+          "cpuSeconds": 4.8699999999999966,
+          "oneCorePercent": 155.10206606111657,
+          "pssMiB": 268.923828125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.8197569999975,
+          "cpuSeconds": 0.010000000000000009,
+          "oneCorePercent": 0.4997951447157777,
+          "pssMiB": 268.931640625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.0991399999984,
+          "cpuSeconds": 0.1900000000000001,
+          "oneCorePercent": 6.1806724945116835,
+          "pssMiB": 268.974609375
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 234.4139739999955,
+          "cpuSeconds": 0.3200000000000004,
+          "oneCorePercent": 136.5106331075666,
+          "pssMiB": 357.6396484375
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3136.8784799999994,
+          "cpuSeconds": 5.889999999999996,
+          "oneCorePercent": 187.76627904310774,
+          "pssMiB": 368.5224609375
+        }
+      ],
+      "disposedPssMiB": 244.970703125
+    },
+    {
+      "repeat": 1,
+      "variant": "canvas2d",
+      "baselinePssMiB": 146.044921875,
+      "replayStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 226.64528500000597,
+          "cpuSeconds": 0.24000000000000005,
+          "oneCorePercent": 105.8923418592157,
+          "pssMiB": 182.513671875
+        },
+        {
+          "name": "replay",
+          "wallMs": 99.06301399999938,
+          "cpuSeconds": 0.10000000000000003,
+          "oneCorePercent": 100.94584846772446,
+          "pssMiB": 200.1044921875
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3133.9646130000037,
+          "cpuSeconds": 1.55,
+          "oneCorePercent": 49.458120668320326,
+          "pssMiB": 209.4443359375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.3971349999993,
+          "cpuSeconds": 0.020000000000000018,
+          "oneCorePercent": 0.9993019201558928,
+          "pssMiB": 209.4287109375
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3075.437761000001,
+          "cpuSeconds": 0.2300000000000001,
+          "oneCorePercent": 7.478610132081291,
+          "pssMiB": 209.5
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 212.89362699999765,
+          "cpuSeconds": 0.3000000000000002,
+          "oneCorePercent": 140.91544412459257,
+          "pssMiB": 278.259765625
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3146.9453300000023,
+          "cpuSeconds": 2.2800000000000002,
+          "oneCorePercent": 72.45121096526958,
+          "pssMiB": 289.076171875
+        }
+      ],
+      "disposedPssMiB": 198.7939453125
+    },
+    {
+      "repeat": 2,
+      "variant": "canvas2d",
+      "baselinePssMiB": 145.4658203125,
+      "replayStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 184.12381299999834,
+          "cpuSeconds": 0.17,
+          "oneCorePercent": 92.32917634613702,
+          "pssMiB": 182.7373046875
+        },
+        {
+          "name": "replay",
+          "wallMs": 99.97614500000054,
+          "cpuSeconds": 0.09999999999999998,
+          "oneCorePercent": 100.02386069196749,
+          "pssMiB": 200.1044921875
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3149.5654520000026,
+          "cpuSeconds": 1.62,
+          "oneCorePercent": 51.43566706865181,
+          "pssMiB": 209.490234375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.3119310000038,
+          "cpuSeconds": 0.010000000000000009,
+          "oneCorePercent": 0.49967223225433255,
+          "pssMiB": 209.5166015625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3076.7505279999896,
+          "cpuSeconds": 0.2299999999999999,
+          "oneCorePercent": 7.4754192095486225,
+          "pssMiB": 209.6142578125
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 222.85147900000447,
+          "cpuSeconds": 0.3,
+          "oneCorePercent": 134.61880591781664,
+          "pssMiB": 279.498046875
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3146.1773329999996,
+          "cpuSeconds": 2.2800000000000002,
+          "oneCorePercent": 72.46889665389375,
+          "pssMiB": 290.1044921875
+        }
+      ],
+      "disposedPssMiB": 198.2890625
+    },
+    {
+      "repeat": 2,
+      "variant": "webgl2",
+      "baselinePssMiB": 145.681640625,
+      "replayStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 225.1344029999891,
+          "cpuSeconds": 0.3,
+          "oneCorePercent": 133.25373465912028,
+          "pssMiB": 229.4990234375
+        },
+        {
+          "name": "replay",
+          "wallMs": 101.73114999999234,
+          "cpuSeconds": 0.18,
+          "oneCorePercent": 176.93695588815572,
+          "pssMiB": 248.2861328125
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3150.5094110000064,
+          "cpuSeconds": 5.419999999999999,
+          "oneCorePercent": 172.0356708371054,
+          "pssMiB": 269.662109375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.7338860000018,
+          "cpuSeconds": 0.020000000000000018,
+          "oneCorePercent": 0.9991338079391436,
+          "pssMiB": 269.6962890625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3073.766887000005,
+          "cpuSeconds": 0.2100000000000001,
+          "oneCorePercent": 6.832008012323927,
+          "pssMiB": 269.7353515625
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 240.17038999999932,
+          "cpuSeconds": 0.34,
+          "oneCorePercent": 141.56616059123732,
+          "pssMiB": 357.4853515625
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3141.9330489999993,
+          "cpuSeconds": 5.180000000000001,
+          "oneCorePercent": 164.86665753901624,
+          "pssMiB": 367.8076171875
+        }
+      ],
+      "disposedPssMiB": 252.4091796875
+    }
+  ]
+}

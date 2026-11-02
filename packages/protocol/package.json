@@ -42,6 +42,12 @@
       "development": "./src/node/local-settings.ts",
       "import": "./dist/node/local-settings.js",
       "default": "./dist/node/local-settings.js"
+    },
+    "./terminal-stream": {
+      "types": "./src/terminal-stream.ts",
+      "development": "./src/terminal-stream.ts",
+      "import": "./dist/terminal-stream.js",
+      "default": "./dist/terminal-stream.js"
     }
   },
   "scripts": {

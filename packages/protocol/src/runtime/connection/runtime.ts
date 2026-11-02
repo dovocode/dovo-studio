@@ -277,6 +277,13 @@ export const patchSchema = mutableStruct({
 })
 export const terminalInputSchema = Schema.Union([
   mutableStruct({
+    type: Schema.Literal('ack'),
+    bytes: maxValue(
+      minValue(Schema.Number.pipe(Schema.check(Schema.isInt())), 1),
+      Number.MAX_SAFE_INTEGER,
+    ),
+  }),
+  mutableStruct({
     type: Schema.Literal('ping'),
     nonce: maxValue(minValue(Schema.String, 1), 64),
   }),

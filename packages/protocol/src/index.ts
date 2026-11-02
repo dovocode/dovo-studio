@@ -351,3 +351,5 @@ export * from './conversation/pdf-view-state.js'
 export { conversationPagesSize, trimConversationPages } from './conversation/history-retention.js'
 export * from './conversation/workflow/provider-retry.js'
 export * from './runtime/previews/browser-element.js'
+
+export * from './terminal-stream.js'

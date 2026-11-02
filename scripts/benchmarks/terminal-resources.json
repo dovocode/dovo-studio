@@ -1,0 +1,1689 @@
+{
+  "metadata": {
+    "timestamp": "2026-11-02T17:29:16.397Z",
+    "platform": "linux",
+    "kernel": "6.12.105+deb13-amd64",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700T",
+    "logicalCpus": 24,
+    "node": "v26.8.1",
+    "chromium": "156.0.8078.4",
+    "repeats": 3,
+    "content": "repeated",
+    "scope": "Isolated production browser terminal client; whole-browser CPU and PSS; software GPU; no PTY/server/React/native mobile",
+    "geometry": {
+      "cols": 109,
+      "rows": 18,
+      "dpr": 1
+    },
+    "replayLines": 16000,
+    "replayBytes": 692902,
+    "stream": {
+      "chunks": 96,
+      "intervalMs": 32,
+      "bytesPerChunk": 16359
+    },
+    "gpu": {
+      "devices": [
+        {
+          "vendorId": 65535,
+          "deviceId": 65535,
+          "vendorString": "Google Inc. (Google)",
+          "deviceString": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+          "driverVendor": "SwANGLE",
+          "driverVersion": "5.0.0"
+        }
+      ],
+      "auxAttributes": {
+        "amdSwitchable": false,
+        "canSupportThreadedTextureMailbox": false,
+        "directRenderingVersion": "",
+        "displayType": "ANGLE_SWIFTSHADER",
+        "glExtensions": "GL_AMD_performance_monitor GL_ANGLE_base_vertex_base_instance_shader_builtin GL_ANGLE_blob_cache GL_ANGLE_client_arrays GL_ANGLE_clip_cull_distance GL_ANGLE_compressed_texture_etc GL_ANGLE_copy_texture_3d GL_ANGLE_depth_texture GL_ANGLE_framebuffer_blit GL_ANGLE_framebuffer_multisample GL_ANGLE_get_image GL_ANGLE_get_serialized_context_string GL_ANGLE_get_tex_level_parameter GL_ANGLE_instanced_arrays GL_ANGLE_memory_object_flags GL_ANGLE_memory_size GL_ANGLE_multi_draw GL_ANGLE_pack_reverse_row_order GL_ANGLE_polygon_mode GL_ANGLE_program_binary_readiness_query GL_ANGLE_program_cache_control GL_ANGLE_read_only_depth_stencil_feedback_loops GL_ANGLE_relaxed_vertex_attribute_type GL_ANGLE_renderability_validation GL_ANGLE_request_extension GL_ANGLE_rgbx_internal_format GL_ANGLE_robust_client_memory GL_ANGLE_robust_fragment_shader_output GL_ANGLE_robust_resource_initialization GL_ANGLE_shader_pixel_local_storage GL_ANGLE_shader_pixel_local_storage_coherent GL_ANGLE_stencil_texturing GL_ANGLE_texture_compression_dxt3 GL_ANGLE_texture_compression_dxt5 GL_ANGLE_texture_multisample GL_ANGLE_texture_usage GL_ANGLE_translated_shader_source GL_ANGLE_vulkan_image GL_ANGLE_yuv_internal_format GL_APPLE_clip_distance GL_ARM_rgba8 GL_ARM_shader_framebuffer_fetch GL_CHROMIUM_bind_generates_resource GL_CHROMIUM_bind_uniform_location GL_CHROMIUM_copy_compressed_texture GL_CHROMIUM_copy_texture GL_CHROMIUM_lose_context GL_EXT_EGL_image_array GL_EXT_EGL_image_external_wrap_modes GL_EXT_EGL_image_storage GL_EXT_base_instance GL_EXT_blend_minmax GL_EXT_buffer_storage GL_EXT_clear_texture GL_EXT_clip_control GL_EXT_clip_cull_distance GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_compressed_ETC1_RGB8_sub_texture GL_EXT_conservative_depth GL_EXT_copy_image GL_EXT_debug_label GL_EXT_debug_marker GL_EXT_depth_clamp GL_EXT_discard_framebuffer GL_EXT_disjoint_timer_query GL_EXT_draw_buffers GL_EXT_draw_buffers_indexed GL_EXT_draw_elements_base_vertex GL_EXT_float_blend GL_EXT_frag_depth GL_EXT_instanced_arrays GL_EXT_map_buffer_range GL_EXT_memory_object GL_EXT_memory_object_fd GL_EXT_occlusion_query_boolean GL_EXT_polygon_offset_clamp GL_EXT_read_format_bgra GL_EXT_robustness GL_EXT_sRGB GL_EXT_sRGB_write_control GL_EXT_semaphore GL_EXT_semaphore_fd GL_EXT_separate_shader_objects GL_EXT_shader_framebuffer_fetch GL_EXT_shader_framebuffer_fetch_non_coherent GL_EXT_shader_non_constant_global_initializers GL_EXT_shader_texture_lod GL_EXT_shadow_samplers GL_EXT_texture_border_clamp GL_EXT_texture_compression_bptc GL_EXT_texture_compression_dxt1 GL_EXT_texture_compression_rgtc GL_EXT_texture_compression_s3tc_srgb GL_EXT_texture_filter_anisotropic GL_EXT_texture_format_BGRA8888 GL_EXT_texture_lod_bias GL_EXT_texture_mirror_clamp_to_edge GL_EXT_texture_rg GL_EXT_texture_sRGB_R8 GL_EXT_texture_sRGB_RG8 GL_EXT_texture_sRGB_decode GL_EXT_texture_shadow_lod GL_EXT_texture_storage GL_EXT_texture_type_2_10_10_10_REV GL_EXT_unpack_subimage GL_KHR_blend_equation_advanced GL_KHR_debug GL_KHR_robust_buffer_access_behavior GL_KHR_robustness GL_KHR_texture_compression_astc_ldr GL_NV_fence GL_NV_framebuffer_blit GL_NV_pack_subimage GL_NV_pixel_buffer_object GL_NV_polygon_mode GL_NV_read_depth GL_NV_read_depth_stencil GL_NV_read_stencil GL_NV_shader_noperspective_interpolation GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_OES_EGL_sync GL_OES_compressed_ETC1_RGB8_texture GL_OES_compressed_paletted_texture GL_OES_copy_image GL_OES_depth24 GL_OES_depth32 GL_OES_depth_texture GL_OES_depth_texture_cube_map GL_OES_draw_buffers_indexed GL_OES_draw_elements_base_vertex GL_OES_element_index_uint GL_OES_fbo_render_mipmap GL_OES_get_program_binary GL_OES_mapbuffer GL_OES_packed_depth_stencil GL_OES_required_internalformat GL_OES_rgb8_rgba8 GL_OES_sample_shading GL_OES_sample_variables GL_OES_shader_multisample_interpolation GL_OES_standard_derivatives GL_OES_surfaceless_context GL_OES_texture_3D GL_OES_texture_border_clamp GL_OES_texture_float GL_OES_texture_float_linear GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_texture_npot GL_OES_texture_stencil8 GL_OES_texture_storage_multisample_2d_array GL_OES_vertex_array_object GL_OES_vertex_half_float GL_OES_vertex_type_10_10_10_2 GL_OVR_multiview GL_OVR_multiview2 GL_QCOM_texture_lod_bias ",
+        "glImplementationParts": "(gl=egl-angle,angle=swiftshader)",
+        "glRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+        "glResetNotificationStrategy": 33362,
+        "glVendor": "Google Inc. (Google)",
+        "glVersion": "OpenGL ES 3.0 (ANGLE 2.1.28967 git hash: dfeede58b618)",
+        "glWsExtensions": "EGL_EXT_create_context_robustness EGL_ANGLE_surface_orientation EGL_KHR_create_context EGL_KHR_image EGL_KHR_image_base EGL_EXT_image_gl_colorspace EGL_KHR_gl_colorspace EGL_KHR_gl_texture_2D_image EGL_KHR_gl_texture_cubemap_image EGL_KHR_gl_renderbuffer_image EGL_KHR_get_all_proc_addresses EGL_KHR_fence_sync EGL_KHR_wait_sync EGL_ANGLE_create_context_webgl_compatibility EGL_CHROMIUM_create_context_bind_generates_resource EGL_KHR_swap_buffers_with_damage EGL_EXT_pixel_format_float EGL_KHR_surfaceless_context EGL_ANGLE_display_texture_share_group EGL_ANGLE_display_semaphore_share_group EGL_ANGLE_create_context_client_arrays EGL_ANGLE_program_cache_control EGL_ANGLE_robust_resource_initialization EGL_ANGLE_create_context_extensions_enabled EGL_ANDROID_blob_cache EGL_ANDROID_recordable EGL_ANGLE_create_context_backwards_compatible EGL_KHR_no_config_context EGL_IMG_context_priority EGL_KHR_create_context_no_error EGL_KHR_reusable_sync EGL_EXT_buffer_age EGL_ANGLE_create_surface_swap_interval EGL_ANGLE_vulkan_image EGL_KHR_partial_update EGL_ANGLE_global_fence_sync EGL_ANGLE_memory_usage_report ",
+        "glWsVendor": "Google Inc. (Google)",
+        "glWsVersion": "1.5 (ANGLE 2.1.28967 git hash: dfeede58b618)",
+        "hardwareSupportsVulkan": false,
+        "inProcessGpu": false,
+        "initializationTime": 0.012016,
+        "isAsan": false,
+        "isClangCoverage": false,
+        "jpegDecodeAcceleratorSupported": false,
+        "maxMsaaSamples": "4",
+        "optimus": false,
+        "passthroughCmdDecoder": true,
+        "pixelShaderVersion": "3.00",
+        "processCrashCount": 0,
+        "sandboxed": false,
+        "skiaBackendType": "None",
+        "subpixelFontRendering": true,
+        "targetCpuBits": 64,
+        "vertexShaderVersion": "3.00",
+        "visibilityCallbackCallCount": 0
+      },
+      "featureStatus": {
+        "2d_canvas": "unavailable_software",
+        "direct_rendering_display_compositor": "disabled_off_ok",
+        "gpu_compositing": "disabled_software",
+        "multiple_raster_threads": "enabled_on",
+        "opengl": "disabled_off",
+        "rasterization": "disabled_software",
+        "raw_draw": "disabled_off_ok",
+        "skia_graphite": "disabled_off",
+        "trees_in_viz": "disabled_off",
+        "video_decode": "disabled_software",
+        "video_encode": "disabled_software",
+        "vulkan": "disabled_off",
+        "webgl": "unavailable_software",
+        "webgpu": "unavailable_software",
+        "webgpu_on_vk_via_gl_interop": "disabled_off",
+        "webnn": "unavailable_software"
+      },
+      "driverBugWorkarounds": [],
+      "videoDecoding": [],
+      "videoEncoding": []
+    }
+  },
+  "results": [
+    {
+      "repeat": 0,
+      "variant": "xterm-5000",
+      "baselinePssMiB": 146.47265625,
+      "replayStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 164.19599299999982,
+          "cpuSeconds": 0.06000000000000001,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.05,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 36.54169563078197,
+          "pssMiB": 168.8369140625
+        },
+        {
+          "name": "replay",
+          "wallMs": 135.41885000000002,
+          "cpuSeconds": 0.21000000000000002,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0.17,
+            "GPU": 0.01,
+            "network.mojom.NetworkService": 0.009999999999999998
+          },
+          "oneCorePercent": 155.0744228000755,
+          "pssMiB": 191.3330078125
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3114.4560930000002,
+          "cpuSeconds": 1.1,
+          "cpuByProcessType": {
+            "browser": 0.08000000000000002,
+            "renderer": 0.9199999999999999,
+            "GPU": 0.06,
+            "network.mojom.NetworkService": 0.04000000000000001
+          },
+          "oneCorePercent": 35.319168649458305,
+          "pssMiB": 196.1455078125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.5714149999994,
+          "cpuSeconds": 0.009999999999999981,
+          "cpuByProcessType": {
+            "browser": 0.009999999999999981,
+            "renderer": 0,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.4998571870527293,
+          "pssMiB": 196.16015625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.327141999999,
+          "cpuSeconds": 0.45000000000000007,
+          "cpuByProcessType": {
+            "browser": 0.07,
+            "renderer": 0.32000000000000006,
+            "GPU": 0.020000000000000004,
+            "network.mojom.NetworkService": 0.039999999999999994
+          },
+          "oneCorePercent": 14.637349221958637,
+          "pssMiB": 195.6455078125
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 217.7498230000001,
+          "cpuSeconds": 0.33,
+          "cpuByProcessType": {
+            "browser": 0.03999999999999998,
+            "renderer": 0.28,
+            "GPU": 0.009999999999999995,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 151.5500657835207,
+          "pssMiB": 240.36328125
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3114.291010000001,
+          "cpuSeconds": 2.12,
+          "cpuByProcessType": {
+            "browser": 0.22000000000000003,
+            "renderer": 1.6899999999999997,
+            "GPU": 0.05,
+            "network.mojom.NetworkService": 0.16000000000000003
+          },
+          "oneCorePercent": 68.0732787396127,
+          "pssMiB": 253.9853515625
+        }
+      ],
+      "disposedPssMiB": 226.5986328125
+    },
+    {
+      "repeat": 0,
+      "variant": "canvas2d",
+      "baselinePssMiB": 146.73828125,
+      "replayStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 200.92455900000095,
+          "cpuSeconds": 0.19999999999999998,
+          "cpuByProcessType": {
+            "browser": 0.04999999999999999,
+            "renderer": 0.12,
+            "GPU": 0.02,
+            "network.mojom.NetworkService": 0.01
+          },
+          "oneCorePercent": 99.53984768979835,
+          "pssMiB": 183.2158203125
+        },
+        {
+          "name": "replay",
+          "wallMs": 101.83700599999975,
+          "cpuSeconds": 0.11,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.09,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.009999999999999998
+          },
+          "oneCorePercent": 108.015744296332,
+          "pssMiB": 201.48828125
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3136.169201999999,
+          "cpuSeconds": 0.4800000000000001,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.37,
+            "GPU": 0.039999999999999994,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 15.305296655993377,
+          "pssMiB": 207.1630859375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.122427000002,
+          "cpuSeconds": 0.03,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0,
+            "GPU": 0.010000000000000009,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 1.499158651925896,
+          "pssMiB": 207.1826171875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.9870469999987,
+          "cpuSeconds": 0.21000000000000002,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.13,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.04000000000000001
+          },
+          "oneCorePercent": 6.829297060125149,
+          "pssMiB": 207.1123046875
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 211.52031599999827,
+          "cpuSeconds": 0.2900000000000001,
+          "cpuByProcessType": {
+            "browser": 0.04999999999999999,
+            "renderer": 0.22000000000000008,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.01999999999999999
+          },
+          "oneCorePercent": 137.10266960834272,
+          "pssMiB": 277.328125
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3138.254350000003,
+          "cpuSeconds": 1.06,
+          "cpuByProcessType": {
+            "browser": 0.14,
+            "renderer": 0.74,
+            "GPU": 0.039999999999999994,
+            "network.mojom.NetworkService": 0.14
+          },
+          "oneCorePercent": 33.77673960684541,
+          "pssMiB": 287.4296875
+        }
+      ],
+      "disposedPssMiB": 196.41796875
+    },
+    {
+      "repeat": 0,
+      "variant": "webgl2",
+      "baselinePssMiB": 145.9365234375,
+      "replayStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 206.19823299999916,
+          "cpuSeconds": 0.22,
+          "cpuByProcessType": {
+            "browser": 0.039999999999999994,
+            "renderer": 0.13,
+            "GPU": 0.03,
+            "network.mojom.NetworkService": 0.019999999999999997
+          },
+          "oneCorePercent": 106.69344581628926,
+          "pssMiB": 202.197265625
+        },
+        {
+          "name": "replay",
+          "wallMs": 99.48077999999805,
+          "cpuSeconds": 0.14,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.08000000000000002,
+            "GPU": 0.05,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 140.73070195067103,
+          "pssMiB": 233.4482421875
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3137.032748999998,
+          "cpuSeconds": 0.53,
+          "cpuByProcessType": {
+            "browser": 0.03999999999999998,
+            "renderer": 0.36000000000000004,
+            "GPU": 0.09999999999999999,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 16.894946352375502,
+          "pssMiB": 244.001953125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.79335,
+          "cpuSeconds": 0.05000000000000003,
+          "cpuByProcessType": {
+            "browser": 0.020000000000000018,
+            "renderer": 0.010000000000000009,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.020000000000000004
+          },
+          "oneCorePercent": 2.4990087057216592,
+          "pssMiB": 243.9755859375
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.2429300000003,
+          "cpuSeconds": 0.2299999999999999,
+          "cpuByProcessType": {
+            "browser": 0.03999999999999998,
+            "renderer": 0.15999999999999992,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 7.481516758338934,
+          "pssMiB": 244.0048828125
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 245.05382700000337,
+          "cpuSeconds": 0.3300000000000001,
+          "cpuByProcessType": {
+            "browser": 0.06,
+            "renderer": 0.2300000000000001,
+            "GPU": 0.020000000000000018,
+            "network.mojom.NetworkService": 0.020000000000000004
+          },
+          "oneCorePercent": 134.6642915313441,
+          "pssMiB": 328.884765625
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3135.2004670000024,
+          "cpuSeconds": 1.0200000000000002,
+          "cpuByProcessType": {
+            "browser": 0.12,
+            "renderer": 0.7000000000000002,
+            "GPU": 0.09,
+            "network.mojom.NetworkService": 0.10999999999999999
+          },
+          "oneCorePercent": 32.53380479928333,
+          "pssMiB": 340.48046875
+        }
+      ],
+      "disposedPssMiB": 225.3623046875
+    },
+    {
+      "repeat": 0,
+      "variant": "xterm-matched",
+      "baselinePssMiB": 145.662109375,
+      "replayStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 158.09665099999984,
+          "cpuSeconds": 0.06,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0.04000000000000001,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 37.95146805481671,
+          "pssMiB": 167.021484375
+        },
+        {
+          "name": "replay",
+          "wallMs": 153.21997399999964,
+          "cpuSeconds": 0.21000000000000002,
+          "cpuByProcessType": {
+            "browser": 0.020000000000000004,
+            "renderer": 0.19,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 137.05784860660563,
+          "pssMiB": 207.3291015625
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3116.0464920000013,
+          "cpuSeconds": 1.1400000000000001,
+          "cpuByProcessType": {
+            "browser": 0.06999999999999999,
+            "renderer": 0.9600000000000001,
+            "GPU": 0.06,
+            "network.mojom.NetworkService": 0.05
+          },
+          "oneCorePercent": 36.5848199931158,
+          "pssMiB": 212.3642578125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.7502390000009,
+          "cpuSeconds": 0.010000000000000009,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.49981251058093745,
+          "pssMiB": 212.33203125
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3073.3729930000045,
+          "cpuSeconds": 0.4,
+          "cpuByProcessType": {
+            "browser": 0.07,
+            "renderer": 0.27,
+            "GPU": 0.020000000000000004,
+            "network.mojom.NetworkService": 0.039999999999999994
+          },
+          "oneCorePercent": 13.015016430190887,
+          "pssMiB": 215.3203125
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 288.0547979999974,
+          "cpuSeconds": 0.4099999999999999,
+          "cpuByProcessType": {
+            "browser": 0.020000000000000018,
+            "renderer": 0.3799999999999999,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.009999999999999995
+          },
+          "oneCorePercent": 142.33402909678443,
+          "pssMiB": 312.8037109375
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3119.1637859999973,
+          "cpuSeconds": 1.9500000000000004,
+          "cpuByProcessType": {
+            "browser": 0.21000000000000002,
+            "renderer": 1.54,
+            "GPU": 0.05,
+            "network.mojom.NetworkService": 0.15000000000000002
+          },
+          "oneCorePercent": 62.51675557251427,
+          "pssMiB": 323.6904296875
+        }
+      ],
+      "disposedPssMiB": 262.1416015625
+    },
+    {
+      "repeat": 1,
+      "variant": "canvas2d",
+      "baselinePssMiB": 145.2470703125,
+      "replayStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 208.50815399999556,
+          "cpuSeconds": 0.2,
+          "cpuByProcessType": {
+            "browser": 0.039999999999999994,
+            "renderer": 0.13,
+            "GPU": 0.01,
+            "network.mojom.NetworkService": 0.019999999999999997
+          },
+          "oneCorePercent": 95.91951017896608,
+          "pssMiB": 181.9501953125
+        },
+        {
+          "name": "replay",
+          "wallMs": 98.96726799999306,
+          "cpuSeconds": 0.10999999999999999,
+          "cpuByProcessType": {
+            "browser": 0.009999999999999995,
+            "renderer": 0.09,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.010000000000000002
+          },
+          "oneCorePercent": 111.14785951250843,
+          "pssMiB": 199.8701171875
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3138.560697000001,
+          "cpuSeconds": 0.44000000000000006,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.34,
+            "GPU": 0.030000000000000002,
+            "network.mojom.NetworkService": 0.030000000000000006
+          },
+          "oneCorePercent": 14.019164912775938,
+          "pssMiB": 206.3876953125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.0160719999985,
+          "cpuSeconds": 0.029999999999999985,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0,
+            "GPU": 0.009999999999999995,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 1.4992383329542798,
+          "pssMiB": 206.3994140625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3073.296402000007,
+          "cpuSeconds": 0.22000000000000003,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.15000000000000002,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 7.158437430793553,
+          "pssMiB": 206.3720703125
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 210.95738699998765,
+          "cpuSeconds": 0.32000000000000006,
+          "cpuByProcessType": {
+            "browser": 0.05999999999999997,
+            "renderer": 0.2300000000000001,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 151.68940256167414,
+          "pssMiB": 275.0986328125
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3137.8568280000036,
+          "cpuSeconds": 1.13,
+          "cpuByProcessType": {
+            "browser": 0.15000000000000002,
+            "renderer": 0.7899999999999998,
+            "GPU": 0.06,
+            "network.mojom.NetworkService": 0.13
+          },
+          "oneCorePercent": 36.011840626910804,
+          "pssMiB": 285.7744140625
+        }
+      ],
+      "disposedPssMiB": 195.294921875
+    },
+    {
+      "repeat": 1,
+      "variant": "webgl2",
+      "baselinePssMiB": 146.3330078125,
+      "replayStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 202.57590899999195,
+          "cpuSeconds": 0.2,
+          "cpuByProcessType": {
+            "browser": 0.03,
+            "renderer": 0.13,
+            "GPU": 0.03,
+            "network.mojom.NetworkService": 0.009999999999999998
+          },
+          "oneCorePercent": 98.72842283531747,
+          "pssMiB": 200.7119140625
+        },
+        {
+          "name": "replay",
+          "wallMs": 108.96846699999878,
+          "cpuSeconds": 0.15,
+          "cpuByProcessType": {
+            "browser": 0.009999999999999995,
+            "renderer": 0.09,
+            "GPU": 0.049999999999999996,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 137.6545014623374,
+          "pssMiB": 234.365234375
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3139.3485680000013,
+          "cpuSeconds": 0.6200000000000001,
+          "cpuByProcessType": {
+            "browser": 0.06000000000000001,
+            "renderer": 0.39999999999999997,
+            "GPU": 0.11000000000000001,
+            "network.mojom.NetworkService": 0.05
+          },
+          "oneCorePercent": 19.749320171700024,
+          "pssMiB": 244.8935546875
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.035044999997,
+          "cpuSeconds": 0.019999999999999962,
+          "cpuByProcessType": {
+            "browser": 0.009999999999999981,
+            "renderer": 0,
+            "GPU": 0.009999999999999981,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.9994827451910016,
+          "pssMiB": 244.904296875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3073.521198000002,
+          "cpuSeconds": 0.21000000000000002,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.13,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.039999999999999994
+          },
+          "oneCorePercent": 6.8325541446289995,
+          "pssMiB": 244.8818359375
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 219.0703450000001,
+          "cpuSeconds": 0.32000000000000006,
+          "cpuByProcessType": {
+            "browser": 0.05999999999999997,
+            "renderer": 0.21000000000000008,
+            "GPU": 0.03,
+            "network.mojom.NetworkService": 0.020000000000000018
+          },
+          "oneCorePercent": 146.0718017310832,
+          "pssMiB": 329.2099609375
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3136.9776560000028,
+          "cpuSeconds": 1.2500000000000002,
+          "cpuByProcessType": {
+            "browser": 0.16000000000000003,
+            "renderer": 0.8400000000000001,
+            "GPU": 0.08999999999999997,
+            "network.mojom.NetworkService": 0.15999999999999998
+          },
+          "oneCorePercent": 39.84727138904426,
+          "pssMiB": 341.404296875
+        }
+      ],
+      "disposedPssMiB": 225.4306640625
+    },
+    {
+      "repeat": 1,
+      "variant": "xterm-matched",
+      "baselinePssMiB": 146.8359375,
+      "replayStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 189.06230000000505,
+          "cpuSeconds": 0.14,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.07999999999999999,
+            "GPU": 0.01,
+            "network.mojom.NetworkService": 0.009999999999999998
+          },
+          "oneCorePercent": 74.04966511038758,
+          "pssMiB": 170.197265625
+        },
+        {
+          "name": "replay",
+          "wallMs": 155.59774599999946,
+          "cpuSeconds": 0.24,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0.20999999999999996,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.010000000000000002
+          },
+          "oneCorePercent": 154.2438795996446,
+          "pssMiB": 210.298828125
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3122.380953999993,
+          "cpuSeconds": 1.06,
+          "cpuByProcessType": {
+            "browser": 0.07,
+            "renderer": 0.88,
+            "GPU": 0.07,
+            "network.mojom.NetworkService": 0.04
+          },
+          "oneCorePercent": 33.94845201838886,
+          "pssMiB": 215.1513671875
+        },
+        {
+          "name": "idle",
+          "wallMs": 2001.8556110000063,
+          "cpuSeconds": 0.010000000000000009,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.49953652726255376,
+          "pssMiB": 214.5576171875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.5072070000024,
+          "cpuSeconds": 0.38,
+          "cpuByProcessType": {
+            "browser": 0.07,
+            "renderer": 0.26,
+            "GPU": 0.020000000000000004,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 12.359704317323454,
+          "pssMiB": 217.4599609375
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 286.6388200000074,
+          "cpuSeconds": 0.4399999999999999,
+          "cpuByProcessType": {
+            "browser": 0.03999999999999998,
+            "renderer": 0.3799999999999999,
+            "GPU": 0.009999999999999995,
+            "network.mojom.NetworkService": 0.009999999999999995
+          },
+          "oneCorePercent": 153.5032833305651,
+          "pssMiB": 312.3583984375
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3121.422814000005,
+          "cpuSeconds": 1.9000000000000004,
+          "cpuByProcessType": {
+            "browser": 0.18,
+            "renderer": 1.5500000000000003,
+            "GPU": 0.04000000000000001,
+            "network.mojom.NetworkService": 0.13
+          },
+          "oneCorePercent": 60.869677490605966,
+          "pssMiB": 323.849609375
+        }
+      ],
+      "disposedPssMiB": 262.4833984375
+    },
+    {
+      "repeat": 1,
+      "variant": "xterm-5000",
+      "baselinePssMiB": 146.0888671875,
+      "replayStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 161.22142200000235,
+          "cpuSeconds": 0.09,
+          "cpuByProcessType": {
+            "browser": 0.020000000000000004,
+            "renderer": 0.05,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.019999999999999997
+          },
+          "oneCorePercent": 55.82384703194013,
+          "pssMiB": 168.0732421875
+        },
+        {
+          "name": "replay",
+          "wallMs": 133.7538199999981,
+          "cpuSeconds": 0.18,
+          "cpuByProcessType": {
+            "browser": 0.009999999999999995,
+            "renderer": 0.17,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 134.5755956727087,
+          "pssMiB": 190.88671875
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3114.2230249999993,
+          "cpuSeconds": 0.7600000000000001,
+          "cpuByProcessType": {
+            "browser": 0.06,
+            "renderer": 0.62,
+            "GPU": 0.049999999999999996,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 24.404160970455873,
+          "pssMiB": 195.001953125
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.6739430000016,
+          "cpuSeconds": 0.030000000000000013,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0,
+            "GPU": 0.020000000000000004,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 1.499494713017312,
+          "pssMiB": 194.994140625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3073.044605999996,
+          "cpuSeconds": 0.28,
+          "cpuByProcessType": {
+            "browser": 0.04999999999999999,
+            "renderer": 0.19000000000000006,
+            "GPU": 0.009999999999999995,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 9.111485054701495,
+          "pssMiB": 194.916015625
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 204.19327899999917,
+          "cpuSeconds": 0.30000000000000004,
+          "cpuByProcessType": {
+            "browser": 0.03,
+            "renderer": 0.26,
+            "GPU": 0.010000000000000009,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 146.91962510676038,
+          "pssMiB": 232.962890625
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3121.6182629999967,
+          "cpuSeconds": 1.7900000000000003,
+          "cpuByProcessType": {
+            "browser": 0.16999999999999998,
+            "renderer": 1.46,
+            "GPU": 0.04000000000000001,
+            "network.mojom.NetworkService": 0.12
+          },
+          "oneCorePercent": 57.34205303757227,
+          "pssMiB": 254.111328125
+        }
+      ],
+      "disposedPssMiB": 226.2412109375
+    },
+    {
+      "repeat": 2,
+      "variant": "webgl2",
+      "baselinePssMiB": 146.1982421875,
+      "replayStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "webgl2",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "webgl2",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 191.73066200000176,
+          "cpuSeconds": 0.19,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.12,
+            "GPU": 0.019999999999999997,
+            "network.mojom.NetworkService": 0.009999999999999998
+          },
+          "oneCorePercent": 99.09734729857568,
+          "pssMiB": 199.001953125
+        },
+        {
+          "name": "replay",
+          "wallMs": 104.6051279999956,
+          "cpuSeconds": 0.15,
+          "cpuByProcessType": {
+            "browser": 0.009999999999999995,
+            "renderer": 0.09,
+            "GPU": 0.05,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 143.39641169408662,
+          "pssMiB": 231.91796875
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3137.8201030000055,
+          "cpuSeconds": 0.5900000000000001,
+          "cpuByProcessType": {
+            "browser": 0.06000000000000001,
+            "renderer": 0.38,
+            "GPU": 0.11,
+            "network.mojom.NetworkService": 0.04000000000000001
+          },
+          "oneCorePercent": 18.802862517067602,
+          "pssMiB": 242.3896484375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.8181010000117,
+          "cpuSeconds": 0,
+          "cpuByProcessType": {
+            "browser": 0,
+            "renderer": 0,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0,
+          "pssMiB": 242.326171875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3075.0997050000005,
+          "cpuSeconds": 0.2,
+          "cpuByProcessType": {
+            "browser": 0.04000000000000001,
+            "renderer": 0.12,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.039999999999999994
+          },
+          "oneCorePercent": 6.503854157145125,
+          "pssMiB": 242.361328125
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 249.4157600000035,
+          "cpuSeconds": 0.41000000000000014,
+          "cpuByProcessType": {
+            "browser": 0.07999999999999999,
+            "renderer": 0.27000000000000013,
+            "GPU": 0.03,
+            "network.mojom.NetworkService": 0.030000000000000013
+          },
+          "oneCorePercent": 164.38415920469274,
+          "pssMiB": 327.705078125
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3139.7688909999997,
+          "cpuSeconds": 1.09,
+          "cpuByProcessType": {
+            "browser": 0.13,
+            "renderer": 0.75,
+            "GPU": 0.08999999999999997,
+            "network.mojom.NetworkService": 0.12
+          },
+          "oneCorePercent": 34.71593094397597,
+          "pssMiB": 339.353515625
+        }
+      ],
+      "disposedPssMiB": 230.7861328125
+    },
+    {
+      "repeat": 2,
+      "variant": "xterm-matched",
+      "baselinePssMiB": 145.693359375,
+      "replayStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 161.19794600000023,
+          "cpuSeconds": 0.09000000000000001,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.06,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.02
+          },
+          "oneCorePercent": 55.8319769161326,
+          "pssMiB": 167.8232421875
+        },
+        {
+          "name": "replay",
+          "wallMs": 167.29104799998458,
+          "cpuSeconds": 0.22999999999999998,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0.21,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 137.4849418123205,
+          "pssMiB": 207.8349609375
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3113.5096820000035,
+          "cpuSeconds": 1.1000000000000003,
+          "cpuByProcessType": {
+            "browser": 0.07,
+            "renderer": 0.92,
+            "GPU": 0.07,
+            "network.mojom.NetworkService": 0.039999999999999994
+          },
+          "oneCorePercent": 35.32990458836155,
+          "pssMiB": 212.833984375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.716889000003,
+          "cpuSeconds": 0.020000000000000018,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.010000000000000009,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.9996416839364216,
+          "pssMiB": 212.3701171875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.9593509999977,
+          "cpuSeconds": 0.37,
+          "cpuByProcessType": {
+            "browser": 0.06,
+            "renderer": 0.25,
+            "GPU": 0.03,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 12.032679387442096,
+          "pssMiB": 215.2138671875
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 287.44255899998825,
+          "cpuSeconds": 0.42999999999999994,
+          "cpuByProcessType": {
+            "browser": 0.03,
+            "renderer": 0.3799999999999999,
+            "GPU": 0.009999999999999995,
+            "network.mojom.NetworkService": 0.010000000000000009
+          },
+          "oneCorePercent": 149.59510571293566,
+          "pssMiB": 310.8154296875
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3124.6830670000054,
+          "cpuSeconds": 1.8100000000000003,
+          "cpuByProcessType": {
+            "browser": 0.19,
+            "renderer": 1.46,
+            "GPU": 0.03,
+            "network.mojom.NetworkService": 0.13
+          },
+          "oneCorePercent": 57.925874758804696,
+          "pssMiB": 322.298828125
+        }
+      ],
+      "disposedPssMiB": 261.095703125
+    },
+    {
+      "repeat": 2,
+      "variant": "xterm-5000",
+      "baselinePssMiB": 146.1416015625,
+      "replayStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "xterm-dom",
+          "history": 5000,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 154.64284599997336,
+          "cpuSeconds": 0.08000000000000002,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.04000000000000001,
+            "GPU": 0.02,
+            "network.mojom.NetworkService": 0.01
+          },
+          "oneCorePercent": 51.73210534421605,
+          "pssMiB": 169.5693359375
+        },
+        {
+          "name": "replay",
+          "wallMs": 126.83305700001074,
+          "cpuSeconds": 0.17999999999999997,
+          "cpuByProcessType": {
+            "browser": 0.01999999999999999,
+            "renderer": 0.15999999999999998,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 141.9188374525931,
+          "pssMiB": 191.787109375
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3115.5300759999955,
+          "cpuSeconds": 1.0200000000000002,
+          "cpuByProcessType": {
+            "browser": 0.06,
+            "renderer": 0.8700000000000001,
+            "GPU": 0.05,
+            "network.mojom.NetworkService": 0.039999999999999994
+          },
+          "oneCorePercent": 32.73921211216713,
+          "pssMiB": 196.193359375
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.6406309999875,
+          "cpuSeconds": 0.010000000000000009,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.4998398935345861,
+          "pssMiB": 196.2216796875
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3074.3144350000075,
+          "cpuSeconds": 0.41000000000000003,
+          "cpuByProcessType": {
+            "browser": 0.06999999999999998,
+            "renderer": 0.28,
+            "GPU": 0.01999999999999999,
+            "network.mojom.NetworkService": 0.04000000000000001
+          },
+          "oneCorePercent": 13.336306635791436,
+          "pssMiB": 196.435546875
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 237.84489400000894,
+          "cpuSeconds": 0.32000000000000006,
+          "cpuByProcessType": {
+            "browser": 0.030000000000000027,
+            "renderer": 0.27,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.01999999999999999
+          },
+          "oneCorePercent": 134.54146297544148,
+          "pssMiB": 246.474609375
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3122.731270999997,
+          "cpuSeconds": 1.9500000000000002,
+          "cpuByProcessType": {
+            "browser": 0.20999999999999996,
+            "renderer": 1.5699999999999998,
+            "GPU": 0.05000000000000002,
+            "network.mojom.NetworkService": 0.12
+          },
+          "oneCorePercent": 62.445334893500096,
+          "pssMiB": 254.576171875
+        }
+      ],
+      "disposedPssMiB": 227.193359375
+    },
+    {
+      "repeat": 2,
+      "variant": "canvas2d",
+      "baselinePssMiB": 145.619140625,
+      "replayStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12087,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "finalStats": [
+        {
+          "renderer": "canvas2d",
+          "history": 12043,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        },
+        {
+          "renderer": "canvas2d",
+          "history": 11928,
+          "cols": 109,
+          "rows": 18
+        }
+      ],
+      "phases": [
+        {
+          "name": "init",
+          "wallMs": 210.79853699999512,
+          "cpuSeconds": 0.19,
+          "cpuByProcessType": {
+            "browser": 0.039999999999999994,
+            "renderer": 0.13,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.019999999999999997
+          },
+          "oneCorePercent": 90.13345287116694,
+          "pssMiB": 184.1259765625
+        },
+        {
+          "name": "replay",
+          "wallMs": 104.05894700001227,
+          "cpuSeconds": 0.12,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0.10999999999999999,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 115.3192526539653,
+          "pssMiB": 200.14453125
+        },
+        {
+          "name": "visible-stream",
+          "wallMs": 3139.383414000011,
+          "cpuSeconds": 0.4900000000000001,
+          "cpuByProcessType": {
+            "browser": 0.04999999999999999,
+            "renderer": 0.34,
+            "GPU": 0.049999999999999996,
+            "network.mojom.NetworkService": 0.05
+          },
+          "oneCorePercent": 15.608160437328426,
+          "pssMiB": 206.935546875
+        },
+        {
+          "name": "idle",
+          "wallMs": 2000.7393699999957,
+          "cpuSeconds": 0.010000000000000009,
+          "cpuByProcessType": {
+            "browser": 0.010000000000000009,
+            "renderer": 0,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0
+          },
+          "oneCorePercent": 0.49981522580824855,
+          "pssMiB": 206.916015625
+        },
+        {
+          "name": "hidden-stream",
+          "wallMs": 3073.276676999987,
+          "cpuSeconds": 0.22,
+          "cpuByProcessType": {
+            "browser": 0.04999999999999999,
+            "renderer": 0.14,
+            "GPU": 0,
+            "network.mojom.NetworkService": 0.03
+          },
+          "oneCorePercent": 7.158483375299468,
+          "pssMiB": 206.8505859375
+        },
+        {
+          "name": "four-session-init-replay",
+          "wallMs": 205.06175600001006,
+          "cpuSeconds": 0.3200000000000001,
+          "cpuByProcessType": {
+            "browser": 0.06,
+            "renderer": 0.22000000000000008,
+            "GPU": 0.010000000000000009,
+            "network.mojom.NetworkService": 0.030000000000000013
+          },
+          "oneCorePercent": 156.0505509374378,
+          "pssMiB": 276.4794921875
+        },
+        {
+          "name": "four-session-stream",
+          "wallMs": 3137.6716869999946,
+          "cpuSeconds": 1.06,
+          "cpuByProcessType": {
+            "browser": 0.14,
+            "renderer": 0.74,
+            "GPU": 0.04999999999999999,
+            "network.mojom.NetworkService": 0.13
+          },
+          "oneCorePercent": 33.78301191905429,
+          "pssMiB": 286.876953125
+        }
+      ],
+      "disposedPssMiB": 195.78515625
+    }
+  ]
+}

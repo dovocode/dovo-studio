@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  expo-libghostty: true
   '@firebase/util': true
   better-sqlite3: true
   esbuild: true
@@ -84,7 +85,9 @@ overrides:
 patchedDependencies:
   braces@3.0.3: patches/braces@3.0.3.patch
   electron-chrome-extensions@4.10.0: patches/electron-chrome-extensions@4.10.0.patch
+  expo-libghostty@0.8.1: patches/expo-libghostty@0.8.1.patch
   expo-modules-autolinking@58.0.16: patches/expo-modules-autolinking@58.0.16.patch
+  ghostty-web@0.4.0: patches/ghostty-web@0.4.0.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
   react-native-enriched-markdown@1.1.1: patches/react-native-enriched-markdown@1.1.1.patch
   react-native-tcp-socket@6.4.3: patches/react-native-tcp-socket@6.4.3.patch

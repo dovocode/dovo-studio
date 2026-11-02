@@ -158,3 +158,67 @@ it('reaps half-open sockets that stop answering pings but keeps live ones', asyn
     await f.cleanup()
   }
 })
+
+it('streams binary replay and live output with parser acknowledgements and framed pongs', async () => {
+  const { decodeTerminalStreamFrame } = await import('@dovo/protocol')
+  const f = await fixture()
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  let socket: WebSocket | undefined
+  try {
+    const s = runtime.services
+    const token = 'test-device-token-with-at-least-32-characters'
+    s.devices.add('Phone', token)
+    const terminal = s.terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: ['-e', "console.log('replay-marker-🙂'); setInterval(() => {}, 1000)"],
+        env: {},
+      },
+      'Binary test',
+    )
+    await waitForRuntime(() =>
+      expect(s.terminals.get(terminal.id).buffer).toContain('replay-marker-🙂'),
+    )
+    socket = new WebSocket(
+      `ws://127.0.0.1:${runtime.port}/ws/terminal?ticket=${s.tickets.issue(token, terminal.id)}&stream=binary-v1`,
+    )
+    const frames: ReturnType<typeof decodeTerminalStreamFrame>[] = []
+    socket.on('message', (raw, binary) => {
+      expect(binary).toBe(true)
+      const frame = decodeTerminalStreamFrame(
+        Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer),
+      )
+      frames.push(frame)
+      if (frame.type === 'data')
+        socket!.send(JSON.stringify({ type: 'ack', bytes: frame.data.length }))
+    })
+    await once(socket, 'open')
+    await waitForRuntime(() =>
+      expect(frames.some((frame) => frame.type === 'replayEnd')).toBe(true),
+    )
+    expect(frames[0]).toEqual({ type: 'replayStart' })
+    expect(
+      frames
+        .filter((frame) => frame.type === 'data')
+        .map((frame) => new TextDecoder().decode(frame.data))
+        .join(''),
+    ).toContain('replay-marker-🙂')
+    socket.send(JSON.stringify({ type: 'ping', nonce: 'binary-check' }))
+    await waitForRuntime(() =>
+      expect(frames).toContainEqual({ type: 'pong', nonce: 'binary-check' }),
+    )
+    const closed = once(socket, 'close')
+    socket.send(JSON.stringify({ type: 'ack', bytes: 99999999 }))
+    expect((await closed)[0]).toBe(1008)
+  } finally {
+    socket?.terminate()
+    await runtime.close()
+    await f.cleanup()
+  }
+})

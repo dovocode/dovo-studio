@@ -54,8 +54,21 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "buildArchs": ["arm64-v8a", "x86_64"]
+          },
+          "ios": {
+            "deploymentTarget": "16.4"
           }
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "../../packages/terminal/src/native/fonts/JetBrainsMonoNLNerdFontMono-Regular.ttf",
+            "../../packages/terminal/src/native/fonts/JetBrainsMonoNLNerdFontMono-Bold.ttf"
+          ]
         }
       ],
       "./plugins/with-scenes.ts",

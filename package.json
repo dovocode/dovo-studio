@@ -166,6 +166,7 @@
     "test:task-search:browser": "node scripts/check-task-search-browser.mjs",
     "test:mobile-automations:browser": "node scripts/check-mobile-automations-browser.mjs",
     "test:mobile-task-list-rendering:browser": "node scripts/check-mobile-task-list-rendering-browser.mjs",
+    "benchmark:terminal": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/benchmark-terminal-resources.mjs",
     "benchmark:history": "pnpm --filter @dovo/runtime... -r build && node scripts/benchmark-history-queries.mjs",
     "benchmark:workspace-memory": "pnpm --filter @dovo/runtime... -r build && node scripts/benchmark-workspace-memory.mjs",
     "benchmark:snapshot-deltas": "node scripts/benchmark-snapshot-deltas.mjs",
@@ -214,7 +215,8 @@
     "test:codex-session-import:browser": "node scripts/check-codex-session-import-browser.mjs",
     "benchmark:markdown-parts": "node scripts/benchmark-markdown-parts-cache.mjs",
     "test:prompt-queue:browser": "node scripts/check-desktop-stage-first-browser.mjs && node scripts/check-desktop-queue-handoff-browser.mjs && node scripts/check-mobile-queue-actions-browser.mjs && node scripts/check-mobile-queue-staging-browser.mjs",
-    "test:background-start:browser": "node scripts/check-desktop-background-start-browser.mjs && node scripts/check-mobile-background-start-browser.mjs && node scripts/check-mobile-background-composer-browser.mjs"
+    "test:background-start:browser": "node scripts/check-desktop-background-start-browser.mjs && node scripts/check-mobile-background-start-browser.mjs && node scripts/check-mobile-background-composer-browser.mjs",
+    "test:terminal-engine:browser": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/check-ghostty-terminal-browser.mjs && node scripts/check-terminal-renderers-browser.mjs && node scripts/check-canvas2d-retained-browser.mjs && node scripts/check-mobile-native-terminal-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -57,7 +57,9 @@ appId: com.dovo.studio
 - extendedWaitUntil:
     notVisible: 'Loading terminal…|Connecting terminal…'
     timeout: 15000
-- tapOn: Keyboard
+# Tapping the native Ghostty surface focuses it and raises the keyboard.
+- tapOn:
+    id: Terminal surface
 - inputText: printf mobile-terminal-ok > terminal-proof.txt
 - pressKey: Enter
 - takeScreenshot: dovo-mobile-terminal-keyboard

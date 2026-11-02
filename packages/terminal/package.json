@@ -1,0 +1,38 @@
+{
+  "name": "@dovo/terminal",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/browser/index.ts",
+    "./native": "./src/native/index.ts",
+    "./styles.css": "./src/browser/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:wasm": "node scripts/build-wasm.mjs"
+  },
+  "dependencies": {
+    "@dovo/client-runtime": "workspace:*",
+    "@dovo/protocol": "workspace:*",
+    "expo-libghostty": "0.8.1",
+    "ghostty-web": "0.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@webgpu/types": "^0.1.69"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "^19.3.0",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    },
+    "expo": {
+      "optional": true
+    }
+  }
+}

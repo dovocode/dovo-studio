@@ -45,6 +45,9 @@
     },
     {
       "path": "./packages/runtime/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/terminal/tsconfig.json"
     }
   ]
 }

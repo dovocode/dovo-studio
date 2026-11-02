@@ -1,3 +1,4 @@
+import { BinaryTerminalStream } from '../terminal/binary-stream.js'
 import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
@@ -449,19 +450,29 @@ export function createRuntimeServer(
       sockets.handleUpgrade(request, socket, head, (client) => {
         track(client, ticket.token)
         services.activity.add('terminal', ticket.resourceId, 'Terminal connected')
+        const binary = url.searchParams.get('stream') === 'binary-v1'
+        const stream = binary
+          ? new BinaryTerminalStream(client, services.terminals.pressure(ticket.resourceId))
+          : undefined
+        let replay = true
         const detach = services.terminals.attach(ticket.resourceId, (data) => {
-          if (client.readyState === WebSocket.OPEN) {
+          if (stream) {
+            if (replay) stream.replay(data)
+            else stream.data(data)
+          } else if (client.readyState === WebSocket.OPEN) {
             if (client.bufferedAmount > 2 * 1024 * 1024)
               client.close(1013, 'Terminal client is too slow')
             else client.send(data)
           }
         })
+        replay = false
         client.on('message', (raw) => {
           try {
             if (isRunToken(ticket.token))
               authorizeRunTerminal(services, ticket.token, ticket.resourceId)
             else services.devices.authenticate(ticket.token)
           } catch {
+            stream?.stop()
             client.close(1008, 'Device authentication required')
             return
           }
@@ -479,20 +490,28 @@ export function createRuntimeServer(
             )
             if (input.type === 'ping') {
               // Binary control frames cannot be confused with raw terminal text.
-              client.send(JSON.stringify({ type: 'pong', nonce: input.nonce }), { binary: true })
+              if (stream) stream.pong(input.nonce)
+              else
+                client.send(JSON.stringify({ type: 'pong', nonce: input.nonce }), { binary: true })
+            } else if (input.type === 'ack') {
+              if (!stream) throw new Error('Unexpected terminal acknowledgement')
+              stream.ack(input.bytes)
             } else if (input.type === 'input') {
               recordInput(ticket.resourceId, input.data.length)
               services.terminals.input(ticket.resourceId, input.data)
             } else services.terminals.resize(ticket.resourceId, input.cols, input.rows)
           } catch {
+            stream?.stop()
             client.close(1008, 'Invalid terminal request')
           }
         })
         client.on('error', () => {
+          stream?.stop()
           detach()
           authenticated.delete(client)
         })
         client.on('close', () => {
+          stream?.stop()
           detach()
           authenticated.delete(client)
         })

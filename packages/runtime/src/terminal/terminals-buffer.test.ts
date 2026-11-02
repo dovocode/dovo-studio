@@ -6,6 +6,8 @@ const pty = vi.hoisted(() => ({
   exit: undefined as ((event: { exitCode: number }) => void) | undefined,
   write: vi.fn<(data: string) => void>(),
   resize: vi.fn<(cols: number, rows: number) => void>(),
+  pause: vi.fn<() => void>(),
+  resume: vi.fn<() => void>(),
 }))
 vi.mock('node:module', () => ({
   createRequire: () => () => ({
@@ -18,6 +20,8 @@ vi.mock('node:module', () => ({
       },
       write: pty.write,
       resize: pty.resize,
+      pause: pty.pause,
+      resume: pty.resume,
     }),
   }),
 }))
@@ -96,4 +100,20 @@ it('keeps live delivery synchronous and ordered and isolates failing clients', a
   } finally {
     errors.mockRestore()
   }
+})
+
+it('keeps the PTY paused until every pressured subscriber releases it', async () => {
+  const { terminals, id } = terminal()
+  const first = terminals.pressure(id)
+  const second = terminals.pressure(id)
+  first(true)
+  first(true)
+  second(true)
+  expect(pty.pause).toHaveBeenCalledTimes(1)
+  first(false)
+  expect(pty.resume).not.toHaveBeenCalled()
+  second(false)
+  expect(pty.resume).toHaveBeenCalledTimes(1)
+  pty.exit!({ exitCode: 0 })
+  await terminals.dispose()
 })

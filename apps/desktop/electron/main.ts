@@ -1,3 +1,4 @@
+import { registerTerminalPorts } from './terminal-ports.js'
 import { registerRepositoryOpeners } from './repository-openers.js'
 import { registerBrowserWindows } from './browser-window.js'
 import { registerDictation } from './dictation.js'
@@ -213,6 +214,8 @@ app.once('will-quit', () => {
 
 const taskLauncher = registerTaskLauncher(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => taskLauncher.dispose())
+const terminalPorts = registerTerminalPorts(rendererPath)
+app.once('will-quit', () => terminalPorts.dispose())
 const runtimeSync = registerRuntimeSync(rendererPath, async (connection) => {
   const local = await startLocalRuntime(__dirname)
   return local.token === connection.token && local.address !== connection.address ? local : null

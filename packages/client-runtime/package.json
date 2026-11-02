@@ -20,6 +20,12 @@
       "development": "./src/effects/terminal-input.ts",
       "import": "./dist/effects/terminal-input.js",
       "default": "./dist/effects/terminal-input.js"
+    },
+    "./socket-heartbeat": {
+      "types": "./src/effects/socket-heartbeat.ts",
+      "development": "./src/effects/socket-heartbeat.ts",
+      "import": "./dist/effects/socket-heartbeat.js",
+      "default": "./dist/effects/socket-heartbeat.js"
     }
   },
   "scripts": {

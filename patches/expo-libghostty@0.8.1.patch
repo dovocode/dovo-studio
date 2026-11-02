@@ -1,0 +1,274 @@
+diff --git a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt
+index 1516400..74a2ec1 100644
+--- a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt
++++ b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyModule.kt
+@@ -12,7 +12,7 @@ class ExpoLibghosttyModule : Module() {
+     Name("ExpoLibghostty")
+ 
+     View(ExpoLibghosttyView::class) {
+-      Events("onInput", "onResize")
++      Events("onInput", "onResize", "onFontFallback")
+ 
+       // Base font size in dp (default 14); applied live, the grid reflows.
+       Prop("fontSize") { view: ExpoLibghosttyView, size: Float ->
+@@ -24,6 +24,12 @@ class ExpoLibghosttyModule : Module() {
+         view.setTheme(theme)
+       }
+ 
++      // Asset font family (fonts/<family>-Regular.ttf); null/empty keeps the
++      // system monospace. Applied live, the grid reflows.
++      Prop("fontFamily") { view: ExpoLibghosttyView, family: String? ->
++        view.setFontFamily(family)
++      }
++
+       // PTY output bytes (base64) → terminal grid.
+       AsyncFunction("write") { view: ExpoLibghosttyView, base64: String ->
+         val data = try {
+diff --git a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt
+index 2d3ed62..e3f017c 100644
+--- a/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt
++++ b/android/src/main/java/expo/modules/libghostty/ExpoLibghosttyView.kt
+@@ -19,6 +19,7 @@ class ExpoLibghosttyView(context: Context, appContext: AppContext) :
+ 
+   private val onInput by EventDispatcher<Map<String, Any>>()
+   private val onResize by EventDispatcher<Map<String, Any>>()
++  private val onFontFallback by EventDispatcher<Map<String, Any>>()
+ 
+   private val terminal = GhosttyTerminalView(context).also { view ->
+     view.onInputBytes = { bytes ->
+@@ -82,6 +83,12 @@ class ExpoLibghosttyView(context: Context, appContext: AppContext) :
+   /** Base font size in dp; applied live (the grid reflows in place). */
+   fun setFontSize(dp: Float) = terminal.setFontSize(dp)
+ 
++  /** Font family from app assets; a missing family is reported, not ignored. */
++  fun setFontFamily(family: String?) {
++    val error = terminal.setFontFamily(family) ?: return
++    onFontFallback(mapOf("fontFamily" to (family?.trim() ?: ""), "message" to error))
++  }
++
+   /** Apply theme colors; a null record clears back to the defaults. */
+   internal fun setTheme(theme: TerminalThemeRecord?) = terminal.setTheme(
+     foreground = theme?.foreground,
+diff --git a/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt b/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt
+index 9d6ad16..c3d464a 100644
+--- a/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt
++++ b/android/src/main/java/expo/modules/libghostty/GhosttyTerminalView.kt
+@@ -57,6 +57,7 @@ internal class GhosttyTerminalView(context: Context) : View(context) {
+ 
+   // ── Cell metrics ──
+   private var fontSizeDp = FONT_SIZE_DP
++  private var fontFamily = ""
+   private val textPaint = newTextPaint(Typeface.MONOSPACE)
+   private val boldPaint = newTextPaint(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD))
+   private val italicPaint = newTextPaint(Typeface.create(Typeface.MONOSPACE, Typeface.ITALIC))
+@@ -300,6 +301,57 @@ internal class GhosttyTerminalView(context: Context) : View(context) {
+     for (paint in arrayOf(textPaint, boldPaint, italicPaint, boldItalicPaint, symbolsPaint)) {
+       paint?.textSize = px
+     }
++    applyFontMetrics()
++  }
++
++  /**
++   * Font family loaded from app assets: `fonts/<family>-Regular.ttf|otf`
++   * (or `fonts/<family>.ttf|otf`) plus an optional `-Bold` face; italics are
++   * synthesized. Null/empty restores the system monospace. Returns an error
++   * message when the family cannot be loaded (the system monospace is used).
++   * Content reflows in place like a font size change.
++   */
++  fun setFontFamily(family: String?): String? {
++    val name = family?.trim().orEmpty()
++    if (name == fontFamily) return null
++    fontFamily = name
++    var error: String? = null
++    var regular: Typeface? = null
++    var bold: Typeface? = null
++    if (name.isNotEmpty()) {
++      if (!FONT_FAMILY_PATTERN.matches(name) || name.contains("..")) {
++        error = "Font family $name is not a valid asset name."
++      } else {
++        regular = loadAssetFace(name, "Regular", true)
++        if (regular == null) error = "Font family $name is not bundled in fonts/."
++        else bold = loadAssetFace(name, "Bold", false) ?: Typeface.create(regular, Typeface.BOLD)
++      }
++    }
++    val base = regular ?: Typeface.MONOSPACE
++    val strong = bold ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
++    textPaint.typeface = base
++    boldPaint.typeface = strong
++    italicPaint.typeface = Typeface.create(base, Typeface.ITALIC)
++    boldItalicPaint.typeface = Typeface.create(strong, Typeface.BOLD_ITALIC)
++    applyFontMetrics()
++    return error
++  }
++
++  private fun loadAssetFace(family: String, style: String, allowPlain: Boolean): Typeface? {
++    val stems = if (allowPlain) listOf("$family-$style", family) else listOf("$family-$style")
++    for (stem in stems) {
++      for (extension in arrayOf("ttf", "otf")) {
++        try {
++          return Typeface.createFromAsset(context.assets, "fonts/$stem.$extension")
++        } catch (e: RuntimeException) {
++          // Not bundled under this name; try the next candidate.
++        }
++      }
++    }
++    return null
++  }
++
++  private fun applyFontMetrics() {
+     cellWidth = textPaint.measureText("M")
+     cellHeight = ceil(textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent).toInt()
+     baseline = -textPaint.fontMetrics.ascent
+@@ -1105,6 +1157,7 @@ internal class GhosttyTerminalView(context: Context) : View(context) {
+     const val MAX_SCROLLBACK = 10_000L
+     const val BLINK_INTERVAL_MS = 600L
+     const val SYMBOLS_FONT_ASSET = "SymbolsNerdFontMono-Regular.ttf"
++    private val FONT_FAMILY_PATTERN = Regex("[A-Za-z0-9 ._-]{1,100}")
+ 
+     // Nerd Font glyph ranges: BMP private-use area plus the supplementary
+     // private-use planes (material icons live at U+F0000+ since v3).
+diff --git a/build/ExpoLibghostty.types.d.ts b/build/ExpoLibghostty.types.d.ts
+index 0969f13..fdacc73 100644
+--- a/build/ExpoLibghostty.types.d.ts
++++ b/build/ExpoLibghostty.types.d.ts
+@@ -11,6 +11,12 @@ export type TerminalResizeEvent = {
+     cols: number;
+     rows: number;
+ };
++export type TerminalFontFallbackEvent = {
++    /** The requested family that could not be loaded. */
++    fontFamily: string;
++    /** Why the platform default monospace font is used instead. */
++    message: string;
++};
+ export type TerminalViewRef = {
+     /** Feed base64-encoded PTY output into the terminal grid. */
+     write(base64: string): Promise<void>;
+@@ -52,6 +58,19 @@ export type TerminalViewProps = {
+      * pass undefined fields to keep ghostty's defaults.
+      */
+     theme?: TerminalTheme;
++    /**
++     * Font family. Empty or omitted keeps the platform default (ghostty's
++     * embedded JetBrains Mono on iOS, the system monospace on Android).
++     * iOS: a CoreText family name registered with the app (for example via
++     * UIAppFonts); applied app-wide like the theme. Android: the file name
++     * stem of `fonts/<family>-Regular.ttf` (and optional `-Bold.ttf`) in the
++     * app assets. Missing families fire `onFontFallback`.
++     */
++    fontFamily?: string;
++    /** The requested `fontFamily` is unavailable; the default font is used. */
++    onFontFallback?: (event: {
++        nativeEvent: TerminalFontFallbackEvent;
++    }) => void;
+     /** User keyboard/IME input to forward to the PTY. */
+     onInput?: (event: {
+         nativeEvent: TerminalInputEvent;
+diff --git a/ios/ExpoLibghosttyModule.swift b/ios/ExpoLibghosttyModule.swift
+index 2f32970..73522a5 100644
+--- a/ios/ExpoLibghosttyModule.swift
++++ b/ios/ExpoLibghosttyModule.swift
+@@ -5,7 +5,7 @@ public class ExpoLibghosttyModule: Module {
+     Name("ExpoLibghostty")
+ 
+     View(ExpoLibghosttyView.self) {
+-      Events("onInput", "onResize")
++      Events("onInput", "onResize", "onFontFallback")
+ 
+       // Base font size in points (default 14). Changing it after mount
+       // rebuilds the surface and resets the grid.
+@@ -19,6 +19,12 @@ public class ExpoLibghosttyModule: Module {
+         view.applyTheme(theme)
+       }
+ 
++      // CoreText family name; nil/empty keeps ghostty's embedded default.
++      // App-wide on iOS, like the theme.
++      Prop("fontFamily") { (view: ExpoLibghosttyView, family: String?) in
++        view.applyFontFamily(family)
++      }
++
+       // PTY output bytes (base64) → terminal grid.
+       AsyncFunction("write") { (view: ExpoLibghosttyView, base64: String) in
+         guard let data = Data(base64Encoded: base64) else {
+diff --git a/ios/ExpoLibghosttyView.swift b/ios/ExpoLibghosttyView.swift
+index 12925b5..6e9cd54 100644
+--- a/ios/ExpoLibghosttyView.swift
++++ b/ios/ExpoLibghosttyView.swift
+@@ -1,3 +1,4 @@
++import CoreText
+ import ExpoModulesCore
+ import GhosttyTerminal
+ 
+@@ -42,6 +43,36 @@ class ExpoLibghosttyView: ExpoView {
+     _ = TerminalController.shared.setTheme(TerminalTheme(light: config, dark: config))
+   }
+ 
++  /// Font family, applied through the shared controller's terminal
++  /// configuration (app-wide, merged with the theme). Ghostty falls back to
++  /// its embedded fonts for missing glyphs. A family CoreText cannot resolve
++  /// is reported instead of being passed through and silently ignored.
++  func applyFontFamily(_ family: String?) {
++    let name = family?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
++    var config = TerminalConfiguration()
++    if !name.isEmpty {
++      if Self.fontFamilyAvailable(name) {
++        config = config.fontFamily(name)
++      } else {
++        onFontFallback([
++          "fontFamily": name,
++          "message": "Font family \(name) is not registered with this app.",
++        ])
++      }
++    }
++    _ = TerminalController.shared.setTerminalConfiguration(config)
++  }
++
++  /// Same family-attribute match ghostty's CoreText discovery performs.
++  private static func fontFamilyAvailable(_ name: String) -> Bool {
++    let descriptor = CTFontDescriptorCreateWithAttributes(
++      [kCTFontFamilyNameAttribute as String: name] as CFDictionary
++    )
++    let matches = CTFontDescriptorCreateMatchingFontDescriptors(descriptor, nil)
++    return (matches.map { CFArrayGetCount($0) } ?? 0) > 0
++  }
++
++  let onFontFallback = EventDispatcher()
+   let onInput = EventDispatcher()
+   let onResize = EventDispatcher()
+ 
+diff --git a/src/ExpoLibghostty.types.ts b/src/ExpoLibghostty.types.ts
+index cbd0ab4..dee7901 100644
+--- a/src/ExpoLibghostty.types.ts
++++ b/src/ExpoLibghostty.types.ts
+@@ -14,6 +14,13 @@ export type TerminalResizeEvent = {
+   rows: number;
+ };
+ 
++export type TerminalFontFallbackEvent = {
++  /** The requested family that could not be loaded. */
++  fontFamily: string;
++  /** Why the platform default monospace font is used instead. */
++  message: string;
++};
++
+ export type TerminalViewRef = {
+   /** Feed base64-encoded PTY output into the terminal grid. */
+   write(base64: string): Promise<void>;
+@@ -57,6 +64,17 @@ export type TerminalViewProps = {
+    * pass undefined fields to keep ghostty's defaults.
+    */
+   theme?: TerminalTheme;
++  /**
++   * Font family. Empty or omitted keeps the platform default (ghostty's
++   * embedded JetBrains Mono on iOS, the system monospace on Android).
++   * iOS: a CoreText family name registered with the app (for example via
++   * UIAppFonts); applied app-wide like the theme. Android: the file name
++   * stem of `fonts/<family>-Regular.ttf` (and optional `-Bold.ttf`) in the
++   * app assets. Missing families fire `onFontFallback`.
++   */
++  fontFamily?: string;
++  /** The requested `fontFamily` is unavailable; the default font is used. */
++  onFontFallback?: (event: { nativeEvent: TerminalFontFallbackEvent }) => void;
+   /** User keyboard/IME input to forward to the PTY. */
+   onInput?: (event: { nativeEvent: TerminalInputEvent }) => void;
+   /** Grid resized (layout, rotation, font change); forward to the PTY. */

@@ -2,8 +2,28 @@ import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+import { createServer } from 'vite-plus'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
+const vite = await createServer({
+  configFile: false,
+  root,
+  logLevel: 'error',
+  server: { host: '127.0.0.1', port: 0 },
+  plugins: [
+    {
+      name: 'fixture',
+      configureServer(server) {
+        server.middlewares.use('/terminal-check', (_req, res) => {
+          res.setHeader('Content-Type', 'text/html')
+          res.end('<div id="app"></div>')
+        })
+      },
+    },
+  ],
+})
+await vite.listen()
+const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
 const built = await bundleBrowser(
   {
     stdin: {
@@ -19,6 +39,9 @@ const node=createRoot(document.getElementById('app'));window.render=()=>node.ren
     jsx: 'automatic',
     format: 'iife',
     platform: 'browser',
+    define: {
+      'import.meta.url': JSON.stringify(`${origin}/packages/terminal/src/browser/terminal.ts`),
+    },
     nodePaths: [
       root + '/packages/extension-tasks/node_modules',
       root + '/packages/studio-ui/node_modules',
@@ -27,8 +50,14 @@ const node=createRoot(document.getElementById('app'));window.render=()=>node.ren
   },
   [
     {
-      path: '@xterm/xterm',
-      contents: `import {Terminal as Base} from '${root}/packages/extension-tasks/node_modules/@xterm/xterm/lib/xterm.mjs';export class Terminal extends Base {constructor(options){super(options);window.terminals.push(this)} registerLinkProvider(provider){window.linkProviders.push({terminal:this,provider});return super.registerLinkProvider(provider)}}`,
+      path: '@dovo/terminal',
+      contents: `import {BrowserTerminal as Base} from '${root}/packages/terminal/src/browser/terminal';
+export const openElectronTerminalPort=async()=>undefined;
+export class BrowserTerminal extends Base {
+constructor(options){super({...options,renderer:'canvas2d'});window.terminals.push(this)}
+async connect(url,signal,opened){await this.ready;const channel=new MessageChannel();const socket=this.socket=new WebSocket(url);channel.port1.onmessage=event=>{if(typeof event.data==='string')socket.send(event.data);else if(event.data.type==='close')socket.close()};channel.port1.start();socket.onopen=()=>channel.port1.postMessage({type:'open'});socket.onmessage=event=>channel.port1.postMessage({type:'data',data:event.data});socket.onclose=()=>channel.port1.postMessage({type:'close',message:'Closed'});try{await super.connect(url,signal,opened,channel.port2)}finally{channel.port1.close();socket.close()}}
+scrollToTop(){this.post({type:'scroll',lines:-Infinity})}
+}`,
     },
     {
       path: '@dovo/studio-core/state',
@@ -68,17 +97,19 @@ try {
     errors.push(error.message)
     console.error('Browser error:', error.message)
   })
-  await page.route('http://terminal.local/**', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  await page.route('**/packages/terminal/src/browser/terminal.worker.ts', (route) =>
+    route.continue({ url: route.request().url() + '?worker_file&type=module' }),
   )
-  await page.goto('http://terminal.local/')
-  const assets = root + '/apps/web/dist/client/assets'
+  await page.goto(`${origin}/terminal-check`)
+  const assets = root + '/apps/desktop/dist/assets'
   for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + file, 'utf8') })
+  await page.addStyleTag({
+    content: await readFile(root + '/packages/terminal/src/browser/styles.css', 'utf8'),
+  })
   await page.evaluate(() => {
     window.sockets = []
     window.terminals = []
-    window.linkProviders = []
     window.openedFiles = []
     window.insertions = []
     window.copied = []
@@ -160,13 +191,13 @@ try {
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const terminal = page.getByRole('region', { name: 'Terminal', exact: true })
-  await terminal.locator('.xterm-screen').waitFor()
+  await terminal.locator('.dovo-terminal-canvas').waitFor()
   await page.waitForFunction(() =>
     window.sockets[0]?.sent.some((message) => message.type === 'resize'),
   )
   const header = terminal.locator('header')
   const before = await header.boundingBox()
-  const screen = await terminal.locator('.xterm-screen').boundingBox()
+  const screen = await terminal.locator('.dovo-terminal-canvas').boundingBox()
   await page.mouse.move(screen.x + screen.width / 2, screen.y + screen.height / 2)
   await page.mouse.wheel(0, -10000)
   await page.waitForTimeout(200)
@@ -187,7 +218,9 @@ try {
     return result
   })
   assert.deepEqual(scrolls, [], 'Terminal output does not scroll its containing panel or page')
-  const selectionScreen = await terminal.locator('.xterm-screen').boundingBox()
+  await page.setViewportSize({ width: 1000, height: 360 })
+  await page.waitForFunction(() => window.terminals[0].viewport.rows > 2)
+  const selectionScreen = await terminal.locator('.dovo-terminal-canvas').boundingBox()
   await page.mouse.move(selectionScreen.x + 3, selectionScreen.y + 7)
   await page.mouse.down()
   await page.mouse.move(selectionScreen.x + 45, selectionScreen.y + 7, { steps: 8 })
@@ -197,7 +230,9 @@ try {
   assert.equal(selection.taskId, 'task')
   assert.match(selection.text, /output/)
   const openMenu = async () => {
-    await terminal.locator('.xterm-screen').click({ button: 'right', position: { x: 5, y: 5 } })
+    await terminal
+      .locator('.dovo-terminal-canvas')
+      .click({ button: 'right', position: { x: 5, y: 5 } })
     await page.getByRole('menuitem', { name: 'Jump to latest', exact: true }).waitFor()
   }
   await openMenu()
@@ -221,12 +256,12 @@ try {
   await page.getByRole('menuitem', { name: 'Add selection to message', exact: true }).click()
   await page.waitForFunction(() => window.insertions.length === 2)
   await page.evaluate(() => window.terminals[0].scrollToTop())
-  await page.waitForFunction(() => window.terminals[0].buffer.active.viewportY === 0)
+  await page.waitForFunction(() => window.terminals[0].viewport.top === 0)
   await openMenu()
   await page.getByRole('menuitem', { name: 'Jump to latest', exact: true }).click()
   await page.waitForFunction(() => {
-    const buffer = window.terminals[0].buffer.active
-    return buffer.viewportY === buffer.baseY && buffer.baseY > 0
+    const viewport = window.terminals[0].viewport
+    return viewport.top === viewport.history && viewport.history > 0
   })
   await page.evaluate(() => {
     window.clipboardError = true
@@ -298,6 +333,20 @@ try {
     '',
   )
   await page.keyboard.press('Escape')
+  const readOnlyInputs = await page.evaluate(
+    () => window.sockets.at(-1).sent.filter((frame) => frame.type === 'input').length,
+  )
+  await terminal.locator('textarea').focus()
+  await page.keyboard.type('must not write')
+  await page.evaluate(() => window.terminals.at(-1).paste('nor paste'))
+  await page.waitForTimeout(50)
+  assert.equal(
+    await page.evaluate(
+      () => window.sockets.at(-1).sent.filter((frame) => frame.type === 'input').length,
+    ),
+    readOnlyInputs,
+    'Exited sessions reject typing and direct paste',
+  )
   await page.evaluate(() => {
     window.runtime = {
       ...window.runtime,
@@ -319,8 +368,9 @@ try {
   await page.keyboard.press('Control+d')
   await page.keyboard.press('Control+w')
   await page.keyboard.press('Control+n')
+  await page.keyboard.press('Control+v')
   await page.waitForFunction(() =>
-    ['\u0004', '\u0017', '\u000e'].every((data) =>
+    ['\u0004', '\u0017', '\u000e', '\u0016'].every((data) =>
       window.sockets.at(-1).sent.some((frame) => frame.type === 'input' && frame.data === data),
     ),
   )
@@ -338,7 +388,7 @@ try {
     exact: true,
   })
   await split.click()
-  await terminal.locator('.xterm-screen:visible').nth(1).waitFor()
+  await terminal.locator('.dovo-terminal-canvas:visible').nth(1).waitFor()
   await terminal.locator('[data-terminal-session="session"]').click()
   await terminal.getByRole('button', { name: 'Next pane', exact: true }).click()
   await page.waitForFunction(
@@ -350,10 +400,10 @@ try {
   await terminal.getByRole('button', { name: 'Side by side', exact: true }).waitFor()
   await terminal.locator('[data-terminal-session="session-1"] textarea').focus()
   await page.keyboard.press('Control+Shift+d')
-  await terminal.locator('.xterm-screen:visible').nth(2).waitFor()
+  await terminal.locator('.dovo-terminal-canvas:visible').nth(2).waitFor()
   await terminal.locator('[data-terminal-session="session-2"] textarea').focus()
   await page.keyboard.press('Control+Shift+e')
-  await terminal.locator('.xterm-screen:visible').nth(3).waitFor()
+  await terminal.locator('.dovo-terminal-canvas:visible').nth(3).waitFor()
   assert.equal(await split.isDisabled(), true, 'Split cap prevents fifth pane')
   assert.equal(
     await terminal.getByRole('button', { name: 'New terminal session', exact: true }).isEnabled(),
@@ -375,7 +425,7 @@ try {
     window.mounted = true
     window.render()
   })
-  await terminal.locator('.xterm-screen:visible').nth(3).waitFor()
+  await terminal.locator('.dovo-terminal-canvas:visible').nth(3).waitFor()
   await terminal.getByRole('button', { name: 'Side by side', exact: true }).waitFor()
   await page.waitForFunction(
     () =>
@@ -432,26 +482,34 @@ try {
       document.activeElement.closest('[data-terminal-session]')?.dataset.terminalSession ===
       'session',
   )
-  const link = await page.evaluate(async () => {
-    const entry = window.linkProviders.findLast((entry) => entry.terminal.element?.isConnected)
-    const term = entry.terminal
-    term.reset()
-    const path = 'src/' + 'long/'.repeat(30) + 'file.ts'
-    await new Promise((resolve) => term.write('界 ' + path + ':12:3', resolve))
-    const links = await new Promise((resolve) => entry.provider.provideLinks(2, resolve))
-    const link = links[0]
-    link.activate()
-    return { text: link.text, start: link.range.start, end: link.range.end, path }
+  const path = 'src/' + 'long/'.repeat(30) + 'file.ts'
+  await page.evaluate((path) => {
+    const term = window.terminals.find((term) =>
+      term.element.closest('[data-terminal-session="session"]'),
+    )
+    term.socket.onmessage({ data: '\x1bc界 ' + path + ':12:3' })
+  }, path)
+  await page.waitForFunction(() =>
+    window.terminals
+      .find((term) => term.element.closest('[data-terminal-session="session"]'))
+      .viewport?.lines.some((line) => line.text.includes('src/')),
+  )
+  const point = await page.evaluate(() => {
+    const term = window.terminals.find((term) =>
+        term.element.closest('[data-terminal-session="session"]'),
+      ),
+      viewport = term.viewport,
+      rect = term.canvas.getBoundingClientRect()
+    return {
+      x: rect.x + 4.5 * viewport.metrics.cellWidth,
+      y: rect.y + viewport.metrics.cellHeight / 2,
+    }
   })
-  assert.equal(link.text, link.path + ':12:3')
-  assert.ok(link.end.y > link.start.y, 'Wrapped terminal location spans rows')
-  assert.equal(link.start.x, 4, 'Wide characters use terminal cell columns')
+  await page.keyboard.down('Control')
+  await page.mouse.click(point.x, point.y)
+  await page.keyboard.up('Control')
   await page.waitForFunction(() => window.openedFiles.length === 1)
-  assert.deepEqual(await page.evaluate(() => window.openedFiles[0]), {
-    path: link.path,
-    line: 12,
-    column: 3,
-  })
+  assert.deepEqual(await page.evaluate(() => window.openedFiles[0]), { path, line: 12, column: 3 })
   await terminal.getByRole('button', { name: 'Close terminal tab 1', exact: true }).click()
   await page.getByRole('heading', { name: 'Close 3 terminal panes?' }).waitFor()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -534,4 +592,5 @@ try {
   )
 } finally {
   await browser.close()
+  await vite.close()
 }

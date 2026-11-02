@@ -72,6 +72,7 @@ type Session = {
   process: pty.IPty
   readonly buffer: string
   listeners: Set<(data: string) => void>
+  pressures: Set<symbol>
 }
 export class Terminals {
   private pendingEnsure = new Map<string, Promise<TerminalInfo>>()
@@ -182,6 +183,7 @@ export class Terminals {
         return output.read()
       },
       listeners: new Set(),
+      pressures: new Set(),
     }
     this.sessions.set(id, session)
     let resolveExit!: () => void
@@ -225,6 +227,21 @@ export class Terminals {
     listener(session.buffer)
     session.listeners.add(listener)
     return () => session.listeners.delete(listener)
+  }
+  /** Each subscriber owns its pressure independently; releasing one cannot resume another. */
+  pressure(id: string) {
+    const session = this.get(id)
+    const key = Symbol('terminal subscriber')
+    return (paused: boolean) => {
+      if (paused) {
+        if (session.pressures.has(key) || session.info.exited) return
+        const first = session.pressures.size === 0
+        session.pressures.add(key)
+        if (first) session.process.pause()
+      } else if (session.pressures.delete(key) && !session.pressures.size && !session.info.exited) {
+        session.process.resume()
+      }
+    }
   }
   input(id: string, data: string) {
     const session = this.get(id)

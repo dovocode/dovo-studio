@@ -1,0 +1,15 @@
+--- a/src/terminal/c/terminal.zig
++++ b/src/terminal/c/terminal.zig
+@@ -950,7 +950,11 @@
+     const pages = &wrapper.terminal.screens.active.pages;
+     
+     // Get pin for this row in active area
+-    const pin = pages.pin(.{ .active = .{ .y = @intCast(y) } }) orelse return false;
++    // Negative rows address history: -1 is its oldest row, -2 the next.
++    const pin = if (y < 0)
++        pages.pin(.{ .history = .{ .y = @intCast(-@as(i64, y) - 1) } }) orelse return false
++    else
++        pages.pin(.{ .active = .{ .y = @intCast(y) } }) orelse return false;
+     const rac = pin.rowAndCell();
+     
+     // wrap_continuation means this row continues from the previous row

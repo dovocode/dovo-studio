@@ -1,4 +1,4 @@
-@import '@xterm/xterm/css/xterm.css';
+@import '@dovo/terminal/styles.css';
 @import 'prosemirror-view/style/prosemirror.css';
 
 /* Keep the browser's address and controls in place as focus changes. */
