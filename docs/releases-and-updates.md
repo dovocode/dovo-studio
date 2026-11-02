@@ -71,8 +71,12 @@ native/process tests. New pushes cancel superseded Check runs. Release jobs inst
 per native platform, deploy one private production runtime, then package desktop and server in
 parallel. The extracted Windows server still exercises setup, start, status and stop.
 
-On macOS, signing still runs from nested binaries to the enclosing app, followed by notarization and
-stapling. The temporary notarization ZIP uses compression level 1 to reduce local compression time;
+On macOS, up to four independent binaries sign concurrently within each nesting level, with children
+completed before enclosing bundles and the root app signed last. The pinned `@electron/osx-sign`
+patch deduplicates framework symlink aliases and waits for in-flight signatures before reporting a
+failure or allowing builder retries. Identity selection, entitlements, timestamps, hardened runtime
+and strict verification stay with the existing signer. Notarization and stapling follow successful
+signing. The temporary notarization ZIP uses compression level 1 to reduce local compression time;
 distributed ZIP/DMG compression is unchanged. After stapling, the mise archive runs alongside DMG
 and update ZIP creation. Release summaries separately time notarization signature checks, ZIP
 creation, upload plus Apple processing, and stapling. Apple processing and upload remain one timed

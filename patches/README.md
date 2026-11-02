@@ -22,6 +22,13 @@ without checking the applied patch and its fixture.
 
 # Compatibility patches and version constraints
 
+- **@electron/osx-sign 1.3.3:** add opt-in bounded signing concurrency (Dovo uses four), retaining
+  the upstream per-file signer and validation. Canonicalize and deduplicate framework symlink paths,
+  finish each depth before parents, sign the root app last, and drain active tasks on failure before
+  builder retries. The default remains sequential. Apply to CommonJS, ESM and their declarations.
+  Verify with `node --test scripts/packaging/mac-parallel-signing.test.mjs`; macOS CI also signs and
+  verifies a real nested fixture ad hoc. Replace this patch when upstream offers equivalent
+  scheduling.
 - **electron-chrome-extensions 4.10.0:** return the caller's tab from `tabs.getCurrent`, leaving
   popups and background workers without a tab. Let preferred-size events size action popups instead
   of resetting their viewport to 25 pixels after load; responsive extensions such as Proton Pass

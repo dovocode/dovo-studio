@@ -11,6 +11,7 @@ import { windowsReleaseConfig } from './windows-signing.mjs'
 import { releaseVariant } from './release-variant.mjs'
 import { createTiming, timeMacSigning } from './release-timing.mjs'
 import { configureMacNotarization } from './mac-notarization.mjs'
+import { configureMacSigning } from './mac-parallel-signing.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
@@ -181,6 +182,7 @@ try {
       },
       afterPack: async (context) => {
         endElectronPack?.()
+        if (process.platform === 'darwin') configureMacSigning(context.packager)
         timeMacSigning(timing, context.packager)
         const endRuntime = timing.start('Bundle and smoke-test runtime')
         const destination = join(
