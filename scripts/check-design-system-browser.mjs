@@ -18,6 +18,12 @@ import {
 // Shard selection: positional `[shard] [count]` or DOVO_DESIGN_SHARD / DOVO_DESIGN_SHARD_COUNT.
 // Shards split the story and hosted matrices; interactions run once (DOVO_DESIGN_INTERACTIONS_ONLY
 // in the browser job, or DOVO_DESIGN_INTERACTIONS=1 on one nominated shard). See scripts/ci/.
+// Production composers can expose either the rich editor or Markdown source field.
+const composerText = (field) =>
+  field.evaluate((element) =>
+    element instanceof HTMLTextAreaElement ? element.value : element.innerText,
+  )
+
 const plan = resolveDesignPlan({ env: process.env, argv: process.argv.slice(2) })
 console.log(describePlan(plan))
 const output = resolve('apps/design-system/storybook-static')
@@ -525,12 +531,12 @@ try {
     await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
     assert.equal(
-      await queueComposer.inputValue(),
+      await composerText(queueComposer),
       'Keep the existing blue accent, but soften the background.',
     )
     await queueComposer.fill('Cancelled edit')
     await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
-    assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
+    assert.equal(await composerText(queueComposer), 'Keep my ordinary draft')
     await page
       .getByTitle('Keep the existing blue accent, but soften the background.', { exact: true })
       .waitFor()
@@ -539,7 +545,7 @@ try {
     await queueComposer.fill('Edited local follow-up')
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page.getByTitle('Edited local follow-up', { exact: true }).waitFor()
-    assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
+    assert.equal(await composerText(queueComposer), 'Keep my ordinary draft')
     await page
       .getByRole('button', { name: 'Drag queued message 2 to reorder', exact: true })
       .focus()
@@ -566,7 +572,7 @@ try {
     await mentionField.fill('@src')
     await page.getByRole('listbox', { name: 'Files and MCP servers', exact: true }).waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
-    assert.ok((await mentionField.inputValue()).includes('src/App.tsx'))
+    assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
     await page.getByRole('button', { name: 'Idle task', exact: true }).click()
     const composerField = page.getByRole('textbox', { name: 'Message task', exact: true })
     await composerField.fill('Verify a full production composer')
@@ -574,21 +580,25 @@ try {
     await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
     await page.getByRole('alert').filter({ hasText: 'set to fail' }).waitFor()
     assert.equal(
-      await composerField.inputValue(),
+      await composerText(composerField),
       'Verify a full production composer',
       'Failed sends retain the draft',
     )
     await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
-    await page.waitForFunction(
-      () => document.querySelector('textarea[aria-label="Message task"]')?.value === '',
-    )
+    await page.waitForFunction(() => {
+      const field = document.querySelector('[aria-label="Message task"]')
+      if (!field) return false
+      return field instanceof HTMLTextAreaElement
+        ? field.value === ''
+        : field.innerText.trim() === ''
+    })
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
     assert.ok(
       await page.getByRole('button', { name: 'Save message to task', exact: true }).isDisabled(),
     )
     await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
     await page.getByRole('button', { name: 'Long draft', exact: true }).click()
-    assert.ok((await composerField.inputValue()).includes('A detailed local preview draft'))
+    assert.ok((await composerText(composerField)).includes('A detailed local preview draft'))
 
     const touch = await browser.newContext({
       hasTouch: true,

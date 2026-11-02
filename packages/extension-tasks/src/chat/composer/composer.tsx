@@ -1191,6 +1191,11 @@ export function Composer({
                       type="button"
                       variant="ghost"
                       aria-label="More composer actions"
+                      // Keep editor focus until click opens the menu. Blurring on mouse-down
+                      // collapses the compact composer and moves the button before mouse-up.
+                      onMouseDown={(event) => {
+                        if (event.button === 0) event.preventDefault()
+                      }}
                       aria-pressed={!preferences.showPlanButton && plan}
                       className={cn(
                         'composer-add-menu',
