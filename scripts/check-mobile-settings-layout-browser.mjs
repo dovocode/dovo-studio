@@ -135,7 +135,7 @@ const built = await build({
       function MotionProbe(){return <output aria-label="Reduced motion">{String(useTheme().reduceMotion)}</output>;}
       import SettingsSection from './src/app/(more)/settings/[section]';
       const computer='Dominic’s development computer with a long name';
-      window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[],tasks:[]}}}]};
+      window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[],tasks:[],agents:[]}}}]};
       window.runtime.overviews.push({...window.runtime.overviews[0],profile:{...window.runtime.overviews[0].profile,id:'other',name:'Build server'},snapshot:{...window.runtime.overviews[0].snapshot,defaults:{scopedSettings:{environment:{},shared:[]}}}});
       window.computerPreferences={};window.computerReads=[];window.computerSaves=[];
       for(const entry of window.runtime.overviews){
