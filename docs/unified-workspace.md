@@ -78,5 +78,8 @@ options, stale computer responses, catalog retries and explicit command executio
 `workspace-terminals.test.ts` cover paired standalone shells and execution; utility-model tests
 cover bounded, tool-free classification and output validation. `pnpm test:workspace-submit:browser`
 mounts the actual workspace, thread, browser and terminal components to check submissions and
-retained views. Terminal metadata tests cover fragmented sequences, bounds, PTY output preservation,
-renaming and runtime snapshot synchronization.
+retained local/remote views through repeated swaps, preserving drafts and terminal replay.
+`pnpm test:workspace-modes:browser` exercises the actual Workbench and extension catalog through
+mode changes, restored threads/pages, incoming snapshots, compact layout and sidebar collapse.
+Terminal metadata tests cover fragmented sequences, bounds, PTY output preservation, renaming and
+runtime snapshot synchronization.

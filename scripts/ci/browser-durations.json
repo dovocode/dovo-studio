@@ -1,5 +1,5 @@
 {
-  "source": "Check run 40553363177; remote-browser-sessions corrected from a local prepared-build run after removing repeated builds; workspace-submit measured locally with real components",
+  "source": "Check run 40553363177; remote-browser-sessions corrected from a local prepared-build run after removing repeated builds; workspace suites measured locally with real components",
   "seconds": {
     "test:account-directory:browser": 13,
     "test:agent-interactions:browser": 5.2,
@@ -132,7 +132,8 @@
     "test:ux-polish:browser": 1.6,
     "test:watch-messages:browser": 2.4,
     "test:windows-runtime:browser": 5.1,
+    "test:workspace-modes:browser": 7,
     "test:workspace-recovery:browser": 5.4,
-    "test:workspace-submit:browser": 9.1
+    "test:workspace-submit:browser": 33.3
   }
 }
