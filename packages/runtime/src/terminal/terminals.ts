@@ -10,6 +10,8 @@ import type { TerminalInfo, UpdateTerminal } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
 import { HttpError } from '../errors.js'
 import { stopUnixTerminal } from './stop-terminal.js'
+import { TerminalMetadata } from './metadata.js'
+import { isDeepStrictEqual } from 'node:util'
 // node-pty is a native addon that is only needed once a terminal is opened. Loading it
 // lazily keeps it (and its native binding) out of the runtime's startup module graph.
 let ptyModule: typeof pty | undefined
@@ -68,6 +70,7 @@ class RetainedOutput {
 }
 type Session = {
   directory: string
+  initialTitle: string
   command: string
   launch: AcpLaunch
   info: TerminalInfo
@@ -186,6 +189,7 @@ export class Terminals {
     const output = new RetainedOutput()
     const session: Session = {
       directory: cwd,
+      initialTitle: title,
       command: launch.command,
       launch,
       info: {
@@ -206,6 +210,19 @@ export class Terminals {
       pressures: new Set(),
     }
     this.sessions.set(id, session)
+    const metadata = new TerminalMetadata((event) => {
+      const info = { ...session.info }
+      if (event.type === 'title') {
+        if (event.title === undefined) delete info.terminalTitle
+        else info.terminalTitle = event.title
+      } else {
+        if (event.activity === undefined) delete info.activity
+        else info.activity = event.activity
+      }
+      info.title = info.customTitle ?? info.terminalTitle ?? session.initialTitle
+      // Runtime snapshot sync includes list() in its 200 ms change signature.
+      if (!isDeepStrictEqual(info, session.info)) session.info = info
+    })
     let resolveExit!: () => void
     const exited = new Promise<void>((resolve) => {
       resolveExit = resolve
@@ -218,9 +235,11 @@ export class Terminals {
     })
     terminal.onData((data) => {
       output.append(data)
+      metadata.write(data)
       notify(session.listeners, data)
     })
     terminal.onExit(({ exitCode }) => {
+      metadata.endProcess()
       session.info = {
         ...session.info,
         exited: true,
@@ -243,11 +262,16 @@ export class Terminals {
     return session
   }
   update(input: UpdateTerminal) {
-    const { id, pinned, settled, snoozedUntil } = decode(updateTerminalSchema, input)
+    const { id, title, pinned, settled, snoozedUntil } = decode(updateTerminalSchema, input)
     const session = this.get(id)
     if (snoozedUntil != null && Date.parse(snoozedUntil) <= Date.now())
       throw new HttpError(400, 'Choose a future snooze time')
     const info = { ...session.info }
+    if (title !== undefined) {
+      if (title === null) delete info.customTitle
+      else info.customTitle = title.trim()
+      info.title = info.customTitle ?? info.terminalTitle ?? session.initialTitle
+    }
     if (pinned !== undefined) info.pinned = pinned
     if (settled !== undefined) {
       if (settled) info.settledAt = new Date().toISOString()
