@@ -90,9 +90,16 @@ const reporter = require('./report.cjs');
 delete process.env.ELECTRON_RUN_AS_NODE;
 const name = process.argv[2];
 let args = process.argv.slice(3);
-const directories = (process.env.PATH || '').split(path.delimiter).filter(dir => path.resolve(dir) !== path.resolve(__dirname, 'bin'));
-const executable = directories.map(dir => path.join(dir, name)).find(file => {
-  try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); }
+// macOS exposes /private/var through /var. Node resolves __dirname to its real path;
+// compare the executable's real directory too, or an aliased PATH selects this launcher again.
+const launcherDirectory = fs.realpathSync(path.join(__dirname, 'bin'));
+const directories = (process.env.PATH || '').split(path.delimiter);
+const executable = directories.map(dir => path.resolve(dir, name)).find(file => {
+  try {
+    if (path.dirname(fs.realpathSync(file)) === launcherDirectory) return false;
+    fs.accessSync(file, fs.constants.X_OK);
+    return fs.statSync(file).isFile();
+  }
   catch (error) { if (['ENOENT', 'ENOTDIR', 'EACCES'].includes(error.code)) return false; throw error; }
 });
 if (!executable) { console.error(name + ': executable not found outside Dovo integration'); process.exit(127); }

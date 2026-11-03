@@ -1,21 +1,24 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
+import { EventEmitter } from 'node:events'
+import { runInNewContext } from 'node:vm'
 import { STUDIO_TERMINAL_SCOPE } from '@dovo/protocol'
 import { openDatabase } from '../storage/database'
 import { Terminals } from './terminals'
 import { TerminalRecovery, recoveryCommand, validateRecoveryShell } from './recovery'
-import { installRecoveryIntegrations } from './recovery-integrations'
+import { installRecoveryIntegrations, recoveryLauncherSource } from './recovery-integrations'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
 
 vi.setConfig(runtimeIntegration)
 afterEach(() => vi.unstubAllEnvs())
 
-async function fixture() {
+async function fixture({ symlinkRecovery = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-terminal-recovery-'))
   for (const [key, folder] of [
     ['CODEX_HOME', 'codex'],
@@ -26,6 +29,11 @@ async function fixture() {
     vi.stubEnv(key!, join(directory, folder!))
   const db = openDatabase(join(directory, 'runtime.sqlite'))
   const recoveryDirectory = join(directory, 'recovery')
+  if (symlinkRecovery) {
+    const actual = join(directory, 'actual-recovery')
+    await mkdir(actual)
+    await symlink(actual, recoveryDirectory, 'dir')
+  }
   const create = () =>
     new Terminals(undefined, undefined, undefined, new TerminalRecovery(db, recoveryDirectory))
   const hook = (id: string, provider: string, sessionId: string, ended = false) => {
@@ -186,11 +194,55 @@ it('loads Pi and OpenCode adapters and records the exact selected session, exclu
   }
 })
 
+it.skipIf(process.platform === 'win32')(
+  'skips its own launcher when PATH contains a symlink alias of its installation',
+  async () => {
+    const f = await fixture({ symlinkRecovery: true })
+    try {
+      installRecoveryIntegrations(f.recoveryDirectory)
+      const bin = join(f.directory, 'tools')
+      await mkdir(bin)
+      const native = join(bin, 'tmux')
+      await writeFile(native, '#!/bin/sh\n', { mode: 0o700 })
+      const probe = vi.fn<
+        (file: string, args: string[], options: object) => { status: number; stdout: string }
+      >(() => ({ status: 0, stdout: 'native-session\n' }))
+      const spawn = vi.fn<(file: string, args: string[], options: object) => EventEmitter>(
+        () => new EventEmitter(),
+      )
+      const nodeRequire = createRequire(import.meta.url)
+      runInNewContext(recoveryLauncherSource, {
+        __dirname: realpathSync(f.recoveryDirectory),
+        require: (name: string) =>
+          name === 'node:child_process'
+            ? { spawnSync: probe, spawn }
+            : name === './report.cjs'
+              ? { report: () => {} }
+              : nodeRequire(name),
+        process: {
+          argv: ['node', 'launch.cjs', 'tmux', 'attach', '-t', 'given-name'],
+          env: { PATH: join(f.recoveryDirectory, 'bin') + ':' + bin },
+          cwd: () => f.directory,
+          on: () => {},
+          exit: (code: number) => {
+            throw new Error(`Unexpected launcher exit: ${code}`)
+          },
+        },
+        console,
+      })
+      expect(probe.mock.calls[0]?.[0]).toBe(native)
+      expect(spawn.mock.calls[0]?.[0]).toBe(native)
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
+
 for (const program of ['tmux', 'hc'] as const)
   it.skipIf(process.platform === 'win32')(
     `reattaches to the canonical ${program} target without rerunning its workload`,
     async () => {
-      const f = await fixture()
+      const f = await fixture({ symlinkRecovery: true })
       let terminals = f.create()
       try {
         const bin = join(f.directory, 'bin')
