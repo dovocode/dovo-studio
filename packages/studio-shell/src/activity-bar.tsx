@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
-import type { StudioIcon, StudioView } from '@dovo/studio-core'
+import type { StudioIcon, StudioNavigation, StudioView } from '@dovo/studio-core'
 import {
   useNavigationSidebar,
   Button,
@@ -49,6 +49,32 @@ const icons: Record<StudioIcon, typeof Bot> = {
   runtime: MonitorSmartphone,
 }
 
+/** Normal workspace modes the unified workspace may stand in for (not Artifacts or tools). */
+const normalWorkspaceModes = new Set(['tasks', 'browser', 'terminals'])
+type WorkspaceModePreferences = {
+  unifiedWorkspaceEnabled: boolean
+  unifiedWorkspaceHideNormalModes: boolean
+}
+/** Hiding is ignored while unified is off, so the normal modes always stay discoverable. */
+export function workspaceModeVisible(viewId: string, preferences: WorkspaceModePreferences) {
+  return !(
+    preferences.unifiedWorkspaceEnabled &&
+    preferences.unifiedWorkspaceHideNormalModes &&
+    normalWorkspaceModes.has(viewId)
+  )
+}
+/**
+ * A section landing on a hidden mode opens the unified workspace instead. Explicit links to an
+ * item (a thread, page or terminal) still open, so notifications and links never go nowhere.
+ */
+export function visibleWorkspaceTarget(
+  target: StudioNavigation,
+  preferences: WorkspaceModePreferences,
+): StudioNavigation {
+  return workspaceModeVisible(target.viewId, preferences) || target.entityId
+    ? target
+    : { viewId: 'workspace' }
+}
 export function ActivityBar({
   views,
   activeId,
@@ -76,10 +102,11 @@ export function ActivityBar({
     )
       setUpdateOpen(true)
   }, [update?.status])
+  // Unified is an optional extra mode above the standalone workspaces; it never replaces them.
+  const unifiedViews = views.filter((view) => !view.navigationGroup && view.id === 'workspace')
   const workspaceViews = views.filter(
     (view) =>
-      !view.navigationGroup &&
-      ['workspace', 'tasks', 'browser', 'terminals', 'artifacts'].includes(view.id),
+      !view.navigationGroup && ['tasks', 'browser', 'terminals', 'artifacts'].includes(view.id),
   )
   const toolViews = views.filter(
     (view) =>
@@ -135,7 +162,7 @@ export function ActivityBar({
       <span className="studio-navigation-heading" aria-hidden="true">
         Workspace
       </span>
-      {[workspaceViews, toolViews]
+      {[unifiedViews, workspaceViews, toolViews]
         .filter((group) => group.length)
         .map((group) => (
           <div className="studio-navigation-group" key={group[0].id}>

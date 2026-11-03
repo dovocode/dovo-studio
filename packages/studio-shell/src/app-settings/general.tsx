@@ -98,6 +98,19 @@ export default function GeneralSettings() {
           />
         </SettingRow>
         <SettingRow
+          label="Hide normal modes"
+          description="Hide Threads, Browser and Terminals from the sidebar while the unified workspace is on. Turning off the unified workspace shows them again."
+        >
+          <Toggle
+            label="Hide normal modes while the unified workspace is on"
+            checked={preferences.unifiedWorkspaceHideNormalModes}
+            disabled={!preferences.unifiedWorkspaceEnabled}
+            onChange={(unifiedWorkspaceHideNormalModes) =>
+              updateAppPreferences({ unifiedWorkspaceHideNormalModes })
+            }
+          />
+        </SettingRow>
+        <SettingRow
           label="Browser workspace"
           description="A shared browser with vertical tabs, profiles, bookmarks and page-to-thread actions. Experimental and off by default; thread previews stay available."
         >

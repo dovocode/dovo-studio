@@ -615,7 +615,9 @@ try {
       const session = {
         id: 'workspace-split',
         taskId: window.taskId,
-        repositoryId: input.repositoryId,
+        repositoryId: window.runtime.snapshot.terminals.find(
+          (session) => session.id === input.sourceTerminalId,
+        )?.repositoryId,
         title: 'Standalone split',
         exited: false,
       }
@@ -634,8 +636,8 @@ try {
     .waitFor()
   assert.deepEqual(
     await page.evaluate(() => window.workspaceCreates),
-    [{ repositoryId: 'workspace-project' }],
-    'Standalone splits preserve the owning project without requiring a thread',
+    [{ sourceTerminalId: 'workspace-shell' }],
+    'Standalone splits inherit their source shell and checkout without requiring a thread',
   )
   assert.equal(await terminal.locator('[data-terminal-session]:visible').count(), 2)
   assert.deepEqual(errors, [])

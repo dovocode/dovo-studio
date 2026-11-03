@@ -100,6 +100,8 @@ const schema = mutableStruct({
   showJira: Schema.Boolean,
   browserWorkspaceEnabled: Schema.Boolean,
   unifiedWorkspaceEnabled: Schema.Boolean,
+  /** Only applies while unified is enabled; normal modes stay discoverable otherwise. */
+  unifiedWorkspaceHideNormalModes: Schema.Boolean,
   ...browserTabCleanupSettingsFields,
   diffLayout: Schema.Literals(['unified', 'split']),
   diffOverflow: Schema.Literals(['wrap', 'scroll']),
@@ -219,6 +221,7 @@ export const defaultAppPreferences: AppPreferences = {
   showJira: true,
   browserWorkspaceEnabled: false,
   unifiedWorkspaceEnabled: false,
+  unifiedWorkspaceHideNormalModes: false,
   browserAutoSettleMinutes: 0,
   browserCloseSettledMinutes: 0,
   diffLayout: 'unified',

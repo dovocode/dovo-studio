@@ -18,7 +18,6 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
-  ChoicePicker,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -32,6 +31,7 @@ import {
 } from '@dovo/studio-ui'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import { TerminalPane } from './terminal-pane'
+import { TerminalStarter } from './terminal-starter'
 import { WorkspaceResourceMenu } from '../unified/workspace-resource-menu'
 
 const targetSchema = Schema.Struct({ runtimeId: Schema.String, id: Schema.String })
@@ -62,98 +62,8 @@ export function useWorkspaceComputers() {
 }
 
 export function NewWorkspaceTerminal({ onOpen }: { onOpen: (target: TerminalTarget) => void }) {
-  const store = useWorkspace()
   const computers = useWorkspaceComputers()
-  const [runtimeId, setRuntimeId] = useState(
-    store.activeRuntimeId ?? computers[0]?.profile.id ?? '',
-  )
-  const [repositoryId, setRepositoryId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const owner = computers.find((entry) => entry.profile.id === runtimeId)
-  const attempt = useRef(0)
-  useEffect(
-    () => () => {
-      attempt.current++
-    },
-    [],
-  )
-  return (
-    <form
-      className="space-y-4"
-      aria-label="New workspace terminal"
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (!owner?.connected || busy) return
-        const generation = ++attempt.current
-        setBusy(true)
-        setError('')
-        void store
-          .readRuntime(
-            owner.profile,
-            '/api/terminals/workspace',
-            { repositoryId: repositoryId || undefined },
-            responses.terminal,
-          )
-          .then((session) => {
-            if (generation === attempt.current)
-              onOpen({ runtimeId: owner.profile.id, id: session.id })
-          })
-          .catch((cause: unknown) => {
-            if (generation === attempt.current) setError(String(cause))
-          })
-          .finally(() => {
-            if (generation === attempt.current) setBusy(false)
-          })
-      }}
-    >
-      <div className="space-y-1.5">
-        <p className="text-xs font-medium">Computer</p>
-        <ChoicePicker
-          aria-label="Terminal computer"
-          value={runtimeId}
-          disabled={busy}
-          onValueChange={(id) => {
-            setRuntimeId(id)
-            setRepositoryId('')
-            setError('')
-          }}
-        >
-          {!computers.length && <option value="">No paired computers</option>}
-          {computers.map((entry) => (
-            <option key={entry.profile.id} value={entry.profile.id}>
-              {runtimeComputerName(entry)}
-              {entry.connected ? '' : ' · offline'}
-            </option>
-          ))}
-        </ChoicePicker>
-      </div>
-      <div className="space-y-1.5">
-        <p className="text-xs font-medium">Working directory</p>
-        <ChoicePicker
-          aria-label="Terminal working directory"
-          value={repositoryId}
-          disabled={busy}
-          onValueChange={setRepositoryId}
-        >
-          <option value="">Home folder</option>
-          {owner?.snapshot?.workspace.repositories.map((repo) => (
-            <option key={repo.id} value={repo.id}>
-              {repo.name}
-            </option>
-          ))}
-        </ChoicePicker>
-      </div>
-      <Button size="sm" className="w-full" disabled={!owner?.connected || busy} type="submit">
-        {busy ? 'Opening…' : 'New terminal'}
-      </Button>
-      {error && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
-    </form>
-  )
+  return <TerminalStarter computers={computers} onOpen={onOpen} />
 }
 
 export function NewWorkspaceTerminalDialog({
@@ -167,7 +77,7 @@ export function NewWorkspaceTerminalDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-2xl">
         <DialogTitle>New terminal</DialogTitle>
         <DialogDescription>Open a shell on a paired computer.</DialogDescription>
         <NewWorkspaceTerminal
@@ -289,7 +199,7 @@ export function WorkspaceTerminalSurface({
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-sm font-medium">{session.title}</h1>
             <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
-              <span className="truncate">
+              <span className="truncate" title={session.directory}>
                 {terminalContext(session, owner.snapshot?.workspace)}
               </span>
               <span aria-hidden="true">·</span>
@@ -352,9 +262,9 @@ export function terminalContext(
 ) {
   if (session.taskId !== STUDIO_TERMINAL_SCOPE)
     return workspace?.tasks.find((task) => task.id === session.taskId)?.title ?? 'Thread terminal'
-  return (
-    workspace?.repositories.find((repo) => repo.id === session.repositoryId)?.name ?? 'Home folder'
-  )
+  const project = workspace?.repositories.find((repo) => repo.id === session.repositoryId)
+  if (!project) return 'Home folder'
+  return session.checkoutBranch ? `${project.name} · ${session.checkoutBranch}` : project.name
 }
 
 export default function TerminalWorkspace({ entityId }: StudioViewProps) {
@@ -545,17 +455,13 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
               </header>
             </HeaderContent>
             <div className="flex min-h-0 flex-1 items-center justify-center p-8">
-              <div className="max-w-sm text-center">
-                <Terminal className="mx-auto mb-5 size-8 text-muted-foreground/60" />
-                <h2 className="text-xl font-medium tracking-tight">A workspace for your shell</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Open a terminal in a project or home folder, on this computer or any paired
-                  computer.
-                </p>
-                <Button className="mt-6 gap-2" onClick={() => setCreating(true)}>
-                  <Plus className="size-4" />
-                  New terminal
-                </Button>
+              <div className="w-full max-w-2xl text-center">
+                <h2 className="startup-heading text-balance text-xl font-medium tracking-tight sm:text-2xl">
+                  What would you like to work on?
+                </h2>
+                <div className="mt-6">
+                  <NewWorkspaceTerminal onOpen={setSelected} />
+                </div>
               </div>
             </div>
           </>

@@ -58,6 +58,10 @@ export const approvalSchema = mutableStruct({
 export const STUDIO_TERMINAL_SCOPE = 'studio:terminals'
 export const terminalSchema = mutableStruct({
   repositoryId: Schema.optional(Schema.String),
+  shellId: Schema.optional(Schema.String),
+  directory: Schema.optional(Schema.String),
+  execution: Schema.optional(Schema.Literals(['main', 'worktree'])),
+  checkoutBranch: Schema.optional(Schema.String),
   checkoutId: Schema.optional(Schema.String),
   id: Schema.String,
   taskId: Schema.String,
@@ -75,6 +79,16 @@ export const updateTerminalSchema = mutableStruct({
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
 })
 export type UpdateTerminal = Schema.Schema.Type<typeof updateTerminalSchema>
+export const createWorkspaceTerminalSchema = mutableStruct({
+  repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  command: Schema.optional(maxValue(minValue(Schema.String, 1), 20000)),
+  shellId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  execution: Schema.optional(Schema.Literals(['main', 'worktree'])),
+  existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 32768)),
+  worktreeBaseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 1000)),
+  sourceTerminalId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+})
+export type CreateWorkspaceTerminal = Schema.Schema.Type<typeof createWorkspaceTerminalSchema>
 export const jobRunStepSchema = mutableStruct({
   nodeId: Schema.String,
   label: Schema.String,

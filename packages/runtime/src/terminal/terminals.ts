@@ -69,6 +69,7 @@ class RetainedOutput {
 type Session = {
   directory: string
   command: string
+  launch: AcpLaunch
   info: TerminalInfo
   process: pty.IPty
   readonly buffer: string
@@ -87,6 +88,15 @@ export class Terminals {
   private sessions = new Map<string, Session>()
   list() {
     return [...this.sessions.values()].map((s) => s.info)
+  }
+  checkCapacity() {
+    if (
+      this.sessions.size >= 20 &&
+      ![...this.sessions.values()].some(
+        (session) => session.info.exited && !session.info.pinned && !session.listeners.size,
+      )
+    )
+      throw new HttpError(409, 'Close a terminal before opening another (limit 20)')
   }
   /** Reuse a live shell, even when two clients open the terminal at the same time. */
   ensure(
@@ -143,6 +153,7 @@ export class Terminals {
     title: string,
     checkoutId?: string,
     repositoryId?: string,
+    workspace?: Pick<TerminalInfo, 'shellId' | 'directory' | 'execution' | 'checkoutBranch'>,
   ) {
     // Retained output is bounded by the same cap, but finished unattended shells
     // must not permanently consume slots needed by new work. Pinned and attached output stays.
@@ -176,11 +187,14 @@ export class Terminals {
     const session: Session = {
       directory: cwd,
       command: launch.command,
+      launch,
       info: {
         id,
         taskId,
+        directory: cwd,
         ...(checkoutId ? { checkoutId } : {}),
         ...(repositoryId ? { repositoryId } : {}),
+        ...workspace,
         title,
         exited: false,
       },

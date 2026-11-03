@@ -46,7 +46,7 @@ export const resolveTaskDefaults=()=>({});
 const Store=createContext(null),Host=createContext(null);
 export const useWorkspace=()=>useContext(Store);
 export const useStudioHost=()=>useContext(Host);
-export const useAppPreferences=()=>({unifiedWorkspaceEnabled:true,taskSnoozeMinutes:[60,240,1440],taskSnoozeSchedule:{timeZone:'local',morningTime:'09:00',eveningTime:'18:00',weekStartsOn:1,presets:['later-today','tomorrow-morning','tomorrow-evening','next-week']}});
+export const useAppPreferences=()=>({unifiedWorkspaceEnabled:true,sendWith:'enter',taskSnoozeMinutes:[60,240,1440],taskSnoozeSchedule:{timeZone:'local',morningTime:'09:00',eveningTime:'18:00',weekStartsOn:1,presets:['later-today','tomorrow-morning','tomorrow-evening','next-week']}});
 export const readAppPreferences=()=>({confirmUnpin:false});
 export const sameWorkspaceFields=()=>false;export const useWorkspaceSelector=selector=>selector(useWorkspace());
 export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
@@ -54,10 +54,13 @@ export function WorkspaceScope({profile,children}){const store=useWorkspace();co
 export function RootFixture({children}){const [version,update]=useState(0);useEffect(()=>{window.refresh=()=>update(v=>v+1)},[]);
 const active=window.computers.find(entry=>entry.profile.id===window.activeRuntimeId);
 const read=async(profile,path,input)=>{
- window.calls.push({path,input,owner:profile.id});
+ window.calls.push({path,input:JSON.parse(JSON.stringify(input)),owner:profile.id});
  const owner=window.computers.find(entry=>entry.profile.id===profile.id);
  if(path==='/api/tasks/workspace/route'){if(window.routeError)throw Error(window.routeError);if(window.delayRoute)await new Promise(resolve=>window.finishRoute=resolve);return {mode:window.routeMode,reason:'Fixture decision'}}
- if(path==='/api/terminals/workspace'){const id=profile.id===window.activeRuntimeId?'created-'+window.calls.length:'remote-created';owner.snapshot.terminals.push({id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId});window.refresh();return {id}}
+ if(path==='/api/terminals/shells'){if(window.shellError)throw Error(window.shellError);if(window.delayShellOwner===profile.id)await new Promise(resolve=>window.finishShells=resolve);return {shells:[{id:'default',label:'Default ('+profile.id+')',path:'/bin/bash',args:['-l']},{id:profile.id==='local'?'bash':'fish',label:profile.id==='local'?'Bash':'Fish',path:profile.id==='local'?'/bin/bash':'/usr/bin/fish',args:['-l']}]}}
+ if(path==='/api/scm/branches')return {branches:[{ref:'refs/heads/main',name:'main',remote:false,checkedOut:true},{ref:'refs/heads/feature',name:'feature',remote:false,checkedOut:false}],current:'main',revision:'fixture'};
+ if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/project/existing',branch:'feature',dirty:true}]};
+ if(path==='/api/terminals/workspace'){const id=profile.id+'-created-'+window.calls.length;owner.snapshot.terminals.push({id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)});window.refresh();return {id}}
  if(path==='/api/terminals/update'){if(window.terminalUpdateError)throw Error(window.terminalUpdateError);const session=owner.snapshot.terminals.find(item=>item.id===input.id);if(input.pinned!==undefined)session.pinned=input.pinned;if(input.settled!==undefined){session.settledAt=input.settled?new Date().toISOString():undefined;session.snoozedUntil=undefined}if(input.snoozedUntil!==undefined){session.snoozedUntil=input.snoozedUntil??undefined;if(input.snoozedUntil)session.settledAt=undefined}window.refresh();return {...session}}
  if(path==='/api/workspace'){const task=owner.snapshot.workspace.tasks.find(item=>item.id===input.id);for(const [key,value] of Object.entries(input.changes))task[key]=value.after;window.refresh();return {applied:true,conflicts:[]}}
  return {ok:true};
@@ -74,6 +77,7 @@ import {Button} from '${root}/packages/studio-ui/src/components/ui/button';
 export {Button};
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input';
+export {ComposerSurface,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
 export {cn} from '${root}/packages/studio-ui/src/lib/utils';
 export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}/packages/studio-ui/src/components/ui/dialog';
 export const HeaderContent=({children})=><>{children}</>;
@@ -243,7 +247,9 @@ try {
   await page.keyboard.press('Escape')
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   assert.equal(
-    await page.evaluate(() => window.calls.length),
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/terminals/workspace').length,
+    ),
     0,
     'Dismissing creation does not open a shell',
   )
@@ -436,12 +442,19 @@ try {
   )
   await page.getByLabel('Workspace request').fill('printf original-input')
   await page.getByRole('button', { name: 'Choose destination' }).click()
+  await page.getByLabel('Workspace terminal shell').selectOption('fish')
   await page.getByRole('button', { name: 'Run command' }).click()
   assert.equal(
     await page.evaluate(
       () => window.calls.find((call) => call.path === '/api/terminals/workspace').input.command,
     ),
     'printf original-input',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.find((call) => call.path === '/api/terminals/workspace').input.shellId,
+    ),
+    'fish',
   )
   await page.getByLabel('Workspace request').fill('Continue this work')
   await page.getByLabel('Workspace destination').selectOption('thread')
@@ -457,8 +470,10 @@ try {
   await page.getByRole('dialog').waitFor()
   await page.getByLabel('Terminal computer', { exact: true }).selectOption('local')
   await page.getByLabel('Terminal working directory').selectOption('project')
-  await page.getByRole('dialog').getByRole('button', { name: 'New terminal', exact: true }).click()
-  await page.waitForSelector('[data-terminal="remote-created"][data-owner="local"]')
+  await page.getByLabel('Terminal shell', { exact: true }).selectOption('bash')
+  await page.getByLabel('Startup command', { exact: true }).fill('  printf starter-command  ')
+  await page.getByRole('dialog').getByRole('button', { name: 'Open terminal', exact: true }).click()
+  await page.waitForSelector('[data-terminal^="local-created-"][data-owner="local"]')
   assert.deepEqual(
     await page.evaluate(() => {
       const call = window.calls.find(
@@ -466,7 +481,12 @@ try {
       )
       return call.input
     }),
-    { repositoryId: 'project' },
+    {
+      repositoryId: 'project',
+      command: '  printf starter-command  ',
+      shellId: 'bash',
+      execution: 'main',
+    },
   )
   await page.getByRole('button', { name: 'Hide terminal pane', exact: true }).click()
   assert.equal(
@@ -474,6 +494,106 @@ try {
       () => window.calls.filter((call) => call.path === '/api/terminals/close').length,
     ),
     0,
+  )
+  const openStarter = async () => {
+    await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+    await page.getByRole('dialog').waitFor()
+  }
+  const launchStarter = async () => {
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Open terminal', exact: true })
+      .click()
+    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  }
+  const lastCreate = () =>
+    page.evaluate(() =>
+      window.calls.filter((call) => call.path === '/api/terminals/workspace').at(-1),
+    )
+  await page.evaluate(() => {
+    window.delayShellOwner = 'remote'
+  })
+  await openStarter()
+  await page.waitForFunction(() => !!window.finishShells)
+  await page.getByLabel('Startup command', { exact: true }).fill('printf keep-draft')
+  await page.getByLabel('Terminal computer', { exact: true }).selectOption('local')
+  await page.getByLabel('Terminal shell', { exact: true }).selectOption('bash')
+  await page.evaluate(() => {
+    window.delayShellOwner = undefined
+    window.finishShells()
+  })
+  assert.equal(
+    await page.getByLabel('Startup command', { exact: true }).inputValue(),
+    'printf keep-draft',
+  )
+  assert.equal(await page.getByLabel('Terminal shell', { exact: true }).inputValue(), 'bash')
+  assert.equal(
+    await page
+      .getByLabel('Terminal shell', { exact: true })
+      .locator('option[value="fish"]')
+      .count(),
+    0,
+    'Stale remote shells never replace the local catalog',
+  )
+  assert.equal(
+    await page.getByLabel('Terminal working directory').locator('option[value="scratch"]').count(),
+    0,
+    'No Project uses home, not the scratch workspace',
+  )
+  await page.getByLabel('Terminal working directory').selectOption('project')
+  await page.getByLabel('Terminal checkout', { exact: true }).selectOption('existing')
+  await page.getByLabel('Terminal existing worktree').selectOption('/project/existing')
+  await launchStarter()
+  assert.deepEqual(await lastCreate(), {
+    path: '/api/terminals/workspace',
+    owner: 'local',
+    input: {
+      repositoryId: 'project',
+      command: 'printf keep-draft',
+      shellId: 'bash',
+      execution: 'worktree',
+      existingWorktreePath: '/project/existing',
+    },
+  })
+  assert.equal(
+    await page.evaluate(() => window.activeRuntimeId),
+    'remote',
+    'Creation on another computer preserves the global selection',
+  )
+  await openStarter()
+  await page.getByLabel('Terminal working directory').selectOption('project')
+  await page.getByLabel('Terminal checkout', { exact: true }).selectOption('worktree')
+  await page.getByLabel('Terminal base branch').selectOption('refs/heads/feature')
+  await launchStarter()
+  assert.deepEqual((await lastCreate()).input, {
+    repositoryId: 'project',
+    shellId: 'default',
+    execution: 'worktree',
+    worktreeBaseBranch: 'refs/heads/feature',
+  })
+  await page.evaluate(() => {
+    window.shellError = 'Shell catalog unavailable'
+  })
+  await openStarter()
+  await page.getByRole('alert').filter({ hasText: 'Shell catalog unavailable' }).waitFor()
+  assert.equal(
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Open terminal', exact: true })
+      .isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.shellError = undefined
+  })
+  await page.getByRole('button', { name: 'Retry shells', exact: true }).click()
+  await page.getByLabel('Terminal shell', { exact: true }).selectOption('fish')
+  await page.getByLabel('Startup command', { exact: true }).fill('   ')
+  await launchStarter()
+  assert.deepEqual(
+    (await lastCreate()).input,
+    { shellId: 'fish' },
+    'Blank startup input opens a home shell without project or worktree settings',
   )
   await page.evaluate(() => {
     window.routeError = 'No utility model configured'
@@ -492,6 +612,18 @@ try {
     window.render()
   })
   await page.getByRole('region', { name: 'Terminals workspace' }).waitFor()
+  if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
+    await page.screenshot({ path: '/tmp/dovo-terminal-starter.png' })
+    for (const width of [1000, 760]) {
+      await page.setViewportSize({ width, height: 800 })
+      assert.ok(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        'Terminal starter must fit the window',
+      )
+    }
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
   await page.locator('.studio-thread-card').filter({ hasText: 'remote shell' }).click()
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
   await rowAction('remote shell', 'Pin')

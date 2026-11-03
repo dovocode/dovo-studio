@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
-import { rm, writeFile, mkdtemp } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { startRuntime } from '../../index'
@@ -216,4 +216,103 @@ it('housekeeping removes clean archived worktrees only when the setting is on', 
   expect(await housekeeping.removeArchivedWorktrees()).toEqual([clean])
   expect(existsSync(clean)).toBe(false)
   expect(existsSync(join(dirty, 'unsaved.txt'))).toBe(true)
+})
+
+it('protects a standalone terminal worktree while its shell runs, then allows safe orphan removal', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const roots = await mkdtemp(join(tmpdir(), 'dovo-terminal-worktree-'))
+  cleanups.push(() => rm(roots, { recursive: true, force: true }))
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'terminal-worktree-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const base = runtime.services
+  base.store.update(() => f.workspace)
+  base.preferences.save({ worktreesRoot: roots })
+  const common = (
+    await base.git.command(f.directory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  ).trim()
+  // What the standalone terminal backend records: a managed worktree with no task owner.
+  const created = join(roots, 'repo', 'terminal-checkout')
+  await base.git.command(f.directory, ['worktree', 'add', '-b', 'dovo/terminal-checkout', created])
+  base.store.rememberWorktree(common, created)
+  const external = join(roots, 'external', 'checkout')
+  await base.git.command(f.directory, ['worktree', 'add', '-b', 'external-work', external])
+  await mkdir(join(created, 'src'))
+  await mkdir(join(external, 'src'))
+  let calls = 0
+  let liveFrom = 1
+  let exited = false
+  // Settled and snoozed shells keep running, so they still hold the checkout.
+  const shells = () => [
+    {
+      title: 'Terminal 3',
+      exited,
+      directory: join(created, 'src'),
+      settledAt: '2026-11-03T00:00:00.000Z',
+      snoozedUntil: '2099-01-01T00:00:00.000Z',
+    },
+    { title: 'External shell', exited: false, directory: external },
+  ]
+  const s = {
+    ...base,
+    terminals: { list: () => (++calls >= liveFrom ? shells() : []) },
+  }
+  const listed = async () => {
+    const { worktrees } = await runClientEffect(listWorktreesEffect(s))
+    return {
+      created: worktrees.find((item) => item.path.endsWith(join('repo', 'terminal-checkout'))),
+      external: worktrees.find((item) => item.path.endsWith(join('external', 'checkout'))),
+    }
+  }
+  const path = (await listed()).created?.path ?? created
+
+  expect((await listed()).created).toMatchObject({
+    state: 'active',
+    taskTitle: 'Terminal 3',
+    threadIds: [],
+    dirty: false,
+  })
+  expect((await listed()).created?.taskId).toBeUndefined()
+  // Unremembered external worktrees stay unowned even while a shell uses them.
+  expect((await listed()).external).toBeUndefined()
+  await expect(runClientEffect(removeWorktreeEffect(s, external))).rejects.toThrow(
+    'no longer listed',
+  )
+
+  await writeFile(join(created, 'notes.txt'), 'unsaved terminal work\n')
+  for (const orphanOnly of [false, true])
+    await expect(runClientEffect(removeWorktreeEffect(s, path, orphanOnly))).rejects.toThrow(
+      'open in Terminal 3',
+    )
+  expect(await readFile(join(created, 'notes.txt'), 'utf8')).toBe('unsaved terminal work\n')
+
+  // A shell that opens while Git inspects the checkout is caught right before removal.
+  await rm(join(created, 'notes.txt'))
+  calls = 0
+  liveFrom = 3
+  await expect(runClientEffect(removeWorktreeEffect(s, path))).rejects.toThrow('open in Terminal 3')
+  expect(existsSync(created)).toBe(true)
+
+  // Once the shell has exited the checkout is an ordinary orphan: dirty work is still refused.
+  liveFrom = 1
+  exited = true
+  await writeFile(join(created, 'notes.txt'), 'still unsaved\n')
+  expect((await listed()).created).toMatchObject({ state: 'missing', dirty: true })
+  expect((await listed()).created?.taskTitle).toBeUndefined()
+  await expect(runClientEffect(removeWorktreeEffect(s, path))).rejects.toThrow(
+    'uncommitted changes',
+  )
+  expect(await readFile(join(created, 'notes.txt'), 'utf8')).toBe('still unsaved\n')
+  await rm(join(created, 'notes.txt'))
+  await runClientEffect(removeWorktreeEffect(s, path, true))
+  expect(existsSync(created)).toBe(false)
+  expect(base.store.managedWorktrees(common)).not.toContain(path)
+  expect(
+    (await base.git.command(f.directory, ['branch', '--list', 'dovo/terminal-checkout'])).trim(),
+  ).not.toBe('')
+  expect(existsSync(external)).toBe(true)
 })

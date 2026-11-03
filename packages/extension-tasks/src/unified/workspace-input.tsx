@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Globe2, MessageSquare, Monitor, Sparkles, Terminal } from 'lucide-react'
-import { randomUUID, runtimeComputerName, workspaceRouteSchema, type Task } from '@dovo/protocol'
+import {
+  randomUUID,
+  runtimeComputerName,
+  terminalShellsResponseSchema,
+  workspaceRouteSchema,
+  type Task,
+  type TerminalShell,
+} from '@dovo/protocol'
 import { createTask, resolveTaskDefaults, responses, useWorkspace } from '@dovo/studio-core'
 import { Button, ChoicePicker, Input } from '@dovo/studio-ui'
 import { browserAddress } from '../browser/shared-browser-tabs'
@@ -33,6 +40,45 @@ export function WorkspaceInput({
     !!active.id &&
     active.runtimeId === store.activeRuntimeId
   const [repositoryId, setRepositoryId] = useState('')
+  const [shellId, setShellId] = useState('default')
+  const [shellRetry, setShellRetry] = useState(0)
+  const [catalog, setCatalog] = useState<{
+    ownerId?: string
+    shells?: TerminalShell[]
+    error?: string
+  }>({})
+  const owner = store.runtimes.find((entry) => entry.profile.id === store.activeRuntimeId)
+  const readRuntime = store.readRuntime
+  useEffect(() => {
+    if (mode !== 'terminal') return
+    let current = true
+    const ownerId = owner?.profile.id
+    setCatalog({ ownerId })
+    if (!owner || !store.connected) return
+    void readRuntime(
+      owner.profile,
+      '/api/terminals/shells',
+      {},
+      terminalShellsResponseSchema,
+      'POST',
+    )
+      .then(({ shells }) => {
+        if (!current) return
+        setCatalog({ ownerId, shells })
+        setShellId((selected) =>
+          shells.some((shell) => shell.id === selected) ? selected : 'default',
+        )
+      })
+      .catch((cause: unknown) => {
+        if (current) setCatalog({ ownerId, error: String(cause) })
+      })
+    return () => {
+      current = false
+    }
+  }, [mode, owner?.profile.id, store.connected, readRuntime, shellRetry])
+  const shellReady =
+    catalog.ownerId === store.activeRuntimeId &&
+    !!catalog.shells?.some((shell) => shell.id === shellId)
   const current = useRef({
     text,
     runtimeId: store.activeRuntimeId,
@@ -51,6 +97,7 @@ export function WorkspaceInput({
     setMode('auto')
     setReason('')
     setRepositoryId('')
+    setShellId('default')
     setError('')
   }, [store.activeRuntimeId])
 
@@ -83,9 +130,10 @@ export function WorkspaceInput({
         if (!url) throw new Error('Enter a browser address.')
         await onBrowser(url)
       } else if (mode === 'terminal') {
+        if (!shellReady) throw new Error('Choose an available shell before running the command.')
         const session = await store.request(
           '/api/terminals/workspace',
-          { repositoryId: repositoryId || undefined, command: text },
+          { repositoryId: repositoryId || undefined, command: text, shellId },
           responses.terminal,
         )
         if (valid() && original.runtimeId)
@@ -216,7 +264,12 @@ export function WorkspaceInput({
           aria-label={actionLabel}
           title={actionLabel}
           className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs"
-          disabled={busy || !text.trim() || (mode !== 'browser' && !store.connected)}
+          disabled={
+            busy ||
+            !text.trim() ||
+            (mode !== 'browser' && !store.connected) ||
+            (mode === 'terminal' && !shellReady)
+          }
         >
           <span className="hidden sm:inline">
             {mode === 'auto' && !busy ? 'Route' : actionLabel}
@@ -239,6 +292,40 @@ export function WorkspaceInput({
       </div>
       {(mode === 'terminal' || mode === 'thread') && (
         <div className="flex flex-wrap items-center gap-3 px-1 text-xs">
+          {mode === 'terminal' && (
+            <>
+              <ChoicePicker
+                aria-label="Workspace terminal shell"
+                className="h-7 w-40 border-transparent bg-muted/40 text-xs shadow-none"
+                value={shellId}
+                disabled={busy || !shellReady}
+                onValueChange={setShellId}
+              >
+                {catalog.ownerId === store.activeRuntimeId && catalog.shells ? (
+                  catalog.shells.map((shell) => (
+                    <option key={shell.id} value={shell.id}>
+                      {shell.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="default">Loading shells…</option>
+                )}
+              </ChoicePicker>
+              {catalog.ownerId === store.activeRuntimeId && catalog.error && (
+                <span role="alert" className="text-destructive">
+                  Could not load shells: {catalog.error}{' '}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShellRetry((value) => value + 1)}
+                  >
+                    Retry shells
+                  </Button>
+                </span>
+              )}
+            </>
+          )}
           {mode === 'thread' && active?.kind === 'thread' && active.id && (
             <label className="flex items-center gap-2 text-muted-foreground">
               <input

@@ -232,9 +232,9 @@ export function TerminalPane({
       request(
         taskId === STUDIO_TERMINAL_SCOPE ? '/api/terminals/workspace' : '/api/terminals',
         taskId === STUDIO_TERMINAL_SCOPE
-          ? {
-              repositoryId: active ? active.repositoryId : repositoryId,
-            }
+          ? active
+            ? { sourceTerminalId: active.id }
+            : { repositoryId }
           : {
               taskId,
               checkoutId: split ? active?.checkoutId : checkoutId || undefined,

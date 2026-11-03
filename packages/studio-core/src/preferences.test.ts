@@ -497,3 +497,18 @@ it('persists calendar snoozes and info order independently of visibility and old
     taskSnoozeSchedule: { morningTime: '09:00', eveningTime: '18:00', weekStartsOn: 1 },
   })
 })
+
+it('keeps hiding normal modes opt-in and persisted separately from unified', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().unifiedWorkspaceHideNormalModes).toBe(false)
+  updateAppPreferences({ unifiedWorkspaceHideNormalModes: true })
+  expect(readAppPreferences()).toMatchObject({
+    unifiedWorkspaceHideNormalModes: true,
+    unifiedWorkspaceEnabled: false,
+  })
+  expect(
+    JSON.parse(saved.getItem('dovo.app-preferences.v1')!).unifiedWorkspaceHideNormalModes,
+  ).toBe(true)
+})

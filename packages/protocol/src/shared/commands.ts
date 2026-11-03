@@ -68,6 +68,19 @@ export const commandSettingsResponse = mutableStruct({
   settings: commandsSchema,
   defaultShell: Schema.String,
 })
+export const terminalShellsResponseSchema = mutableStruct({
+  shells: mutableArray(
+    mutableStruct({
+      id: Schema.String,
+      label: Schema.String,
+      path: Schema.String,
+      args: mutableArray(Schema.String),
+    }),
+  ),
+})
+export type TerminalShell = Schema.Schema.Type<
+  typeof terminalShellsResponseSchema
+>['shells'][number]
 export const commandFields = [
   {
     id: 'shell',

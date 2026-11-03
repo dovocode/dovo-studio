@@ -1,10 +1,19 @@
 import { homedir } from 'node:os'
-import { realpath } from 'node:fs/promises'
+import { realpath, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { decode, responses, STUDIO_TERMINAL_SCOPE, taskSchema } from '@dovo/protocol'
+import {
+  decode,
+  responses,
+  STUDIO_TERMINAL_SCOPE,
+  SCRATCH_PROJECT_ID,
+  taskSchema,
+  terminalShellsResponseSchema,
+} from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
+import { HttpError } from '../errors'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
@@ -30,12 +39,15 @@ async function setup() {
     request('/api/terminals/workspace', input, credential)
   const update = (input: unknown, credential = token) =>
     request('/api/terminals/update', input, credential)
-  return { ...f, runtime, post, update }
+  return { ...f, runtime, post, update, request, token }
 }
 it('opens home and project shells for a paired device without creating threads', async () => {
   const { runtime, post, directory, workspace } = await setup()
   const home = decode(responses.terminal, await (await post({})).json())
   expect(home.taskId).toBe(STUDIO_TERMINAL_SCOPE)
+  expect(home.directory).toBe(await realpath(homedir()))
+  expect(home.shellId).toBe('default')
+  expect(home.execution).toBe('main')
   expect(runtime.services.terminals.get(home.id).directory).toBe(await realpath(homedir()))
   const project = decode(
     responses.terminal,
@@ -107,7 +119,7 @@ it('pins, settles, reopens and snoozes a standalone shell without replacing or s
 })
 
 it('supports thread terminals but denies lifecycle mutations even to a run that owns the terminal', async () => {
-  const { runtime, directory, update } = await setup()
+  const { runtime, directory, update, post, request } = await setup()
   const task = decode(taskSchema, {
     id: 'terminal-thread',
     title: 'Terminal thread',
@@ -138,6 +150,9 @@ it('supports thread terminals but denies lifecycle mutations even to a run that 
     new AbortController().signal,
   )
   runtime.services.runCredentials.addTerminal(credential, terminal.id)
+  expect((await post({}, credential)).status).toBe(403)
+  expect((await request('/api/terminals/shells', {}, credential)).status).toBe(403)
+  expect((await post({ sourceTerminalId: terminal.id })).status).toBe(400)
   expect((await update({ id: terminal.id, settled: true }, credential)).status).toBe(403)
   expect(runtime.services.terminals.get(terminal.id).info.settledAt).toBeUndefined()
   expect((await update({ id: terminal.id, pinned: true, settled: true })).status).toBe(200)
@@ -217,3 +232,265 @@ it('validates lifecycle input atomically and requires paired or owner authorizat
     ],
   })
 })
+
+it('lists owning-computer shells for paired and owner clients and launches the selected shell', async () => {
+  const { runtime, request, post } = await setup()
+  const response = await request('/api/terminals/shells', {})
+  expect(response.status).toBe(200)
+  const { shells } = decode(terminalShellsResponseSchema, await response.json())
+  expect(shells[0]?.id).toBe('default')
+  expect((await request('/api/terminals/shells', {}, ownerToken)).status).toBe(200)
+  expect((await request('/api/terminals/shells', {}, 'unpaired')).status).toBe(401)
+  const shell = shells.find((item) => item.id !== 'default') ?? shells[0]!
+  const opened = await post({ shellId: shell.id })
+  expect(opened.status).toBe(200)
+  const terminal = decode(responses.terminal, await opened.json())
+  expect(terminal.shellId).toBe(shell.id)
+  const session = runtime.services.terminals.get(terminal.id)
+  expect(session.command).toBe(shell.path)
+  expect(session.launch.args).toEqual(shell.args)
+})
+
+it('creates a standalone worktree from the selected base and splits without creating another checkout', async () => {
+  const { runtime, post, directory } = await setup()
+  const s = runtime.services
+  s.preferences.save({
+    worktreesRoot: join(directory, 'managed-worktrees'),
+    branchPrefix: 'custom/',
+  })
+  await s.git.command(directory, ['branch', 'terminal-base'])
+  const add = vi.spyOn(s.git, 'addWorktree')
+  const response = await post({
+    repositoryId: 'repo',
+    execution: 'worktree',
+    worktreeBaseBranch: 'terminal-base',
+  })
+  expect(response.status).toBe(200)
+  const terminal = decode(responses.terminal, await response.json())
+  expect(terminal).toMatchObject({
+    taskId: STUDIO_TERMINAL_SCOPE,
+    repositoryId: 'repo',
+    execution: 'worktree',
+    shellId: 'default',
+  })
+  expect(terminal.directory).toContain(join(directory, 'managed-worktrees', 'terminal-'))
+  expect(terminal.checkoutBranch).toMatch(/^custom\/terminal-/)
+  expect(add).toHaveBeenCalledTimes(1)
+  expect(add.mock.calls[0]?.[2].at(-1)).toBe('refs/heads/terminal-base')
+  const common = (
+    await s.git.command(directory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  ).trim()
+  expect(s.store.managedWorktrees(common)).toContain(terminal.directory)
+  const splitResponse = await post({ sourceTerminalId: terminal.id })
+  expect(splitResponse.status).toBe(200)
+  const split = decode(responses.terminal, await splitResponse.json())
+  expect(split.id).not.toBe(terminal.id)
+  expect(split).toMatchObject({
+    directory: terminal.directory,
+    shellId: terminal.shellId,
+    execution: 'worktree',
+    checkoutBranch: terminal.checkoutBranch,
+    repositoryId: 'repo',
+  })
+  expect(s.terminals.get(split.id).launch).toEqual(s.terminals.get(terminal.id).launch)
+  expect(add).toHaveBeenCalledTimes(1)
+  expect(s.store.get().tasks).toEqual([])
+  expect((await post({ sourceTerminalId: terminal.id, shellId: 'default' })).status).toBe(400)
+  expect((await post({ sourceTerminalId: 'missing' })).status).toBe(404)
+  await s.terminals.close(terminal.id)
+  await s.terminals.close(split.id)
+  expect(await s.git.command(directory, ['worktree', 'list', '--porcelain'])).toContain(
+    terminal.directory,
+  )
+})
+
+it('opens only registered existing worktrees of the selected project', async () => {
+  const { runtime, post, directory } = await setup()
+  const target = join(directory, 'existing-worktree')
+  await runtime.services.git.addWorktree(directory, target, [
+    '-b',
+    'existing-terminal',
+    target,
+    'HEAD',
+  ])
+  const add = vi.spyOn(runtime.services.git, 'addWorktree')
+  const response = await post({
+    repositoryId: 'repo',
+    execution: 'worktree',
+    existingWorktreePath: target,
+  })
+  expect(response.status).toBe(200)
+  expect(decode(responses.terminal, await response.json())).toMatchObject({
+    directory: await realpath(target),
+    execution: 'worktree',
+    checkoutBranch: 'existing-terminal',
+  })
+  expect(add).not.toHaveBeenCalled()
+  expect((await post({ repositoryId: 'repo', existingWorktreePath: homedir() })).status).toBe(400)
+  const unrelated = await fixture()
+  cleanups.unshift(unrelated.cleanup)
+  const unrelatedTree = join(unrelated.directory, 'other-tree')
+  await runtime.services.git.addWorktree(unrelated.directory, unrelatedTree, [
+    '--detach',
+    unrelatedTree,
+    'HEAD',
+  ])
+  expect((await post({ repositoryId: 'repo', existingWorktreePath: unrelatedTree })).status).toBe(
+    400,
+  )
+})
+
+it('rejects invalid starter choices and unauthorized creation before worktree mutations', async () => {
+  const { runtime, post, directory } = await setup()
+  const add = vi.spyOn(runtime.services.git, 'addWorktree')
+  for (const input of [
+    { repositoryId: 'repo', execution: 'worktree', shellId: 'not-installed' },
+    { repositoryId: 'repo', execution: 'worktree', worktreeBaseBranch: '--orphan' },
+    { repositoryId: 'repo', execution: 'main', existingWorktreePath: directory },
+    { execution: 'worktree' },
+    { worktreeBaseBranch: 'main' },
+  ])
+    expect((await post(input)).status).toBe(400)
+  expect((await post({ repositoryId: 'repo', execution: 'worktree' }, 'unpaired')).status).toBe(401)
+  expect(add).not.toHaveBeenCalled()
+  expect(runtime.services.terminals.list()).toEqual([])
+})
+
+it('rechecks project selection and pairing after asynchronous checkout inspection', async () => {
+  const { runtime, post, token } = await setup()
+  const s = runtime.services
+  const inspect = s.git.inspect.bind(s.git)
+  const add = vi.spyOn(s.git, 'addWorktree')
+  vi.spyOn(s.git, 'inspect').mockImplementationOnce(async (...args) => {
+    const result = await inspect(...args)
+    s.store.update((workspace) => ({ ...workspace, repositories: [] }))
+    return result
+  })
+  const repositories = s.store.get().repositories
+  expect((await post({ repositoryId: 'repo', execution: 'worktree' })).status).toBe(409)
+  s.store.update((workspace) => ({ ...workspace, repositories }))
+  vi.spyOn(s.git, 'inspect').mockImplementationOnce(async (...args) => {
+    const result = await inspect(...args)
+    const device = s.devices.list().find((entry) => entry.name === 'Paired computer')!
+    s.devices.revoke(device.id)
+    return result
+  })
+  expect((await post({ repositoryId: 'repo', execution: 'worktree' }, token)).status).toBe(401)
+  expect(add).not.toHaveBeenCalled()
+  expect(s.terminals.list()).toEqual([])
+})
+
+it('treats the No Project id as home even when its scratch directory is unavailable', async () => {
+  const { runtime, post } = await setup()
+  for (const registered of [false, true]) {
+    if (registered)
+      runtime.services.store.update((workspace) => ({
+        ...workspace,
+        repositories: [
+          ...workspace.repositories,
+          {
+            id: SCRATCH_PROJECT_ID,
+            name: 'No Project',
+            kind: 'scratch',
+            path: '/unavailable/managed-scratch',
+            branch: '',
+          },
+        ],
+      }))
+    const response = await post({ repositoryId: SCRATCH_PROJECT_ID })
+    expect(response.status).toBe(200)
+    const terminal = decode(responses.terminal, await response.json())
+    expect(terminal.directory).toBe(await realpath(homedir()))
+    expect(terminal.repositoryId).toBeUndefined()
+    expect((await post({ repositoryId: SCRATCH_PROJECT_ID, execution: 'worktree' })).status).toBe(
+      400,
+    )
+  }
+  expect(runtime.services.store.get().tasks).toEqual([])
+})
+
+it('preserves and registers the created worktree when pairing is revoked during creation', async () => {
+  const { runtime, post, directory } = await setup()
+  const s = runtime.services
+  s.preferences.save({ worktreesRoot: join(directory, 'managed-worktrees') })
+  const common = (
+    await s.git.command(directory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  ).trim()
+  const add = s.git.addWorktree.bind(s.git)
+  let created: string | undefined
+  vi.spyOn(s.git, 'addWorktree').mockImplementationOnce(async (...args) => {
+    await add(...args)
+    created = await realpath(args[1])
+    // Clear the GitService callback's registration to verify the helper records it too.
+    s.store.forgetWorktree(common, created)
+    const device = s.devices.list().find((entry) => entry.name === 'Paired computer')!
+    s.devices.revoke(device.id)
+  })
+  expect((await post({ repositoryId: 'repo', execution: 'worktree' })).status).toBe(401)
+  expect(created).toEqual(expect.any(String))
+  expect(s.store.managedWorktrees(common)).toContain(created)
+  expect(await s.git.command(directory, ['worktree', 'list', '--porcelain'])).toContain(created)
+  expect(s.terminals.list()).toEqual([])
+  expect(s.store.get().tasks).toEqual([])
+})
+
+it('rejects a missing configured default shell before creating any worktree directory', async () => {
+  const { runtime, post, directory } = await setup()
+  const s = runtime.services
+  const root = join(directory, 'unused-worktrees')
+  s.preferences.save({ worktreesRoot: root })
+  s.commands.save({ ...s.commands.get(), shell: join(directory, 'missing-shell') })
+  const add = vi.spyOn(s.git, 'addWorktree')
+  const response = await post({ repositoryId: 'repo', execution: 'worktree' })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({
+    error: 'This shell is not available on the selected computer.',
+  })
+  expect(add).not.toHaveBeenCalled()
+  await expect(readdir(root)).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(s.terminals.list()).toEqual([])
+})
+
+it.each([
+  { failure: new Error('Shell spawn failed'), status: 500 },
+  {
+    failure: new HttpError(409, 'Close a terminal before opening another (limit 20)'),
+    status: 409,
+  },
+])(
+  'keeps and identifies a new worktree when shell creation fails with status $status',
+  async ({ failure, status }) => {
+    const { runtime, post, directory } = await setup()
+    const s = runtime.services
+    s.preferences.save({ worktreesRoot: join(directory, 'managed-worktrees') })
+    const add = vi.spyOn(s.git, 'addWorktree')
+    vi.spyOn(s.terminals, 'createCommand').mockImplementation(() => {
+      throw failure
+    })
+    const response = await post({ repositoryId: 'repo', execution: 'worktree' })
+    expect(response.status).toBe(status)
+    expect(add).toHaveBeenCalledTimes(1)
+    const kept = await realpath(add.mock.calls[0]![1])
+    expect(await response.json()).toMatchObject({
+      error: `${failure.message}\nWorktree kept at ${kept}`,
+    })
+    const common = (
+      await s.git.command(directory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    ).trim()
+    expect(s.store.managedWorktrees(common)).toContain(kept)
+    expect(await s.git.command(directory, ['worktree', 'list', '--porcelain'])).toContain(kept)
+    expect(s.terminals.list()).toEqual([])
+
+    const existing = await post({
+      repositoryId: 'repo',
+      execution: 'worktree',
+      existingWorktreePath: kept,
+    })
+    expect(existing.status).toBe(status)
+    expect(await existing.json()).toMatchObject({ error: failure.message })
+    const main = await post({ repositoryId: 'repo' })
+    expect(main.status).toBe(status)
+    expect(await main.json()).toMatchObject({ error: failure.message })
+    expect(add).toHaveBeenCalledTimes(1)
+  },
+)
