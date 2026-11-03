@@ -44,6 +44,7 @@ export function TerminalPane({
   repositoryId,
   autoCreate = true,
   onSelectSession,
+  onNewSession,
   sessionScopeId,
   onSessionsClosed,
 }: {
@@ -57,6 +58,8 @@ export function TerminalPane({
   repositoryId?: string
   autoCreate?: boolean
   onSelectSession?: (id: string) => void
+  /** Standalone sessions are opened through the workspace starter and sidebar. */
+  onNewSession?: () => void
   /** Fixed standalone workspace anchor. Only this session and locally created peers are shown. */
   sessionScopeId?: string
   /** Confirmed successful closes only, including the successful subset of a failed batch. */
@@ -309,6 +312,10 @@ export function TerminalPane({
     })
   }
   const create = (split?: TerminalGroup['layout']) => {
+    if (scopedSession && !split) {
+      onNewSession?.()
+      return
+    }
     if (split && splitLimit) return
     const generation = currentScope.current.generation
     act(() =>
@@ -403,38 +410,52 @@ export function TerminalPane({
           ))}
         </ChoicePicker>
       )}
-      <header className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
-        {groups.map((tab, index) => {
-          const session = sessions.find((session) => session.id === tab.sessions[0])!
-          return (
-            <div key={tab.id} className="flex shrink-0 items-center rounded">
-              <Button
-                size="sm"
-                variant="ghost"
-                className={cn('h-6 px-2 text-[0.625rem]', tab.id === group?.id && 'bg-accent')}
-                onClick={() => focusPane(session.id)}
-              >
-                {tab.sessions.length > 1
-                  ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
-                  : session.title}
-                {task?.linkedCheckouts?.length ? ` · ${checkoutLabel(session)}` : ''}
-                {session.exited ? ' · exited' : ''}
-              </Button>
-              <IconButton
-                label={`Close terminal tab ${index + 1}`}
-                className="size-6"
-                disabled={!connected || busy}
-                onClick={() => askClose(tab.sessions)}
-              >
-                <X size={12} />
-              </IconButton>
-            </div>
-          )
-        })}
+      <header
+        aria-label={scopedSession ? 'Terminal controls' : 'Terminal tabs and controls'}
+        className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2"
+      >
+        {!scopedSession &&
+          groups.map((tab, index) => {
+            const session = sessions.find((session) => session.id === tab.sessions[0])!
+            return (
+              <div key={tab.id} data-terminal-tab className="flex shrink-0 items-center rounded">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={cn('h-6 px-2 text-[0.625rem]', tab.id === group?.id && 'bg-accent')}
+                  onClick={() => focusPane(session.id)}
+                >
+                  {tab.sessions.length > 1
+                    ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
+                    : session.title}
+                  {task?.linkedCheckouts?.length ? ` · ${checkoutLabel(session)}` : ''}
+                  {session.exited ? ' · exited' : ''}
+                </Button>
+                <IconButton
+                  label={`Close terminal tab ${index + 1}`}
+                  className="size-6"
+                  disabled={!connected || busy}
+                  onClick={() => askClose(tab.sessions)}
+                >
+                  <X size={12} />
+                </IconButton>
+              </div>
+            )
+          })}
+        {scopedSession && group && (
+          <IconButton
+            label="Close terminal session"
+            className="size-6"
+            disabled={!connected || busy}
+            onClick={() => askClose(group.sessions)}
+          >
+            <X size={12} />
+          </IconButton>
+        )}
         <IconButton
           label="New terminal session"
           className="size-6"
-          disabled={!connected || !shellReady || busy}
+          disabled={!connected || !shellReady || busy || (!!scopedSession && !onNewSession)}
           onClick={() => create()}
         >
           <Plus size={12} />

@@ -19,6 +19,7 @@ import type { TaskOwner } from '../list/task-collection'
 import { BrowserFavicon } from '../browser/browser-favicon'
 import { useBrowserProfileDetails } from '../browser/browser-profile-label'
 import type { BrowserTab } from '../browser/shared-browser-tabs'
+import type { TerminalStatusTone } from '../terminal/terminal-status'
 
 export type WorkspaceRowStatus = 'active' | 'snoozed' | 'settled'
 type RowShell = {
@@ -27,7 +28,7 @@ type RowShell = {
   disabled: boolean
   status: WorkspaceRowStatus
   onSelect: () => void
-  /** The item's Pin / Settle / Snooze menu, kept beside the row. */
+  /** The item's direct Pin / Settle / Snooze actions. */
   actions: ReactNode
 }
 
@@ -60,6 +61,7 @@ function RowFrame({
   children,
   actions,
   compact = false,
+  pinnedPage = false,
 }: {
   kind: 'Thread' | 'Page' | 'Terminal'
   title: string
@@ -67,6 +69,7 @@ function RowFrame({
   children: ReactNode
   actions: ReactNode
   compact?: boolean
+  pinnedPage?: boolean
 }) {
   return (
     <div
@@ -74,15 +77,25 @@ function RowFrame({
       aria-label={`${kind}: ${title}`}
       data-workspace-kind={kind.toLowerCase()}
       data-compact={compact || undefined}
+      data-pinned-page={pinnedPage || undefined}
       data-highlighted={selected || undefined}
-      className="studio-workspace-row group/workspace relative mb-[3px] min-w-0 [&:hover_.studio-thread-card-context:first-child]:pr-28 [&:focus-within_.studio-thread-card-context:first-child]:pr-28 has-[[data-state=open]]:[&_.studio-thread-card-context:first-child]:pr-28 [&:hover_.studio-browser-tab-title]:pr-28 [&:focus-within_.studio-browser-tab-title]:pr-28 has-[[data-state=open]]:[&_.studio-browser-tab-title]:pr-28 [@media(hover:none)]:[&_.studio-thread-card-context:first-child]:pr-28 [@media(hover:none)]:[&_.studio-browser-tab-title]:pr-28"
+      className={cn(
+        'studio-workspace-row group/workspace relative min-w-0',
+        !pinnedPage &&
+          'mb-[3px] [&:hover_.studio-thread-card-context:first-child]:pr-28 [&:focus-within_.studio-thread-card-context:first-child]:pr-28 has-[[data-state=open]]:[&_.studio-thread-card-context:first-child]:pr-28 [&:hover_.studio-browser-tab-title]:pr-28 [&:focus-within_.studio-browser-tab-title]:pr-28 has-[[data-state=open]]:[&_.studio-browser-tab-title]:pr-28 [@media(hover:none)]:[&_.studio-thread-card-context:first-child]:pr-28 [@media(hover:none)]:[&_.studio-browser-tab-title]:pr-28',
+      )}
     >
       <div className={cn('relative min-w-0', compact && '[&_.studio-thread-card-title]:pr-24')}>
         {children}
       </div>
       <div
         data-workspace-actions
-        className="absolute right-2 top-0.5 [[data-compact]_&]:top-1.5 pointer-events-none opacity-0 transition-opacity group-hover/workspace:pointer-events-auto group-hover/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+        className={cn(
+          'absolute pointer-events-none opacity-0 transition-opacity group-hover/workspace:pointer-events-auto group-hover/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100',
+          pinnedPage
+            ? 'inset-x-px bottom-px overflow-hidden rounded-b-xl border-t bg-popover text-popover-foreground [&_.studio-thread-actions]:gap-0 [&_button]:h-6 [&_button]:min-w-0 [&_button]:flex-1 [&_button]:gap-0 [&_button]:rounded-none [&_button]:px-0 [&_button]:text-[0px] [&_svg]:size-3'
+            : 'right-2 top-0.5 [[data-compact]_&]:top-1.5',
+        )}
       >
         {actions}
       </div>
@@ -91,8 +104,7 @@ function RowFrame({
 }
 
 /**
- * The thread list's own row, unchanged, with a mini message bubble under its project icon.
- * Offsets follow TaskRow's layout: px-2.5/py-2 padding and a size-7 icon (size-4 when settled).
+ * The thread list's own row, with its existing project, status and terminal identity.
  */
 export function WorkspaceThreadRow({
   task,
@@ -125,11 +137,7 @@ export function WorkspaceThreadRow({
       />
       <KindMark
         icon={MessageSquare}
-        className={cn(
-          'absolute',
-          // Settled rows shrink the icon to one line, so the bubble sits at its lower corner.
-          compact ? 'left-[20px] top-[18px]' : 'left-[17px] top-[40px]',
-        )}
+        className={cn('absolute', compact ? 'left-[20px] top-[18px]' : 'left-[17px] top-[40px]')}
       />
     </RowFrame>
   )
@@ -146,10 +154,13 @@ export function WorkspacePageRow({
   status,
   onSelect,
   actions,
+  pinnedPage = false,
 }: RowShell & {
   page: BrowserTab
   computer: string
   runtimeIcon?: RuntimeSnapshot['runtimeIcon']
+  /** Only the sidebar's pinned browser grid uses the Browser workspace's compact tile. */
+  pinnedPage?: boolean
 }) {
   const { name: profile, emoji } = useBrowserProfileDetails(page)
   const words = profile.trim().split(/\s+/)
@@ -162,46 +173,104 @@ export function WorkspacePageRow({
       : profile.slice(0, 2)
   ).toUpperCase()
   return (
-    <RowFrame kind="Page" title={title} selected={selected} actions={actions}>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-current={selected ? 'page' : undefined}
-        aria-label={`${title} · ${computer} · ${profile}`}
-        title={`${title}\n${page.url}\n${computer} · ${profile}`}
-        onClick={onSelect}
-        className={cn(
-          'studio-browser-tab flex w-full min-w-0 items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-xs transition-colors',
-          selected
-            ? 'bg-accent/70 text-foreground'
-            : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
-        )}
-      >
-        <span className="studio-browser-tab-source flex w-7 shrink-0 flex-col items-center gap-0.5">
-          <span className="studio-browser-tab-favicon inline-flex size-6 items-center justify-center">
-            <BrowserFavicon tab={page} />
-          </span>
-          <KindMark icon={Globe2} />
-        </span>
-        <span className="studio-browser-tab-title min-w-0 flex-1 truncate text-sm">{title}</span>
-        <span className="col-start-4 row-span-2 flex items-center gap-1">
-          {page.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-          <LifecycleMark status={status} />
-        </span>
-        <span
-          className="studio-browser-tab-profile flex shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground"
-          aria-hidden="true"
+    <RowFrame
+      kind="Page"
+      title={title}
+      selected={selected}
+      actions={actions}
+      pinnedPage={pinnedPage}
+    >
+      {pinnedPage ? (
+        <div
+          data-browser-tab-id={page.id}
+          data-pinned
+          data-active={selected || undefined}
+          className={cn(
+            'studio-browser-tab relative flex min-w-0 flex-col overflow-hidden rounded-xl border transition-colors',
+            selected
+              ? 'border-primary/30 bg-accent text-foreground shadow-sm'
+              : 'border-border/50 bg-background/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground',
+          )}
         >
-          <span className="studio-browser-tab-identity">
-            <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
+          <button
+            type="button"
+            data-browser-tab-select
+            disabled={disabled}
+            aria-current={selected ? 'page' : undefined}
+            aria-label={`${title} · ${computer} · ${profile}`}
+            title={`${title}\n${page.url}\n${computer} · ${profile}`}
+            onClick={onSelect}
+            className="studio-browser-tab-select flex h-14 w-full min-w-0 flex-none items-center justify-center px-2 py-2 text-left text-xs"
+          >
+            <span className="studio-browser-tab-source relative inline-flex h-10 w-8 shrink-0 items-start justify-center">
+              <span className="studio-browser-tab-favicon relative inline-flex size-8 items-center justify-center">
+                <BrowserFavicon tab={page} />
+                {status !== 'active' && (
+                  <span className="absolute -right-1 -top-0.5 rounded-full bg-sidebar">
+                    <LifecycleMark status={status} />
+                  </span>
+                )}
+              </span>
+              <span
+                className="studio-browser-tab-profile absolute inset-x-0 bottom-0 flex min-w-0 shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
+                aria-hidden="true"
+              >
+                <span className="studio-browser-tab-identity">
+                  <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
+                </span>
+                <span
+                  className={cn(
+                    'studio-browser-tab-identity overflow-hidden',
+                    emoji && 'text-[9px]',
+                  )}
+                >
+                  {emoji ?? initials}
+                </span>
+              </span>
+            </span>
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          aria-current={selected ? 'page' : undefined}
+          aria-label={`${title} · ${computer} · ${profile}`}
+          title={`${title}\n${page.url}\n${computer} · ${profile}`}
+          onClick={onSelect}
+          className={cn(
+            'studio-browser-tab flex w-full min-w-0 items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-xs transition-colors',
+            selected
+              ? 'bg-accent/70 text-foreground'
+              : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+          )}
+        >
+          <span className="studio-browser-tab-source flex w-7 shrink-0 flex-col items-center gap-0.5">
+            <span className="studio-browser-tab-favicon inline-flex size-6 items-center justify-center">
+              <BrowserFavicon tab={page} />
+            </span>
+            <KindMark icon={Globe2} />
+          </span>
+          <span className="studio-browser-tab-title min-w-0 flex-1 truncate text-sm">{title}</span>
+          <span className="col-start-4 row-span-2 flex items-center gap-1">
+            {page.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+            <LifecycleMark status={status} />
           </span>
           <span
-            className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+            className="studio-browser-tab-profile flex shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground"
+            aria-hidden="true"
           >
-            {emoji ?? initials}
+            <span className="studio-browser-tab-identity">
+              <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
+            </span>
+            <span
+              className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+            >
+              {emoji ?? initials}
+            </span>
           </span>
-        </span>
-      </button>
+        </button>
+      )}
     </RowFrame>
   )
 }
@@ -212,6 +281,8 @@ export function WorkspaceTerminalRow({
   checkout,
   checkoutIsBranch,
   state,
+  stateTone = 'muted',
+  stateDetail,
   computer,
   runtimeIcon,
   pinned,
@@ -226,14 +297,23 @@ export function WorkspaceTerminalRow({
   project: string
   checkout: string
   checkoutIsBranch: boolean
-  /** Running, exited… */
+  /** Program-reported activity or the shared fallback label. */
   state: string
+  stateTone?: TerminalStatusTone
+  stateDetail?: string
   computer: string
   runtimeIcon?: RuntimeSnapshot['runtimeIcon']
   pinned: boolean
   offline: boolean
 }) {
   const exited = state.startsWith('Exited')
+  const toneClass = {
+    muted: 'text-muted-foreground',
+    working: 'text-primary',
+    warning: 'text-status-warning',
+    success: 'text-status-success',
+    error: 'text-destructive',
+  }[offline ? 'muted' : stateTone]
   return (
     <RowFrame kind="Terminal" title={title} selected={selected} actions={actions}>
       <div
@@ -266,7 +346,7 @@ export function WorkspaceTerminalRow({
               <span className="min-w-0 flex-1 truncate">{project}</span>
               {pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
               <LifecycleMark status={status} />
-              <span className={cn('shrink-0', !exited && !offline && 'text-primary')}>
+              <span title={stateDetail} className={cn('shrink-0', toneClass)}>
                 {offline ? 'Offline' : state}
               </span>
             </span>

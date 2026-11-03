@@ -9,13 +9,12 @@ import {
   type SetStateAction,
 } from 'react'
 import {
-  ChevronRight,
+  ChevronDown,
   Globe2,
   House,
   MessageSquare,
   Terminal,
   X,
-  Plus,
   Search,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -27,6 +26,8 @@ import {
   runtimeComputerName,
   STUDIO_BROWSER_SCOPE,
   STUDIO_TERMINAL_SCOPE,
+  taskFamilyInputIds,
+  taskIsWorking,
   wakeBrowserTab,
   type RuntimeSnapshot,
   type TerminalInfo,
@@ -69,10 +70,16 @@ import {
   terminalContext,
   useWorkspaceComputers,
 } from '../terminal/terminal-workspace'
+import { terminalStatus, type TerminalStatusTone } from '../terminal/terminal-status'
 import { WorkspaceInput } from './workspace-input'
 import { WorkspaceResourceMenu } from './workspace-resource-menu'
 import { workspaceIdentity } from './workspace-identity'
-import { WorkspacePageRow, WorkspaceTerminalRow, WorkspaceThreadRow } from './workspace-rows'
+import {
+  WorkspacePageRow,
+  WorkspaceTerminalRow,
+  WorkspaceThreadRow,
+  type WorkspaceRowStatus,
+} from './workspace-rows'
 import {
   closeWorkspaceTab,
   openWorkspaceTab,
@@ -84,8 +91,7 @@ import {
   type WorkspaceTab,
 } from './workspace-tabs'
 
-const icons = { thread: MessageSquare, browser: Globe2, terminal: Terminal }
-type ResourceStatus = 'active' | 'snoozed' | 'settled'
+type ResourceStatus = WorkspaceRowStatus | 'needs-input' | 'working' | 'waiting'
 /** One sidebar row; every kind exposes the same Pin / Settle / Snooze workflow. */
 type WorkspaceResource = {
   tab: WorkspaceTab
@@ -110,6 +116,8 @@ type WorkspaceResource = {
         /** True only for a known branch; folders and unknown checkouts are not branches. */
         checkoutIsBranch: boolean
         state: string
+        stateTone: TerminalStatusTone
+        stateDetail?: string
         computer: string
         runtimeIcon?: RuntimeIcon
       }
@@ -117,7 +125,10 @@ type WorkspaceResource = {
 type RuntimeIcon = RuntimeSnapshot['runtimeIcon']
 const sections = [
   { id: 'pinned', name: 'Pinned' },
+  { id: 'needs-input', name: 'Needs input' },
   { id: 'active', name: 'Active' },
+  { id: 'working', name: 'Working' },
+  { id: 'waiting', name: 'Waiting' },
   { id: 'snoozed', name: 'Snoozed' },
   { id: 'settled', name: 'Settled' },
 ] as const
@@ -174,7 +185,10 @@ function WorkspaceContent() {
   const taskOwners = useRef(new Map<string, TaskOwner>())
   const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>({
     pinned: true,
+    'needs-input': true,
     active: true,
+    working: false,
+    waiting: false,
     snoozed: false,
     settled: false,
   })
@@ -406,7 +420,8 @@ function WorkspaceContent() {
         snapshot,
       })
       taskOwners.current.set(owner.profile.id, taskOwner)
-      const waiting = new Set(
+      const input = taskFamilyInputIds(
+        snapshot.workspace.tasks,
         [...(snapshot.questions ?? []), ...(snapshot.approvals ?? [])].map(
           (request) => request.taskId,
         ),
@@ -423,13 +438,25 @@ function WorkspaceContent() {
           // Capture the owner now so a later active-computer switch cannot redirect the write.
           const patch = (updates: Parameters<ReturnType<typeof taskActionClient>['patch']>[1]) =>
             taskActionClient(taskStore, source).patch(task, updates)
+          const needsInput = input.has(task.id)
           return {
             tab,
             title: task.title || 'Untitled thread',
             detail: source.name,
             offline: !owner.connected,
             pinned: !!task.pinned,
-            status: task.archived ? 'settled' : isSnoozed(task, now) ? 'snoozed' : 'active',
+            // Same precedence and activity helpers as TaskList; pinning wins in sectionOf.
+            status: task.archived
+              ? 'settled'
+              : needsInput
+                ? 'needs-input'
+                : isSnoozed(task, now)
+                  ? 'snoozed'
+                  : taskIsWorking(task)
+                    ? 'working'
+                    : task.waitingForFeedback
+                      ? 'waiting'
+                      : 'active',
             snoozedUntil: task.snoozedUntil ?? undefined,
             settleDisabled: task.status === 'running',
             pin: () => patch({ pinned: !task.pinned }),
@@ -439,7 +466,7 @@ function WorkspaceContent() {
               kind: 'thread',
               task,
               owner: taskOwner,
-              needsInput: waiting.has(task.id),
+              needsInput,
               terminals: shellCounts.get(task.id) ?? 0,
             },
           }
@@ -462,6 +489,7 @@ function WorkspaceContent() {
             await store.refreshRuntime(owner.profile).catch(() => undefined)
           }
           const snoozed = !!session.snoozedUntil && Date.parse(session.snoozedUntil) > now
+          const activity = terminalStatus(session, owner.connected)
           const repository = snapshot.workspace.repositories.find(
             (item) => item.id === session.repositoryId,
           )
@@ -475,7 +503,7 @@ function WorkspaceContent() {
             detail: `${source.name} · ${terminalContext(session, snapshot.workspace)}`,
             offline: !owner.connected,
             pinned: !!session.pinned,
-            status: snoozed ? 'snoozed' : session.settledAt ? 'settled' : 'active',
+            status: session.settledAt ? 'settled' : snoozed ? 'snoozed' : activity.section,
             snoozedUntil: session.snoozedUntil,
             pin: () => update({ pinned: !session.pinned }),
             settle: () => update({ settled: !session.settledAt, snoozedUntil: null }),
@@ -490,11 +518,9 @@ function WorkspaceContent() {
                   : (session.directory ??
                     (session.execution === 'worktree' ? 'Worktree' : 'Local checkout'))),
               checkoutIsBranch: branch !== undefined,
-              state: session.exited
-                ? session.exitCode === undefined
-                  ? 'Exited'
-                  : `Exited (${session.exitCode})`
-                : 'Running',
+              state: activity.label,
+              stateTone: activity.tone,
+              stateDetail: activity.detail,
               computer: source.name,
               runtimeIcon: snapshot.runtimeIcon,
             },
@@ -570,13 +596,15 @@ function WorkspaceContent() {
         workspaceTabKey(a.tab).localeCompare(workspaceTabKey(b.tab)),
     )
   /** One row per item, in its kind's established design; shared by the sidebar and overview. */
-  const renderResource = (resource: WorkspaceResource) => {
+  const renderResource = (resource: WorkspaceResource, pinnedPage = false) => {
     const key = workspaceTabKey(resource.tab)
+    const status: WorkspaceRowStatus =
+      resource.status === 'settled' || resource.status === 'snoozed' ? resource.status : 'active'
     const shell = {
       title: resource.title,
       selected: key === state.active,
       disabled: switching,
-      status: resource.status,
+      status,
       onSelect: () => open(resource.tab),
       actions: (
         <WorkspaceResourceMenu
@@ -596,7 +624,7 @@ function WorkspaceContent() {
     return row.kind === 'thread' ? (
       <WorkspaceThreadRow key={key} {...shell} {...row} />
     ) : row.kind === 'browser' ? (
-      <WorkspacePageRow key={key} {...shell} {...row} />
+      <WorkspacePageRow key={key} {...shell} {...row} pinnedPage={pinnedPage} />
     ) : (
       <WorkspaceTerminalRow
         key={key}
@@ -629,15 +657,15 @@ function WorkspaceContent() {
       document.querySelector<HTMLElement>('[data-workspace-input] textarea')?.focus(),
     )
   }
-  /** Closing keeps focus in the tab strip, or returns it to Home when no tab remains. */
+  /** Hiding an item focuses the remaining content, or returns to the Home composer. */
   const closeTab = (key: string) => {
     const next = closeWorkspaceTab(current.current, key)
     setState(next)
     requestAnimationFrame(() => {
-      const tab = next.active
-        ? document.getElementById(`workspace-tab-${encodeURIComponent(next.active)}`)
-        : null
-      ;(tab ?? document.querySelector<HTMLElement>('[data-workspace-input] textarea'))?.focus()
+      const target = next.active
+        ? document.getElementById('workspace-content')
+        : document.querySelector<HTMLElement>('[data-workspace-input] textarea')
+      target?.focus()
     })
   }
   // Sections follow the thread workflow; each one mixes threads, pages and terminals.
@@ -726,7 +754,7 @@ function WorkspaceContent() {
                   <button
                     type="button"
                     aria-label="Workspace home"
-                    title="Show workspace home; open tabs stay open"
+                    title="Show workspace home; open items stay open"
                     aria-current={!active ? 'page' : undefined}
                     className={cn(
                       'min-w-0 flex-1 rounded px-1 text-left text-xs font-medium hover:text-foreground',
@@ -736,6 +764,17 @@ function WorkspaceContent() {
                   >
                     Workspace
                   </button>
+                  {active && (
+                    <IconButton
+                      label={`Hide ${label(active)}`}
+                      title="Hide this open item; it remains available in the sidebar."
+                      className="size-7 text-muted-foreground"
+                      disabled={switching}
+                      onClick={() => closeTab(workspaceTabKey(active))}
+                    >
+                      <X className="size-3.5" />
+                    </IconButton>
+                  )}
                   <IconButton
                     label="New thread"
                     title="New thread"
@@ -803,33 +842,63 @@ function WorkspaceContent() {
                 {sidebarSections.map((section) => {
                   const expanded = searching || openSections[section.id]
                   return (
-                    <section
-                      key={section.id}
-                      aria-label={`${section.name} workspace items`}
-                      className="mb-2"
-                    >
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        disabled={searching}
-                        className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          setOpenSections((previous) => ({
-                            ...previous,
-                            [section.id]: !previous[section.id],
-                          }))
-                        }
+                    <section key={section.id} aria-label={`${section.name} workspace items`}>
+                      <details
+                        data-section={section.id}
+                        open={expanded}
+                        className="group studio-list-section mb-1 shrink-0"
                       >
-                        <ChevronRight
-                          className={cn(
-                            'size-3 shrink-0 transition-transform',
-                            expanded && 'rotate-90',
-                          )}
-                        />
-                        <span className="flex-1 text-left">{section.name}</span>
-                        <span className="tabular-nums">{section.items.length}</span>
-                      </button>
-                      {expanded && section.items.map(renderResource)}
+                        <summary
+                          aria-disabled={searching || undefined}
+                          className="studio-list-section-header"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            if (searching) return
+                            setOpenSections((previous) => ({
+                              ...previous,
+                              [section.id]: !previous[section.id],
+                            }))
+                          }}
+                        >
+                          <ChevronDown
+                            size={11}
+                            className="studio-list-section-chevron"
+                            aria-hidden="true"
+                          />
+                          {['needs-input', 'working', 'waiting', 'snoozed', 'settled'].includes(
+                            section.id,
+                          ) && <span className="studio-thread-section-dot" aria-hidden="true" />}
+                          <span className="min-w-0 flex-1 truncate">{section.name}</span>
+                          <span>{section.items.length}</span>
+                        </summary>
+                        {expanded && (
+                          <div className="pt-1">
+                            {section.id === 'pinned' ? (
+                              <>
+                                {section.items.some((item) => item.tab.kind === 'browser') && (
+                                  <div
+                                    role="group"
+                                    aria-label="Pinned browser tabs"
+                                    className="studio-browser-pins mb-1.5 grid grid-cols-[repeat(auto-fill,minmax(3rem,1fr))] gap-1.5"
+                                  >
+                                    {section.items
+                                      .filter((item) => item.tab.kind === 'browser')
+                                      .map((item) => renderResource(item, true))}
+                                  </div>
+                                )}
+                                {section.items
+                                  .filter((item) => item.tab.kind === 'thread')
+                                  .map((item) => renderResource(item))}
+                                {section.items
+                                  .filter((item) => item.tab.kind === 'terminal')
+                                  .map((item) => renderResource(item))}
+                              </>
+                            ) : (
+                              section.items.map((item) => renderResource(item))
+                            )}
+                          </div>
+                        )}
+                      </details>
                     </section>
                   )
                 })}
@@ -845,94 +914,23 @@ function WorkspaceContent() {
           </ResizableSidebar>
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!!state.tabs.length && (
-            <div
-              role="tablist"
-              aria-label="Workspace tabs"
-              className="flex min-h-11 shrink-0 items-center gap-1 overflow-x-auto border-b bg-sidebar/40 px-2 py-1"
-            >
-              {/* With the sidebar hidden, Home stays one click away; tabs stay mounted. */}
-              {sidebar?.collapsed && (
+          {sidebar?.collapsed && (
+            <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+              <Button size="sm" variant="ghost" aria-label="Workspace home" onClick={showHome}>
+                <House className="size-3.5" />
+                Workspace
+              </Button>
+              {active && (
                 <IconButton
-                  label="Workspace home"
-                  title="Show workspace home; open tabs stay open"
-                  aria-pressed={!active}
-                  className="size-7 shrink-0 text-muted-foreground"
-                  onClick={showHome}
+                  label={`Hide ${label(active)}`}
+                  title="Hide this open item; it remains available in the sidebar."
+                  className="ml-auto size-7 text-muted-foreground"
+                  disabled={switching}
+                  onClick={() => closeTab(workspaceTabKey(active))}
                 >
-                  <House className="size-3.5" />
+                  <X className="size-3.5" />
                 </IconButton>
               )}
-              {state.tabs.map((tab) => {
-                const key = workspaceTabKey(tab),
-                  Icon = icons[tab.kind]
-                return (
-                  <div
-                    key={key}
-                    className={cn(
-                      'group flex shrink-0 items-center rounded-lg border border-transparent pr-1',
-                      state.active === key
-                        ? 'border-border/60 bg-background shadow-sm'
-                        : 'hover:bg-accent/50',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      id={`workspace-tab-${encodeURIComponent(key)}`}
-                      aria-controls="workspace-tab-panel"
-                      aria-selected={state.active === key}
-                      tabIndex={state.active === key ? 0 : -1}
-                      onKeyDown={(event) => {
-                        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-                        event.preventDefault()
-                        const index = state.tabs.indexOf(tab)
-                        const next =
-                          event.key === 'Home'
-                            ? 0
-                            : event.key === 'End'
-                              ? state.tabs.length - 1
-                              : (index +
-                                  (event.key === 'ArrowRight' ? 1 : -1) +
-                                  state.tabs.length) %
-                                state.tabs.length
-                        open(state.tabs[next])
-                        event.currentTarget
-                          .closest('[role="tablist"]')
-                          ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-                          [next]?.focus()
-                      }}
-                      disabled={switching}
-                      // Unresolved tabs stay open; their tooltip says why (loading, offline, unavailable).
-                      title={workspaceIdentity(tab, { computers, browserTabs }).detail}
-                      className="flex max-w-52 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground aria-selected:text-foreground"
-                      onClick={() => open(tab)}
-                    >
-                      <Icon size={14} className="shrink-0" />
-                      <span className="truncate">{label(tab)}</span>
-                    </button>
-                    <IconButton
-                      label={`Close workspace tab ${label(tab)}`}
-                      title="Close this workspace tab; the session remains available in the sidebar."
-                      className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                      onClick={() => closeTab(key)}
-                    >
-                      <X size={12} />
-                    </IconButton>
-                  </div>
-                )
-              })}
-              <IconButton
-                label="New workspace tab"
-                title="New thread"
-                disabled={switching || !store.activeRuntimeId}
-                className="size-7 shrink-0 text-muted-foreground"
-                onClick={() =>
-                  open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
-                }
-              >
-                <Plus className="size-3.5" />
-              </IconButton>
             </div>
           )}
           {error && (
@@ -1005,17 +1003,20 @@ function WorkspaceContent() {
                   <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
                     Continue working
                   </h2>
-                  {continueWorking.map(renderResource)}
+                  {continueWorking.map((item) => renderResource(item))}
                 </section>
               )}
             </div>
           </div>
           <div
-            id="workspace-tab-panel"
-            role="tabpanel"
-            aria-labelledby={
-              active ? `workspace-tab-${encodeURIComponent(workspaceTabKey(active))}` : undefined
+            id="workspace-content"
+            role="region"
+            aria-label={
+              active
+                ? `${active.kind === 'browser' ? 'Page' : active.kind === 'thread' ? 'Thread' : 'Terminal'}: ${label(active)}`
+                : undefined
             }
+            tabIndex={-1}
             className={cn('flex min-h-0 min-w-0 flex-1 flex-col', !active && 'hidden')}
           >
             {switching && (
@@ -1062,6 +1063,7 @@ function WorkspaceContent() {
                           embedded
                           target={tab}
                           onHide={() => setState((previous) => closeWorkspaceTab(previous, key))}
+                          onNew={() => setCreatingTerminal(true)}
                           onLifecycleError={setLifecycleError}
                         />
                       ) : owner ? (

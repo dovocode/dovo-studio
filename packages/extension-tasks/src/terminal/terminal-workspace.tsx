@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlarmClock, ArrowUpRight, Check, Monitor, Plus, Search, Terminal } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, Monitor, Pencil, Plus, Search, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -33,6 +33,16 @@ import { ResizableSidebar } from '../detail/resizable-sidebar'
 import { TerminalPane } from './terminal-pane'
 import { TerminalStarter } from './terminal-starter'
 import { WorkspaceResourceMenu } from '../unified/workspace-resource-menu'
+import { WorkspaceTerminalRow } from '../unified/workspace-rows'
+import { terminalStatus, type TerminalStatusTone } from './terminal-status'
+
+const statusColors: Record<TerminalStatusTone, string> = {
+  muted: 'text-muted-foreground',
+  working: 'text-primary',
+  warning: 'text-status-warning',
+  success: 'text-status-success',
+  error: 'text-destructive',
+}
 
 const targetSchema = Schema.Struct({ runtimeId: Schema.String, id: Schema.String })
 export type TerminalTarget = Schema.Schema.Type<typeof targetSchema>
@@ -145,14 +155,126 @@ function TerminalResourceActions({
   )
 }
 
+function TerminalTitle({
+  owner,
+  session,
+  onError,
+}: {
+  owner: ReturnType<typeof useWorkspaceComputers>[number]
+  session: TerminalInfo
+  onError: (message: string) => void
+}) {
+  const store = useWorkspace()
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [pending, setPending] = useState(false)
+  const pendingRef = useRef(false)
+  const [error, setError] = useState('')
+  const save = async (next: string | null) => {
+    if (pendingRef.current || !owner.connected) return
+    pendingRef.current = true
+    setPending(true)
+    setError('')
+    onError('')
+    try {
+      await store.readRuntime(
+        owner.profile,
+        '/api/terminals/update',
+        { id: session.id, title: next },
+        responses.terminal,
+        'POST',
+      )
+      await store.refreshRuntime(owner.profile)
+      setOpen(false)
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      pendingRef.current = false
+      setPending(false)
+    }
+  }
+  return (
+    <>
+      <h1 className="min-w-0 text-sm font-medium">
+        <button
+          type="button"
+          aria-label="Rename terminal"
+          disabled={!owner.connected}
+          className="group/title inline-flex max-w-full items-center gap-1.5 text-left"
+          onClick={() => {
+            setTitle(session.title)
+            setError('')
+            setOpen(true)
+          }}
+        >
+          <span className="truncate">{session.title}</span>
+          <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 group-focus-visible/title:opacity-100" />
+        </button>
+      </h1>
+      <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
+        <DialogContent className="max-w-md">
+          <DialogTitle>Rename terminal</DialogTitle>
+          <DialogDescription>
+            Choose a name, or let the shell and its programs update it automatically.
+          </DialogDescription>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (title.trim()) void save(title.trim())
+            }}
+          >
+            <Input
+              aria-label="Terminal title"
+              autoFocus
+              maxLength={256}
+              value={title}
+              disabled={pending}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+            {error && (
+              <p role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={pending || !owner.connected}
+                onClick={() => void save(null)}
+              >
+                Use automatic title
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={pending}
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={pending || !owner.connected || !title.trim()}>
+                Save
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 export function WorkspaceTerminalSurface({
   target,
   onHide,
+  onNew,
   embedded = false,
   onLifecycleError,
 }: {
   target: TerminalTarget
   onHide: () => void
+  onNew?: () => void
   embedded?: boolean
   onLifecycleError?: (message: string) => void
 }) {
@@ -169,6 +291,7 @@ export function WorkspaceTerminalSurface({
   if (knownSession.current?.key !== targetKey) knownSession.current = undefined
   if (currentSession) knownSession.current = { key: targetKey, session: currentSession }
   const session = currentSession ?? knownSession.current?.session
+  const status = session ? terminalStatus(session, owner?.connected ?? false) : undefined
   const thread = owner?.snapshot?.workspace.tasks.find((task) => task.id === session?.taskId)
   if (!owner)
     return (
@@ -231,7 +354,7 @@ export function WorkspaceTerminalSurface({
         >
           <Terminal className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-medium">{session.title}</h1>
+            <TerminalTitle key={targetKey} owner={owner} session={session} onError={reportError} />
             <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
               <span className="truncate" title={session.directory}>
                 {terminalContext(session, owner.snapshot?.workspace)}
@@ -239,8 +362,15 @@ export function WorkspaceTerminalSurface({
               <span aria-hidden="true">·</span>
               <Monitor className="size-3 shrink-0" />
               <span className="truncate">{runtimeComputerName(owner)}</span>
-              {session.exited && <span>· Exited</span>}
+              {status && (
+                <span className={cn('shrink-0', statusColors[status.tone])}>· {status.label}</span>
+              )}
             </p>
+            {status?.detail && (
+              <p className="truncate text-xs text-muted-foreground" title={status.detail}>
+                {status.detail}
+              </p>
+            )}
           </div>
           <TerminalResourceActions owner={owner} session={session} onError={reportError} />
         </header>
@@ -274,6 +404,7 @@ export function WorkspaceTerminalSurface({
           repositoryId={session.repositoryId}
           autoCreate={false}
           onClose={onHide}
+          onNewSession={onNew}
           onSessionsClosed={(ids) => {
             if (ids.includes(target.id)) onHide()
           }}
@@ -301,6 +432,14 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   )
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    Pinned: true,
+    'Needs input': true,
+    Working: true,
+    Active: true,
+    Snoozed: false,
+    Settled: false,
+  })
   const [lifecycleError, setLifecycleError] = useState('')
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -362,98 +501,108 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {(['Pinned', 'Active', 'Snoozed', 'Settled'] as const).map((group) => {
-                const entries = matches.filter(({ session }) => {
-                  const status = session.pinned
-                    ? 'Pinned'
-                    : session.settledAt
-                      ? 'Settled'
-                      : session.snoozedUntil && Date.parse(session.snoozedUntil) > now
-                        ? 'Snoozed'
-                        : 'Active'
-                  return status === group
-                })
-                if (!entries.length) return null
-                return (
-                  <div key={group} className="mb-3">
-                    <h2 className="flex items-center gap-1.5 px-2 py-2 text-[11px] font-medium text-muted-foreground">
-                      {group}
-                    </h2>
-                    {entries.map(({ owner, session }) => {
-                      const active =
-                        selected?.id === session.id && selected.runtimeId === owner.profile.id
-                      return (
-                        <div
-                          key={`${owner.profile.id}:${session.id}`}
-                          className="studio-thread-row group/terminal-row relative mb-1 flex items-center"
-                          data-highlighted={active || undefined}
-                        >
-                          <button
-                            type="button"
-                            className="studio-thread-card flex min-w-0 flex-1 items-center gap-2.5 border px-2.5 py-2.5 text-left hover:bg-accent"
-                            aria-selected={active}
-                            onClick={() =>
-                              setSelected({ runtimeId: owner.profile.id, id: session.id })
-                            }
-                          >
-                            <Terminal
-                              className={cn(
-                                'size-4 shrink-0',
-                                active ? 'text-primary' : 'text-muted-foreground',
-                              )}
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium group-hover/terminal-row:pr-28 group-focus-within/terminal-row:pr-28 [@media(hover:none)]:pr-28">
-                                {session.title}
-                              </span>
-                              <span className="studio-thread-card-context block truncate text-xs text-muted-foreground">
-                                {terminalContext(session, owner.snapshot?.workspace)} ·{' '}
-                                {runtimeComputerName(owner)}
-                              </span>
-                            </span>
-                            {session.settledAt ? (
-                              <Check
-                                className="size-3.5 shrink-0 text-muted-foreground"
-                                aria-label="Settled"
-                              />
-                            ) : session.snoozedUntil && Date.parse(session.snoozedUntil) > now ? (
-                              <AlarmClock
-                                className="size-3.5 shrink-0 text-muted-foreground"
-                                aria-label="Snoozed"
-                              />
-                            ) : null}
-                            <span
-                              className={cn(
-                                'size-1.5 shrink-0 rounded-full',
-                                session.exited || !owner.connected
-                                  ? 'bg-muted-foreground/40'
-                                  : 'bg-status-success',
-                              )}
-                              title={
-                                session.exited
-                                  ? 'Exited'
-                                  : owner.connected
-                                    ? 'Live session'
-                                    : 'Offline'
+              {(['Pinned', 'Needs input', 'Working', 'Active', 'Snoozed', 'Settled'] as const).map(
+                (group) => {
+                  const entries = matches.filter(({ owner, session }) => {
+                    const activity = terminalStatus(session, owner.connected)
+                    const status = session.pinned
+                      ? 'Pinned'
+                      : session.settledAt
+                        ? 'Settled'
+                        : session.snoozedUntil && Date.parse(session.snoozedUntil) > now
+                          ? 'Snoozed'
+                          : activity.section === 'working'
+                            ? 'Working'
+                            : activity.section === 'needs-input'
+                              ? 'Needs input'
+                              : 'Active'
+                    return status === group
+                  })
+                  if (!entries.length) return null
+                  return (
+                    <details
+                      key={group}
+                      data-section={group.toLowerCase().replaceAll(' ', '-')}
+                      open={openSections[group]}
+                      className="group studio-list-section mb-1 shrink-0"
+                    >
+                      <summary
+                        className="studio-list-section-header"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setOpenSections((previous) => ({
+                            ...previous,
+                            [group]: !previous[group],
+                          }))
+                        }}
+                      >
+                        <ChevronDown
+                          size={11}
+                          className="studio-list-section-chevron"
+                          aria-hidden="true"
+                        />
+                        {group !== 'Pinned' && (
+                          <span className="studio-thread-section-dot" aria-hidden="true" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate">{group}</span>
+                        <span>{entries.length}</span>
+                      </summary>
+                      {openSections[group] &&
+                        entries.map(({ owner, session }) => {
+                          const activity = terminalStatus(session, owner.connected)
+                          const active =
+                            selected?.id === session.id && selected.runtimeId === owner.profile.id
+                          const repository = owner.snapshot?.workspace.repositories.find(
+                            (item) => item.id === session.repositoryId,
+                          )
+                          const branch =
+                            session.checkoutBranch ??
+                            (session.execution === 'worktree' ? undefined : repository?.branch)
+                          return (
+                            <WorkspaceTerminalRow
+                              key={`${owner.profile.id}:${session.id}`}
+                              title={session.title}
+                              selected={active}
+                              disabled={false}
+                              status={
+                                session.settledAt
+                                  ? 'settled'
+                                  : session.snoozedUntil && Date.parse(session.snoozedUntil) > now
+                                    ? 'snoozed'
+                                    : 'active'
+                              }
+                              onSelect={() =>
+                                setSelected({ runtimeId: owner.profile.id, id: session.id })
+                              }
+                              project={repository?.name ?? 'Home folder'}
+                              checkout={
+                                branch ??
+                                (repository
+                                  ? (session.directory ?? 'Local checkout')
+                                  : 'Home folder')
+                              }
+                              checkoutIsBranch={branch !== undefined}
+                              state={activity.label}
+                              stateTone={activity.tone}
+                              stateDetail={activity.detail}
+                              computer={runtimeComputerName(owner)}
+                              runtimeIcon={owner.snapshot?.runtimeIcon}
+                              pinned={session.pinned ?? false}
+                              offline={!owner.connected}
+                              actions={
+                                <TerminalResourceActions
+                                  owner={owner}
+                                  session={session}
+                                  onError={setLifecycleError}
+                                />
                               }
                             />
-                          </button>
-                          <div
-                            data-workspace-actions
-                            className="absolute right-2 top-1 pointer-events-none opacity-0 transition-opacity group-hover/terminal-row:pointer-events-auto group-hover/terminal-row:opacity-100 group-focus-within/terminal-row:pointer-events-auto group-focus-within/terminal-row:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
-                          >
-                            <TerminalResourceActions
-                              owner={owner}
-                              session={session}
-                              onError={setLifecycleError}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })}
+                          )
+                        })}
+                    </details>
+                  )
+                },
+              )}
               {!matches.length && (
                 <p className="px-3 py-6 text-center text-xs text-muted-foreground">
                   {search ? 'No matching terminals.' : 'Your terminal sessions will appear here.'}
@@ -473,6 +622,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
           <WorkspaceTerminalSurface
             target={selected}
             onHide={() => setSelected(undefined)}
+            onNew={() => setCreating(true)}
             onLifecycleError={setLifecycleError}
           />
         ) : (

@@ -31,7 +31,7 @@ const built = await bundleBrowser(
 import {TerminalPane} from './packages/extension-tasks/src/terminal/terminal-pane';
 import {Group,Panel} from 'react-resizable-panels';
 const node=createRoot(document.getElementById('app'));
-function ScopedPane({anchor}) {return <div data-workspace-anchor={anchor} style={{height:380}}><TerminalPane taskId="studio:terminals" focusId={anchor} sessionScopeId={anchor} autoCreate={false} onClose={()=>{}} onSessionsClosed={ids=>{window.closedEvents.push({anchor,ids});if(ids.includes(anchor)){window.hiddenAnchors.push(anchor);window.render()}}}/></div>}
+function ScopedPane({anchor}) {return <div data-workspace-anchor={anchor} style={{height:380}}><TerminalPane taskId="studio:terminals" focusId={anchor} sessionScopeId={anchor} autoCreate={false} onClose={()=>{}} onNewSession={()=>window.newWorkspaceRequests.push(anchor)} onSessionsClosed={ids=>{window.closedEvents.push({anchor,ids});if(ids.includes(anchor)){window.hiddenAnchors.push(anchor);window.render()}}}/></div>}
 window.render=()=>node.render(window.mounted===false?null:window.twoScopes?<div>{(window.scopeAnchors??['scope-a','scope-b']).filter(id=>!window.hiddenAnchors.includes(id)).map(anchor=><ScopedPane key={anchor} anchor={anchor}/>)}</div>:<Group orientation="vertical" style={{height:'100vh'}}><Panel defaultSize="60%"><div>Conversation</div></Panel><Panel id="terminal" defaultSize="40%"><TerminalPane taskId={window.taskId??"task"} focusId={window.focusId??"session"} onOpenFile={file=>window.openedFiles.push(file)} onClose={()=>{}} onAddSelection={(taskId,text)=>window.insertions.push({taskId,text})}/></Panel></Group>);window.render();`,
       loader: 'tsx',
       resolveDir: root,
@@ -648,6 +648,7 @@ try {
     window.hiddenAnchors = []
     window.closedEvents = []
     window.scopedCreates = []
+    window.newWorkspaceRequests = []
     window.scopedCloses = []
     window.runtime.snapshot = {
       terminals: [
@@ -688,6 +689,19 @@ try {
   await b.locator('[data-terminal-session="scope-b"] .dovo-terminal-canvas').waitFor()
   assert.equal(await a.locator('[data-terminal-session]').count(), 1)
   assert.equal(await b.locator('[data-terminal-session]').count(), 1)
+  assert.equal(
+    await a.locator('[data-terminal-tab]').count(),
+    0,
+    'Standalone shells have no horizontal session tabs',
+  )
+  assert.equal(await a.getByRole('button', { name: /Close terminal tab/ }).count(), 0)
+  await a.getByRole('button', { name: 'New terminal session', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.newWorkspaceRequests), ['scope-a'])
+  assert.deepEqual(
+    await page.evaluate(() => window.scopedCreates),
+    [],
+    'New standalone terminals use the workspace starter instead of hidden internal tabs',
+  )
   await page.evaluate(() => {
     window.delayScopeSnapshot = true
   })
@@ -774,7 +788,7 @@ try {
   await page.evaluate(() => {
     window.failScopedClose = 'scope-a'
   })
-  await a.getByRole('button', { name: 'Close terminal tab 1', exact: true }).click()
+  await a.getByRole('button', { name: 'Close terminal session', exact: true }).click()
   await page.getByRole('button', { name: 'Close terminal panes', exact: true }).click()
   await a.getByRole('alert').filter({ hasText: 'Scoped close rejected' }).waitFor()
   assert.deepEqual(await page.evaluate(() => window.scopedCloses), ['scope-split-1'])
@@ -787,7 +801,7 @@ try {
   await page.evaluate(() => {
     window.failScopedClose = undefined
   })
-  await a.getByRole('button', { name: 'Close terminal tab 1', exact: true }).click()
+  await a.getByRole('button', { name: 'Close terminal session', exact: true }).click()
   await page.getByRole('button', { name: 'Close terminal', exact: true }).click()
   await a.waitFor({ state: 'detached' })
   assert.equal(await b.locator('[data-terminal-session="scope-b"]').count(), 1)

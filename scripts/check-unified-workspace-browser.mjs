@@ -93,7 +93,7 @@ export const useModelLabel=()=>undefined;
 export {cn} from '${root}/packages/studio-ui/src/lib/utils';
 export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}/packages/studio-ui/src/components/ui/dialog';
 export const HeaderContent=({children})=><>{children}</>;
-export const useNavigationSidebar=()=>({collapsed:false});
+export const useNavigationSidebar=()=>({collapsed:!!window.sidebarCollapsed});
 export const SidebarHeader=()=> <div className="flex h-[52px] shrink-0 items-center gap-2 px-5 text-sm font-semibold"><span className="flex size-5 items-center justify-center rounded-md bg-primary text-[10px] text-primary-foreground">D</span>Dovo <span className="ml-auto text-[10px] font-normal text-muted-foreground">Workspace</span></div>;
 export const IconButton=({label,...props})=><Button variant="ghost" size="icon" aria-label={label} {...props}/>;
 export const ChoicePicker=({onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}/>;`,
@@ -164,6 +164,20 @@ try {
             profileId: 'default',
             runtimeId: 'remote',
           },
+          ...['Docs', 'Issues', 'Metrics', 'Notes', 'Preview'].map((title, index) => ({
+            id: 'pinned-' + index,
+            url: 'http://lan.local:3000/' + title.toLowerCase(),
+            title,
+            kind: 'remote',
+            pinned: true,
+            profileId: 'default',
+            runtimeId: index % 2 ? 'local' : 'remote',
+            favicon:
+              'data:image/svg+xml,' +
+              encodeURIComponent(
+                `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="4" fill="${['#5988e8', '#cf7b39', '#9d74d5', '#4aab8d', '#d25c78'][index]}"/><text x="8" y="12" text-anchor="middle" font-family="sans-serif" font-size="11" fill="white">${title[0]}</text></svg>`,
+              ),
+          })),
         ],
       }),
     )
@@ -181,6 +195,15 @@ try {
           title: id + ' thread',
           repositoryId: 'project',
           status: 'draft',
+          createdAt: '2026-11-03T10:00:00Z',
+          messages: [],
+        },
+        {
+          id: 'pinned-thread',
+          title: 'Pinned ' + id + ' work',
+          repositoryId: 'project',
+          status: 'draft',
+          pinned: true,
           createdAt: '2026-11-03T10:00:00Z',
           messages: [],
         },
@@ -213,6 +236,19 @@ try {
             repositoryId: 'project',
             directory: '/project',
           },
+          ...(id === 'local'
+            ? [
+                {
+                  id: 'pinned-shell',
+                  title: 'Pinned shell',
+                  taskId: 'studio:terminals',
+                  pinned: true,
+                  exited: false,
+                  repositoryId: 'project',
+                  directory: '/project',
+                },
+              ]
+            : []),
         ],
         runtimeHost: id,
         agents: [],
@@ -221,6 +257,15 @@ try {
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const workspaceInput = page.getByLabel('Workspace request')
+  const savedWorkspace = () =>
+    page.evaluate(() => JSON.parse(sessionStorage.getItem('dovo.unified-workspace.v1')))
+  const selectSidebarItem = (kind, title) =>
+    page
+      .getByRole('complementary')
+      .getByRole('group', { name: `${kind}: ${title}`, exact: true })
+      .locator('button')
+      .first()
+      .click()
   const returnHome = async () => {
     await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
     await workspaceInput.waitFor({ state: 'visible' })
@@ -240,6 +285,19 @@ try {
       await page.getByRole('form', { name: 'Workspace input', exact: true }).count(),
       0,
       `No shared composer toolbar is exposed in an active ${kind}`,
+    )
+    assert.equal(await page.getByRole('tablist').count(), 0, 'Unified has no horizontal tab strip')
+    assert.equal(
+      await page.getByRole('tab').count(),
+      0,
+      'Navigation uses the sidebar for every kind',
+    )
+    const content = page.locator('#workspace-content')
+    assert.equal(await content.getAttribute('aria-labelledby'), null)
+    assert.match(
+      await content.getAttribute('aria-label'),
+      new RegExp(`^${kind === 'browser' ? 'Page' : kind === 'thread' ? 'Thread' : 'Terminal'}: `),
+      'The content region names the selected resource without an absent tab label',
     )
   }
   const assertComposerDesign = async (name) => {
@@ -373,6 +431,57 @@ try {
     await idle.waitFor()
   }
   const workspaceRows = page.getByRole('complementary').locator('[data-workspace-kind]')
+  const pinnedSection = page.getByRole('region', { name: 'Pinned workspace items', exact: true })
+  const pinnedGrid = pinnedSection.getByRole('group', { name: 'Pinned browser tabs', exact: true })
+  const pinnedPages = pinnedGrid.locator('[data-pinned-page]')
+  await pinnedPages.first().waitFor()
+  assert.deepEqual(
+    await pinnedPages.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
+    ['Page: Docs', 'Page: Issues', 'Page: Metrics', 'Page: Notes', 'Page: Preview'],
+    'Pinned browser pages keep their own compact grid',
+  )
+  assert.deepEqual(
+    await pinnedSection
+      .locator('[data-workspace-kind]')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
+    [
+      'Page: Docs',
+      'Page: Issues',
+      'Page: Metrics',
+      'Page: Notes',
+      'Page: Preview',
+      'Thread: Pinned local work',
+      'Thread: Pinned remote work',
+      'Terminal: Pinned shell',
+    ],
+    'Actual thread rows sit directly below pinned pages, followed by standalone terminal rows',
+  )
+  assert.equal(await pinnedPages.locator('.studio-browser-tab-title').count(), 0)
+  assert.equal(await pinnedPages.locator('.studio-browser-tab-favicon img').count(), 5)
+  assert.equal(await pinnedPages.locator('.studio-browser-tab-profile').count(), 5)
+  assert.equal(
+    await pinnedSection.locator('[data-workspace-kind="thread"] .studio-thread-card').count(),
+    2,
+  )
+  assert.equal(
+    await pinnedSection.locator('[data-workspace-kind="thread"] .lucide-message-square').count(),
+    2,
+  )
+  assert.equal(
+    await pinnedSection.locator('[data-workspace-kind="terminal"] .lucide-square-terminal').count(),
+    1,
+  )
+  for (const title of ['Docs', 'Pinned local work', 'Pinned shell']) {
+    for (const action of ['Unpin', 'Snooze', 'Settle']) {
+      assert.equal(
+        await pinnedSection
+          .getByRole('button', { name: `${action} ${title}`, exact: true })
+          .count(),
+        1,
+      )
+    }
+  }
+  assert.equal(await pinnedSection.getByRole('button', { name: /More|ellipsis/i }).count(), 0)
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const assets = root + '/apps/desktop/dist/assets'
     const css = (await readdir(assets)).find((file) => /^index-.*\.css$/.test(file))
@@ -406,8 +515,11 @@ try {
     await page.getByRole('heading', { name: 'What are you working on?' }).hover()
     await page.waitForFunction(
       () =>
-        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
-          .opacity === '0',
+        getComputedStyle(
+          document.querySelector(
+            '[data-workspace-kind="thread"][aria-label="Thread: local thread"] [data-workspace-actions]',
+          ),
+        ).opacity === '0',
     )
     assert.equal(await actionOpacity(), '0', 'Row actions stay hidden at rest')
     await workspaceRows
@@ -415,8 +527,11 @@ try {
       .hover()
     await page.waitForFunction(
       () =>
-        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
-          .opacity === '1',
+        getComputedStyle(
+          document.querySelector(
+            '[data-workspace-kind="thread"][aria-label="Thread: local thread"] [data-workspace-actions]',
+          ),
+        ).opacity === '1',
     )
     assert.equal(await actionOpacity(), '1', 'Hover reveals row actions')
     await page.getByRole('heading', { name: 'What are you working on?' }).hover()
@@ -424,38 +539,392 @@ try {
     assert.equal(await action.evaluate((button) => button.matches(':focus')), true)
     await page.waitForFunction(
       () =>
-        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
-          .opacity === '1',
+        getComputedStyle(
+          document.querySelector(
+            '[data-workspace-kind="thread"][aria-label="Thread: local thread"] [data-workspace-actions]',
+          ),
+        ).opacity === '1',
     )
     await action.evaluate((button) => button.blur())
     await page.waitForFunction(
       () =>
-        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
-          .opacity === '0',
+        getComputedStyle(
+          document.querySelector(
+            '[data-workspace-kind="thread"][aria-label="Thread: local thread"] [data-workspace-actions]',
+          ),
+        ).opacity === '0',
     )
     await page.screenshot({ path: '/tmp/dovo-unified-overview.png', animations: 'disabled' })
+    await page.screenshot({
+      path: '/tmp/dovo-unified-pinned-browser-grid.png',
+      animations: 'disabled',
+    })
     await workspaceRows
       .filter({ has: page.getByRole('button', { name: 'Pin local thread', exact: true }) })
       .hover()
     await page.waitForFunction(
       () =>
-        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
-          .opacity === '1',
+        getComputedStyle(
+          document.querySelector(
+            '[data-workspace-kind="thread"][aria-label="Thread: local thread"] [data-workspace-actions]',
+          ),
+        ).opacity === '1',
     )
     await page.screenshot({ path: '/tmp/dovo-unified-hover.png', animations: 'disabled' })
+    const tile = pinnedPages.first()
+    const tileBounds = await tile.boundingBox()
+    const nextGridRow = await pinnedPages.last().boundingBox()
+    const firstThread = await pinnedSection
+      .locator('[data-workspace-kind="thread"]')
+      .first()
+      .boundingBox()
+    assert.ok(
+      tileBounds.width >= 48 && tileBounds.width < 70,
+      'Uses Browser workspace compact tile width',
+    )
+    assert.equal(
+      await tile
+        .locator('[data-browser-tab-select]')
+        .evaluate((button) => button.getBoundingClientRect().height),
+      56,
+    )
+    assert.ok(nextGridRow.y > tileBounds.y, 'Five fixture pages wrap in the compact grid')
+    assert.ok(
+      firstThread.y >= nextGridRow.y + nextGridRow.height,
+      'Threads follow the entire pinned grid',
+    )
+    await tile.hover()
+    const actions = tile.locator('[data-workspace-actions]')
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-pinned-page] [data-workspace-actions]'))
+          .opacity === '1',
+    )
+    const buttons = await actions.getByRole('button').all()
+    for (const button of buttons) {
+      const bounds = await button.boundingBox()
+      assert.ok(
+        bounds.x >= tileBounds.x && bounds.x + bounds.width <= tileBounds.x + tileBounds.width + 1,
+        'Direct pinned actions fit inside the tile',
+      )
+      assert.equal(
+        await button.evaluate((element) => {
+          const bounds = element.getBoundingClientRect()
+          const hit = document.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+          )
+          return hit === element || element.contains(hit)
+        }),
+        true,
+        'Every pinned action has a usable pointer target',
+      )
+    }
+    await page.screenshot({
+      path: '/tmp/dovo-unified-pinned-browser-actions.png',
+      animations: 'disabled',
+    })
+    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    const snooze = tile.getByRole('button', { name: 'Snooze Docs', exact: true })
+    await snooze.focus()
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-pinned-page] [data-workspace-actions]'))
+          .opacity === '1',
+    )
+    await page.keyboard.press('Enter')
+    await page.getByRole('menuitem', { name: 'For 1 hour', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await snooze.evaluate((button) => button.blur())
     await page.getByRole('heading', { name: 'What are you working on?' }).hover()
   }
+  await page.evaluate(() => {
+    window.computers[0].snapshot.workspace.tasks.push(
+      {
+        id: 'unified-section-fixture-snoozed',
+        title: 'Section fixture snoozed',
+        repositoryId: 'project',
+        status: 'running',
+        waitingForFeedback: true,
+        snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+        messages: [],
+      },
+      {
+        id: 'unified-section-fixture-settled',
+        title: 'Section fixture settled',
+        repositoryId: 'project',
+        status: 'running',
+        waitingForFeedback: true,
+        snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+        archived: true,
+        messages: [],
+      },
+      ...[
+        { id: 'working', status: 'running', waitingForFeedback: true },
+        {
+          id: 'pending',
+          status: 'done',
+          queue: [
+            {
+              id: 'result',
+              role: 'user',
+              text: 'Pending child result',
+              subagentResultId: 'child-result',
+            },
+          ],
+        },
+        { id: 'waiting', status: 'done', waitingForFeedback: true },
+        { id: 'review', status: 'review' },
+        {
+          id: 'input',
+          status: 'running',
+          waitingForFeedback: true,
+          snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+        },
+        { id: 'approval', status: 'review' },
+      ].map(({ id, ...facts }) => ({
+        id: 'unified-section-fixture-' + id,
+        title: 'Section fixture ' + id,
+        repositoryId: 'project',
+        createdAt: '2026-11-03T10:00:00Z',
+        messages: [],
+        ...facts,
+      })),
+    )
+    const snapshot = window.computers[0].snapshot
+    const pinned = snapshot.workspace.tasks.find((task) => task.id === 'pinned-thread')
+    window.sectionPinnedBackup = { ...pinned }
+    Object.assign(pinned, {
+      status: 'running',
+      waitingForFeedback: true,
+      snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+    })
+    snapshot.questions = [
+      { taskId: 'unified-section-fixture-input' },
+      { taskId: 'unified-section-fixture-settled' },
+      { taskId: 'pinned-thread' },
+    ]
+    snapshot.approvals = [{ taskId: 'unified-section-fixture-approval' }]
+    window.computers[0].snapshot = { ...snapshot }
+    window.refresh()
+  })
+  for (const [name, count, initiallyOpen] of [
+    ['Pinned', 8, true],
+    ['Needs input', 2, true],
+    ['Active', 6, true],
+    ['Working', 2, false],
+    ['Waiting', 1, false],
+    ['Snoozed', 1, false],
+    ['Settled', 1, false],
+  ]) {
+    const disclosure = page
+      .getByRole('region', { name: `${name} workspace items`, exact: true })
+      .locator('details')
+    const header = disclosure.locator(':scope > summary')
+    await header.waitFor()
+    assert.equal(await header.getAttribute('class'), 'studio-list-section-header')
+    assert.equal(await header.locator('span').last().textContent(), String(count))
+    assert.equal(
+      await header.locator('.studio-thread-section-dot').count(),
+      ['Needs input', 'Working', 'Waiting', 'Snoozed', 'Settled'].includes(name) ? 1 : 0,
+    )
+    assert.equal(await disclosure.evaluate((element) => element.open), initiallyOpen)
+    if (!initiallyOpen) await header.click()
+    const actualRows = await disclosure
+      .locator('[data-workspace-kind]')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label')))
+    const expectedRows = {
+      'Needs input': ['Thread: Section fixture approval', 'Thread: Section fixture input'],
+      Working: ['Thread: Section fixture pending', 'Thread: Section fixture working'],
+      Waiting: ['Thread: Section fixture waiting'],
+      Snoozed: ['Thread: Section fixture snoozed'],
+      Settled: ['Thread: Section fixture settled'],
+    }[name]
+    if (expectedRows)
+      assert.deepEqual(
+        actualRows,
+        expectedRows,
+        `${name} follows the TaskList classifier and priority`,
+      )
+    if (name === 'Active') {
+      assert.ok(actualRows.includes('Page: LAN browser'))
+      assert.ok(
+        actualRows.includes('Terminal: local shell') &&
+          actualRows.includes('Terminal: remote shell'),
+        'Running standalone shells stay Active',
+      )
+      assert.ok(
+        actualRows.includes('Thread: Section fixture review'),
+        'Review alone is not Waiting without feedback',
+      )
+    }
+    if (name === 'Pinned')
+      assert.ok(
+        actualRows.includes('Thread: Pinned local work'),
+        'Pinning outranks snooze, input, work and feedback',
+      )
+    if (!initiallyOpen) await header.click()
+    await header.focus()
+    await page.keyboard.press('Enter')
+    assert.equal(
+      await disclosure.evaluate((element) => element.open),
+      !initiallyOpen,
+      `${name} supports keyboard collapse/expand`,
+    )
+    assert.equal(
+      await header.locator('span').last().textContent(),
+      String(count),
+      'Collapsed headers retain counts',
+    )
+    await page.keyboard.press('Space')
+    assert.equal(await disclosure.evaluate((element) => element.open), initiallyOpen)
+    if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+      await header.hover()
+      const hoveredSurface = await header.evaluate(
+        (element) => getComputedStyle(element).backgroundImage,
+      )
+      await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+      const style = await header.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          uppercase: style.textTransform,
+          border: style.borderTopWidth,
+          background: style.backgroundImage,
+        }
+      })
+      assert.equal(style.uppercase, 'uppercase', `${name} uses the thread section typography`)
+      assert.equal(style.border, '1px', `${name} uses the shared bordered header`)
+      assert.ok(
+        style.background.includes('linear-gradient'),
+        `${name} uses the shared gradient surface`,
+      )
+      assert.notEqual(style.background, hoveredSurface, `${name} uses the shared hover surface`)
+    }
+  }
+  if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+    for (const id of ['active', 'working', 'waiting'])
+      await page.getByRole('complementary').locator(`[data-section="${id}"] > summary`).click()
+    await page.setViewportSize({ width: 1280, height: 1280 })
+    await pinnedSection.evaluate((section) => {
+      section.parentElement.scrollTop = 0
+    })
+    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.screenshot({ path: '/tmp/dovo-unified-section-headers.png', animations: 'disabled' })
+    await page.screenshot({ path: '/tmp/dovo-unified-working-waiting.png', animations: 'disabled' })
+    for (const id of ['active', 'working', 'waiting'])
+      await page.getByRole('complementary').locator(`[data-section="${id}"] > summary`).click()
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
+  await page.getByLabel('Search workspace').fill('Section fixture')
+  const searchingDisclosure = page
+    .getByRole('region', { name: 'Snoozed workspace items', exact: true })
+    .locator('details')
+  assert.equal(
+    await searchingDisclosure.evaluate((element) => element.open),
+    true,
+    'Search reveals matching collapsed sections',
+  )
+  assert.equal(await searchingDisclosure.locator('summary').getAttribute('aria-disabled'), 'true')
+  await searchingDisclosure.locator('summary').focus()
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await searchingDisclosure.evaluate((element) => element.open),
+    true,
+    'Matching search results stay expanded',
+  )
+  await page.getByLabel('Search workspace').fill('')
+  assert.equal(
+    await searchingDisclosure.evaluate((element) => element.open),
+    false,
+    'Clearing search restores collapse state',
+  )
+  await page.evaluate(() => {
+    window.computers[0].snapshot.workspace.tasks =
+      window.computers[0].snapshot.workspace.tasks.filter(
+        (task) => !task.id.startsWith('unified-section-fixture-'),
+      )
+    const snapshot = window.computers[0].snapshot
+    const pinnedIndex = snapshot.workspace.tasks.findIndex((task) => task.id === 'pinned-thread')
+    snapshot.workspace.tasks[pinnedIndex] = window.sectionPinnedBackup
+    snapshot.questions = []
+    snapshot.approvals = []
+    window.computers[0].snapshot = { ...snapshot }
+    window.refresh()
+  })
+  const pinnedSelect = pinnedPages.first().locator('[data-browser-tab-select]')
+  assert.equal(await pinnedSelect.getAttribute('aria-label'), 'Docs · remote · Remote Default')
+  await pinnedSelect.focus()
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('[data-browser="pinned-0"]:visible')
+  assert.equal(await pinnedSelect.getAttribute('aria-current'), 'page')
+  assert.equal(
+    await page.evaluate(() => window.activeRuntimeId),
+    'local',
+    'Selecting a pinned remote browser page preserves global computer selection',
+  )
+  await assertComposerHidden('browser')
+  if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+    await page.screenshot({
+      path: '/tmp/dovo-unified-pinned-browser-selected.png',
+      animations: 'disabled',
+    })
+  }
+  const beforeCollapsedHome = (await savedWorkspace()).tabs
+  await page.evaluate(() => {
+    window.sidebarCollapsed = true
+    window.refresh()
+  })
+  await page.getByRole('complementary').waitFor({ state: 'hidden' })
+  await returnHome()
+  assert.deepEqual(
+    (await savedWorkspace()).tabs,
+    beforeCollapsedHome,
+    'Collapsed Home retains open views',
+  )
+  await page.evaluate(() => {
+    window.sidebarCollapsed = false
+    window.refresh()
+  })
+  await selectSidebarItem('Page', 'Docs')
+  await page.evaluate(() => {
+    window.sidebarCollapsed = true
+    window.refresh()
+  })
+  await page.getByRole('complementary').waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Hide Docs', exact: true }).click()
+  await workspaceInput.waitFor({ state: 'visible' })
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Workspace request',
+  )
+  assert.deepEqual((await savedWorkspace()).tabs, [], 'Hiding the last item returns focus to Home')
+  await page.evaluate(() => {
+    window.sidebarCollapsed = false
+    window.refresh()
+  })
+  await page.getByRole('complementary').waitFor()
+  assert.equal(await pinnedPages.count(), 5, 'Hiding an open page keeps its pinned sidebar tile')
+  await selectSidebarItem('Page', 'Docs')
+  await assertComposerHidden('browser')
+  await returnHome()
   await assertComposerInteractions('Workspace input', 'Workspace request', 'Workspace destination')
   assert.deepEqual(
     await workspaceRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
     [
+      'Page: Docs',
+      'Page: Issues',
+      'Page: Metrics',
+      'Page: Notes',
+      'Page: Preview',
+      'Thread: Pinned local work',
+      'Thread: Pinned remote work',
+      'Terminal: Pinned shell',
       'Page: LAN browser',
       'Terminal: local shell',
       'Thread: local thread',
       'Terminal: remote shell',
       'Thread: remote thread',
     ],
-    'Threads, browser pages and standalone terminals share one title order across computers',
+    'Pinned pages lead, threads follow, and Active items retain mixed title order across computers',
   )
   assert.equal(await workspaceRows.filter({ hasText: 'thread terminal' }).count(), 0)
   assert.equal(
@@ -473,6 +942,11 @@ try {
   await page.getByLabel('Search workspace').fill('')
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByLabel('Workspace computer filter').selectOption('local')
+  assert.deepEqual(
+    await pinnedPages.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
+    ['Page: Issues', 'Page: Notes'],
+    'Pinned grid respects each browser page’s owning computer',
+  )
   assert.equal(
     await page
       .getByRole('complementary')
@@ -482,6 +956,10 @@ try {
     0,
   )
   await page.getByLabel('Workspace computer filter').selectOption('')
+  await page.getByRole('button', { name: 'Browsers', exact: true }).click()
+  assert.equal(await workspaceRows.locator('.studio-thread-card').count(), 0)
+  assert.equal(await pinnedPages.count(), 5)
+  await page.getByRole('button', { name: 'All', exact: true }).click()
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
   await page.getByRole('dialog').waitFor()
@@ -519,13 +997,14 @@ try {
     .click()
   await page.getByLabel('Thread draft').fill('Keep this draft')
   await assertComposerHidden('thread')
-  const openTabCount = await page.getByRole('tab').count()
+  const openItems = (await savedWorkspace()).tabs
+  const threadDraft = await page.getByLabel('Thread draft').elementHandle()
   await returnHome()
   await page.getByRole('region', { name: 'Continue working', exact: true }).waitFor()
-  assert.equal(
-    await page.getByRole('tab').count(),
-    openTabCount,
-    'Home retains mounted workspace tabs',
+  assert.deepEqual(
+    (await savedWorkspace()).tabs,
+    openItems,
+    'Home retains open items without a visible tab strip',
   )
   assert.equal(await page.getByLabel('Workspace request').inputValue(), 'Keep the shared draft')
   assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'thread')
@@ -535,15 +1014,22 @@ try {
   await returnHome()
   assert.equal(await workspaceInput.inputValue(), 'Keep the shared draft')
   assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'thread')
-  await page.getByRole('tab', { name: 'local thread', exact: true }).click()
+  await selectSidebarItem('Thread', 'local thread')
   await assertComposerHidden('thread')
   assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
+  assert.equal(
+    await page
+      .getByLabel('Thread draft')
+      .evaluate((input, original) => input === original, threadDraft),
+    true,
+    'Sidebar navigation retains the thread editor mount',
+  )
   const expandSection = async (name) => {
-    const toggle = page
+    const disclosure = page
       .getByRole('region', { name: name + ' workspace items' })
-      .getByRole('button')
-      .first()
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+      .locator('details')
+    if (!(await disclosure.evaluate((element) => element.open)))
+      await disclosure.locator('summary').click()
   }
   const hoverRow = async (title) => {
     const sidebar = page.getByRole('complementary')
@@ -569,6 +1055,243 @@ try {
       .click()
     await page.getByRole('menuitem', { name: duration, exact: true }).click()
   }
+  await page.evaluate(() => {
+    const snapshot = window.computers[1].snapshot
+    const later = new Date(Date.now() + 3600000).toISOString()
+    snapshot.terminals.push(
+      ...[
+        {
+          id: 'build',
+          activity: {
+            state: 'working',
+            progress: 40,
+            app: 'Builder',
+            message: 'Compiling project',
+          },
+        },
+        {
+          id: 'approval',
+          activity: { state: 'blocked', kind: 'permission', message: 'Approve deployment?' },
+        },
+        { id: 'done', activity: { state: 'done' } },
+        { id: 'error', activity: { state: 'error' } },
+        { id: 'idle', activity: { state: 'idle' } },
+        { id: 'unknown' },
+        { id: 'exited', exited: true, exitCode: 7, activity: { state: 'working' } },
+        { id: 'snoozed', snoozedUntil: later, activity: { state: 'working' } },
+        {
+          id: 'settled',
+          settledAt: new Date().toISOString(),
+          snoozedUntil: later,
+          activity: { state: 'blocked' },
+        },
+        {
+          id: 'pinned',
+          pinned: true,
+          settledAt: new Date().toISOString(),
+          snoozedUntil: later,
+          activity: { state: 'blocked' },
+        },
+      ].map(({ id, ...metadata }) => ({
+        id: 'program-' + id,
+        title: 'Program ' + id,
+        taskId: 'studio:terminals',
+        exited: false,
+        repositoryId: 'project',
+        directory: '/project',
+        ...metadata,
+      })),
+    )
+    window.computers[1].snapshot = { ...snapshot }
+    window.refresh()
+  })
+  await page.getByLabel('Search workspace').fill('Program ')
+  for (const [section, title, label, tone] of [
+    ['Working', 'Program build', 'Working 40%', 'text-primary'],
+    ['Needs input', 'Program approval', 'Needs input', 'text-status-warning'],
+    ['Active', 'Program done', 'Done', 'text-status-success'],
+    ['Active', 'Program error', 'Failed', 'text-destructive'],
+    ['Active', 'Program idle', 'Idle', 'text-muted-foreground'],
+    ['Active', 'Program unknown', 'Live session', 'text-muted-foreground'],
+    ['Active', 'Program exited', 'Exited 7', 'text-destructive'],
+    ['Snoozed', 'Program snoozed', 'Working', 'text-primary'],
+    ['Settled', 'Program settled', 'Needs input', 'text-status-warning'],
+    ['Pinned', 'Program pinned', 'Needs input', 'text-status-warning'],
+  ]) {
+    const row = page
+      .getByRole('region', { name: section + ' workspace items', exact: true })
+      .getByRole('group', { name: `Terminal: ${title}`, exact: true })
+    await row.waitFor()
+    assert.ok(
+      (await row.getByText(label, { exact: true }).getAttribute('class')).includes(tone),
+      `${title} uses the common label and tone in ${section}`,
+    )
+  }
+  for (const [section, count] of [
+    ['Pinned', 1],
+    ['Needs input', 1],
+    ['Active', 5],
+    ['Working', 1],
+    ['Snoozed', 1],
+    ['Settled', 1],
+  ]) {
+    assert.equal(
+      await page
+        .getByRole('region', { name: section + ' workspace items', exact: true })
+        .locator('summary > span')
+        .last()
+        .textContent(),
+      String(count),
+    )
+  }
+  assert.equal(
+    await workspaceRows
+      .filter({ hasText: 'Program build' })
+      .getByTitle('Compiling project')
+      .count(),
+    1,
+  )
+  assert.equal(
+    await workspaceRows
+      .filter({ hasText: 'Program approval' })
+      .getByTitle('Approve deployment?')
+      .count(),
+    1,
+  )
+  await page.evaluate(() => {
+    window.computers[1].connected = false
+    window.refresh()
+  })
+  const offlineBuild = page
+    .getByRole('region', { name: 'Active workspace items', exact: true })
+    .getByRole('group', { name: 'Terminal: Program build', exact: true })
+  await offlineBuild.getByText('Offline', { exact: true }).waitFor()
+  assert.equal(
+    await offlineBuild.getByText('Working 40%', { exact: true }).count(),
+    0,
+    'Offline overrides stale program work',
+  )
+  await page.evaluate(() => {
+    window.computers[1].connected = true
+    window.refresh()
+  })
+  await selectSidebarItem('Terminal', 'Program build')
+  await page.waitForSelector('[data-terminal="program-build"][data-owner="remote"]')
+  await assertComposerHidden('terminal')
+  await rowAction('Program build', 'Pin')
+  await rowAction('Program build', 'Settle')
+  await page
+    .getByRole('region', { name: 'Pinned workspace items', exact: true })
+    .getByRole('group', { name: 'Terminal: Program build', exact: true })
+    .waitFor()
+  await rowAction('Program build', 'Unpin')
+  await page
+    .getByRole('region', { name: 'Settled workspace items', exact: true })
+    .getByRole('group', { name: 'Terminal: Program build', exact: true })
+    .waitFor()
+  await rowAction('Program build', 'Reopen')
+  await snoozeRow('Program build')
+  await page
+    .getByRole('region', { name: 'Snoozed workspace items', exact: true })
+    .getByRole('group', { name: 'Terminal: Program build', exact: true })
+    .waitFor()
+  await snoozeRow('Program build', 'Unsnooze')
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.computers[1].snapshot.terminals.find((session) => session.id === 'program-build')
+          .activity.state,
+    ),
+    'working',
+    'Lifecycle changes retain program metadata',
+  )
+  await page.evaluate(() => {
+    const snapshot = window.computers[1].snapshot
+    const session = snapshot.terminals.find((session) => session.id === 'program-build')
+    session.title = session.terminalTitle = 'Program build updated'
+    window.computers[1].snapshot = { ...snapshot }
+    window.refresh()
+  })
+  await page.getByRole('region', { name: 'Terminal: Program build updated', exact: true }).waitFor()
+  await page.evaluate(() => {
+    const snapshot = window.computers[1].snapshot
+    const session = snapshot.terminals.find((session) => session.id === 'program-build')
+    session.title = session.customTitle = 'Program custom name'
+    session.terminalTitle = 'Program automatic title'
+    window.computers[1].snapshot = { ...snapshot }
+    window.refresh()
+  })
+  await page.getByRole('region', { name: 'Terminal: Program custom name', exact: true }).waitFor()
+  await page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Terminal: Program custom name', exact: true })
+    .waitFor()
+  assert.equal(
+    await workspaceRows.filter({ hasText: 'Program automatic title' }).count(),
+    0,
+    'Unified renders the backend-resolved custom title',
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.computers[1].snapshot.terminals.find((session) => session.id === 'program-done')
+          .settledAt,
+    ),
+    undefined,
+    'A Done report never auto-settles the session',
+  )
+  if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+    await page.setViewportSize({ width: 1280, height: 1200 })
+    await page
+      .getByRole('complementary')
+      .locator('[data-section="pinned"]')
+      .evaluate((section) => {
+        section.parentElement.parentElement.scrollTop = 0
+      })
+    await page.locator('#workspace-content').hover()
+    await page.screenshot({
+      path: '/tmp/dovo-unified-terminal-statuses.png',
+      animations: 'disabled',
+    })
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
+  await page
+    .getByRole('complementary')
+    .getByRole('button', { name: 'Hide Program custom name', exact: true })
+    .click()
+  await page.getByLabel('Search workspace').fill('')
+  await selectSidebarItem('Thread', 'local thread')
+  assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
+  await page.evaluate(() => {
+    const snapshot = window.computers[1].snapshot
+    snapshot.terminals = snapshot.terminals.filter((session) => !session.id.startsWith('program-'))
+    window.computers[1].snapshot = { ...snapshot }
+    window.refresh()
+  })
+  await snoozeRow('Docs')
+  assert.equal(
+    await pinnedGrid.getByRole('group', { name: 'Page: Docs', exact: true }).count(),
+    1,
+    'Snoozed pinned pages remain in the compact grid',
+  )
+  await pinnedGrid.getByLabel('Snoozed', { exact: true }).waitFor()
+  await snoozeRow('Docs', 'Unsnooze')
+  await rowAction('Docs', 'Settle')
+  await pinnedGrid.getByLabel('Settled', { exact: true }).waitFor()
+  assert.equal(
+    await pinnedGrid.getByRole('button', { name: 'Reopen Docs', exact: true }).count(),
+    1,
+  )
+  await rowAction('Docs', 'Reopen')
+  await rowAction('Docs', 'Unpin')
+  assert.equal(await pinnedGrid.getByRole('group', { name: 'Page: Docs', exact: true }).count(), 0)
+  await rowAction('Docs', 'Pin')
+  await pinnedGrid.getByRole('group', { name: 'Page: Docs', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.activeRuntimeId),
+    'local',
+    'Pinned browser lifecycle actions preserve the active computer',
+  )
   await rowAction('LAN browser', 'Pin')
   assert.equal(
     await page.evaluate(
@@ -603,9 +1326,9 @@ try {
   await rowAction('local thread', 'Pin')
   await page.waitForFunction(() => window.computers[0].snapshot.workspace.tasks[0].pinned === true)
   assert.ok(
-    (
-      await page.getByRole('complementary').locator('.studio-thread-card').first().textContent()
-    ).includes('local thread'),
+    (await pinnedSection.locator('.studio-thread-card').first().textContent()).includes(
+      'local thread',
+    ),
     'Pinned items lead the mixed list',
   )
   await rowAction('local thread', 'Unpin')
@@ -627,6 +1350,7 @@ try {
     window.computers[0].snapshot.workspace.tasks[0].status = 'running'
     window.refresh()
   })
+  await expandSection('Working')
   await hoverRow('local thread')
   assert.equal(
     await page
@@ -693,11 +1417,22 @@ try {
   await assertComposerHidden('terminal')
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const terminal = await page.locator('[data-terminal-primary]').boundingBox()
-    const panel = await page.getByRole('tabpanel').boundingBox()
+    const panel = await page
+      .getByRole('region', { name: 'Terminal: remote shell', exact: true })
+      .boundingBox()
     assert.ok(
       terminal.width > panel.width * 0.9 && terminal.height > panel.height * 0.7,
       'Terminal owns the main workspace area',
     )
+    await page.setViewportSize({ width: 1280, height: 1050 })
+    await pinnedSection.evaluate((section) => {
+      section.parentElement.scrollTop = 0
+    })
+    await page.screenshot({
+      path: '/tmp/dovo-unified-terminal-no-tabs.png',
+      animations: 'disabled',
+    })
+    await page.setViewportSize({ width: 1280, height: 900 })
   }
 
   assert.equal(
@@ -706,8 +1441,36 @@ try {
     'opening remote terminals must not switch the active computer',
   )
   assert.ok((await page.evaluate(() => window.effects)).includes('hide-thread:thread'))
-  await page.getByRole('tab', { name: 'local thread' }).click()
+  await page
+    .getByRole('complementary')
+    .getByRole('button', { name: 'Hide remote shell', exact: true })
+    .click()
+  await page.waitForFunction(() => document.activeElement?.id === 'workspace-content')
+  assert.equal(
+    (await savedWorkspace()).tabs.some(
+      (item) => item.kind === 'terminal' && item.runtimeId === 'remote' && item.id === 'shell',
+    ),
+    false,
+    'The direct sidebar Hide action releases the retained item without closing its session',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/terminals/close').length,
+    ),
+    0,
+  )
+  await selectSidebarItem('Terminal', 'remote shell')
+  await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
+  await selectSidebarItem('Thread', 'local thread')
   assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
+  if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+    await page.setViewportSize({ width: 1280, height: 1050 })
+    await pinnedSection.evaluate((section) => {
+      section.parentElement.scrollTop = 0
+    })
+    await page.screenshot({ path: '/tmp/dovo-unified-thread-no-tabs.png', animations: 'disabled' })
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
   assert.ok((await page.evaluate(() => window.effects)).includes('hide-terminal:shell'))
   await page
     .getByRole('complementary')
@@ -730,7 +1493,7 @@ try {
       () => window.calls.filter((call) => call.path === '/api/tasks/workspace/route').length,
     ),
     0,
-    'Tab and Home navigation never reclassifies the draft',
+    'Sidebar and Home navigation never reclassifies the draft',
   )
   await page.getByLabel('Workspace input computer').selectOption('remote')
   await page.getByLabel('Workspace destination').selectOption('auto')
@@ -753,8 +1516,8 @@ try {
     'http://lan.local:3000/plain-http',
   ])
   assert.equal(
-    await page.getByRole('tab', { name: 'browser · New tab', exact: true }).count(),
-    0,
+    (await savedWorkspace()).tabs.some((item) => item.kind === 'browser' && item.id === 'new'),
+    false,
     'new-page placeholder must be replaced',
   )
   await assertComposerHidden('browser')
@@ -944,12 +1707,12 @@ try {
   })
   await page.getByRole('button', { name: 'Run command', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Waiting for terminal session' }).waitFor()
-  const delayedTab = await page.getByRole('tab', { selected: true }).getAttribute('id')
+  const delayedItem = (await savedWorkspace()).active
   await page.evaluate(() => window.refresh())
   assert.equal(
-    await page.getByRole('tab', { selected: true }).getAttribute('id'),
-    delayedTab,
-    'A delayed terminal snapshot cannot erase a freshly opened tab',
+    (await savedWorkspace()).active,
+    delayedItem,
+    'A delayed terminal snapshot cannot erase a freshly opened item',
   )
   await page.evaluate(() => {
     window.delayTerminalSnapshot = false
@@ -1057,15 +1820,18 @@ try {
   await rowAction('remote shell', 'Pin')
   await rowAction('remote shell', 'Settle')
   assert.ok(
-    (
-      await page.getByRole('complementary').locator('.studio-thread-card').first().textContent()
-    ).includes('remote shell'),
+    await page
+      .getByRole('complementary')
+      .locator('[data-section="pinned"] .studio-thread-card')
+      .filter({ hasText: 'remote shell' })
+      .count(),
     'Pinned settled terminals stay in Pinned',
   )
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
   await rowAction('remote shell', 'Reopen')
   await rowAction('remote shell', 'Unpin')
   await snoozeRow('remote shell')
+  await page.getByRole('complementary').locator('[data-section="snoozed"] > summary').click()
   await snoozeRow('remote shell', 'Unsnooze')
   assert.equal(
     await page.evaluate(
@@ -1079,9 +1845,12 @@ try {
     ).toISOString()
     window.refresh()
   })
-  await page.getByRole('heading', { name: 'Snoozed', exact: true }).waitFor()
+  await page.getByRole('complementary').locator('[data-section="snoozed"]').waitFor()
   await page.clock.fastForward(31_000)
-  await page.getByRole('heading', { name: 'Snoozed', exact: true }).waitFor({ state: 'hidden' })
+  await page
+    .getByRole('complementary')
+    .locator('[data-section="snoozed"]')
+    .waitFor({ state: 'hidden' })
   await page
     .getByRole('complementary')
     .locator('.studio-thread-card')
@@ -1113,7 +1882,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'Unified workspace: mixed tabs, retained drafts, remote ownership, routing override, HTTP, explicit execution and terminal launcher passed.',
+    'Unified workspace: sidebar navigation without horizontal tabs, pinned browser grid, retained drafts, lifecycle, remote ownership, HTTP, routing and terminal launcher passed.',
   )
 } finally {
   await browser.close()
