@@ -566,7 +566,15 @@ export class RemoteBrowsers {
       (released ??= (async () => {
         if (--current.users) return
         if (this.profiles.get(key) === current) this.profiles.delete(key)
-        const closing = current.context.then((context) => context.close())
+        const closing = current.context.then(async (context) => {
+          try {
+            await context.close()
+          } catch (error) {
+            // Renderer loss can finish closing the context before Playwright's
+            // close command replies. Only confirmed closure completes release.
+            if (!context.isClosed()) throw error
+          }
+        })
         this.closingProfiles.set(key, closing)
         try {
           await closing

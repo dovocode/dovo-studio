@@ -294,12 +294,15 @@ try {
     }
     await crashedAndClosed
     assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
+    console.log('Remote browsers: crashed page closed; reopening its profile')
     await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
+    console.log('Remote browsers: profile reopened; attaching the recovered viewer')
     dispose.push(
       await browsers.attach('unavailable', (message) => {
         if (message.type === 'state') recoveryStates.push(message)
       }),
     )
+    console.log('Remote browsers: recovered viewer attached; checking status')
     await browsers.input('unavailable', { type: 'status' })
     await browsers.close('unavailable')
   } finally {

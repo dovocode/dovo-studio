@@ -61,6 +61,7 @@ const built = await bundleBrowser(
       path: '@dovo/studio-ui',
       contents: `
   export * as Popover from '@radix-ui/react-popover';
+  export * as ContextMenu from '@radix-ui/react-context-menu';
   export const useNavigationSidebar=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;
   export const MessageResponse=({children})=>children;
   export const Tooltip=({children})=>children;export const TooltipTrigger=({children})=>children;export const TooltipContent=()=>null;

@@ -30,16 +30,60 @@ function browser() {
 }
 function context() {
   let onClose: (() => void) | undefined
+  let closed = false
   return {
     once: vi.fn<(event: string, listener: () => void) => void>((event, listener) => {
       if (event === 'close') onClose = listener
     }),
-    close: vi.fn<() => Promise<void>>(async () => onClose?.()),
+    close: vi.fn<() => Promise<void>>(async () => {
+      closed = true
+      onClose?.()
+    }),
+    isClosed: () => closed,
+    route: vi.fn<() => Promise<void>>(async () => {}),
   }
 }
 afterEach(() => {
   vi.useRealTimers()
   vi.resetAllMocks()
+})
+
+it('reopens a profile when its context closes before the close command rejects', async () => {
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const instance = browser()
+  const original = context()
+  instance.newContext.mockResolvedValueOnce(original)
+  mocks.launch.mockResolvedValue(instance)
+  const browsers = new RemoteBrowsers()
+  const profile = await browsers['profile']('default')
+  const finishClose = original.close.getMockImplementation()
+  if (!finishClose) throw new Error('Missing native context close fixture')
+  // The close starts while open, observes closure, then loses its command reply.
+  original.close.mockImplementationOnce(async () => {
+    await finishClose()
+    throw new Error('Target page, context or browser has been closed')
+  })
+  await expect(profile.release()).resolves.toBeUndefined()
+  const reopened = await browsers['profile']('default')
+  expect(reopened.context).not.toBe(original)
+  await reopened.release()
+  await browsers.dispose()
+})
+
+it('reports a failed profile close when the context remains open', async () => {
+  mocks.ensure.mockResolvedValue('/managed/chromium')
+  const instance = browser()
+  const original = context()
+  instance.newContext.mockResolvedValueOnce(original)
+  mocks.launch.mockResolvedValue(instance)
+  const browsers = new RemoteBrowsers()
+  const profile = await browsers['profile']('default')
+  const failure = new Error('Context shutdown failed')
+  original.close.mockRejectedValueOnce(failure)
+  await expect(profile.release()).rejects.toBe(failure)
+  expect(original.isClosed()).toBe(false)
+  await original.close()
+  await browsers.dispose()
 })
 
 it('shares startup before installation and Chromium launch finish', async () => {
