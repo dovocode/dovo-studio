@@ -66,7 +66,9 @@ async fn run() -> Result<(), Failure> {
     let mut media = media::start_screen_media_stream(&mut adapter, &mut handshake, 1).await?;
     let mut touch = UniversalHidServiceClient::connect_rsd(&mut adapter, &mut handshake).await?;
     let mut buttons = IndigoHidClient::connect_rsd(&mut adapter, &mut handshake).await?;
-    let mut keyboard = touch.create_main_keyboard().await?;
+    // A registered HID keyboard hides the iOS software keyboard, even before a
+    // key is sent. Touch-only control must leave the normal keyboard available.
+    let mut keyboard = None;
     // iOS authenticates HID reports against the active display session.
     tokio::time::sleep(Duration::from_millis(300)).await;
     event(json!({"type":"ready","device":udid}));
@@ -137,16 +139,22 @@ async fn run() -> Result<(), Failure> {
                     if codes.iter().any(|code| *code == 0 || *code > 0xE7) {
                         return Err("Invalid keyboard usage".into());
                     }
+                    if keyboard.is_none() {
+                        keyboard = Some(touch.create_main_keyboard().await?);
+                    }
+                    let Some(keyboard) = keyboard.as_mut() else {
+                        return Err("Could not create device keyboard".into());
+                    };
                     for code in codes {
                         pressed.push(code);
                         touch
-                            .main_keyboard_key_down(&mut keyboard, KeyboardUsage::new(code)?)
+                            .main_keyboard_key_down(keyboard, KeyboardUsage::new(code)?)
                             .await?;
                         tokio::time::sleep(Duration::from_millis(12)).await;
                     }
                     while let Some(code) = pressed.last().copied() {
                         touch
-                            .main_keyboard_key_up(&mut keyboard, KeyboardUsage::new(code)?)
+                            .main_keyboard_key_up(keyboard, KeyboardUsage::new(code)?)
                             .await?;
                         pressed.pop();
                     }
@@ -165,7 +173,9 @@ async fn run() -> Result<(), Failure> {
                             .send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, None)
                             .await?;
                     }
-                    touch.reset_main_keyboard(&mut keyboard).await?;
+                    if let Some(keyboard) = keyboard.as_mut() {
+                        touch.reset_main_keyboard(keyboard).await?;
+                    }
                 }
                 Command::Resume => {}
             }
@@ -181,7 +191,9 @@ async fn run() -> Result<(), Failure> {
                 .send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, None)
                 .await?;
         }
-        touch.remove_main_keyboard(&mut keyboard).await?;
+        if let Some(keyboard) = keyboard.as_mut() {
+            touch.remove_main_keyboard(keyboard).await?;
+        }
         media.client.stop_media_stream().await?;
         Ok::<(), Failure>(())
     };

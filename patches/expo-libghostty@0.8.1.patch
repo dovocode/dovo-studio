@@ -150,7 +150,7 @@ index 9d6ad1671c843b7cd75e08639906a9065b984210..c3d464aba0cc4c2cf507ae8e2382579d
      // Nerd Font glyph ranges: BMP private-use area plus the supplementary
      // private-use planes (material icons live at U+F0000+ since v3).
 diff --git a/build/ExpoLibghostty.types.d.ts b/build/ExpoLibghostty.types.d.ts
-index 0969f137ea5482158fb577ef3eee6c9192b1da2e..90e012c0b4c02c7b1e251488f854937c58a69256 100644
+index 0969f137ea5482158fb577ef3eee6c9192b1da2e..7acb1054d1e550b509dcf6fc285b4c97a75c4e12 100644
 --- a/build/ExpoLibghostty.types.d.ts
 +++ b/build/ExpoLibghostty.types.d.ts
 @@ -11,7 +11,17 @@ export type TerminalResizeEvent = {
@@ -171,7 +171,7 @@ index 0969f137ea5482158fb577ef3eee6c9192b1da2e..90e012c0b4c02c7b1e251488f854937c
      /** Feed base64-encoded PTY output into the terminal grid. */
      write(base64: string): Promise<void>;
      /** Feed PTY output as UTF-8 text, for string-based wires. */
-@@ -52,6 +62,19 @@ export type TerminalViewProps = {
+@@ -52,6 +62,21 @@ export type TerminalViewProps = {
       * pass undefined fields to keep ghostty's defaults.
       */
      theme?: TerminalTheme;
@@ -188,6 +188,8 @@ index 0969f137ea5482158fb577ef3eee6c9192b1da2e..90e012c0b4c02c7b1e251488f854937c
 +    onFontFallback?: (event: {
 +        nativeEvent: TerminalFontFallbackEvent;
 +    }) => void;
++    /** iOS: visibility of the software keyboard, excluding an accessory-only row. */
++    onKeyboardVisibilityChange?: (event: { nativeEvent: { visible: boolean } }) => void;
      /** User keyboard/IME input to forward to the PTY. */
      onInput?: (event: {
          nativeEvent: TerminalInputEvent;
@@ -205,7 +207,7 @@ index e3bf3b8973c565cccfea1982e498d5d23bac1d8c..3d767508a063732a07f227353fab9d78
              writeText: whenReady((text) => native.current.writeText(text)),
              finish: whenReady((exitCode) => native.current.finish(exitCode)),
 diff --git a/ios/ExpoLibghosttyModule.swift b/ios/ExpoLibghosttyModule.swift
-index 2f32970ab6b560820b12b8e17842ed05471ba8ec..97b53f13a46c8394e0dd1fabab2e917f7db6c085 100644
+index 2f32970ab6b560820b12b8e17842ed05471ba8ec..072c0c86cd083594e53dae2522ca8432ab4725c1 100644
 --- a/ios/ExpoLibghosttyModule.swift
 +++ b/ios/ExpoLibghosttyModule.swift
 @@ -5,7 +5,7 @@ public class ExpoLibghosttyModule: Module {
@@ -213,7 +215,7 @@ index 2f32970ab6b560820b12b8e17842ed05471ba8ec..97b53f13a46c8394e0dd1fabab2e917f
  
      View(ExpoLibghosttyView.self) {
 -      Events("onInput", "onResize")
-+      Events("onInput", "onResize", "onFontFallback")
++      Events("onInput", "onResize", "onFontFallback", "onKeyboardVisibilityChange")
  
        // Base font size in points (default 14). Changing it after mount
        // rebuilds the surface and resets the grid.
@@ -239,7 +241,7 @@ index 2f32970ab6b560820b12b8e17842ed05471ba8ec..97b53f13a46c8394e0dd1fabab2e917f
        AsyncFunction("write") { (view: ExpoLibghosttyView, base64: String) in
          guard let data = Data(base64Encoded: base64) else {
 diff --git a/ios/ExpoLibghosttyView.swift b/ios/ExpoLibghosttyView.swift
-index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..2e201ec3ec6e7ab3699c1b1a3e09e59d96b87ae3 100644
+index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..451b27ab5b317627611796ba0add52d9a6de2951 100644
 --- a/ios/ExpoLibghosttyView.swift
 +++ b/ios/ExpoLibghosttyView.swift
 @@ -1,3 +1,4 @@
@@ -247,7 +249,7 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..2e201ec3ec6e7ab3699c1b1a3e09e59d
  import ExpoModulesCore
  import GhosttyTerminal
  
-@@ -42,6 +43,36 @@ class ExpoLibghosttyView: ExpoView {
+@@ -42,6 +43,37 @@ class ExpoLibghosttyView: ExpoView {
      _ = TerminalController.shared.setTheme(TerminalTheme(light: config, dark: config))
    }
  
@@ -281,10 +283,11 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..2e201ec3ec6e7ab3699c1b1a3e09e59d
 +  }
 +
 +  let onFontFallback = EventDispatcher()
++  let onKeyboardVisibilityChange = EventDispatcher()
    let onInput = EventDispatcher()
    let onResize = EventDispatcher()
  
-@@ -66,9 +97,23 @@ class ExpoLibghosttyView: ExpoView {
+@@ -66,9 +98,25 @@ class ExpoLibghosttyView: ExpoView {
      terminalView.controller = TerminalController.shared
      terminalView.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
      terminalView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -292,12 +295,14 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..2e201ec3ec6e7ab3699c1b1a3e09e59d
 +      .esc, .tab, .shift, .ctrl, .alt,
 +      .arrowLeft, .arrowUp, .arrowDown, .arrowRight,
 +    ]
++    terminalView.onSoftwareKeyboardVisibilityChange = { [weak self] visible in
++      self?.onKeyboardVisibilityChange(["visible": visible])
++    }
      addSubview(terminalView)
    }
  
 +  func focusKeyboard() {
-+    terminalView.becomeFirstResponder()
-+    terminalView.reloadInputViews()
++    terminalView.showSoftwareKeyboard()
 +  }
 +
 +  func blurKeyboard() {
@@ -504,7 +509,7 @@ index 809e7dd6f1887dc5c2b0267e4c786587c49aec57..659e59d22f9f8e00b2c0dcababcc668f
  
              var event = ghostty_input_key_s()
 diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift
-index 3f3eeb202351f474526690dc27937df833bdd7e3..3fca91b5aa958c750180bc466152fa356e0efeab 100644
+index 3f3eeb202351f474526690dc27937df833bdd7e3..cba72012e19707f5a0d98e037ee1d873427935da 100644
 --- a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift
 +++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+Interaction.swift
 @@ -23,11 +23,9 @@
@@ -518,12 +523,75 @@ index 3f3eeb202351f474526690dc27937df833bdd7e3..3fca91b5aa958c750180bc466152fa35
 -                }
 +                // A terminal tap focuses input. Dismissal is an explicit host action;
 +                // toggling here can dismiss a keyboard that is still being presented.
-+                becomeFirstResponder()
++                showSoftwareKeyboard()
              #endif
          }
  
+diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift
+index 7bb1e9861c9640c197321a9eff2cd7f9e087c0a1..3dfa613322d488a4b8fa6df7d192b0ea6a8ed192 100644
+--- a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift
++++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView.swift
+@@ -40,7 +40,14 @@
+         #if !targetEnvironment(macCatalyst)
+             lazy var terminalInputAccessory = TerminalInputAccessoryView(terminalView: self)
+             let stickyModifiers = TerminalStickyModifierState()
+-            var softwareKeyboardVisible = false
++            public var onSoftwareKeyboardVisibilityChange: ((Bool) -> Void)?
++            var softwareKeyboardVisible = false {
++                didSet {
++                    if softwareKeyboardVisible != oldValue {
++                        onSoftwareKeyboardVisibilityChange?(softwareKeyboardVisible)
++                    }
++                }
++            }
+             var pendingKeyboardDismissOnTouchEnd = false
+             var touchDidScrollDuringCurrentTouch = false
+         #endif
+@@ -245,11 +252,22 @@
+         }
+ 
+         #if !targetEnvironment(macCatalyst)
++            /// Reacquire the input session when iOS has hidden the software keyboard
++            /// while keeping this view focused (for example after a hardware keyboard).
++            public func showSoftwareKeyboard() {
++                guard window != nil else { return }
++                if isFirstResponder, !softwareKeyboardVisible {
++                    resignFirstResponder()
++                }
++                becomeFirstResponder()
++                reloadInputViews()
++            }
++
+             func setupKeyboardObservers() {
+                 NotificationCenter.default.addObserver(
+                     self,
+-                    selector: #selector(keyboardDidShow),
+-                    name: UIResponder.keyboardDidShowNotification,
++                    selector: #selector(keyboardFrameWillChange),
++                    name: UIResponder.keyboardWillChangeFrameNotification,
+                     object: nil
+                 )
+                 NotificationCenter.default.addObserver(
+@@ -260,9 +278,14 @@
+                 )
+             }
+ 
+-            @objc func keyboardDidShow(_: Notification) {
+-                guard isFirstResponder else { return }
+-                softwareKeyboardVisible = true
++            @objc func keyboardFrameWillChange(_ notification: Notification) {
++                guard isFirstResponder, let window,
++                      let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
++                else { return }
++                let keyboardFrame = window.convert(frame, from: window.screen.coordinateSpace)
++                let overlap = window.bounds.intersection(keyboardFrame).height
++                // iOS can show only our accessory row with a hardware keyboard attached.
++                softwareKeyboardVisible = overlap > terminalInputAccessory.intrinsicContentSize.height
+             }
+ 
+             @objc func keyboardDidHide(_: Notification) {
 diff --git a/src/ExpoLibghostty.types.ts b/src/ExpoLibghostty.types.ts
-index cbd0ab4128aa22b18c65f633dd81cbd0d737f51b..ef531ba79f22328749abc1331bfbe413a8a305b5 100644
+index cbd0ab4128aa22b18c65f633dd81cbd0d737f51b..04d139fc8995870d8220b23cfb84502987962fca 100644
 --- a/src/ExpoLibghostty.types.ts
 +++ b/src/ExpoLibghostty.types.ts
 @@ -14,7 +14,18 @@ export type TerminalResizeEvent = {
@@ -545,7 +613,7 @@ index cbd0ab4128aa22b18c65f633dd81cbd0d737f51b..ef531ba79f22328749abc1331bfbe413
    /** Feed base64-encoded PTY output into the terminal grid. */
    write(base64: string): Promise<void>;
    /** Feed PTY output as UTF-8 text, for string-based wires. */
-@@ -57,6 +68,17 @@ export type TerminalViewProps = {
+@@ -57,6 +68,19 @@ export type TerminalViewProps = {
     * pass undefined fields to keep ghostty's defaults.
     */
    theme?: TerminalTheme;
@@ -560,6 +628,8 @@ index cbd0ab4128aa22b18c65f633dd81cbd0d737f51b..ef531ba79f22328749abc1331bfbe413
 +  fontFamily?: string;
 +  /** The requested `fontFamily` is unavailable; the default font is used. */
 +  onFontFallback?: (event: { nativeEvent: TerminalFontFallbackEvent }) => void;
++  /** iOS: visibility of the software keyboard, excluding an accessory-only row. */
++  onKeyboardVisibilityChange?: (event: { nativeEvent: { visible: boolean } }) => void;
    /** User keyboard/IME input to forward to the PTY. */
    onInput?: (event: { nativeEvent: TerminalInputEvent }) => void;
    /** Grid resized (layout, rotation, font change); forward to the PTY. */

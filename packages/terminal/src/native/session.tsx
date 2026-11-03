@@ -146,6 +146,7 @@ export function NativeTerminalSession({
   const [backgrounded, setBackgrounded] = useState(AppState.currentState === 'background')
   const [readyKey, setReadyKey] = useState('')
   const [keyboardInset, setKeyboardInset] = useState(0)
+  const [keyboardVisible, setKeyboardVisible] = useState(false)
   const ready = readyKey === viewKey
   const terminal = useRef<TerminalViewRef>(null)
   const size = useRef<{ key: string; value: TerminalGridSize } | null>(null)
@@ -268,14 +269,12 @@ export function NativeTerminalSession({
       {platform === 'ios' && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={
-            keyboardInset > 0 ? 'Hide terminal keyboard' : 'Show terminal keyboard'
-          }
+          accessibilityLabel={keyboardVisible ? 'Hide terminal keyboard' : 'Show terminal keyboard'}
           disabled={!inputReady}
           onPress={() => {
             const view = terminal.current
             if (!view || !inputReady) return
-            void (keyboardInset > 0 ? view.blur() : view.focus()).catch((cause: unknown) =>
+            void (keyboardVisible ? view.blur() : view.focus()).catch((cause: unknown) =>
               setError(
                 cause instanceof Error
                   ? cause.message
@@ -291,7 +290,7 @@ export function NativeTerminalSession({
           }}
         >
           <Text style={{ color: theme.foreground ?? '#ededee', opacity: inputReady ? 1 : 0.5 }}>
-            {keyboardInset > 0 ? 'Hide keyboard' : 'Show keyboard'}
+            {keyboardVisible ? 'Hide keyboard' : 'Show keyboard'}
           </Text>
         </Pressable>
       )}
@@ -301,6 +300,15 @@ export function NativeTerminalSession({
         style={{ flex: 1 }}
         fontSize={fontSize}
         theme={theme}
+        {...(platform === 'ios'
+          ? {
+              onKeyboardVisibilityChange: ({
+                nativeEvent,
+              }: {
+                nativeEvent: { visible: boolean }
+              }) => setKeyboardVisible(nativeEvent.visible),
+            }
+          : {})}
         {...(fontFamilySupported ? { fontFamily } : {})}
         onFontFallback={({ nativeEvent }) =>
           setFontFallback({ family: nativeEvent.fontFamily, message: nativeEvent.message })
