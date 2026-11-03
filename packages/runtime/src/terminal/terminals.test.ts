@@ -279,7 +279,14 @@ it('reclaims exited unattended sessions while preserving observed output and the
     const first = terminals.createCommand(
       'task',
       f.directory,
-      { command: process.execPath, args: ['-e', 'console.log("retained-output")'], env: {} },
+      {
+        command: process.execPath,
+        args: [
+          '-e',
+          'console.log("retained-output"); process.stdin.once("data", () => process.exit(0))',
+        ],
+        env: {},
+      },
       'Observed',
     )
     const detach = terminals.attach(first.id, () => {})
@@ -290,6 +297,8 @@ it('reclaims exited unattended sessions while preserving observed output and the
         { command: process.execPath, args: ['-e', ''], env: {} },
         'Finished',
       )
+    await waitForRuntime(() => expect(terminals.get(first.id).buffer).toContain('retained-output'))
+    terminals.input(first.id, '\r')
     await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
       timeout: 10000,
     })
@@ -315,15 +324,29 @@ it('retains pinned exited sessions at capacity until unpinned or explicitly clos
       const terminal = terminals.createCommand(
         'task',
         f.directory,
-        { command: process.execPath, args: ['-e', 'console.log("pinned-output")'], env: {} },
+        {
+          command: process.execPath,
+          args: [
+            '-e',
+            'console.log("pinned-output"); process.stdin.once("data", () => process.exit(0))',
+          ],
+          env: {},
+        },
         'Pinned',
       )
       terminals.update({ id: terminal.id, pinned: true })
       return terminal.id
     })
+    // Establish captured output before exit: a burst of short-lived macOS PTYs can close
+    // before their output is read. This test checks retention and eviction of captured data.
+    await waitForRuntime(() => {
+      for (const id of pinned) expect(terminals.get(id).buffer).toContain('pinned-output')
+    })
+    for (const id of pinned) terminals.input(id, '\r')
     await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
       timeout: 10000,
     })
+    for (const session of terminals.list()) expect(session.exitCode).toBe(0)
     expect(() => terminals.create('task', f.directory)).toThrow(
       'Close a terminal before opening another (limit 20)',
     )
