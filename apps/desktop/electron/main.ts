@@ -569,7 +569,13 @@ const startup = Effect.gen(function* () {
       event.returnValue = {
         version: app.getVersion(),
         channel: !app.isPackaged ? 'dev' : nightly ? 'nightly' : 'stable',
-      }
+        viewer: {
+          platform: process.platform,
+          // An x64 Electron build can run on Apple Silicon through Rosetta.
+          architecture: app.runningUnderARM64Translation ? 'arm64' : process.arch,
+          processArchitecture: process.arch,
+        },
+      } satisfies NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     })
     const updates = registerUpdates(__dirname, async () => {
       await browserWindows.returnAll()

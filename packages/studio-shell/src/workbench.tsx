@@ -59,6 +59,7 @@ import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from
 import { CommandPalette } from './command-palette'
 import { TaskLauncher } from './task-launcher'
 import { TitleBar, type DesktopPlatform } from './title-bar'
+import { workbenchDiagnosticContext } from './workbench-diagnostics'
 type WorkbenchProps = {
   captureContent?: ReactNode
   threadWindow?: import('@dovo/protocol').ThreadWindowTarget
@@ -177,9 +178,10 @@ function WorkbenchErrorBoundary({
     <ErrorBoundary
       scope="app"
       diagnosticContext={{
-        appVersion: appInfo?.version,
-        channel: appInfo?.channel,
-        platform: navigator.platform,
+        ...workbenchDiagnosticContext(
+          appInfo,
+          typeof navigator === 'undefined' ? undefined : navigator.platform,
+        ),
         computerName: entry?.profile.name,
         runtimeVersion: entry?.snapshot?.releaseVersion,
       }}

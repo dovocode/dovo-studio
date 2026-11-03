@@ -28,6 +28,7 @@ const fixture = vi.hoisted(() => {
     startupIpc: [] as string[],
     startupUpdates: 0,
     startupQuits: 0,
+    translated: false,
     choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
     start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
       Promise.reject(new Error('Runtime protocol is incompatible')),
@@ -52,6 +53,9 @@ vi.mock('./dictation.js', () => ({ registerDictation: () => ({ dispose: () => {}
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
+    get runningUnderARM64Translation() {
+      return fixture.translated
+    },
     getVersion: () => '0.0.7',
     getPath: () => '/tmp/dovo-startup-unit-test',
     commandLine: {
@@ -189,6 +193,7 @@ it('rejects untrusted senders before returning runtime credentials or activating
     'runtime:windows-save',
     'runtime:windows-connection',
     'runtime:windows-security',
+    'app:info',
   ]) {
     const handler = fixture.handlers.get(channel)
     if (!handler) throw new Error(`Missing IPC handler ${channel}`)
@@ -204,6 +209,38 @@ const trustedEvent = () => {
   }
   return { senderFrame: frame, sender: { mainFrame: frame } }
 }
+
+it.each([
+  { platform: 'darwin', arch: 'arm64', translated: false, architecture: 'arm64' },
+  { platform: 'darwin', arch: 'x64', translated: false, architecture: 'x64' },
+  { platform: 'darwin', arch: 'x64', translated: true, architecture: 'arm64' },
+  { platform: 'win32', arch: 'x64', translated: false, architecture: 'x64' },
+  { platform: 'win32', arch: 'x64', translated: true, architecture: 'arm64' },
+  { platform: 'linux', arch: 'arm64', translated: false, architecture: 'arm64' },
+] as const)(
+  'reports the desktop viewer from the host: $platform/$arch, translated=$translated',
+  ({ platform, arch, translated, architecture }) => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const archSpy = vi.spyOn(process, 'arch', 'get').mockReturnValue(arch)
+    fixture.translated = translated
+    try {
+      const handler = fixture.handlers.get('app:info')
+      if (!handler) throw new Error('Missing app info handler')
+      const event = { ...trustedEvent(), returnValue: undefined }
+      handler(event)
+      expect(event.returnValue).toEqual({
+        version: '0.0.7',
+        channel: 'stable',
+        viewer: { platform, architecture, processArchitecture: arch },
+      })
+    } finally {
+      fixture.translated = false
+      platformSpy.mockRestore()
+      archSpy.mockRestore()
+    }
+  },
+)
+
 it('accepts Native Windows setup without restarting active work', async () => {
   await import('./main')
   const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')

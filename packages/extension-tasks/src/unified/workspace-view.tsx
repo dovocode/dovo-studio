@@ -945,28 +945,27 @@ function WorkspaceContent() {
               {lifecycleError}
             </p>
           )}
+          {/* Keep the Home draft mounted without taking space above an active workspace tab. */}
           <div
+            hidden={!!active}
             className={
               active
-                ? 'shrink-0 px-4 py-3'
+                ? 'hidden'
                 : 'flex min-h-0 flex-1 justify-center overflow-y-auto px-8 py-[12vh]'
             }
           >
-            <div className={active ? 'w-full' : 'w-full max-w-xl'}>
+            <div className="startup-draft w-full max-w-[var(--chat-max)]">
               {!active && (
-                <div className="mb-7">
-                  <h1 className="text-2xl font-medium tracking-tight">What are you working on?</h1>
+                <div className="mb-7 text-center">
+                  <h1 className="startup-heading text-balance text-xl font-medium tracking-tight sm:text-2xl">
+                    What are you working on?
+                  </h1>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
                     A page to explore, a command to run, or an idea to build.
                   </p>
                 </div>
               )}
-              <WorkspaceInput
-                active={active}
-                compact={!!active}
-                onOpen={open}
-                onBrowser={openBrowserLink}
-              />
+              <WorkspaceInput active={active} onOpen={open} onBrowser={openBrowserLink} />
               {!active && (
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Button

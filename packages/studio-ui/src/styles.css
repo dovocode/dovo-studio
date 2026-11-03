@@ -163,6 +163,8 @@
 .task-composer .studio-composer > [data-composer-input] {
   min-height: 4rem;
   padding: 1rem 1.25rem 0.5rem;
+  background: transparent;
+  box-shadow: none;
 }
 .task-composer [data-composer-footer] {
   flex-wrap: wrap;

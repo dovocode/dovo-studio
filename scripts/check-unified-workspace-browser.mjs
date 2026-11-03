@@ -51,7 +51,7 @@ export const resolveTaskDefaults=()=>({});
 const Store=createContext(null),Host=createContext(null);
 export const useWorkspace=()=>useContext(Store);
 export const useStudioHost=()=>useContext(Host);
-export const useAppPreferences=()=>({unifiedWorkspaceEnabled:true,sendWith:'enter',taskSnoozeMinutes:[60,240,1440],taskSnoozeSchedule:{timeZone:'local',morningTime:'09:00',eveningTime:'18:00',weekStartsOn:1,presets:['later-today','tomorrow-morning','tomorrow-evening','next-week']}});
+export const useAppPreferences=()=>({unifiedWorkspaceEnabled:true,sendWith:'enter',minimalComposer:true,taskSnoozeMinutes:[60,240,1440],taskSnoozeSchedule:{timeZone:'local',morningTime:'09:00',eveningTime:'18:00',weekStartsOn:1,presets:['later-today','tomorrow-morning','tomorrow-evening','next-week']},...window.composerPreferences});
 export const readAppPreferences=()=>({confirmUnpin:false});
 export const sameWorkspaceFields=()=>false;export const useWorkspaceSelector=selector=>selector(useWorkspace());
 export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
@@ -84,7 +84,7 @@ import {Button} from '${root}/packages/studio-ui/src/components/ui/button';
 export {Button};
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input';
-export {ComposerSurface,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
+export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
 export {ProjectIcon} from '${root}/packages/studio-ui/src/project-icon';
 export {AgentAvatar} from '${root}/packages/studio-ui/src/agent-avatar';
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon';
@@ -220,6 +220,158 @@ try {
     }))
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const workspaceInput = page.getByLabel('Workspace request')
+  const returnHome = async () => {
+    await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
+    await workspaceInput.waitFor({ state: 'visible' })
+  }
+  const assertComposerHidden = async (kind) => {
+    await workspaceInput.waitFor({ state: 'hidden' })
+    assert.equal(await workspaceInput.count(), 1, 'Home input remains mounted')
+    assert.equal(
+      await workspaceInput.evaluate((input) => {
+        const overview = input.closest('[hidden]')
+        return !!overview && overview.getClientRects().length === 0
+      }),
+      true,
+      `Home composer has no layout footprint in an active ${kind}`,
+    )
+    assert.equal(
+      await page.getByRole('form', { name: 'Workspace input', exact: true }).count(),
+      0,
+      `No shared composer toolbar is exposed in an active ${kind}`,
+    )
+  }
+  const assertComposerDesign = async (name) => {
+    const form = page.getByRole('form', { name, exact: true })
+    const design = await form.evaluate((surface) => {
+      const submit = surface.querySelector('button[type="submit"]')
+      const input = surface.querySelector('textarea')
+      const workspace = surface.parentElement.querySelector('[data-composer-workspace]')
+      return {
+        radius: parseFloat(getComputedStyle(surface).borderRadius),
+        submitWidth: submit.getBoundingClientRect().width,
+        submitHeight: submit.getBoundingClientRect().height,
+        submitRadius: parseFloat(getComputedStyle(submit).borderRadius),
+        inputBackground: getComputedStyle(input).backgroundColor,
+        inputShadow: getComputedStyle(input).boxShadow,
+        workspaceBorder: getComputedStyle(workspace).borderBottomWidth,
+        workspaceBackground: getComputedStyle(workspace).backgroundColor,
+      }
+    })
+    assert.ok(design.radius >= 20, 'Uses the rounded thread composer surface')
+    assert.equal(design.submitWidth, design.submitHeight, 'Submit keeps the thread icon size')
+    assert.ok(design.submitRadius >= design.submitWidth / 2, 'Submit uses the circular design')
+    assert.equal(design.inputBackground, 'rgba(0, 0, 0, 0)')
+    assert.equal(
+      design.inputShadow,
+      'none',
+      'Dialog field styling cannot cover the composer surface',
+    )
+    assert.equal(design.workspaceBorder, '0px', 'Workspace controls have no attached panel border')
+    assert.equal(design.workspaceBackground, 'rgba(0, 0, 0, 0)')
+  }
+  const assertComposerInteractions = async (name, inputLabel, controlLabel) => {
+    const form = page.getByRole('form', { name, exact: true })
+    const input = page.getByLabel(inputLabel, { exact: true })
+    const control = page.getByLabel(controlLabel, { exact: true })
+    const original = await input.elementHandle()
+    const idle = page.locator('form[data-idle]').filter({ has: input })
+    const expanded = page.locator('form:not([data-idle])').filter({ has: input })
+    const finishLayout = () =>
+      form.evaluate((surface) => {
+        for (const animation of surface.getAnimations({ subtree: true })) animation.finish()
+      })
+    await input.evaluate((element) => element.blur())
+    await idle.waitFor()
+    await finishLayout()
+    const idleBounds = await form.boundingBox()
+    if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+      assert.ok(idleBounds.height <= 48, `${name} starts as a single idle row`)
+      const editor = await input.boundingBox()
+      const action = await form.locator('[data-composer-actions]').boundingBox()
+      assert.ok(editor.width > 70, 'The idle editor leaves space for the placeholder')
+      assert.ok(Math.abs(editor.y + editor.height / 2 - (action.y + action.height / 2)) < 2)
+    }
+    await input.focus()
+    await expanded.waitFor()
+    await finishLayout()
+    if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+      assert.ok(
+        (await form.boundingBox()).height > idleBounds.height + 20,
+        'Focus expands the editor',
+      )
+      await page.screenshot({
+        path:
+          name === 'Workspace input'
+            ? '/tmp/dovo-unified-composer-expanded.png'
+            : '/tmp/dovo-terminal-composer-expanded.png',
+        animations: 'disabled',
+      })
+    }
+    await control.focus()
+    assert.equal(
+      await form.getAttribute('data-idle'),
+      null,
+      'Toolbar focus keeps the editor expanded',
+    )
+    await control.evaluate((element) => element.blur())
+    await idle.waitFor()
+    await page.evaluate(() => {
+      window.composerPreferences = { sendWith: 'mod-enter', markdownComposerPreview: true }
+      window.refresh()
+    })
+    const before = await page.evaluate(() => window.calls.length)
+    await input.fill('**literal draft**')
+    await input.press('Enter')
+    assert.equal(
+      await input.inputValue(),
+      '**literal draft**\n',
+      'The shared send preference adds a newline',
+    )
+    assert.equal(
+      await page.evaluate(() => window.calls.length),
+      before,
+      'Plain Enter cannot dispatch in mod-enter mode',
+    )
+    assert.equal(
+      await form.getByLabel('Formatted message preview').count(),
+      0,
+      'Commands and addresses remain plain text',
+    )
+    if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+      const shortDraft = await input.boundingBox()
+      const multiline = Array.from({ length: 8 }, (_, index) => `Draft line ${index}`).join('\n')
+      await input.fill(multiline)
+      await finishLayout()
+      assert.ok(
+        (await input.boundingBox()).height > shortDraft.height + 20,
+        'The shared textarea grows to fit multiline drafts',
+      )
+      assert.equal(await input.inputValue(), multiline)
+    }
+    await control.focus()
+    await control.evaluate((element) => element.blur())
+    assert.equal(await form.getAttribute('data-idle'), null, 'A draft stays expanded after blur')
+    assert.equal(
+      await input.evaluate((element, initial) => element === initial, original),
+      true,
+      'Focus and preference changes preserve the editor',
+    )
+    await input.fill('')
+    await input.evaluate((element) => element.blur())
+    await idle.waitFor()
+    await page.evaluate(() => {
+      window.composerPreferences = { minimalComposer: false }
+      window.refresh()
+    })
+    await expanded.waitFor()
+    await page.evaluate(() => {
+      window.composerPreferences = undefined
+      window.refresh()
+    })
+    await idle.waitFor()
+  }
   const workspaceRows = page.getByRole('complementary').locator('[data-workspace-kind]')
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const assets = root + '/apps/desktop/dist/assets'
@@ -231,6 +383,16 @@ try {
       document.documentElement.dataset.theme = 'dark'
     })
     await page.getByRole('heading', { name: 'What are you working on?' }).waitFor()
+    await assertComposerDesign('Workspace input')
+    await page.evaluate(() => {
+      document.documentElement.classList.remove('dark')
+      document.documentElement.dataset.theme = 'light'
+    })
+    await assertComposerDesign('Workspace input')
+    await page.evaluate(() => {
+      document.documentElement.classList.add('dark')
+      document.documentElement.dataset.theme = 'dark'
+    })
     const action = page
       .getByRole('complementary')
       .getByRole('button', { name: 'Pin local thread', exact: true })
@@ -271,7 +433,7 @@ try {
         getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
           .opacity === '0',
     )
-    await page.screenshot({ path: '/tmp/dovo-unified-overview.png' })
+    await page.screenshot({ path: '/tmp/dovo-unified-overview.png', animations: 'disabled' })
     await workspaceRows
       .filter({ has: page.getByRole('button', { name: 'Pin local thread', exact: true }) })
       .hover()
@@ -280,9 +442,10 @@ try {
         getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
           .opacity === '1',
     )
-    await page.screenshot({ path: '/tmp/dovo-unified-hover.png' })
+    await page.screenshot({ path: '/tmp/dovo-unified-hover.png', animations: 'disabled' })
     await page.getByRole('heading', { name: 'What are you working on?' }).hover()
   }
+  await assertComposerInteractions('Workspace input', 'Workspace request', 'Workspace destination')
   assert.deepEqual(
     await workspaceRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
     [
@@ -322,6 +485,11 @@ try {
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
   await page.getByRole('dialog').waitFor()
+  await assertComposerInteractions('New workspace terminal', 'Startup command', 'Terminal shell')
+  if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
+    await assertComposerDesign('New workspace terminal')
+    await page.screenshot({ path: '/tmp/dovo-terminal-starter-dialog.png', animations: 'disabled' })
+  }
   await page.keyboard.press('Escape')
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   assert.equal(
@@ -341,16 +509,18 @@ try {
     }
     await page.setViewportSize({ width: 1280, height: 900 })
   }
+  await workspaceInput.fill('Keep the shared draft')
+  await page.getByLabel('Workspace input computer').selectOption('local')
+  await page.getByLabel('Workspace destination').selectOption('thread')
   await page
     .getByRole('complementary')
     .locator('.studio-thread-card')
     .filter({ hasText: 'local thread' })
     .click()
   await page.getByLabel('Thread draft').fill('Keep this draft')
-  await page.getByLabel('Workspace request').fill('Keep the shared draft')
-  await page.getByLabel('Workspace destination').selectOption('browser')
+  await assertComposerHidden('thread')
   const openTabCount = await page.getByRole('tab').count()
-  await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
+  await returnHome()
   await page.getByRole('region', { name: 'Continue working', exact: true }).waitFor()
   assert.equal(
     await page.getByRole('tab').count(),
@@ -358,12 +528,16 @@ try {
     'Home retains mounted workspace tabs',
   )
   assert.equal(await page.getByLabel('Workspace request').inputValue(), 'Keep the shared draft')
-  assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'browser')
+  assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'thread')
+  await workspaceRows.getByRole('button', { name: /^LAN browser ·/ }).click()
+  await page.waitForSelector('[data-browser="page"]:visible')
+  await assertComposerHidden('browser')
+  await returnHome()
+  assert.equal(await workspaceInput.inputValue(), 'Keep the shared draft')
+  assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'thread')
   await page.getByRole('tab', { name: 'local thread', exact: true }).click()
+  await assertComposerHidden('thread')
   assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
-  assert.equal(await page.getByLabel('Workspace request').inputValue(), 'Keep the shared draft')
-  await page.getByLabel('Workspace request').fill('')
-  await page.getByLabel('Workspace destination').selectOption('auto')
   const expandSection = async (name) => {
     const toggle = page
       .getByRole('region', { name: name + ' workspace items' })
@@ -516,6 +690,7 @@ try {
     .filter({ hasText: 'remote shell' })
     .click()
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
+  await assertComposerHidden('terminal')
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const terminal = await page.locator('[data-terminal-primary]').boundingBox()
     const panel = await page.getByRole('tabpanel').boundingBox()
@@ -541,9 +716,26 @@ try {
     .click()
   await page.waitForSelector('[data-thread="thread"][data-owner="remote"]')
   assert.equal(await page.evaluate(() => window.activeRuntimeId), 'remote')
+  await assertComposerHidden('thread')
+  await returnHome()
+  assert.equal(await workspaceInput.inputValue(), 'Keep the shared draft')
+  assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'thread')
+  assert.equal(
+    await page.getByLabel('Workspace input computer').inputValue(),
+    'local',
+    'Opening a remote thread does not retarget the Home draft',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/tasks/workspace/route').length,
+    ),
+    0,
+    'Tab and Home navigation never reclassifies the draft',
+  )
   await page.getByLabel('Workspace input computer').selectOption('remote')
+  await page.getByLabel('Workspace destination').selectOption('auto')
   await page.getByLabel('Workspace request').fill('printf original-input')
-  await page.getByRole('button', { name: 'Choose destination' }).click()
+  await workspaceInput.press('Enter')
   await page.getByRole('button', { name: 'Run command' }).waitFor()
   assert.equal(
     await page.evaluate(
@@ -565,6 +757,8 @@ try {
     0,
     'new-page placeholder must be replaced',
   )
+  await assertComposerHidden('browser')
+  await returnHome()
   await page.getByLabel('Workspace request').fill('printf original-input')
   await page.getByRole('button', { name: 'Choose destination' }).click()
   await page.getByLabel('Workspace terminal shell').selectOption('fish')
@@ -581,6 +775,8 @@ try {
     ),
     'fish',
   )
+  await assertComposerHidden('terminal')
+  await returnHome()
   await page.getByLabel('Workspace request').fill('Continue this work')
   await page.getByLabel('Workspace destination').selectOption('thread')
   await page.getByRole('button', { name: 'Start thread', exact: true }).click()
@@ -597,7 +793,7 @@ try {
   await page.getByLabel('Terminal working directory').selectOption('project')
   await page.getByLabel('Terminal shell', { exact: true }).selectOption('bash')
   await page.getByLabel('Startup command', { exact: true }).fill('  printf starter-command  ')
-  await page.getByRole('dialog').getByRole('button', { name: 'Open terminal', exact: true }).click()
+  await page.getByLabel('Startup command', { exact: true }).press('Enter')
   await page.waitForSelector('[data-terminal^="local-created-"][data-owner="local"]')
   assert.deepEqual(
     await page.evaluate(() => {
@@ -720,6 +916,7 @@ try {
     { shellId: 'fish' },
     'Blank startup input opens a home shell without project or worktree settings',
   )
+  await returnHome()
   await page.evaluate(() => {
     window.delayRoute = true
   })
@@ -759,6 +956,7 @@ try {
     window.publishTerminalSnapshot()
   })
   await page.waitForSelector('[data-terminal^="remote-created-"][data-owner="remote"]:visible')
+  await returnHome()
   await page.getByLabel('Workspace destination').selectOption('thread')
   await page.getByLabel('Workspace request').fill('Retry this captured request')
   await page.evaluate(() => {
@@ -791,6 +989,8 @@ try {
     createsBeforeRetry,
     'Retry never creates a duplicate thread',
   )
+  await assertComposerHidden('thread')
+  await returnHome()
   await page.evaluate(() => {
     window.routeError = 'No utility model configured'
   })
@@ -837,7 +1037,8 @@ try {
   )
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
-    await page.screenshot({ path: '/tmp/dovo-terminal-starter.png' })
+    await assertComposerDesign('New workspace terminal')
+    await page.screenshot({ path: '/tmp/dovo-terminal-starter.png', animations: 'disabled' })
     for (const width of [1000, 760]) {
       await page.setViewportSize({ width, height: 800 })
       assert.ok(

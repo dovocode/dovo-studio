@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Globe2, MessageSquare, Monitor, Sparkles, Terminal } from 'lucide-react'
+import { Globe2, MessageSquare, Monitor, Sparkles, Terminal } from 'lucide-react'
 import {
   randomUUID,
   snapshotSchema,
@@ -17,7 +17,14 @@ import {
   useAppPreferences,
   useWorkspace,
 } from '@dovo/studio-core'
-import { Button, ChoicePicker, ComposerSurface, ComposerWorkspaceBar } from '@dovo/studio-ui'
+import {
+  Button,
+  ChoicePicker,
+  ComposerSurface,
+  ComposerSubmit,
+  ComposerTextarea,
+  ComposerWorkspaceBar,
+} from '@dovo/studio-ui'
 import { browserAddress } from '../browser/shared-browser-tabs'
 import type { WorkspaceTab } from './workspace-tabs'
 
@@ -36,15 +43,14 @@ export function WorkspaceInput({
   active,
   onOpen,
   onBrowser,
-  compact = false,
 }: {
   active?: WorkspaceTab
   onOpen: (tab: WorkspaceTab) => void
   onBrowser: (url: string) => Promise<void>
-  compact?: boolean
 }) {
   const store = useWorkspace()
-  const { sendWith } = useAppPreferences()
+  const { minimalComposer } = useAppPreferences()
+  const [editorFocused, setEditorFocused] = useState(false)
   const [text, setText] = useState('')
   const [mode, setMode] = useState<Destination | 'auto'>('auto')
   const [suggested, setSuggested] = useState(false)
@@ -355,8 +361,15 @@ export function WorkspaceInput({
             ? `Thread · ${thread?.title ?? 'Unavailable thread'}`
             : 'Thread · New thread'
           : 'Choose a destination'
+  const idle = !!minimalComposer && !editorFocused && !text.trim()
   return (
-    <div className="min-w-0" data-workspace-input data-compact={compact || undefined}>
+    <div
+      className="startup-draft task-composer min-w-0"
+      data-workspace-input
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setEditorFocused(false)
+      }}
+    >
       <div
         className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs"
         aria-label="Workspace input target"
@@ -375,7 +388,7 @@ export function WorkspaceInput({
       </div>
       <ComposerSurface
         aria-label="Workspace input"
-        compact={compact}
+        compact={idle}
         aria-busy={!!phase}
         error={error}
         controls={
@@ -393,12 +406,10 @@ export function WorkspaceInput({
           </ChoicePicker>
         }
         actions={
-          <Button
-            type="submit"
-            size="sm"
+          <ComposerSubmit
             aria-label={actionLabel}
             title={actionLabel}
-            className="h-8 gap-1.5 rounded-lg px-2.5 text-xs"
+            busy={!!phase}
             disabled={
               !!phase ||
               !text.trim() ||
@@ -406,20 +417,16 @@ export function WorkspaceInput({
               (mode === 'terminal' && !shellReady) ||
               (mode === 'thread' && !!threadId && !thread)
             }
-          >
-            {actionLabel}
-            <ArrowUpRight className="size-3.5" aria-hidden="true" />
-          </Button>
+          />
         }
         onSubmit={(event) => {
           event.preventDefault()
           void submit()
         }}
       >
-        <textarea
+        <ComposerTextarea
           aria-label="Workspace request"
-          className="w-full resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
-          rows={compact ? 2 : 3}
+          preview={mode === 'thread'}
           placeholder={
             mode === 'terminal'
               ? 'Write a command to run in a new shell…'
@@ -434,22 +441,11 @@ export function WorkspaceInput({
           maxLength={20000}
           value={text}
           disabled={busy}
+          onFocus={() => setEditorFocused(true)}
           onChange={(event) => {
             invalidate(true)
             draft.current = event.target.value
             setText(event.target.value)
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key === 'Enter' &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing &&
-              event.keyCode !== 229 &&
-              (sendWith !== 'mod-enter' || event.metaKey || event.ctrlKey)
-            ) {
-              event.preventDefault()
-              event.currentTarget.form?.requestSubmit()
-            }
           }}
         />
       </ComposerSurface>

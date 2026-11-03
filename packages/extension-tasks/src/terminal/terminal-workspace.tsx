@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlarmClock, ArrowUpRight, Check, Monitor, Plus, Search, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -47,17 +47,19 @@ export function readTerminalTarget(value?: string): TerminalTarget | undefined {
 
 /** Use the active editor's snapshot immediately, including its optimistic workspace edits. */
 export function useWorkspaceComputers() {
-  const store = useWorkspace()
-  return store.runtimes.map((entry) =>
-    entry.profile.id === store.activeRuntimeId
-      ? {
-          ...entry,
-          connected: store.connected,
-          snapshot: store.snapshot
-            ? { ...store.snapshot, workspace: store.workspace }
-            : entry.snapshot,
-        }
-      : entry,
+  const { runtimes, activeRuntimeId, connected, snapshot, workspace } = useWorkspace()
+  return useMemo(
+    () =>
+      runtimes.map((entry) =>
+        entry.profile.id === activeRuntimeId
+          ? {
+              ...entry,
+              connected,
+              snapshot: snapshot ? { ...snapshot, workspace } : entry.snapshot,
+            }
+          : entry,
+      ),
+    [runtimes, activeRuntimeId, connected, snapshot, workspace],
   )
 }
 

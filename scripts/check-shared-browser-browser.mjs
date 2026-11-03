@@ -19,6 +19,7 @@ const built = await build({
   stdin: {
     contents: `import {createRoot} from 'react-dom/client';import {BrowserPane,restoredSharedBrowserTabs,sharedBrowserWindowId} from './src/browser/browser-pane.tsx';window.browserWorkspaceTabs={restored:restoredSharedBrowserTabs,windowId:sharedBrowserWindowId};import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useCallback,useState} from 'react';
 // Mirrors the unified workspace: an owner holds the authoritative tab list for a pane that may be hidden.
+import UnifiedWorkspace from './src/unified/workspace-view';
 function ControlledBrowser(){
   const [tabs,setTabs]=useState(()=>window.browserWorkspaceTabs.restored(window.fixtureControlledWindowId));
   window.controlledTabs=tabs;window.setControlledTabs=setTabs;
@@ -28,7 +29,7 @@ function ControlledBrowser(){
 }import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
 function Fixture(){
   const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
-  const content=window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
+  const content=window.fixtureUnified ? <UnifiedWorkspace/> : window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
   if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}</>;
   const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
   return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
@@ -48,6 +49,30 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
     {
       name: 'fixture',
       setup(builder) {
+        // Keep UnifiedWorkspace, BrowserPane and Effect state real. Isolate unrelated thread,
+        // terminal and composer surfaces so this checks the actual controlled-tab integration.
+        const unifiedBoundaries = {
+          '../view': 'export default function Thread(){return <div>Thread surface</div>}',
+          '../list/task-row-actions':
+            'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',
+          '../list/task-collection': 'export const retainTaskOwner=(_,owner)=>owner',
+          '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminalDialog=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
+          './workspace-input':
+            'export const WorkspaceInput=()=> <textarea aria-label="Workspace draft"/>',
+          './workspace-resource-menu': 'export const WorkspaceResourceMenu=()=>null',
+          './workspace-rows':
+            'export const WorkspacePageRow=({title,onSelect})=><button onClick={onSelect}>{title}</button>;export const WorkspaceThreadRow=WorkspacePageRow;export const WorkspaceTerminalRow=WorkspacePageRow',
+        }
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) =>
+          importer.endsWith('/unified/workspace-view.tsx') && path in unifiedBoundaries
+            ? { path, namespace: 'fixture-unified-boundary' }
+            : undefined,
+        )
+        builder.onLoad({ filter: /.*/, namespace: 'fixture-unified-boundary' }, ({ path }) => ({
+          contents: unifiedBoundaries[path],
+          loader: 'tsx',
+          resolveDir: root + 'packages/extension-tasks',
+        }))
         builder.onResolve({ filter: /^\.\.\/detail\/task-conversation$/ }, () => ({
           path: 'conversation',
           namespace: 'fixture-conversation',
@@ -61,8 +86,9 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
         builder.onResolve(
           { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
           ({ path }) => ({
-            path: path.endsWith('/state') ? path : '@dovo/studio-core',
-            namespace: 'fixture',
+            ...(path.endsWith('/state')
+              ? { path: root + 'packages/studio-core/src/runtime/application-state.ts' }
+              : { path: '@dovo/studio-core', namespace: 'fixture' }),
           }),
         )
         builder.onResolve(
@@ -75,9 +101,8 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
-          contents: path.endsWith('/state')
-            ? `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const current=useRef(value);current.current=value;const set=next=>{current.current=typeof next==='function'?next(current.current):next;setValue(current.current)};return [value,set,current]}`
-            : path === './screenshot-attachment'
+          contents:
+            path === './screenshot-attachment'
               ? 'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async()=>{}});'
               : path === './device-list'
                 ? 'export const DeviceList=()=>null;'
@@ -104,7 +129,7 @@ const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFol
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
-const snapshot={runtimeHost:'LAN runtime',workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
+const snapshot={runtimeHost:'LAN runtime',terminals:[],workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
 const otherProfile={id:'mac',name:'Mac Studio',connection:{address:'http://mac.local',token:'paired-mac-token-at-least-20-characters'}};
 const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...task,id:'remote-target',title:'Mac thread',draft:'Remote draft'}]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
@@ -127,7 +152,8 @@ export const useSettingsTarget=()=>{
 };
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
 window.studioCommands=new Map();const registerCommand=command=>{window.studioCommands.set(command.id,command);return ()=>window.studioCommands.delete(command.id)};
-export const useStudioHost=()=>({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+const HostContext=createContext(null);export const StudioHostProvider=({api,children})=>createElement(HostContext.Provider,{value:api},children);
+export const useStudioHost=()=>useContext(HostContext)||({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -432,6 +458,85 @@ async function checkUnifiedBrowserControl() {
       await page.evaluate(() => window.controlSelections.length),
       2,
       'External page focus does not echo a selection back to the parent',
+    )
+  } finally {
+    await page.close()
+  }
+}
+async function checkRealUnifiedBrowserIntegration() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<div id="app" style="height:800px"></div>',
+      }),
+    )
+    await page.goto('http://localhost/real-unified-browser')
+    await page.evaluate(() => {
+      window.fixtureUnified = true
+      window.fixtureHeader = true
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'existing',
+          tabs: [
+            {
+              id: 'existing',
+              url: 'http://lan.local:3000/',
+              title: 'Existing page',
+              kind: 'web',
+              runtimeId: 'previous-computer',
+              profileId: 'default',
+            },
+          ],
+        }),
+      )
+    })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.evaluate(() => window.setCleanup({ unifiedWorkspaceEnabled: true }))
+    const workspace = page.getByRole('region', { name: 'Unified workspace' })
+    await workspace.waitFor()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs[0].runtimeId ===
+        'runtime',
+    )
+    await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
+    await page.waitForFunction(() =>
+      window.calls.some((call) => call.action === 'show' && call.tabId === 'existing'),
+    )
+    await workspace.getByRole('button', { name: 'New browser', exact: true }).first().click()
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 2,
+    )
+    await workspace.getByRole('button', { name: 'Workspace home', exact: true }).click()
+    await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'existing',
+    )
+    // React's passive effects and external-store subscriptions must settle after selection.
+    const syncCount = () =>
+      page.evaluate(() => window.calls.filter((call) => call.action === 'sync-tabs').length)
+    const before = await syncCount()
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    assert.equal(
+      await syncCount(),
+      before,
+      'Controlled tabs stop publishing once selection has settled',
+    )
+    assert.deepEqual(
+      errors,
+      [],
+      'Real UnifiedWorkspace + BrowserPane renders without update-depth failures',
     )
   } finally {
     await page.close()
@@ -1068,7 +1173,17 @@ async function checkAwakeDefaultsAndDetaching() {
     await page.close()
   }
 }
+if (process.argv.includes('--unified-integration-only')) {
+  try {
+    await checkRealUnifiedBrowserIntegration()
+    console.log('Real UnifiedWorkspace + BrowserPane + Effect state integration passed.')
+  } finally {
+    await browser.close()
+  }
+  process.exit(0)
+}
 try {
+  await checkRealUnifiedBrowserIntegration()
   await checkControlledBrowserTabs()
   await checkBackgroundBrowserService()
   await checkBackgroundRemoteBrowser()

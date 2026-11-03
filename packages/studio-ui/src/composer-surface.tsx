@@ -231,13 +231,18 @@ export function ComposerSurface({
 export function ComposerTextarea({
   value,
   hidden,
+  preview = true,
   className,
   ...props
-}: ComponentProps<typeof PromptInputTextarea> & { value: string; hidden?: boolean }) {
+}: ComponentProps<typeof PromptInputTextarea> & {
+  value: string
+  hidden?: boolean
+  preview?: boolean
+}) {
   const { markdownComposerPreview } = useAppPreferences()
   return (
     <>
-      {!hidden && markdownComposerPreview && value.trim() && (
+      {!hidden && preview && markdownComposerPreview && value.trim() && (
         <div
           aria-label="Formatted message preview"
           className="max-h-40 overflow-y-auto border-b px-4 py-3 text-sm"

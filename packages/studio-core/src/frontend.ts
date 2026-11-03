@@ -81,7 +81,16 @@ export interface StudioCommand {
 }
 export interface StudioHostApi {
   accountStorage?: import('@dovo/protocol').AccountStorage
-  appInfo?: { version: string; channel: 'stable' | 'nightly' | 'dev' }
+  appInfo?: {
+    version: string
+    channel: 'stable' | 'nightly' | 'dev'
+    /** The local desktop viewer, independent of the connected runtime. */
+    viewer?: {
+      platform: string
+      architecture: string
+      processArchitecture: string
+    }
+  }
   updates?: import('@dovo/protocol').DesktopUpdateBridge
   popOutThread?: import('@dovo/protocol').ThreadWindowBridge
   threadWindow?: boolean

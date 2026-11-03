@@ -129,6 +129,9 @@ export default function TasksView({
   )
   const preferences = useAppPreferences()
   const host = useStudioHost()
+  // Unified can replace its host object when palette registration rerenders the shell.
+  // Subscriptions depend on the registry function, not unrelated navigation context.
+  const { registerCommand } = host
   const localTasks = useMemo(
     () => workspace.tasks.filter((task) => !task.example),
     [workspace.tasks],
@@ -723,23 +726,23 @@ export default function TasksView({
   })
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.new',
         title: 'New thread',
         aliases: ['new task', 'new chat', 'start conversation'],
         run: newThread,
       }),
-    [host, newThread],
+    [registerCommand, newThread],
   )
   useEffect(() => {
     const disposers = [
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.switch',
         title: 'Go to task…',
         aliases: ['go to thread', 'find thread', 'find task', 'switch thread', 'switch task'],
         run: () => setSearching('tasks'),
       }),
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.search',
         title: 'Search conversations…',
         aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
@@ -749,16 +752,16 @@ export default function TasksView({
     return () => {
       for (const dispose of disposers) dispose()
     }
-  }, [host])
+  }, [registerCommand])
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.terminal',
         title: 'Toggle terminal',
         aliases: ['shell', 'console', 'command line'],
         run: toggleTerminal,
       }),
-    [host, toggleTerminal],
+    [registerCommand, toggleTerminal],
   )
   // Sidebar order, reported by the visible task list, for switching tasks from the keyboard.
   const order = useRef<TaskEntry[]>([])
