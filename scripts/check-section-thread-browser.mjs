@@ -21,7 +21,7 @@ const mocks = {
     export const SettingsTargetProvider=({children})=>children;
     export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const updateAppPreferences=()=>{};
-    export const useConfirmSettingsNavigation=()=>()=>window.allowSettings;
+    const confirmSettingsNavigation=()=>window.allowSettings;export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
       const [defaults,setDefaults]=useState(null);
@@ -51,7 +51,7 @@ const mocks = {
   './extension-catalog':
     'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
   './activity-bar':
-    'export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
+    'export const ActivityBar=({views,onSelect,onDetachBrowser})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}{onDetachBrowser&&<button onClick={onDetachBrowser}>Detach browser</button>}</nav>;',
   './settings-nav': 'export const SettingsNav=()=>null;',
   './title-bar': 'export const TitleBar=()=>null;',
   './command-palette':
@@ -63,7 +63,7 @@ const built = await build({
     resolveDir: root + 'packages/studio-ui',
     loader: 'tsx',
     contents: `
-      import {useState,useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
+      import {useEffect,useState,useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
       import {Workbench} from '../studio-shell/src/workbench';
       import {TerminalCloseDialog} from '../extension-tasks/src/terminal/terminal-close-dialog';
       import {useStudioHost,useWorkspace} from '@dovo/studio-core';
@@ -72,9 +72,10 @@ const built = await build({
       function Composer({task}){const {controller,update}=useComposerDraft(task);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={text} onChange={e=>update(e.target.value)}/>;}
       function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const [closing,setClosing]=useState(false);const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output><button onClick={()=>setClosing(true)}>Close terminal tab</button>{closing&&<TerminalCloseDialog labels={['Terminal 1']} onCancel={()=>setClosing(false)} onConfirm={()=>setClosing(false)} onRestoreFocus={()=>document.querySelector('[aria-label="Message"]')?.focus()}/ >}{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
       function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
+      function Browser(){const {registerCommand,navigate}=useStudioHost();useEffect(()=>registerCommand({id:'browser.detach',title:'Detach browser',run:()=>{window.detachCalls=(window.detachCalls||0)+1;navigate({viewId:'tasks'})}}),[registerCommand,navigate]);return <p>Embedded browser</p>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:()=> <p>Embedded browser</p>})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
-      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
+      const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} openBrowserWindow={async()=>{}} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
     `,
   },
   bundle: true,
@@ -311,6 +312,27 @@ try {
     await page.getByText('Embedded browser', { exact: true }).count(),
     0,
     'Late browser response preserves newer navigation',
+  )
+  // Detach requests from another section wait for the browser's command to mount.
+  await page.getByRole('button', { name: 'Detach browser', exact: true }).click()
+  await page.waitForFunction(() => window.detachCalls === 1)
+  await selected('fresh')
+  await section('Settings')
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.allowSettings = false
+  })
+  await page.getByRole('button', { name: 'Detach browser', exact: true }).click()
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.allowSettings = true
+  })
+  await section('Browser')
+  await page.getByText('Embedded browser', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.detachCalls),
+    1,
+    'Cancelled navigation must not detach later',
   )
   assert.deepEqual(errors, [])
   console.log(

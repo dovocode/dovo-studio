@@ -13,6 +13,7 @@ import {
   PanelsTopLeft,
   Shapes,
   Globe2,
+  ExternalLink,
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
@@ -26,6 +27,7 @@ import {
   TooltipContent,
   TooltipTrigger,
   cn,
+  ContextMenu,
 } from '@dovo/studio-ui'
 
 import { UpdateProgress } from './update-progress'
@@ -51,6 +53,7 @@ export function ActivityBar({
   update,
   onUpdate,
   onCheckUpdates,
+  onDetachBrowser,
 }: {
   views: readonly StudioView[]
   activeId: string
@@ -58,6 +61,7 @@ export function ActivityBar({
   update?: DesktopUpdateState
   onUpdate?: () => void
   onCheckUpdates?: () => void
+  onDetachBrowser?: () => void
 }) {
   const sidebar = useNavigationSidebar()
   const [updateOpen, setUpdateOpen] = useState(false)
@@ -83,33 +87,42 @@ export function ActivityBar({
     Icon: typeof Bot,
     selected: boolean,
     select: () => void,
-  ) => (
-    <Tooltip key={id}>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={label}
-          aria-current={selected ? 'page' : undefined}
-          aria-expanded={selected && sidebar?.collapsible ? !sidebar.collapsed : undefined}
-          className={cn('studio-navigation-item', selected && 'is-active')}
-          onClick={() =>
-            selected && sidebar?.collapsible && sidebar.setCollapsed
-              ? sidebar.setCollapsed((value) => !value)
-              : select()
-          }
-        >
-          <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-          <span className="studio-navigation-label">{label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={10}>
-        {selected && sidebar?.collapsible
-          ? `${label} · ${sidebar.collapsed ? 'Show' : 'Hide'} sidebar`
-          : label}
-      </TooltipContent>
-    </Tooltip>
-  )
+  ) => {
+    const button = (
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={label}
+        aria-current={selected ? 'page' : undefined}
+        aria-expanded={selected && sidebar?.collapsible ? !sidebar.collapsed : undefined}
+        className={cn('studio-navigation-item', selected && 'is-active')}
+        onClick={() =>
+          selected && sidebar?.collapsible && sidebar.setCollapsed
+            ? sidebar.setCollapsed((value) => !value)
+            : select()
+        }
+      >
+        <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+        <span className="studio-navigation-label">{label}</span>
+      </Button>
+    )
+    return (
+      <Tooltip key={id}>
+        <TooltipTrigger asChild>
+          {id === 'browser' && onDetachBrowser ? (
+            <ContextMenu.Trigger asChild>{button}</ContextMenu.Trigger>
+          ) : (
+            button
+          )}
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={10}>
+          {selected && sidebar?.collapsible
+            ? `${label} · ${sidebar.collapsed ? 'Show' : 'Hide'} sidebar`
+            : label}
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
   return (
     <nav className="studio-navigation" aria-label="Main navigation">
       <span className="studio-navigation-heading" aria-hidden="true">
@@ -119,11 +132,28 @@ export function ActivityBar({
         .filter((group) => group.length)
         .map((group) => (
           <div className="studio-navigation-group" key={group[0].id}>
-            {group.map((view) =>
-              item(view.id, view.title, icons[view.icon], activeId === view.id, () =>
+            {group.map((view) => {
+              const button = item(view.id, view.title, icons[view.icon], activeId === view.id, () =>
                 onSelect(view.id),
-              ),
-            )}
+              )
+              return view.id === 'browser' && onDetachBrowser ? (
+                <ContextMenu.Root key={view.id}>
+                  {button}
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content className="z-50 min-w-44 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+                      <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none focus:bg-accent"
+                        onSelect={onDetachBrowser}
+                      >
+                        <ExternalLink size={14} /> Detach browser
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
+              ) : (
+                button
+              )
+            })}
           </div>
         ))}
       <div className="studio-navigation-settings">

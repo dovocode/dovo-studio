@@ -640,7 +640,8 @@ function WorkbenchContent({
   )
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
-  const [, refreshCommands] = useApplicationState(0)
+  const [commandVersion, refreshCommands] = useApplicationState(0)
+  const [detachBrowserRequested, setDetachBrowserRequested] = useState(false)
   const registerCommand = useCallback((command: StudioCommand) => {
     if (commands.current.has(command.id)) throw new Error(`Duplicate command: ${command.id}`)
     commands.current.set(command.id, command)
@@ -650,6 +651,24 @@ function WorkbenchContent({
       refreshCommands((n) => n + 1)
     }
   }, [])
+  const detachBrowser = () => {
+    const command = commands.current.get('browser.detach')
+    if (command) return command.run()
+    navigate({ viewId: 'browser' })
+    if (settingsNavigation.current.target.viewId === 'browser') setDetachBrowserRequested(true)
+  }
+  useEffect(() => {
+    if (!detachBrowserRequested) return
+    if (target.viewId !== 'browser') {
+      setDetachBrowserRequested(false)
+      return
+    }
+    const command = commands.current.get('browser.detach')
+    if (command) {
+      setDetachBrowserRequested(false)
+      command.run()
+    }
+  }, [detachBrowserRequested, target.viewId, commandVersion])
   const api = useMemo<StudioHostApi>(
     () => ({
       navigate,
@@ -896,6 +915,7 @@ function WorkbenchContent({
           <div className="studio-body">
             {!browserWindowId && (
               <ActivityBar
+                onDetachBrowser={browser && openBrowserWindow ? detachBrowser : undefined}
                 update={update}
                 onUpdate={updates ? () => void updates.install() : undefined}
                 onCheckUpdates={updates ? () => void updates.check() : undefined}

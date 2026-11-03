@@ -47,6 +47,7 @@ import {
   type BrowserWebsiteCustomization,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
+import { useCommittedCallback } from '../detail/use-committed-callback'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   useEffect,
@@ -243,6 +244,7 @@ function BrowserContent({
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
       navigate: navigateStudio,
+      registerCommand,
     } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
@@ -803,6 +805,49 @@ function BrowserContent({
       if (mount.current) setBusy(false)
     }
   }
+  const detachBrowser = useCommittedCallback(() => {
+    if (!browser) return
+    void act(async () => {
+      const moving = workspaceTabs()
+      await browser({
+        action: 'detach-tabs',
+        key: scope,
+        tabs: moving,
+        activeId: activeTabRef.current,
+      })
+      const ids = new Set(moving.map(({ tab }) => tab.id))
+      for (const id of ids) nativeTabKeys.delete(`${scope}:${id}`)
+      const remaining = currentTabs.current.filter((tab) => !ids.has(tab.id))
+      const next = remaining.length
+        ? remaining
+        : [
+            {
+              id: randomUUID(),
+              url: '',
+              title: '',
+              kind: 'web' as const,
+              profileId: 'default',
+              runtimeId: store.localRuntimeId ?? undefined,
+            },
+          ]
+      // Commit and persist the source workspace before navigation unmounts it.
+      // Otherwise its saved tab list still contains pages owned by the new window.
+      flushSync(() => {
+        currentTabs.current = next
+        setTabs(next)
+        selectTab(next[0])
+      })
+      if (!browserWindowId) navigateStudio({ viewId: 'tasks' })
+    })
+  })
+  useEffect(() => {
+    if (!shared || !browser || !openBrowserWindow) return
+    return registerCommand({
+      id: 'browser.detach',
+      title: 'Detach browser',
+      run: detachBrowser,
+    })
+  }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser])
   const loadDevices = async () => {
     const hosts = await request(
       '/api/device-hosts',
@@ -1872,48 +1917,6 @@ function BrowserContent({
               >
                 New browser window
               </DropdownMenu.Item>
-              {browser && (
-                <DropdownMenu.Item
-                  disabled={busy}
-                  className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
-                  onSelect={() =>
-                    void act(async () => {
-                      const moving = workspaceTabs()
-                      await browser({
-                        action: 'detach-tabs',
-                        key: scope,
-                        tabs: moving,
-                        activeId: activeTabRef.current,
-                      })
-                      const ids = new Set(moving.map(({ tab }) => tab.id))
-                      for (const id of ids) nativeTabKeys.delete(`${scope}:${id}`)
-                      const remaining = currentTabs.current.filter((tab) => !ids.has(tab.id))
-                      const next = remaining.length
-                        ? remaining
-                        : [
-                            {
-                              id: randomUUID(),
-                              url: '',
-                              title: '',
-                              kind: 'web' as const,
-                              profileId: 'default',
-                              runtimeId: store.localRuntimeId ?? undefined,
-                            },
-                          ]
-                      // Commit and persist the source workspace before navigation unmounts it.
-                      // Otherwise its saved tab list still contains pages owned by the new window.
-                      flushSync(() => {
-                        currentTabs.current = next
-                        setTabs(next)
-                        selectTab(next[0])
-                      })
-                      if (!browserWindowId) navigateStudio({ viewId: 'tasks' })
-                    })
-                  }
-                >
-                  Detach browser
-                </DropdownMenu.Item>
-              )}
             </>
           )}
         </DropdownMenu.Content>
