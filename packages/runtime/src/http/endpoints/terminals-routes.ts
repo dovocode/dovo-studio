@@ -1,10 +1,12 @@
 import { isAbsolute, relative } from 'node:path'
+import { homedir } from 'node:os'
 import { stat } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { mutableStruct, threadServerRequestSchema, stopThreadServerSchema } from '@dovo/protocol'
+import { STUDIO_TERMINAL_SCOPE } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
@@ -53,6 +55,39 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/terminals/workspace') {
+        const { repositoryId, command } = decode(
+          mutableStruct({
+            repositoryId: Schema.optional(idSchema),
+            command: Schema.optional(maxValue(minValue(Schema.String, 1), 20000)),
+          }),
+          yield* serviceResult(body(request)),
+        )
+        const repository = repositoryId
+          ? s.store.get().repositories.find((item) => item.id === repositoryId)
+          : undefined
+        if (repositoryId && !repository) throw new HttpError(404, 'Project not found')
+        const directory = yield* serviceResult(repositoryPath(repository?.path ?? homedir()))
+        return yield* runtimeOperation(() => {
+          authenticateRuntimeOperation(s, token)
+          if (
+            repository &&
+            !isDeepStrictEqual(
+              repository,
+              s.store.get().repositories.find((item) => item.id === repositoryId),
+            )
+          )
+            throw new HttpError(409, 'The project changed. Reopen the terminal.')
+          const session = s.terminals.create(
+            STUDIO_TERMINAL_SCOPE,
+            directory,
+            undefined,
+            repositoryId,
+          )
+          if (command) s.terminals.input(session.id, `${command.replace(/\r?\n/g, '\r')}\r`)
+          return session
+        })
+      }
       if (
         method === 'POST' &&
         (path === '/api/terminals/servers' || path === '/api/terminals/servers/stop')

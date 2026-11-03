@@ -47,6 +47,13 @@ export const cleanupDictationSchema = strictStruct({
 export const cleanedDictationSchema = strictStruct({
   text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 16000),
 })
+export const workspaceRouteRequestSchema = strictStruct({
+  text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
+})
+export const workspaceRouteSchema = strictStruct({
+  mode: Schema.Literals(['browser', 'terminal', 'thread']),
+  reason: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 500),
+})
 export type TitleGenerationSettings = Schema.Schema.Type<typeof titleGenerationSettingsSchema>
 
 /** Utility model selection is independent of the task model, even when sharing its provider. */

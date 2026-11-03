@@ -14,6 +14,7 @@ import {
   Shapes,
   Globe2,
   ExternalLink,
+  Terminal,
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
@@ -36,6 +37,8 @@ const icons: Record<StudioIcon, typeof Bot> = {
   tasks: MessagesSquare,
   artifacts: Shapes,
   browser: Globe2,
+  terminal: Terminal,
+  workspace: PanelsTopLeft,
   issues: CircleDot,
   jira: PanelsTopLeft,
   scm: GitBranch,
@@ -74,10 +77,14 @@ export function ActivityBar({
       setUpdateOpen(true)
   }, [update?.status])
   const workspaceViews = views.filter(
-    (view) => !view.navigationGroup && ['tasks', 'browser', 'artifacts'].includes(view.id),
+    (view) =>
+      !view.navigationGroup &&
+      ['workspace', 'tasks', 'browser', 'terminals', 'artifacts'].includes(view.id),
   )
   const toolViews = views.filter(
-    (view) => !view.navigationGroup && !['tasks', 'browser', 'artifacts'].includes(view.id),
+    (view) =>
+      !view.navigationGroup &&
+      !['workspace', 'tasks', 'browser', 'terminals', 'artifacts'].includes(view.id),
   )
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)

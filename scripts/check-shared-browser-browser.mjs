@@ -19,7 +19,7 @@ const built = await build({
     contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useState} from 'react';import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
 function Fixture(){
   const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
-  const content=window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>;
+  const content=window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
   if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}</>;
   const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
   return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
@@ -350,6 +350,84 @@ async function checkAddressSelection() {
     }
   }
 }
+async function checkUnifiedBrowserControl() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<div id="app" style="height:800px"></div>',
+      }),
+    )
+    await page.goto('http://localhost/unified-browser')
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'existing',
+          tabs: [
+            {
+              id: 'existing',
+              url: 'http://lan.local:3000/',
+              title: 'Existing page',
+              kind: 'web',
+              runtimeId: 'runtime',
+              profileId: 'default',
+            },
+          ],
+        }),
+      )
+      window.controlSelections = []
+      window.fixtureWorkspaceControl = {
+        newTabRequest: 'first',
+        onSelect: (id) => window.controlSelections.push(id),
+        onTabsChange: (tabs, active) => {
+          window.controlTabs = tabs
+          window.controlActive = active
+        },
+      }
+    })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.waitForFunction(
+      () =>
+        window.controlSelections.length === 1 &&
+        window.controlTabs.some((tab) => tab.id === window.controlSelections[0]) &&
+        window.controlActive === window.controlSelections[0],
+    )
+    assert.equal(
+      await page.getByRole('complementary', { name: 'Recent browser tabs' }).count(),
+      0,
+      'Mixed workspace supplies the page list',
+    )
+    await page.evaluate(() => window.renderBrowser())
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      1,
+      'A render does not repeat the new-page request',
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.newTabRequest = 'second'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(
+      () =>
+        window.controlSelections.length === 2 &&
+        window.controlActive === window.controlSelections[1],
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'existing'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActive === 'existing')
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      2,
+      'External page focus does not echo a selection back to the parent',
+    )
+  } finally {
+    await page.close()
+  }
+}
 async function checkAwakeDefaultsAndDetaching() {
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
   const errors = []
@@ -513,6 +591,7 @@ async function checkAwakeDefaultsAndDetaching() {
   }
 }
 try {
+  await checkUnifiedBrowserControl()
   await checkAwakeDefaultsAndDetaching()
   await checkAddressSelection()
   await captureBrowserSidebar(browser)

@@ -589,6 +589,55 @@ try {
   await page.getByRole('button', { name: 'Close terminal panes', exact: true }).click()
   await page.waitForFunction(() => window.runtime.snapshot.terminals.length === 0)
   assert.equal(await page.evaluate(() => window.replacementCalls), 2)
+  await page.evaluate(() => {
+    window.taskId = 'studio:terminals'
+    window.focusId = 'workspace-shell'
+    window.runtime.workspace = {
+      tasks: [],
+      repositories: [{ id: 'workspace-project', name: 'Standalone project' }],
+    }
+    window.runtime.snapshot = {
+      terminals: [
+        {
+          id: 'workspace-shell',
+          taskId: window.taskId,
+          repositoryId: 'workspace-project',
+          title: 'Standalone shell',
+          exited: false,
+        },
+      ],
+    }
+    window.workspaceCreates = []
+    const request = window.runtime.request
+    window.runtime.request = async (path, input) => {
+      if (path !== '/api/terminals/workspace') return request(path, input)
+      window.workspaceCreates.push(input)
+      const session = {
+        id: 'workspace-split',
+        taskId: window.taskId,
+        repositoryId: input.repositoryId,
+        title: 'Standalone split',
+        exited: false,
+      }
+      window.runtime.snapshot = { terminals: [...window.runtime.snapshot.terminals, session] }
+      window.render()
+      return session
+    }
+    window.render()
+  })
+  await terminal
+    .locator('[data-terminal-session="workspace-shell"] .dovo-terminal-canvas')
+    .waitFor()
+  await terminal.getByRole('button', { name: /Split terminal left\/right/ }).click()
+  await terminal
+    .locator('[data-terminal-session="workspace-split"] .dovo-terminal-canvas')
+    .waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => window.workspaceCreates),
+    [{ repositoryId: 'workspace-project' }],
+    'Standalone splits preserve the owning project without requiring a thread',
+  )
+  assert.equal(await terminal.locator('[data-terminal-session]:visible').count(), 2)
   assert.deepEqual(errors, [])
   console.log(
     'Terminal: scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration and wrapped file locations passed.',

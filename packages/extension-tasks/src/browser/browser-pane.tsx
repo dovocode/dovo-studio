@@ -143,6 +143,12 @@ import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
+export type BrowserWorkspaceControl = {
+  focusTabId?: string
+  onSelect: (id: string) => void
+  onTabsChange: (tabs: BrowserTab[], activeId: string) => void
+  newTabRequest?: string
+}
 type OpenLink = { id: string; url: string; remote?: boolean }
 type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
@@ -158,12 +164,14 @@ export function BrowserPane({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   taskId: string
   onClose?: () => void
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
 }) {
   return (
     <PreviewPane
@@ -173,6 +181,7 @@ export function BrowserPane({
       openLink={openLink}
       onLinkOpened={onLinkOpened}
       shared={shared}
+      workspaceControl={workspaceControl}
     />
   )
 }
@@ -186,6 +195,7 @@ function PreviewPane({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   taskId: string
   onClose?: () => void
@@ -193,6 +203,7 @@ function PreviewPane({
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
 }) {
   const { connection } = useWorkspace()
   const { browserWindowId, threadWindow } = useStudioHost()
@@ -214,6 +225,7 @@ function PreviewPane({
       openLink={openLink}
       onLinkOpened={onLinkOpened}
       shared={shared}
+      workspaceControl={workspaceControl}
     />
   )
 }
@@ -226,12 +238,14 @@ function BrowserContent({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   scope: string
   storageWindowId?: string
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
   initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
@@ -464,6 +478,13 @@ function BrowserContent({
       setError(`Remote sharing sources could not be updated: ${String(cause)}`),
     )
   }, [browser, shared, tabs, runtimes])
+  const openedWorkspaceTab = useRef('')
+  useEffect(() => {
+    const request = workspaceControl?.newTabRequest
+    if (!request || openedWorkspaceTab.current === request) return
+    openedWorkspaceTab.current = request
+    if (!newTab()) workspaceControl?.onSelect(activeTab)
+  }, [workspaceControl?.newTabRequest])
   const openedLink = useRef('')
   const controlsId = useId()
   const [frozenPage, setFrozenPage] = useApplicationState<{
@@ -492,7 +513,20 @@ function BrowserContent({
   useEffect(() => {
     savedTabs.set(scope, { tabs, active: activeTab, closed })
   }, [scope, tabs, activeTab, closed])
-  const selectTab = (tab: BrowserTab) => {
+  const workspaceControlRef = useRef(workspaceControl)
+  workspaceControlRef.current = workspaceControl
+  useEffect(() => {
+    workspaceControlRef.current?.onTabsChange(
+      tabs.filter((tab) => !tab.previewOf),
+      activeTab,
+    )
+  }, [tabs, activeTab])
+  useEffect(() => {
+    const tab = tabs.find((tab) => tab.id === workspaceControl?.focusTabId)
+    if (tab) selectTab(tab, false)
+  }, [workspaceControl?.focusTabId])
+  const selectTab = (tab: BrowserTab, notify = true) => {
+    if (notify) workspaceControl?.onSelect(tab.id)
     previewRequest.current++
     setPendingPreview(undefined)
     if (tab.id === activeTab) return
@@ -648,8 +682,10 @@ function BrowserContent({
           ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
           : 'default',
       )
-    )
+    ) {
+      workspaceControl?.onSelect(activeTab)
       return
+    }
     openedLink.current = openLink.id
     onLinkOpened?.()
   }, [openLink?.id, browser, onLinkOpened, tabs.length])
@@ -2834,7 +2870,7 @@ function BrowserContent({
           : undefined
       }
       sidebar={
-        shared ? (
+        shared && !workspaceControl ? (
           <ResizableSidebar
             preference="browserSidebarWidth"
             side="left"
@@ -3010,7 +3046,7 @@ function BrowserContent({
         </Dialog>
       )}
 
-      {!shared && initialMode !== 'devices' && regularTabs.length > 1 && (
+      {!shared && !workspaceControl && initialMode !== 'devices' && regularTabs.length > 1 && (
         <div
           role="tablist"
           aria-label="Browser tabs"

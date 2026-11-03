@@ -121,7 +121,7 @@ export class Terminals {
     this.pendingEnsure.set(`${taskId}:${checkoutId ?? ''}`, result)
     return result
   }
-  create(taskId: string, cwd: string, checkoutId?: string) {
+  create(taskId: string, cwd: string, checkoutId?: string, repositoryId?: string) {
     const settings = this.settings()
     return this.createCommand(
       taskId,
@@ -133,6 +133,7 @@ export class Terminals {
       },
       `Terminal ${this.sessions.size + 1}${checkoutId ? ' · linked checkout' : ''}`,
       checkoutId,
+      repositoryId,
     )
   }
   createCommand(
@@ -141,6 +142,7 @@ export class Terminals {
     launch: AcpLaunch,
     title: string,
     checkoutId?: string,
+    repositoryId?: string,
   ) {
     // Retained output is bounded by the same cap, but finished unattended shells
     // must not permanently consume slots needed by new work. Attached output stays.
@@ -177,6 +179,7 @@ export class Terminals {
         id,
         taskId,
         ...(checkoutId ? { checkoutId } : {}),
+        ...(repositoryId ? { repositoryId } : {}),
         title,
         exited: false,
       },

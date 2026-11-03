@@ -108,7 +108,8 @@ export default function TasksView({
   nativeAgentKey,
   navigationKey,
   pullTarget,
-}: StudioViewProps) {
+  embedded = false,
+}: StudioViewProps & { embedded?: boolean }) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -236,10 +237,12 @@ export default function TasksView({
     setSplitId(next)
   }
   const [listOpen, setListOpen] = useApplicationState(false)
-  const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const [sidebarPreference, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const sidebar = !embedded && sidebarPreference
   const navigationSidebar = useNavigationSidebar()
   useEffect(() => {
-    if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
+    if (!embedded && compact && navigationSidebar?.setCollapsed)
+      setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{

@@ -16,8 +16,10 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
     if (
       !settings ||
       typeof settings !== 'object' ||
-      !('browserWorkspaceEnabled' in settings) ||
-      settings.browserWorkspaceEnabled !== true
+      !(
+        ('browserWorkspaceEnabled' in settings && settings.browserWorkspaceEnabled === true) ||
+        ('unifiedWorkspaceEnabled' in settings && settings.unifiedWorkspaceEnabled === true)
+      )
     )
       throw new Error(
         'Enable experimental Browser in Settings → General before opening a browser window.',

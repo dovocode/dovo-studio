@@ -7,7 +7,12 @@ import {
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import type { TerminalFileLink } from './terminal-file-links'
-import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
+import {
+  STUDIO_TERMINAL_SCOPE,
+  terminalGroups,
+  splitTerminal,
+  type TerminalGroup,
+} from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ChevronDown, Plus, X, Columns2, Rows2 } from 'lucide-react'
@@ -23,6 +28,9 @@ export function TerminalPane({
   visible = true,
   onAddSelection,
   onOpenFile,
+  repositoryId,
+  autoCreate = true,
+  onSelectSession,
 }: {
   taskId: string
   onClose: () => void
@@ -31,6 +39,9 @@ export function TerminalPane({
   visible?: boolean
   onAddSelection?: (taskId: string, text: string) => void
   onOpenFile?: (file: TerminalFileLink & { checkoutId?: string }) => void
+  repositoryId?: string
+  autoCreate?: boolean
+  onSelectSession?: (id: string) => void
 }) {
   const { snapshot, workspace, connected, request, connection } = useWorkspace()
   const scope = JSON.stringify([connection?.runtimeId ?? connection?.address, taskId])
@@ -113,6 +124,11 @@ export function TerminalPane({
   liveSessions.current = sessions
   const group = groups.find((group) => group.sessions.includes(active?.id ?? ''))
   const checkoutLabel = (session: (typeof sessions)[number]) => {
+    if (taskId === STUDIO_TERMINAL_SCOPE)
+      return (
+        workspace.repositories.find((repo) => repo.id === session.repositoryId)?.name ??
+        'Home folder'
+      )
     const link = task?.linkedCheckouts?.find((item) => item.id === session.checkoutId)
     const repository = workspace.repositories.find(
       (repo) => repo.id === (link?.repositoryId ?? task?.repositoryId),
@@ -125,6 +141,7 @@ export function TerminalPane({
   const focusPane = (id: string) => {
     setSelected(id)
     setFocusRequest((current) => ({ id, count: current.count + 1 }))
+    onSelectSession?.(id)
   }
   useEffect(() => {
     if (connected && sessions.length && layoutOwner === scope)
@@ -142,8 +159,11 @@ export function TerminalPane({
   }, [visible, active?.id])
   const task = workspace.tasks.find((item) => item.id === taskId)
   const shellReady =
-    !!task &&
-    (task.execution !== 'worktree' || !!task.existingWorktreePath || !canChangeTaskCheckout(task))
+    taskId === STUDIO_TERMINAL_SCOPE ||
+    (!!task &&
+      (task.execution !== 'worktree' ||
+        !!task.existingWorktreePath ||
+        !canChangeTaskCheckout(task)))
   const act = (operation: () => Promise<unknown>) => {
     if (!connected || !shellReady || pending.current || closeTarget.current) return
     pending.current = true
@@ -210,11 +230,15 @@ export function TerminalPane({
     const generation = currentScope.current.generation
     act(() =>
       request(
-        '/api/terminals',
-        {
-          taskId,
-          checkoutId: split ? active?.checkoutId : checkoutId || undefined,
-        },
+        taskId === STUDIO_TERMINAL_SCOPE ? '/api/terminals/workspace' : '/api/terminals',
+        taskId === STUDIO_TERMINAL_SCOPE
+          ? {
+              repositoryId: active ? active.repositoryId : repositoryId,
+            }
+          : {
+              taskId,
+              checkoutId: split ? active?.checkoutId : checkoutId || undefined,
+            },
         responses.terminal,
       ).then((session) => {
         if (generation !== currentScope.current.generation) return
@@ -224,6 +248,7 @@ export function TerminalPane({
     )
   }
   useEffect(() => {
+    if (!autoCreate || taskId === STUDIO_TERMINAL_SCOPE) return
     if (!visible) {
       autoTried.current = false
       return

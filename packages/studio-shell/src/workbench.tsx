@@ -214,7 +214,13 @@ function WorkbenchContent({
   taskLauncher,
   windowColors,
 }: WorkbenchProps) {
-  const { showIssues, showJira, browserWorkspaceEnabled, browserProfiles } = useAppPreferences()
+  const {
+    showIssues,
+    showJira,
+    browserWorkspaceEnabled,
+    unifiedWorkspaceEnabled,
+    browserProfiles,
+  } = useAppPreferences()
   useAppearance(windowColors)
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
   useEffect(() => {
@@ -835,6 +841,7 @@ function WorkbenchContent({
       (view) =>
         view.navigationGroup !== 'hidden' &&
         (view.id !== 'browser' || browserWorkspaceEnabled) &&
+        (view.id !== 'workspace' || unifiedWorkspaceEnabled) &&
         (view.id !== 'artifacts' || artifactsEnabled) &&
         (view.id !== 'issues' || showIssues) &&
         (view.id !== 'jira' || showJira),
@@ -857,6 +864,8 @@ function WorkbenchContent({
           [
             'tasks',
             'browser',
+            'terminals',
+            'workspace',
             'pulls',
             'jobs',
             'issues',
@@ -920,15 +929,17 @@ function WorkbenchContent({
                 onUpdate={updates ? () => void updates.install() : undefined}
                 onCheckUpdates={updates ? () => void updates.check() : undefined}
                 views={catalog.views.filter((view) =>
-                  view.id === 'browser'
-                    ? browserWorkspaceEnabled
-                    : view.id === 'artifacts'
-                      ? artifactsEnabled
-                      : view.id === 'issues'
-                        ? showIssues
-                        : view.id === 'jira'
-                          ? showJira
-                          : true,
+                  view.id === 'workspace'
+                    ? unifiedWorkspaceEnabled
+                    : view.id === 'browser'
+                      ? browserWorkspaceEnabled
+                      : view.id === 'artifacts'
+                        ? artifactsEnabled
+                        : view.id === 'issues'
+                          ? showIssues
+                          : view.id === 'jira'
+                            ? showJira
+                            : true,
                 )}
                 activeId={target.viewId}
                 onSelect={(viewId) => {
@@ -965,7 +976,9 @@ function WorkbenchContent({
                   onOpen={() => navigate({ viewId: 'browser' })}
                 />
               )}
-              {browserWorkspaceEnabled && browser && <BrowserMediaControls />}
+              {(browserWorkspaceEnabled || unifiedWorkspaceEnabled) && browser && (
+                <BrowserMediaControls />
+              )}
               {/* Settings get a grouped sidebar with search; other views use the full area. */}
               <div
                 className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}

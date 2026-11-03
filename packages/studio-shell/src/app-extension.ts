@@ -15,6 +15,8 @@ export const appSettingsExtension = defineStudioExtension(
         'Quit shortcut',
         'Browser workspace',
         'Enable experimental Browser',
+        'Unified workspace',
+        'Enable experimental unified workspace',
       ],
       navigationGroup: 'settings',
       settingsScope: 'device',
@@ -23,7 +25,7 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.1,
       settingsSection: 'app',
       keywords:
-        'navigation shortcuts issues jira time clock quit battery background activity experimental browser workspace',
+        'navigation shortcuts issues jira time clock quit battery background activity experimental browser workspace unified terminals tabs',
       load: () => import('./app-settings/general'),
     },
     {

@@ -54,7 +54,10 @@ export const approvalSchema = mutableStruct({
   rememberRule: Schema.optional(Schema.NullOr(Schema.Literals(['command', 'web']))),
   createdAt: Schema.String,
 })
+/** Standalone shells share a scope without creating a synthetic thread. */
+export const STUDIO_TERMINAL_SCOPE = 'studio:terminals'
 export const terminalSchema = mutableStruct({
+  repositoryId: Schema.optional(Schema.String),
   checkoutId: Schema.optional(Schema.String),
   id: Schema.String,
   taskId: Schema.String,

@@ -16,6 +16,7 @@ const configured = new WeakMap<Session, string>()
 const preferences = Schema.Struct({
   browserProfiles: browserProfilesSchema,
   browserWorkspaceEnabled: Schema.optional(Schema.Boolean),
+  unifiedWorkspaceEnabled: Schema.optional(Schema.Boolean),
 })
 export function websiteSearchUrl(profileId: string, text: string) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
@@ -32,7 +33,10 @@ export function websiteLinkProfile(
   context: 'website' | 'external' = 'website',
 ) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
-  return result.success && (context === 'external' || result.data.browserWorkspaceEnabled === true)
+  return result.success &&
+    (context === 'external' ||
+      result.data.browserWorkspaceEnabled === true ||
+      result.data.unifiedWorkspaceEnabled === true)
     ? browserLinkProfile(url, result.data.browserProfiles, sourceProfileId)
     : undefined
 }
