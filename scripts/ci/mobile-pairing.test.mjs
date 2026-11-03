@@ -74,17 +74,26 @@ void test('the native release flow mints its code at input, after driver startup
   assert.ok(mint < prepared.indexOf('- tapOn: Dismiss keyboard'))
 })
 
-void test('native address entry preserves complete LAN and VPN URLs without fast synthesized bursts', () => {
+void test('native address entry waits for each observed prefix before sending more input', () => {
   const prepared = preparePairingFlow('- inputText: ${RUNTIME_ADDRESS}')
   const commands = parseAllDocuments(prepared)[0].toJS()
   for (const address of ['http://192.168.64.12:63424', 'http://100.98.12.3:51464']) {
     const context = { RUNTIME_ADDRESS: address, output: {} }
     const entered = []
+    let observed = ''
     const evaluate = (expression) => runInNewContext(expression.slice(2, -1), context)
     const execute = (commands) => {
       for (const command of commands) {
         if (command.evalScript) evaluate(command.evalScript)
-        if (command.inputText) entered.push(evaluate(command.inputText))
+        if (command.inputText) {
+          assert.equal(observed, entered.join(''), 'Wait for UIKit before the next input')
+          entered.push(evaluate(command.inputText))
+        }
+        if (command.assertVisible) {
+          assert.equal(command.assertVisible.id, 'Computer address')
+          observed = evaluate(command.assertVisible.text)
+          assert.equal(observed, entered.join(''))
+        }
         if (command.repeat)
           for (let index = 0; index < evaluate(command.repeat.times); index++)
             execute(command.repeat.commands)

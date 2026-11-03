@@ -8,14 +8,18 @@ export function preparePairingFlow(flow) {
       '- inputText: ${RUNTIME_ADDRESS}',
       // Maestro 2.11's iOS TextInputHelper sends multi-character input at 30 Hz.
       // URL-keyboard startup can drop the middle of that synthesized burst. Each
-      // single-character command uses the driver's slower path; never retry or
-      // silently repair an incorrect field value after the assertion.
+      // single-character command uses the driver's slower path. Its completion
+      // can precede UIKit applying the input, so observe each prefix before
+      // sending the next character (including the repeated t in http).
       [
         '- evalScript: ${output.addressCharacter = 0}',
         '- repeat:',
         '    times: ${RUNTIME_ADDRESS.length}',
         '    commands:',
         '      - inputText: ${RUNTIME_ADDRESS.charAt(output.addressCharacter)}',
+        '      - assertVisible:',
+        '          id: Computer address',
+        '          text: ${RUNTIME_ADDRESS.slice(0, output.addressCharacter + 1)}',
         '      - evalScript: ${output.addressCharacter++}',
         '- assertVisible:',
         '    id: Computer address',
