@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { existsSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -40,8 +40,19 @@ afterEach(async (context) => {
       const log = join(directory, 'server.log')
       try {
         console.error(`Runtime lifecycle log (${directory}):\n${readFileSync(log, 'utf8')}`)
+        const releases = join(directory, 'releases')
+        if (existsSync(releases)) {
+          for (const release of readdirSync(releases)) {
+            const updateLog = join(releases, release, 'update.log')
+            if (existsSync(updateLog)) {
+              console.error(`Staged update log (${updateLog}):\n${readFileSync(updateLog, 'utf8')}`)
+            } else {
+              console.error(`Source staging did not reach dependency installation (${release}).`)
+            }
+          }
+        }
       } catch (error) {
-        console.error('Could not read runtime lifecycle log', error)
+        console.error('Could not read runtime lifecycle logs', error)
       }
     }
     await stopServer(directory)
@@ -151,13 +162,19 @@ it('leaves the running server untouched when staged dependency installation fail
       ],
       {
         env: { ...process.env, PATH: `${directory}${delimiter}${process.env.PATH}` },
-        timeout: 30000,
+        // This command snapshots the real source tree before invoking the failing installer.
+        // Leave time for startup and assertions outside the child-process deadline.
+        timeout: 60000,
       },
     ),
-  ).rejects.toThrow('pnpm exited with 12')
+  ).rejects.toMatchObject({
+    code: 1,
+    killed: false,
+    stderr: expect.stringContaining('pnpm exited with 12'),
+  })
   expect((await serverStatus(directory)).pid).toBe(initial.pid)
   expect((await serverStatus(directory)).running).toBe(true)
-}, 30000)
+}, 90000)
 
 it('drains the exact spawned candidate when publishing its managed process record fails', async () => {
   const directory = await fixture()
