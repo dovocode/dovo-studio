@@ -90,8 +90,10 @@ export function NewWorkspaceTerminalDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
-        <DialogTitle>New terminal</DialogTitle>
-        <DialogDescription>Open a shell on a paired computer.</DialogDescription>
+        <DialogTitle className="sr-only">New terminal</DialogTitle>
+        <DialogDescription className="sr-only">
+          Open a shell on a paired computer.
+        </DialogDescription>
         <NewWorkspaceTerminal
           onOpen={(target) => {
             onOpen(target)
@@ -637,15 +639,8 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                 </Button>
               </header>
             </HeaderContent>
-            <div className="flex min-h-0 flex-1 items-center justify-center p-8">
-              <div className="w-full max-w-2xl text-center">
-                <h2 className="startup-heading text-balance text-xl font-medium tracking-tight sm:text-2xl">
-                  What would you like to work on?
-                </h2>
-                <div className="mt-6">
-                  <NewWorkspaceTerminal onOpen={setSelected} />
-                </div>
-              </div>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <NewWorkspaceTerminal onOpen={setSelected} />
             </div>
           </>
         )}

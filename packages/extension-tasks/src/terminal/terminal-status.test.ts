@@ -43,3 +43,14 @@ it('prioritizes offline and exited state over stale activity', () => {
     section: 'active',
   })
 })
+
+it('identifies sleeping sessions and recovery errors without showing stale working status', () => {
+  const sleeping: TerminalInfo = { ...shell, dormant: true, activity: { state: 'working' } }
+  expect(terminalStatus(sleeping, true)).toMatchObject({ label: 'Sleeping', section: 'active' })
+  expect(terminalStatus({ ...sleeping, recoveryError: 'Folder missing' }, true)).toMatchObject({
+    label: 'Recovery needs attention',
+    detail: 'Folder missing',
+    tone: 'warning',
+  })
+  expect(terminalStatus(sleeping, false).label).toBe('Offline')
+})

@@ -14,7 +14,37 @@ its own shell and the peers created inside it; independent sessions keep separat
 Standalone sessions use sidebar navigation without a horizontal terminal tab strip. **New terminal**
 opens the workspace starter; split controls add panes inside the selected session. Sessions run on
 their owning computer; hiding a pane or changing workspaces keeps the shell running. Closing a
-terminal inside the terminal pane terminates it. Terminals do not survive a runtime restart.
+terminal inside the terminal pane terminates it and forgets its recovery record.
+
+Thread, Unified and Terminal starters share the same heading, project selection and composer design,
+including the minimal composer preference. Terminal replaces the model picker with its shell picker.
+**Remember session** is enabled by default on runtimes that support recovery; older paired runtimes
+show a disabled control until updated. This retains terminal identity, title, checkout, shell,
+pin/settle/snooze state and the exact supported application's conversation identity on the owning
+computer. Active sessions reopen when that runtime starts again, including after a computer reboot.
+Settled sessions remain asleep until restored; snoozed sessions wake when due. Neither environment
+variables nor terminal input, startup commands or scrollback are saved. Ordinary shells reopen in
+their directory without replaying commands. Missing directories and recovery failures remain visible
+so the session can be restored after the problem is resolved.
+
+Remembered terminals install scoped lifecycle integrations for **Codex**, **Claude**, **Pi** and
+**OpenCode**, preserving existing configuration. Codex requires its normal one-time hook review;
+review the Dovo hook with `/hooks` if prompted. Integrations load on the application's next start.
+Recovery uses the exact captured conversation ID or Pi session file, never the latest session in a
+directory. Custom tool configuration directories must be set before opening the terminal. Native
+tool conversation files must remain available on the owning computer.
+
+On Unix, named **tmux** and **Herdr Core** (`hc attach`) launches also remember their canonical
+session identity. They reattach to the existing multiplexer instead of launching a duplicate agent.
+Bare `tmux` uses a stable Dovo session name. Custom sockets and interactive target pickers are not
+captured. A shell configuration that replaces PATH can bypass these launchers. Reattachment survives
+Dovo restarts while the multiplexer remains running; after a computer reboot, tmux pane
+reconstruction still needs its native
+[tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) /
+[tmux-continuum](https://github.com/tmux-plugins/tmux-continuum) setup. Dovo does not replay
+arbitrary pane commands. Herdr's `--keep` replaces a lost program with a fresh shell; it does not
+recover an agent conversation by itself. Dovo's direct agent integrations provide exact conversation
+recovery.
 
 Enable **Unified workspace** under **Settings → General → Experimental** to show **Workspace** in
 navigation above the normal Threads, Browser and Terminals modes. These remain independent choices.
@@ -38,9 +68,14 @@ connections.
 **Pin**, **Snooze** and **Settle/Reopen** appear as direct row actions, revealed on hover or
 keyboard focus and kept accessible on touch screens. Status sections keep all resource types mixed.
 Pinned items appear first, and settled or snoozed items remain available to reopen or unsnooze.
-Settling a thread follows the existing thread rules; settling or snoozing a terminal only organizes
-the session and keeps its shell running. Terminal metadata is shared through its owning runtime for
-paired clients, for the lifetime of that session.
+Settling a thread follows the existing thread rules. Settling or snoozing a terminal keeps working,
+blocked and unreported jobs running. A remembered agent with an exact recovery target may release
+its PTY once the program explicitly reports **Idle** or **Done** through OSC 7501. Restoring it
+resumes that exact conversation; concurrent restores open one process. Multiplexers stay live.
+Automatic sleep checks for background jobs and helper processes; unknown or wrapped process trees
+stay live. Windows terminals currently stay live until runtime shutdown. Tools without those
+activity reports stay running until runtime shutdown. Terminal metadata is shared through its owning
+runtime for paired clients, and remembered metadata survives restarts.
 
 Terminal activity follows the program-reported approach used by
 [Herdr Core](https://github.com/herdrdev/herdr-core#status-comes-from-the-program). Dovo observes
@@ -82,4 +117,8 @@ retained local/remote views through repeated swaps, preserving drafts and termin
 `pnpm test:workspace-modes:browser` exercises the actual Workbench and extension catalog through
 mode changes, restored threads/pages, incoming snapshots, compact layout and sidebar collapse.
 Terminal metadata tests cover fragmented sequences, bounds, PTY output preservation, renaming and
-runtime snapshot synchronization.
+runtime snapshot synchronization. `packages/runtime/src/terminal/recovery.test.ts` covers generated
+lifecycle adapters, configuration preservation, exact concurrent conversation recovery through
+runtime recreation, canonical multiplexer targets, smart sleep, concurrent restores, explicit close
+and missing-folder recovery. These automated checks use fake CLI executables; a physical reboot and
+complete native tool sessions still need manual verification.

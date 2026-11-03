@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Folder, House } from 'lucide-react'
+import { Folder, House, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
 import {
   branchesSchema,
@@ -9,6 +9,8 @@ import {
   type CreateWorkspaceTerminal,
   type RuntimeOverview,
 } from '@dovo/protocol'
+import { StartupHeading } from '../task-creation/startup-heading'
+import { TerminalRecoveryControl } from './terminal-recovery-control'
 import { responses, useAppPreferences, useWorkspace } from '@dovo/studio-core'
 import {
   Button,
@@ -17,6 +19,7 @@ import {
   ComposerSubmit,
   ComposerTextarea,
   ComposerWorkspaceBar,
+  ProjectIcon,
   cn,
 } from '@dovo/studio-ui'
 
@@ -36,6 +39,7 @@ export function TerminalStarter({
   const [repositoryId, setRepositoryId] = useState('')
   const [command, setCommand] = useState('')
   const [shellId, setShellId] = useState('default')
+  const [rememberSession, setRememberSession] = useState(true)
   const [checkout, setCheckout] = useState<'main' | 'existing' | 'worktree'>('main')
   const [existingWorktreePath, setExistingWorktreePath] = useState('')
   const [worktreeBaseBranch, setWorktreeBaseBranch] = useState('')
@@ -150,258 +154,287 @@ export function TerminalStarter({
   }
   const pickerClass = 'h-7 max-w-full border-0 bg-transparent text-xs shadow-none'
   return (
-    <div className="startup-draft w-full min-w-0 text-left">
-      <div
-        role="group"
-        aria-label="Start a terminal"
-        className="mb-6 mt-1 flex max-w-full flex-wrap items-center justify-center gap-1.5"
-      >
-        <button
-          type="button"
-          aria-label="Start in home folder"
-          aria-pressed={!repositoryId}
-          disabled={busy || !connected}
-          onClick={() => {
-            setRepositoryId('')
-            resetCheckout()
-          }}
-          className={cn(
-            'startup-no-project inline-flex min-h-11 min-w-20 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
-            !repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
-          )}
-        >
-          <House className="size-4" aria-hidden="true" /> Home folder
-        </button>
+    <div className="startup-draft flex h-full min-h-0 w-full flex-col overflow-y-auto text-left">
+      <StartupHeading>
         <div
-          data-selected={!!repositoryId || undefined}
-          className={cn(
-            'startup-project-selector flex min-w-0 max-w-full items-center gap-1 rounded-lg border pl-3',
-            repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
-          )}
+          role="group"
+          aria-label="Start a terminal"
+          className="flex max-w-full flex-wrap items-center justify-center gap-1.5"
         >
-          <Folder className="size-4 shrink-0" aria-hidden="true" />
-          <ChoicePicker
-            aria-label="Terminal working directory"
-            className="h-9 max-w-full border-0 bg-transparent text-sm shadow-none"
-            value={repositoryId}
+          <button
+            type="button"
+            aria-label="Start in home folder"
+            aria-pressed={!repositoryId}
             disabled={busy || !connected}
-            onValueChange={(id) => {
-              setRepositoryId(id)
-              resetCheckout()
-            }}
-          >
-            <option value="">Choose project</option>
-            {owner?.snapshot?.workspace.repositories
-              .filter((repo) => repo.kind !== 'scratch')
-              .map((repo) => (
-                <option key={repo.id} value={repo.id}>
-                  {repo.name}
-                </option>
-              ))}
-          </ChoicePicker>
-        </div>
-      </div>
-      <div
-        className="task-composer"
-        onBlurCapture={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) setEditorFocused(false)
-        }}
-      >
-        <ComposerSurface
-          aria-label="New workspace terminal"
-          compact={!!minimalComposer && !editorFocused && !command.trim()}
-          aria-busy={busy}
-          error={error}
-          controls={
-            <ChoicePicker
-              aria-label="Terminal shell"
-              className={pickerClass}
-              value={shellId}
-              disabled={busy || !connected || !shells}
-              onValueChange={setShellId}
-            >
-              {!shells && <option value="default">Default shell</option>}
-              {shells?.map((shell) => (
-                <option key={shell.id} value={shell.id}>
-                  {shell.label}
-                </option>
-              ))}
-            </ChoicePicker>
-          }
-          actions={
-            <ComposerSubmit
-              aria-label="Open terminal"
-              title="Open terminal"
-              busy={busy}
-              disabled={busy || !connected || !shellReady || !checkoutReady}
-            />
-          }
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!profile || !connected || busy || !shellReady || !checkoutReady) return
-            const generation = ++attempt.current
-            const input: CreateWorkspaceTerminal = {
-              repositoryId: repositoryId || undefined,
-              command: command.trim() ? command : undefined,
-              shellId,
-              execution: repositoryId ? (checkout === 'main' ? 'main' : 'worktree') : undefined,
-              existingWorktreePath:
-                repositoryId && checkout === 'existing' ? existingWorktreePath : undefined,
-              worktreeBaseBranch:
-                repositoryId && checkout === 'worktree' ? worktreeBaseBranch : undefined,
-            }
-            setBusy(true)
-            setError('')
-            void readRuntime(profile, '/api/terminals/workspace', input, responses.terminal, 'POST')
-              .then((session) => {
-                if (generation === attempt.current) onOpen({ runtimeId, id: session.id })
-              })
-              .catch((cause: unknown) => {
-                if (generation === attempt.current)
-                  setError(cause instanceof Error ? cause.message : String(cause))
-              })
-              .finally(() => {
-                if (generation === attempt.current) setBusy(false)
-              })
-          }}
-        >
-          <ComposerTextarea
-            aria-label="Startup command"
-            preview={false}
-            placeholder="Run a command, or open a shell…"
-            maxLength={20000}
-            value={command}
-            disabled={busy}
-            onFocus={() => setEditorFocused(true)}
-            onChange={(event) => setCommand(event.target.value)}
-          />
-        </ComposerSurface>
-        <ComposerWorkspaceBar>
-          <ChoicePicker
-            aria-label="Terminal computer"
-            className={pickerClass}
-            value={runtimeId}
-            disabled={busy}
-            onValueChange={(id) => {
-              attempt.current++
-              setRuntimeId(id)
+            onClick={() => {
               setRepositoryId('')
-              setShellId('default')
               resetCheckout()
             }}
+            className={cn(
+              'startup-no-project inline-flex min-h-11 min-w-20 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+              !repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
+            )}
           >
-            {!computers.length && <option value="">No paired computers</option>}
-            {computers.map((entry) => (
-              <option key={entry.profile.id} value={entry.profile.id}>
-                {runtimeComputerName(entry)}
-                {entry.connected ? '' : ' · offline'}
-              </option>
-            ))}
-          </ChoicePicker>
-          {repositoryId && (
+            <House className="size-4" aria-hidden="true" /> Home folder
+          </button>
+          <div
+            data-selected={!!repositoryId || undefined}
+            className={cn(
+              'startup-project-selector inline-flex min-w-0 max-w-full items-stretch',
+              repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
+            )}
+          >
             <ChoicePicker
-              aria-label="Terminal checkout"
-              className={pickerClass}
-              value={checkout}
+              aria-label="Terminal working directory"
+              icons={Object.fromEntries([
+                ['', <Folder className="size-4" />],
+                ...(owner?.snapshot?.workspace.repositories ?? []).map((repo) => [
+                  repo.id,
+                  <ProjectIcon repository={repo} className="size-4" />,
+                ]),
+              ])}
+              className="h-9 max-w-full border-0 bg-transparent text-sm shadow-none"
+              value={repositoryId}
               disabled={busy || !connected}
-              onValueChange={(value) => {
-                if (value !== 'main' && value !== 'existing' && value !== 'worktree') return
-                setCheckout(value)
-                setExistingWorktreePath('')
-                setWorktreeBaseBranch('')
-                setError('')
+              onValueChange={(id) => {
+                setRepositoryId(id)
+                resetCheckout()
               }}
             >
-              <option value="main">Local checkout</option>
-              <option value="existing">Existing worktree</option>
-              <option value="worktree">New worktree</option>
+              <option value="">Choose project</option>
+              {owner?.snapshot?.workspace.repositories
+                .filter((repo) => repo.kind !== 'scratch')
+                .map((repo) => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.name}
+                  </option>
+                ))}
             </ChoicePicker>
-          )}
-          {repositoryId && checkout === 'worktree' && options?.branches && (
-            <ChoicePicker
-              aria-label="Terminal base branch"
-              className={pickerClass}
-              value={worktreeBaseBranch}
-              disabled={busy || !connected}
-              onValueChange={setWorktreeBaseBranch}
-            >
-              {!options.branches.branches.length && <option value="">No branches available</option>}
-              {options.branches.branches.map((branch) => (
-                <option key={branch.ref} value={branch.ref}>
-                  {branch.name}
-                </option>
-              ))}
-            </ChoicePicker>
-          )}
-          {repositoryId && checkout === 'existing' && options?.worktrees && (
-            <ChoicePicker
-              aria-label="Terminal existing worktree"
-              className={pickerClass}
-              value={existingWorktreePath}
-              disabled={busy || !connected}
-              onValueChange={setExistingWorktreePath}
-            >
-              {!options.worktrees.worktrees.length && (
-                <option value="">No existing worktrees</option>
-              )}
-              {options.worktrees.worktrees.map((tree) => (
-                <option key={tree.path} value={tree.path}>
-                  {tree.branch || tree.path} · {tree.path}
-                  {tree.dirty ? ' · modified' : ''}
-                </option>
-              ))}
-            </ChoicePicker>
-          )}
-        </ComposerWorkspaceBar>
-      </div>
-      {!connected && (
-        <p role="status" className="mt-3 px-3 text-xs text-muted-foreground">
-          {owner
-            ? 'Computer offline. Reconnect to open a terminal.'
-            : 'Pair a computer to open a terminal.'}
-        </p>
-      )}
-      {connected && !shells && !catalog.error && (
-        <p role="status" className="mt-3 px-3 text-xs text-muted-foreground">
-          Loading shells…
-        </p>
-      )}
-      {connected && catalog.ownerId === runtimeId && catalog.error && (
-        <div role="alert" className="mt-3 px-3 text-xs text-destructive">
-          Could not load shells: {catalog.error}{' '}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => setShellRetry((value) => value + 1)}
-          >
-            Retry shells
-          </Button>
+          </div>
         </div>
-      )}
-      {connected &&
-        repositoryId &&
-        checkout !== 'main' &&
-        !options?.error &&
-        !options?.branches &&
-        !options?.worktrees && (
+      </StartupHeading>
+      <div className="mb-auto w-full shrink-0 pb-8">
+        <div
+          className="task-composer"
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setEditorFocused(false)
+          }}
+        >
+          <ComposerSurface
+            aria-label="New workspace terminal"
+            compact={!!minimalComposer && !editorFocused && !command.trim()}
+            aria-busy={busy}
+            error={error}
+            controls={
+              <ChoicePicker
+                aria-label="Terminal shell"
+                icons={Object.fromEntries(
+                  (shells ?? []).map((shell) => [shell.id, <Terminal className="size-3.5" />]),
+                )}
+                className={pickerClass}
+                value={shellId}
+                disabled={busy || !connected || !shells}
+                onValueChange={setShellId}
+              >
+                {!shells && <option value="default">Default shell</option>}
+                {shells?.map((shell) => (
+                  <option key={shell.id} value={shell.id}>
+                    {shell.label}
+                  </option>
+                ))}
+              </ChoicePicker>
+            }
+            actions={
+              <ComposerSubmit
+                aria-label="Open terminal"
+                title="Open terminal"
+                busy={busy}
+                disabled={busy || !connected || !shellReady || !checkoutReady}
+              />
+            }
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!profile || !connected || busy || !shellReady || !checkoutReady) return
+              const generation = ++attempt.current
+              const input: CreateWorkspaceTerminal = {
+                rememberSession:
+                  rememberSession && owner?.snapshot?.terminalRecoverySupported === true,
+                repositoryId: repositoryId || undefined,
+                command: command.trim() ? command : undefined,
+                shellId,
+                execution: repositoryId ? (checkout === 'main' ? 'main' : 'worktree') : undefined,
+                existingWorktreePath:
+                  repositoryId && checkout === 'existing' ? existingWorktreePath : undefined,
+                worktreeBaseBranch:
+                  repositoryId && checkout === 'worktree' ? worktreeBaseBranch : undefined,
+              }
+              setBusy(true)
+              setError('')
+              void readRuntime(
+                profile,
+                '/api/terminals/workspace',
+                input,
+                responses.terminal,
+                'POST',
+              )
+                .then((session) => {
+                  if (generation === attempt.current) onOpen({ runtimeId, id: session.id })
+                })
+                .catch((cause: unknown) => {
+                  if (generation === attempt.current)
+                    setError(cause instanceof Error ? cause.message : String(cause))
+                })
+                .finally(() => {
+                  if (generation === attempt.current) setBusy(false)
+                })
+            }}
+          >
+            <ComposerTextarea
+              aria-label="Startup command"
+              preview={false}
+              placeholder="Run a command, or open a shell…"
+              maxLength={20000}
+              value={command}
+              disabled={busy}
+              onFocus={() => setEditorFocused(true)}
+              onChange={(event) => setCommand(event.target.value)}
+            />
+          </ComposerSurface>
+          <ComposerWorkspaceBar>
+            <TerminalRecoveryControl
+              enabled={rememberSession}
+              supported={owner?.snapshot?.terminalRecoverySupported === true}
+              disabled={busy}
+              onChange={setRememberSession}
+            />
+            <ChoicePicker
+              aria-label="Terminal computer"
+              className={pickerClass}
+              value={runtimeId}
+              disabled={busy}
+              onValueChange={(id) => {
+                attempt.current++
+                setRuntimeId(id)
+                setRepositoryId('')
+                setShellId('default')
+                resetCheckout()
+              }}
+            >
+              {!computers.length && <option value="">No paired computers</option>}
+              {computers.map((entry) => (
+                <option key={entry.profile.id} value={entry.profile.id}>
+                  {runtimeComputerName(entry)}
+                  {entry.connected ? '' : ' · offline'}
+                </option>
+              ))}
+            </ChoicePicker>
+            {repositoryId && (
+              <ChoicePicker
+                aria-label="Terminal checkout"
+                className={pickerClass}
+                value={checkout}
+                disabled={busy || !connected}
+                onValueChange={(value) => {
+                  if (value !== 'main' && value !== 'existing' && value !== 'worktree') return
+                  setCheckout(value)
+                  setExistingWorktreePath('')
+                  setWorktreeBaseBranch('')
+                  setError('')
+                }}
+              >
+                <option value="main">Local checkout</option>
+                <option value="existing">Existing worktree</option>
+                <option value="worktree">New worktree</option>
+              </ChoicePicker>
+            )}
+            {repositoryId && checkout === 'worktree' && options?.branches && (
+              <ChoicePicker
+                aria-label="Terminal base branch"
+                className={pickerClass}
+                value={worktreeBaseBranch}
+                disabled={busy || !connected}
+                onValueChange={setWorktreeBaseBranch}
+              >
+                {!options.branches.branches.length && (
+                  <option value="">No branches available</option>
+                )}
+                {options.branches.branches.map((branch) => (
+                  <option key={branch.ref} value={branch.ref}>
+                    {branch.name}
+                  </option>
+                ))}
+              </ChoicePicker>
+            )}
+            {repositoryId && checkout === 'existing' && options?.worktrees && (
+              <ChoicePicker
+                aria-label="Terminal existing worktree"
+                className={pickerClass}
+                value={existingWorktreePath}
+                disabled={busy || !connected}
+                onValueChange={setExistingWorktreePath}
+              >
+                {!options.worktrees.worktrees.length && (
+                  <option value="">No existing worktrees</option>
+                )}
+                {options.worktrees.worktrees.map((tree) => (
+                  <option key={tree.path} value={tree.path}>
+                    {tree.branch || tree.path} · {tree.path}
+                    {tree.dirty ? ' · modified' : ''}
+                  </option>
+                ))}
+              </ChoicePicker>
+            )}
+          </ComposerWorkspaceBar>
+        </div>
+        {!connected && (
           <p role="status" className="mt-3 px-3 text-xs text-muted-foreground">
-            Loading {checkout === 'worktree' ? 'branches' : 'worktrees'}…
+            {owner
+              ? 'Computer offline. Reconnect to open a terminal.'
+              : 'Pair a computer to open a terminal.'}
           </p>
         )}
-      {connected && options?.error && (
-        <div role="alert" className="mt-3 px-3 text-xs text-destructive">
-          Could not load checkout choices: {options.error}{' '}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => setCheckoutRetry((value) => value + 1)}
-          >
-            Retry checkout choices
-          </Button>
-        </div>
-      )}
+        {connected && !shells && !catalog.error && (
+          <p role="status" className="mt-3 px-3 text-xs text-muted-foreground">
+            Loading shells…
+          </p>
+        )}
+        {connected && catalog.ownerId === runtimeId && catalog.error && (
+          <div role="alert" className="mt-3 px-3 text-xs text-destructive">
+            Could not load shells: {catalog.error}{' '}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setShellRetry((value) => value + 1)}
+            >
+              Retry shells
+            </Button>
+          </div>
+        )}
+        {connected &&
+          repositoryId &&
+          checkout !== 'main' &&
+          !options?.error &&
+          !options?.branches &&
+          !options?.worktrees && (
+            <p role="status" className="mt-3 px-3 text-xs text-muted-foreground">
+              Loading {checkout === 'worktree' ? 'branches' : 'worktrees'}…
+            </p>
+          )}
+        {connected && options?.error && (
+          <div role="alert" className="mt-3 px-3 text-xs text-destructive">
+            Could not load checkout choices: {options.error}{' '}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setCheckoutRetry((value) => value + 1)}
+            >
+              Retry checkout choices
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

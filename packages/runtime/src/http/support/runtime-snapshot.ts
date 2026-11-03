@@ -298,6 +298,7 @@ export function runtimeSnapshot(
       checkedDraftMoveSupported: true,
       queueRestoreReceiptsSupported: true,
       threadServersSupported: process.platform === 'linux' || process.platform === 'darwin',
+      terminalRecoverySupported: s.terminals.supportsRecovery(),
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,

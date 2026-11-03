@@ -100,6 +100,13 @@ export const terminalSchema = mutableStruct({
   /** Absent until a program explicitly reports root activity through OSC 7501. */
   activity: Schema.optional(terminalActivitySchema),
   exited: Schema.Boolean,
+  /** A retained terminal with no running process, waiting for an explicit restore. */
+  dormant: Schema.optional(Schema.Boolean),
+  recoveryProgram: Schema.optional(
+    Schema.Literals(['codex', 'claude', 'pi', 'opencode', 'tmux', 'herdr']),
+  ),
+  recoveryError: Schema.optional(Schema.String),
+  recoverySetup: Schema.optional(Schema.String),
   pinned: Schema.optional(Schema.Boolean),
   settledAt: Schema.optional(isoDateTime(Schema.String)),
   snoozedUntil: Schema.optional(isoDateTime(Schema.String)),
@@ -115,6 +122,7 @@ export const updateTerminalSchema = mutableStruct({
 })
 export type UpdateTerminal = Schema.Schema.Type<typeof updateTerminalSchema>
 export const createWorkspaceTerminalSchema = mutableStruct({
+  rememberSession: Schema.optional(Schema.Boolean),
   repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   command: Schema.optional(maxValue(minValue(Schema.String, 1), 20000)),
   shellId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
@@ -226,6 +234,7 @@ export const snapshotSchema = mutableStruct({
   queueRestoreReceiptsSupported: Schema.optional(Schema.Literal(true)),
   checkedDraftMoveSupported: Schema.optional(Schema.Literal(true)),
   threadServersSupported: Schema.optional(Schema.Boolean),
+  terminalRecoverySupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),

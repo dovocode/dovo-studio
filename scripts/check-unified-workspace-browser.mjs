@@ -96,7 +96,7 @@ export const HeaderContent=({children})=><>{children}</>;
 export const useNavigationSidebar=()=>({collapsed:!!window.sidebarCollapsed});
 export const SidebarHeader=()=> <div className="flex h-[52px] shrink-0 items-center gap-2 px-5 text-sm font-semibold"><span className="flex size-5 items-center justify-center rounded-md bg-primary text-[10px] text-primary-foreground">D</span>Dovo <span className="ml-auto text-[10px] font-normal text-muted-foreground">Workspace</span></div>;
 export const IconButton=({label,...props})=><Button variant="ghost" size="icon" aria-label={label} {...props}/>;
-export const ChoicePicker=({onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}/>;`,
+export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}/>;`,
     },
     {
       path: '../detail/resizable-sidebar',
@@ -225,6 +225,7 @@ try {
       },
       connected: true,
       snapshot: {
+        terminalRecoverySupported: true,
         workspace: workspace(id),
         terminals: [
           { id: 'shell', title: id + ' shell', taskId: 'studio:terminals', exited: false },
@@ -491,7 +492,7 @@ try {
       document.documentElement.classList.add('dark')
       document.documentElement.dataset.theme = 'dark'
     })
-    await page.getByRole('heading', { name: 'What are you working on?' }).waitFor()
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
     await assertComposerDesign('Workspace input')
     await page.evaluate(() => {
       document.documentElement.classList.remove('dark')
@@ -512,7 +513,7 @@ try {
             button.closest('.studio-workspace-row').querySelector('[data-workspace-actions]'),
           ).opacity,
       )
-    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
     await page.waitForFunction(
       () =>
         getComputedStyle(
@@ -534,7 +535,7 @@ try {
         ).opacity === '1',
     )
     assert.equal(await actionOpacity(), '1', 'Hover reveals row actions')
-    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
     await action.focus()
     assert.equal(await action.evaluate((button) => button.matches(':focus')), true)
     await page.waitForFunction(
@@ -624,7 +625,7 @@ try {
       path: '/tmp/dovo-unified-pinned-browser-actions.png',
       animations: 'disabled',
     })
-    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
     const snooze = tile.getByRole('button', { name: 'Snooze Docs', exact: true })
     await snooze.focus()
     await page.waitForFunction(
@@ -636,7 +637,7 @@ try {
     await page.getByRole('menuitem', { name: 'For 1 hour', exact: true }).waitFor()
     await page.keyboard.press('Escape')
     await snooze.evaluate((button) => button.blur())
-    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
   }
   await page.evaluate(() => {
     window.computers[0].snapshot.workspace.tasks.push(
@@ -783,7 +784,7 @@ try {
       const hoveredSurface = await header.evaluate(
         (element) => getComputedStyle(element).backgroundImage,
       )
-      await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+      await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
       const style = await header.evaluate((element) => {
         const style = getComputedStyle(element)
         return {
@@ -808,7 +809,7 @@ try {
     await pinnedSection.evaluate((section) => {
       section.parentElement.scrollTop = 0
     })
-    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
     await page.screenshot({ path: '/tmp/dovo-unified-section-headers.png', animations: 'disabled' })
     await page.screenshot({ path: '/tmp/dovo-unified-working-waiting.png', animations: 'disabled' })
     for (const id of ['active', 'working', 'waiting'])
@@ -1566,6 +1567,7 @@ try {
       return call.input
     }),
     {
+      rememberSession: true,
       repositoryId: 'project',
       command: '  printf starter-command  ',
       shellId: 'bash',
@@ -1632,6 +1634,7 @@ try {
     path: '/api/terminals/workspace',
     owner: 'local',
     input: {
+      rememberSession: true,
       repositoryId: 'project',
       command: 'printf keep-draft',
       shellId: 'bash',
@@ -1650,6 +1653,7 @@ try {
   await page.getByLabel('Terminal base branch').selectOption('refs/heads/feature')
   await launchStarter()
   assert.deepEqual((await lastCreate()).input, {
+    rememberSession: true,
     repositoryId: 'project',
     shellId: 'default',
     execution: 'worktree',
@@ -1672,11 +1676,12 @@ try {
   })
   await page.getByRole('button', { name: 'Retry shells', exact: true }).click()
   await page.getByLabel('Terminal shell', { exact: true }).selectOption('fish')
+  await page.getByRole('button', { name: 'Remember session', exact: true }).click()
   await page.getByLabel('Startup command', { exact: true }).fill('   ')
   await launchStarter()
   assert.deepEqual(
     (await lastCreate()).input,
-    { shellId: 'fish' },
+    { shellId: 'fish', rememberSession: false },
     'Blank startup input opens a home shell without project or worktree settings',
   )
   await returnHome()

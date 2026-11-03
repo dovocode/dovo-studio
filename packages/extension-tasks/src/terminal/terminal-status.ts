@@ -14,6 +14,13 @@ export function terminalStatus(
 } {
   const detail = session.activity?.message
   if (!connected) return { label: 'Offline', tone: 'muted', section: 'active', detail }
+  if (session.dormant && !session.exited)
+    return {
+      label: session.recoveryError ? 'Recovery needs attention' : 'Sleeping',
+      tone: session.recoveryError ? 'warning' : 'muted',
+      section: 'active',
+      detail: session.recoveryError,
+    }
   if (session.exited)
     return {
       label: session.exitCode == null ? 'Exited' : `Exited ${session.exitCode}`,

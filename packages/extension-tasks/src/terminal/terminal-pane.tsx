@@ -553,39 +553,71 @@ export function TerminalPane({
                     </IconButton>
                   </div>
                 )}
-                <TerminalSession
-                  id={session.id}
-                  focusRequest={focusRequest.id === session.id ? focusRequest.count : 0}
-                  onOpenFile={
-                    onOpenFile
-                      ? async (file) => {
-                          const generation = currentScope.current.generation
-                          const result = await request(
-                            '/api/terminals/file',
-                            { id: session.id, path: file.path },
-                            mutableStruct({
-                              taskId: Schema.String,
-                              path: Schema.String,
-                              checkoutId: Schema.optional(Schema.String),
-                            }),
-                          )
-                          if (generation !== currentScope.current.generation) return
-                          if (result.taskId !== taskId)
-                            throw new Error('This terminal belongs to another thread')
-                          onOpenFile({
-                            ...file,
-                            path: result.path,
-                            ...(result.checkoutId ? { checkoutId: result.checkoutId } : {}),
-                          })
-                        }
-                      : undefined
-                  }
-                  readOnly={!!session.exited}
-                  active={visible && !!group?.sessions.includes(session.id)}
-                  onAddSelection={
-                    onAddSelection ? (text) => onAddSelection(taskId, text) : undefined
-                  }
-                />
+                {(session.recoveryError || session.recoverySetup) && (
+                  <p
+                    role="status"
+                    className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground"
+                  >
+                    {session.recoveryError ?? session.recoverySetup}
+                  </p>
+                )}
+                {session.dormant && !session.exited ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+                    <p>
+                      This terminal is sleeping
+                      {session.recoveryProgram ? ` · ${session.recoveryProgram}` : ''}.
+                    </p>
+                    <Button
+                      size="sm"
+                      disabled={!connected || busy}
+                      onClick={() =>
+                        act(() =>
+                          request(
+                            '/api/terminals/update',
+                            { id: session.id, settled: false },
+                            responses.terminal,
+                          ),
+                        )
+                      }
+                    >
+                      Restore session
+                    </Button>
+                  </div>
+                ) : (
+                  <TerminalSession
+                    id={session.id}
+                    focusRequest={focusRequest.id === session.id ? focusRequest.count : 0}
+                    onOpenFile={
+                      onOpenFile
+                        ? async (file) => {
+                            const generation = currentScope.current.generation
+                            const result = await request(
+                              '/api/terminals/file',
+                              { id: session.id, path: file.path },
+                              mutableStruct({
+                                taskId: Schema.String,
+                                path: Schema.String,
+                                checkoutId: Schema.optional(Schema.String),
+                              }),
+                            )
+                            if (generation !== currentScope.current.generation) return
+                            if (result.taskId !== taskId)
+                              throw new Error('This terminal belongs to another thread')
+                            onOpenFile({
+                              ...file,
+                              path: result.path,
+                              ...(result.checkoutId ? { checkoutId: result.checkoutId } : {}),
+                            })
+                          }
+                        : undefined
+                    }
+                    readOnly={!!session.exited}
+                    active={visible && !!group?.sessions.includes(session.id)}
+                    onAddSelection={
+                      onAddSelection ? (text) => onAddSelection(taskId, text) : undefined
+                    }
+                  />
+                )}
               </div>
             ))}
         </div>

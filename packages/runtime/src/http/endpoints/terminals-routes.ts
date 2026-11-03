@@ -106,6 +106,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
                 shellId: source.info.shellId,
                 execution: source.info.execution,
                 checkoutBranch: source.info.checkoutBranch,
+                rememberSession: Boolean(source.recovery),
               },
             )
             if (command) s.terminals.input(session.id, `${command.replace(/\r?\n/g, '\r')}\r`)
@@ -148,7 +149,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
               `Terminal ${s.terminals.list().length + 1}`,
               undefined,
               checkout.repositoryId,
-              { ...checkout, shellId: shell.id },
+              { ...checkout, shellId: shell.id, rememberSession: input.rememberSession },
             )
           } catch (error) {
             if (checkout.execution !== 'worktree' || input.existingWorktreePath) throw error

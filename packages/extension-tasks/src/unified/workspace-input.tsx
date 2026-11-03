@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Globe2, MessageSquare, Monitor, Sparkles, Terminal } from 'lucide-react'
+import {
+  Globe2,
+  MessageSquare,
+  Monitor,
+  Sparkles,
+  Terminal,
+  House,
+  Folder,
+  MessageCircleDashed,
+} from 'lucide-react'
 import {
   randomUUID,
   snapshotSchema,
@@ -24,7 +33,11 @@ import {
   ComposerSubmit,
   ComposerTextarea,
   ComposerWorkspaceBar,
+  ProjectIcon,
+  cn,
 } from '@dovo/studio-ui'
+import { StartupHeading } from '../task-creation/startup-heading'
+import { TerminalRecoveryControl } from '../terminal/terminal-recovery-control'
 import { browserAddress } from '../browser/shared-browser-tabs'
 import type { WorkspaceTab } from './workspace-tabs'
 
@@ -64,6 +77,7 @@ export function WorkspaceInput({
   const [repositoryId, setRepositoryId] = useState('')
   const [threadId, setThreadId] = useState('')
   const [shellId, setShellId] = useState('default')
+  const [rememberSession, setRememberSession] = useState(true)
   const [shellRetry, setShellRetry] = useState(0)
   const [catalog, setCatalog] = useState<{
     ownerId?: string
@@ -203,6 +217,9 @@ export function WorkspaceInput({
           mode === 'thread' ? threadId : '',
           repositoryId,
           mode === 'terminal' ? shellId : '',
+          mode === 'terminal'
+            ? rememberSession && snapshot?.terminalRecoverySupported === true
+            : false,
         ])
         if (submission.current?.key !== key || submission.current.text !== original) {
           const previous = submission.current
@@ -225,7 +242,12 @@ export function WorkspaceInput({
             const session = await readRuntime(
               entry.profile,
               '/api/terminals/workspace',
-              { repositoryId: repositoryId || undefined, command: original, shellId },
+              {
+                repositoryId: repositoryId || undefined,
+                command: original,
+                shellId,
+                rememberSession: rememberSession && snapshot?.terminalRecoverySupported === true,
+              },
               responses.terminal,
               'POST',
             )
@@ -364,213 +386,280 @@ export function WorkspaceInput({
   const idle = !!minimalComposer && !editorFocused && !text.trim()
   return (
     <div
-      className="startup-draft task-composer min-w-0"
+      className="startup-draft flex min-h-0 w-full flex-col"
       data-workspace-input
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setEditorFocused(false)
       }}
     >
-      <div
-        className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs"
-        aria-label="Workspace input target"
-      >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="font-medium">{target}</span>
-        {mode !== 'browser' && (
-          <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
-            <Monitor className="size-3" aria-hidden="true" />
-            <span className="truncate">
-              {computer} · {projectName}
-              {connected ? '' : ' · offline'}
-            </span>
-          </span>
-        )}
-      </div>
-      <ComposerSurface
-        aria-label="Workspace input"
-        compact={idle}
-        aria-busy={!!phase}
-        error={error}
-        controls={
-          <ChoicePicker
-            aria-label="Workspace destination"
-            className="h-8 w-32 border-transparent bg-muted/40 text-xs shadow-none"
-            value={mode}
-            disabled={busy}
-            onValueChange={chooseMode}
+      <StartupHeading>
+        {mode !== 'browser' && !(mode === 'thread' && threadId) && (
+          <div
+            role="group"
+            aria-label="Start in a project"
+            className="flex max-w-full flex-wrap items-center justify-center gap-1.5"
           >
-            <option value="auto">Auto</option>
-            <option value="browser">Browser</option>
-            <option value="terminal">Terminal</option>
-            <option value="thread">Thread</option>
-          </ChoicePicker>
-        }
-        actions={
-          <ComposerSubmit
-            aria-label={actionLabel}
-            title={actionLabel}
-            busy={!!phase}
-            disabled={
-              !!phase ||
-              !text.trim() ||
-              (mode !== 'browser' && !connected) ||
-              (mode === 'terminal' && !shellReady) ||
-              (mode === 'thread' && !!threadId && !thread)
+            <button
+              type="button"
+              aria-pressed={!repositoryId}
+              disabled={busy || !connected}
+              onClick={() => {
+                invalidate()
+                setRepositoryId('')
+              }}
+              className={cn(
+                'startup-no-project inline-flex items-center justify-center gap-2 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+                !repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
+              )}
+            >
+              {mode === 'terminal' ? (
+                <House className="size-4" />
+              ) : (
+                <MessageCircleDashed className="size-4" />
+              )}
+              {mode === 'terminal' ? 'Home folder' : 'No Project'}
+            </button>
+            <div
+              data-selected={!!repositoryId || undefined}
+              className="startup-project-selector inline-flex min-w-0 max-w-full items-stretch"
+            >
+              <ChoicePicker
+                aria-label="Workspace input project"
+                className="h-9 max-w-64 border-0 bg-transparent text-sm shadow-none"
+                icons={Object.fromEntries([
+                  ['', <Folder className="size-4" />],
+                  ...(workspace?.repositories ?? []).map((repo) => [
+                    repo.id,
+                    <ProjectIcon repository={repo} className="size-4" />,
+                  ]),
+                ])}
+                value={repositoryId}
+                disabled={busy || !connected}
+                onValueChange={(id) => {
+                  invalidate()
+                  setRepositoryId(id)
+                }}
+              >
+                <option value="">Choose project</option>
+                {workspace?.repositories
+                  .filter((repo) => repo.kind !== 'scratch')
+                  .map((repo) => (
+                    <option key={repo.id} value={repo.id}>
+                      {repo.name}
+                    </option>
+                  ))}
+              </ChoicePicker>
+            </div>
+          </div>
+        )}
+      </StartupHeading>
+      <div className="mb-auto w-full shrink-0 pb-8">
+        <div className="task-composer min-w-0">
+          <ComposerSurface
+            aria-label="Workspace input"
+            compact={idle}
+            aria-busy={!!phase}
+            error={error}
+            controls={
+              <>
+                <ChoicePicker
+                  aria-label="Workspace destination"
+                  className="h-7 max-w-40 border-0 bg-transparent text-xs shadow-none"
+                  icons={{
+                    auto: <Sparkles className="size-3.5" />,
+                    browser: <Globe2 className="size-3.5" />,
+                    terminal: <Terminal className="size-3.5" />,
+                    thread: <MessageSquare className="size-3.5" />,
+                  }}
+                  value={mode}
+                  disabled={busy}
+                  onValueChange={chooseMode}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="browser">Browser</option>
+                  <option value="terminal">Terminal</option>
+                  <option value="thread">Thread</option>
+                </ChoicePicker>
+                {mode === 'terminal' && (
+                  <ChoicePicker
+                    aria-label="Workspace terminal shell"
+                    className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
+                    value={shellId}
+                    disabled={busy || !connected || !shells}
+                    onValueChange={(id) => {
+                      invalidate()
+                      setShellId(id)
+                    }}
+                  >
+                    {shells ? (
+                      shells.map((shell) => (
+                        <option key={shell.id} value={shell.id}>
+                          {shell.label}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="default">
+                        {catalog.ownerId === runtimeId && catalog.error
+                          ? 'Shells unavailable'
+                          : 'Loading shells…'}
+                      </option>
+                    )}
+                  </ChoicePicker>
+                )}
+              </>
             }
-          />
-        }
-        onSubmit={(event) => {
-          event.preventDefault()
-          void submit()
-        }}
-      >
-        <ComposerTextarea
-          aria-label="Workspace request"
-          preview={mode === 'thread'}
-          placeholder={
-            mode === 'terminal'
-              ? 'Write a command to run in a new shell…'
-              : mode === 'browser'
-                ? 'Enter a URL or web search…'
-                : mode === 'thread'
-                  ? threadId
-                    ? 'Write a message to this thread…'
-                    : 'What would you like to work on?'
-                  : 'Search the web, run a command, or start a thread…'
-          }
-          maxLength={20000}
-          value={text}
-          disabled={busy}
-          onFocus={() => setEditorFocused(true)}
-          onChange={(event) => {
-            invalidate(true)
-            draft.current = event.target.value
-            setText(event.target.value)
-          }}
-        />
-      </ComposerSurface>
-      {mode !== 'browser' && (
-        <ComposerWorkspaceBar>
-          <ChoicePicker
-            aria-label="Workspace input computer"
-            className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
-            value={runtimeId}
-            disabled={busy}
-            onValueChange={(id) => {
-              invalidate()
-              setRuntimeId(id)
-              setRepositoryId('')
-              setShellId('default')
-              setThreadId('')
+            actions={
+              <ComposerSubmit
+                aria-label={actionLabel}
+                title={actionLabel}
+                busy={!!phase}
+                disabled={
+                  !!phase ||
+                  !text.trim() ||
+                  (mode !== 'browser' && !connected) ||
+                  (mode === 'terminal' && !shellReady) ||
+                  (mode === 'thread' && !!threadId && !thread)
+                }
+              />
+            }
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submit()
             }}
           >
-            {!store.runtimes.length && <option value="">No paired computers</option>}
-            {store.runtimes.map((owner) => (
-              <option key={owner.profile.id} value={owner.profile.id}>
-                {runtimeComputerName(owner)}
-                {(owner.profile.id === store.activeRuntimeId ? store.connected : owner.connected)
-                  ? ''
-                  : ' · offline'}
-              </option>
-            ))}
-          </ChoicePicker>
-          {mode === 'thread' && (
-            <ChoicePicker
-              aria-label="Workspace thread target"
-              className="h-7 max-w-56 border-transparent bg-transparent text-xs shadow-none"
-              value={threadId}
+            <ComposerTextarea
+              aria-label="Workspace request"
+              preview={mode === 'thread'}
+              placeholder={
+                mode === 'terminal'
+                  ? 'Write a command to run in a new shell…'
+                  : mode === 'browser'
+                    ? 'Enter a URL or web search…'
+                    : mode === 'thread'
+                      ? threadId
+                        ? 'Write a message to this thread…'
+                        : 'What would you like to work on?'
+                      : 'Search the web, run a command, or start a thread…'
+              }
+              maxLength={20000}
+              value={text}
               disabled={busy}
-              onValueChange={(id) => {
-                invalidate()
-                setThreadId(id)
+              onFocus={() => setEditorFocused(true)}
+              onChange={(event) => {
+                invalidate(true)
+                draft.current = event.target.value
+                setText(event.target.value)
               }}
-            >
-              <option value="">New thread</option>
-              {threadId && (
-                <option value={threadId}>Continue: {thread?.title ?? 'Unavailable thread'}</option>
+            />
+          </ComposerSurface>
+          <div
+            className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs"
+            aria-label="Workspace input target"
+          >
+            <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="font-medium">{target}</span>
+            {mode !== 'browser' && (
+              <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
+                <Monitor className="size-3" aria-hidden="true" />
+                <span className="truncate">
+                  {computer} · {projectName}
+                  {connected ? '' : ' · offline'}
+                </span>
+              </span>
+            )}
+          </div>
+          {mode !== 'browser' && (
+            <ComposerWorkspaceBar>
+              {mode === 'terminal' && (
+                <TerminalRecoveryControl
+                  enabled={rememberSession}
+                  supported={snapshot?.terminalRecoverySupported === true}
+                  disabled={busy}
+                  onChange={(enabled) => {
+                    invalidate()
+                    setRememberSession(enabled)
+                  }}
+                />
               )}
-              {activeThread && activeThread.id !== threadId && (
-                <option value={activeThread.id}>Continue: {activeThread.title}</option>
-              )}
-            </ChoicePicker>
-          )}
-          {(mode === 'terminal' || (mode === 'thread' && !threadId)) && (
-            <ChoicePicker
-              aria-label="Workspace input project"
-              className="h-7 max-w-48 border-transparent bg-transparent text-xs shadow-none"
-              value={repositoryId}
-              disabled={busy || !connected}
-              onValueChange={(id) => {
-                invalidate()
-                setRepositoryId(id)
-              }}
-            >
-              <option value="">{mode === 'terminal' ? 'Home folder' : 'General'}</option>
-              {workspace?.repositories
-                .filter((repo) => repo.kind !== 'scratch')
-                .map((repo) => (
-                  <option key={repo.id} value={repo.id}>
-                    {repo.name}
+              <ChoicePicker
+                aria-label="Workspace input computer"
+                className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
+                value={runtimeId}
+                disabled={busy}
+                onValueChange={(id) => {
+                  invalidate()
+                  setRuntimeId(id)
+                  setRepositoryId('')
+                  setShellId('default')
+                  setThreadId('')
+                }}
+              >
+                {!store.runtimes.length && <option value="">No paired computers</option>}
+                {store.runtimes.map((owner) => (
+                  <option key={owner.profile.id} value={owner.profile.id}>
+                    {runtimeComputerName(owner)}
+                    {(
+                      owner.profile.id === store.activeRuntimeId ? store.connected : owner.connected
+                    )
+                      ? ''
+                      : ' · offline'}
                   </option>
                 ))}
-            </ChoicePicker>
-          )}
-          {mode === 'terminal' && (
-            <ChoicePicker
-              aria-label="Workspace terminal shell"
-              className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
-              value={shellId}
-              disabled={busy || !connected || !shells}
-              onValueChange={(id) => {
-                invalidate()
-                setShellId(id)
-              }}
-            >
-              {shells ? (
-                shells.map((shell) => (
-                  <option key={shell.id} value={shell.id}>
-                    {shell.label}
-                  </option>
-                ))
-              ) : (
-                <option value="default">
-                  {catalog.ownerId === runtimeId && catalog.error
-                    ? 'Shells unavailable'
-                    : 'Loading shells…'}
-                </option>
+              </ChoicePicker>
+              {mode === 'thread' && (
+                <ChoicePicker
+                  aria-label="Workspace thread target"
+                  className="h-7 max-w-56 border-transparent bg-transparent text-xs shadow-none"
+                  value={threadId}
+                  disabled={busy}
+                  onValueChange={(id) => {
+                    invalidate()
+                    setThreadId(id)
+                  }}
+                >
+                  <option value="">New thread</option>
+                  {threadId && (
+                    <option value={threadId}>
+                      Continue: {thread?.title ?? 'Unavailable thread'}
+                    </option>
+                  )}
+                  {activeThread && activeThread.id !== threadId && (
+                    <option value={activeThread.id}>Continue: {activeThread.title}</option>
+                  )}
+                </ChoicePicker>
               )}
-            </ChoicePicker>
+            </ComposerWorkspaceBar>
           )}
-        </ComposerWorkspaceBar>
-      )}
-      <p
-        role={reason ? 'status' : undefined}
-        className="mt-2 px-1 text-[11px] text-muted-foreground"
-      >
-        {reason
-          ? `Suggested ${mode}: ${reason}. Review the destination before continuing.`
-          : mode === 'auto'
-            ? 'AI suggests a destination. Review it before opening or running.'
-            : mode === 'terminal'
-              ? 'Runs only when you choose Run command. Use the terminal starter for worktrees.'
-              : mode === 'thread' && !threadId
-                ? 'Starts a new thread. Choose a continuation target to use an existing thread.'
-                : 'Destination selected. Ready when you are.'}
-      </p>
-      {mode === 'terminal' && catalog.ownerId === runtimeId && catalog.error && (
-        <div role="alert" className="mt-1 px-1 text-xs text-destructive">
-          Could not load shells: {catalog.error}{' '}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => setShellRetry((value) => value + 1)}
+          <p
+            role={reason ? 'status' : undefined}
+            className="mt-2 px-1 text-[11px] text-muted-foreground"
           >
-            Retry shells
-          </Button>
+            {reason
+              ? `Suggested ${mode}: ${reason}. Review the destination before continuing.`
+              : mode === 'auto'
+                ? 'AI suggests a destination. Review it before opening or running.'
+                : mode === 'terminal'
+                  ? 'Runs only when you choose Run command. Use the terminal starter for worktrees.'
+                  : mode === 'thread' && !threadId
+                    ? 'Starts a new thread. Choose a continuation target to use an existing thread.'
+                    : 'Destination selected. Ready when you are.'}
+          </p>
+          {mode === 'terminal' && catalog.ownerId === runtimeId && catalog.error && (
+            <div role="alert" className="mt-1 px-1 text-xs text-destructive">
+              Could not load shells: {catalog.error}{' '}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setShellRetry((value) => value + 1)}
+              >
+                Retry shells
+              </Button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

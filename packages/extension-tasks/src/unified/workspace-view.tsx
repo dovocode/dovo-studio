@@ -946,30 +946,16 @@ function WorkspaceContent() {
           {/* Keep the Home draft mounted without taking space above an active workspace tab. */}
           <div
             hidden={!!active}
-            className={
-              active
-                ? 'hidden'
-                : 'flex min-h-0 flex-1 justify-center overflow-y-auto px-8 py-[12vh]'
-            }
+            className={active ? 'hidden' : 'flex min-h-0 flex-1 flex-col overflow-y-auto'}
           >
-            <div className="startup-draft w-full max-w-[var(--chat-max)]">
-              {!active && (
-                <div className="mb-7 text-center">
-                  <h1 className="startup-heading text-balance text-xl font-medium tracking-tight sm:text-2xl">
-                    What are you working on?
-                  </h1>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    A page to explore, a command to run, or an idea to build.
-                  </p>
-                </div>
-              )}
+            <div className="startup-draft my-auto w-full py-8">
               <WorkspaceInput active={active} onOpen={open} onBrowser={openBrowserLink} />
               {!active && (
-                <div className="mt-5 flex flex-wrap gap-2">
+                <div className="mx-auto grid w-full max-w-[var(--chat-max)] grid-cols-3 gap-2 px-5">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-2 rounded-lg text-xs"
+                    className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
                     disabled={switching || !store.activeRuntimeId}
                     onClick={() =>
                       open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
@@ -981,7 +967,7 @@ function WorkspaceContent() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-2 rounded-lg text-xs"
+                    className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
                     onClick={newBrowser}
                   >
                     <Globe2 className="size-3.5" />
@@ -990,7 +976,7 @@ function WorkspaceContent() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-2 rounded-lg text-xs"
+                    className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
                     onClick={() => setCreatingTerminal(true)}
                   >
                     <Terminal className="size-3.5" />
@@ -999,7 +985,10 @@ function WorkspaceContent() {
                 </div>
               )}
               {!active && !!continueWorking.length && (
-                <section aria-label="Continue working" className="mt-10">
+                <section
+                  aria-label="Continue working"
+                  className="mx-auto mt-8 w-full max-w-[var(--chat-max)] px-5"
+                >
                   <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
                     Continue working
                   </h2>
