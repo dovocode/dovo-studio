@@ -38,7 +38,7 @@ const pageSchema = mutableStruct({
   nextCursor: Schema.optional(Schema.NullOr(Schema.String)),
 })
 /** Ask the configured app-server, so separate CODEX_HOME and API-key logins
- * are checked with the same configuration used to run a conversation. */
+ * and custom providers are checked with the same configuration used to run a conversation. */
 export async function codexAuthenticated(agent: AgentDiscovery): Promise<boolean> {
   try {
     return await withCatalogRpc(
@@ -59,10 +59,18 @@ export async function codexAuthenticated(agent: AgentDiscovery): Promise<boolean
         // handshake like the model catalog expects; keep it selectable.
         if (response === undefined) return true
         const result = decode(
-          mutableStruct({ account: Schema.NullOr(mutableStruct({ type: Schema.String })) }),
+          mutableStruct({
+            account: Schema.NullOr(mutableStruct({ type: Schema.String })),
+            requiresOpenaiAuth: Schema.optional(Schema.Boolean),
+          }),
           response,
         )
-        return result.account?.type === 'chatgpt' || result.account?.type === 'apiKey'
+        // Custom providers can authenticate with their own bearer rather than an OpenAI login.
+        return (
+          result.requiresOpenaiAuth === false ||
+          result.account?.type === 'chatgpt' ||
+          result.account?.type === 'apiKey'
+        )
       },
       agent.env,
     )

@@ -101,7 +101,8 @@ export function createCodexAdapter(): AgentAdapter {
     probe: async (agent) => ({
       provider: 'codex',
       available: await codexAuthenticated(agent),
-      detail: 'Requires an authenticated Codex login or API-key login on this runtime host.',
+      detail:
+        'Requires an authenticated Codex login, API-key login, or configured custom provider on this runtime host.',
     }),
     async run(run) {
       run = checkedPolicyRun(run, 'codex')
