@@ -9,10 +9,9 @@ import {
   type SetStateAction,
 } from 'react'
 import {
-  AlarmClock,
-  Check,
   ChevronRight,
   Globe2,
+  House,
   MessageSquare,
   Terminal,
   X,
@@ -27,7 +26,9 @@ import {
   randomUUID,
   runtimeComputerName,
   STUDIO_BROWSER_SCOPE,
+  STUDIO_TERMINAL_SCOPE,
   wakeBrowserTab,
+  type RuntimeSnapshot,
   type TerminalInfo,
   type UpdateTerminal,
 } from '@dovo/protocol'
@@ -40,6 +41,7 @@ import {
   WorkspaceScope,
   type StudioHostApi,
   type StudioNavigation,
+  type Task,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -59,6 +61,7 @@ import {
 } from '../browser/browser-pane'
 import type { BrowserTab } from '../browser/shared-browser-tabs'
 import { taskActionClient, useTaskActionStore } from '../list/task-row-actions'
+import { retainTaskOwner, type TaskOwner } from '../list/task-collection'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import {
   NewWorkspaceTerminalDialog,
@@ -68,9 +71,13 @@ import {
 } from '../terminal/terminal-workspace'
 import { WorkspaceInput } from './workspace-input'
 import { WorkspaceResourceMenu } from './workspace-resource-menu'
+import { workspaceIdentity } from './workspace-identity'
+import { WorkspacePageRow, WorkspaceTerminalRow, WorkspaceThreadRow } from './workspace-rows'
 import {
   closeWorkspaceTab,
   openWorkspaceTab,
+  reconcileWorkspaceTabs,
+  showWorkspaceOverview,
   readWorkspaceTabs,
   saveWorkspaceTabs,
   workspaceTabKey,
@@ -92,7 +99,22 @@ type WorkspaceResource = {
   pin: () => Promise<void> | void
   settle: () => Promise<void> | void
   snooze: (until: string | null) => Promise<void> | void
+  /** Presentation facts for the kind's own row design. */
+  row:
+    | { kind: 'thread'; task: Task; owner: TaskOwner; needsInput: boolean; terminals: number }
+    | { kind: 'browser'; page: BrowserTab; computer: string; runtimeIcon?: RuntimeIcon }
+    | {
+        kind: 'terminal'
+        project: string
+        checkout: string
+        /** True only for a known branch; folders and unknown checkouts are not branches. */
+        checkoutIsBranch: boolean
+        state: string
+        computer: string
+        runtimeIcon?: RuntimeIcon
+      }
 }
+type RuntimeIcon = RuntimeSnapshot['runtimeIcon']
 const sections = [
   { id: 'pinned', name: 'Pinned' },
   { id: 'active', name: 'Active' },
@@ -149,6 +171,7 @@ function WorkspaceContent() {
   }, [])
   const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(() => new Set())
   const pendingActionsRef = useRef(new Set<string>())
+  const taskOwners = useRef(new Map<string, TaskOwner>())
   const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>({
     pinned: true,
     active: true,
@@ -163,6 +186,9 @@ function WorkspaceContent() {
   const [error, setError] = useState(restored.error ?? '')
   const [lifecycleError, setLifecycleError] = useState('')
   const [switching, setSwitching] = useState(false)
+  // A failed computer switch keeps its tab and offers a retry instead of a blank panel.
+  const [switchFailure, setSwitchFailure] = useState<{ runtimeId: string; message: string }>()
+  const [switchAttempt, setSwitchAttempt] = useState(0)
   const [browserRequest, setBrowserRequest] = useState('')
   const pendingBrowserAction = useRef(false)
   const requestedBrowserTab = useRef<string | undefined>(undefined)
@@ -178,6 +204,28 @@ function WorkspaceContent() {
       mounted.current = false
     }
   }, [])
+  // Older saved tabs may point at thread terminals. Drop the tab once its computer's snapshot
+  // confirms the shell is thread-scoped; the shell itself keeps running.
+  const threadTerminalKeys = state.tabs
+    .filter(
+      (tab) =>
+        tab.kind === 'terminal' &&
+        computers
+          .find((entry) => entry.profile.id === tab.runtimeId)
+          ?.snapshot?.terminals.some(
+            (session) => session.id === tab.id && session.taskId !== STUDIO_TERMINAL_SCOPE,
+          ),
+    )
+    .map(workspaceTabKey)
+  useEffect(() => {
+    if (!threadTerminalKeys.length) return
+    const ineligible = new Set(threadTerminalKeys)
+    setState((previous) =>
+      reconcileWorkspaceTabs(previous, (tab) =>
+        ineligible.has(workspaceTabKey(tab)) ? 'missing' : 'unknown',
+      ),
+    )
+  }, [threadTerminalKeys.join('\n')])
   useEffect(() => {
     try {
       saveWorkspaceTabs(state)
@@ -187,22 +235,31 @@ function WorkspaceContent() {
   }, [state])
   // Threads retain the existing active-computer mutation path; terminals and pages can use
   // explicit remote ownership without changing the user's active computer.
+  // Paired computers can load after a restored tab; re-run once its owner appears.
+  const activeOwnerPresent =
+    active?.kind === 'thread' && computers.some((entry) => entry.profile.id === active.runtimeId)
   useEffect(() => {
     if (active?.kind !== 'thread' || active.runtimeId === store.activeRuntimeId) {
+      setSwitching(false)
+      setSwitchFailure(undefined)
+      return
+    }
+    if (!activeOwnerPresent) {
       setSwitching(false)
       return
     }
     let alive = true
-    if (!computers.some((entry) => entry.profile.id === active.runtimeId)) {
-      setSwitching(false)
-      return
-    }
+    const runtimeId = active.runtimeId
     setSwitching(true)
-    setError('')
+    setSwitchFailure(undefined)
     void store
-      .switchRuntime(active.runtimeId)
+      .switchRuntime(runtimeId)
       .catch((cause: unknown) => {
-        if (alive) setError(String(cause))
+        if (alive)
+          setSwitchFailure({
+            runtimeId,
+            message: cause instanceof Error ? cause.message : String(cause),
+          })
       })
       .finally(() => {
         if (alive) setSwitching(false)
@@ -210,7 +267,14 @@ function WorkspaceContent() {
     return () => {
       alive = false
     }
-  }, [active?.kind, active?.runtimeId, store.activeRuntimeId, store.switchRuntime])
+  }, [
+    active?.kind,
+    active?.runtimeId,
+    activeOwnerPresent,
+    store.activeRuntimeId,
+    store.switchRuntime,
+    switchAttempt,
+  ])
   const open = useCallback((tab: WorkspaceTab) => {
     if (tab.kind === 'browser')
       setBrowserTabs((previous) =>
@@ -244,9 +308,16 @@ function WorkspaceContent() {
       },
       navigate: (target: StudioNavigation, options?: { replace?: boolean }) => {
         if (target.viewId === 'tasks') {
+          // Navigation comes from the visible thread; keep its computer even mid-switch.
+          const origin = current.current.tabs.find(
+            (tab) => workspaceTabKey(tab) === current.current.active,
+          )
           const tab: WorkspaceTab = {
             kind: 'thread',
-            runtimeId: store.activeRuntimeId ?? '',
+            runtimeId:
+              origin?.kind === 'thread' && origin.runtimeId
+                ? origin.runtimeId
+                : (store.activeRuntimeId ?? ''),
             id: target.entityId ?? '',
           }
           threadNavigation.current.set(workspaceTabKey(tab), target)
@@ -323,8 +394,29 @@ function WorkspaceContent() {
         name: runtimeComputerName(owner),
         online: owner.connected,
       }
+      const snapshot = owner.snapshot
+      // Every resource below comes from the snapshot; none exist before it arrives.
+      if (!snapshot) return []
+      // Reuse the previous owner object while its facts are unchanged, so thread rows stay memoized.
+      const taskOwner = retainTaskOwner(taskOwners.current.get(owner.profile.id), {
+        ...source,
+        connection: owner.profile.connection,
+        address: owner.profile.connection.address,
+        workspace: snapshot.workspace,
+        snapshot,
+      })
+      taskOwners.current.set(owner.profile.id, taskOwner)
+      const waiting = new Set(
+        [...(snapshot.questions ?? []), ...(snapshot.approvals ?? [])].map(
+          (request) => request.taskId,
+        ),
+      )
+      const shellCounts = new Map<string, number>()
+      for (const session of snapshot.terminals)
+        if (!session.exited)
+          shellCounts.set(session.taskId, (shellCounts.get(session.taskId) ?? 0) + 1)
       // Settled threads are task.archived; only hard-archived threads (archivedAt) leave the list.
-      const threads = (owner.snapshot?.workspace.tasks ?? [])
+      const threads = snapshot.workspace.tasks
         .filter((task) => !task.example && !task.archivedAt)
         .map((task): WorkspaceResource => {
           const tab = { kind: 'thread' as const, runtimeId: owner.profile.id, id: task.id }
@@ -343,10 +435,19 @@ function WorkspaceContent() {
             pin: () => patch({ pinned: !task.pinned }),
             settle: () => patch({ archived: !task.archived, snoozedUntil: null }),
             snooze: (until) => patch({ snoozedUntil: until }),
+            row: {
+              kind: 'thread',
+              task,
+              owner: taskOwner,
+              needsInput: waiting.has(task.id),
+              terminals: shellCounts.get(task.id) ?? 0,
+            },
           }
         })
-      const terminals = (owner.snapshot?.terminals ?? []).map(
-        (session: TerminalInfo): WorkspaceResource => {
+      // Thread terminals belong to their thread, as browser previews do; only standalone shells mix in.
+      const terminals = snapshot.terminals
+        .filter((session) => session.taskId === STUDIO_TERMINAL_SCOPE)
+        .map((session: TerminalInfo): WorkspaceResource => {
           // Workflow metadata only; settling or snoozing never stops the shell.
           const update = async (updates: Omit<UpdateTerminal, 'id'>) => {
             if (!owner.connected) throw new Error(`${source.name} is offline.`)
@@ -357,13 +458,21 @@ function WorkspaceContent() {
               responses.terminal,
               'POST',
             )
-            await store.refreshRuntime(owner.profile)
+            // The write committed; a failed refresh must not report the change as failed.
+            await store.refreshRuntime(owner.profile).catch(() => undefined)
           }
           const snoozed = !!session.snoozedUntil && Date.parse(session.snoozedUntil) > now
+          const repository = snapshot.workspace.repositories.find(
+            (item) => item.id === session.repositoryId,
+          )
+          // A worktree with an unknown branch must not claim the project's main branch.
+          const branch =
+            session.checkoutBranch ??
+            (session.execution === 'worktree' ? undefined : repository?.branch)
           return {
             tab: { kind: 'terminal' as const, runtimeId: owner.profile.id, id: session.id },
-            title: `${session.title}${session.exited ? ' · exited' : ''}`,
-            detail: `${source.name} · ${terminalContext(session, owner.snapshot?.workspace)}`,
+            title: session.title,
+            detail: `${source.name} · ${terminalContext(session, snapshot.workspace)}`,
             offline: !owner.connected,
             pinned: !!session.pinned,
             status: snoozed ? 'snoozed' : session.settledAt ? 'settled' : 'active',
@@ -371,13 +480,31 @@ function WorkspaceContent() {
             pin: () => update({ pinned: !session.pinned }),
             settle: () => update({ settled: !session.settledAt, snoozedUntil: null }),
             snooze: (until) => update({ snoozedUntil: until }),
+            row: {
+              kind: 'terminal',
+              project: repository?.name ?? 'Home folder',
+              checkout:
+                branch ??
+                (!repository
+                  ? 'Home folder'
+                  : (session.directory ??
+                    (session.execution === 'worktree' ? 'Worktree' : 'Local checkout'))),
+              checkoutIsBranch: branch !== undefined,
+              state: session.exited
+                ? session.exitCode === undefined
+                  ? 'Exited'
+                  : `Exited (${session.exitCode})`
+                : 'Running',
+              computer: source.name,
+              runtimeIcon: snapshot.runtimeIcon,
+            },
           }
-        },
-      )
+        })
       return [...threads, ...terminals]
     }),
     ...pages.map((page): WorkspaceResource => {
       const status = browserTabCategory(page, now)
+      const pageOwner = computers.find((entry) => entry.profile.id === page.runtimeId)
       return {
         tab: { kind: 'browser' as const, runtimeId: '', id: page.id },
         title: page.title || page.url || 'New browser tab',
@@ -412,6 +539,17 @@ function WorkspaceContent() {
                   until: Date.parse(until),
                 },
           ),
+        row: {
+          kind: 'browser',
+          page,
+          computer:
+            page.kind === 'web'
+              ? 'This computer'
+              : pageOwner
+                ? runtimeComputerName(pageOwner)
+                : 'Unavailable computer',
+          runtimeIcon: pageOwner?.snapshot?.runtimeIcon,
+        },
       }
     }),
   ]
@@ -431,6 +569,77 @@ function WorkspaceContent() {
         a.title.localeCompare(b.title, undefined, { numeric: true }) ||
         workspaceTabKey(a.tab).localeCompare(workspaceTabKey(b.tab)),
     )
+  /** One row per item, in its kind's established design; shared by the sidebar and overview. */
+  const renderResource = (resource: WorkspaceResource) => {
+    const key = workspaceTabKey(resource.tab)
+    const shell = {
+      title: resource.title,
+      selected: key === state.active,
+      disabled: switching,
+      status: resource.status,
+      onSelect: () => open(resource.tab),
+      actions: (
+        <WorkspaceResourceMenu
+          title={resource.title}
+          pinned={resource.pinned}
+          settled={resource.status === 'settled'}
+          snoozedUntil={resource.snoozedUntil}
+          disabled={pendingActions.has(key) || resource.offline}
+          settleDisabled={resource.settleDisabled}
+          onPin={() => runLifecycle(resource.tab, resource.pin)}
+          onSettle={() => runLifecycle(resource.tab, resource.settle)}
+          onSnooze={(until) => runLifecycle(resource.tab, () => resource.snooze(until))}
+        />
+      ),
+    }
+    const row = resource.row
+    return row.kind === 'thread' ? (
+      <WorkspaceThreadRow key={key} {...shell} {...row} />
+    ) : row.kind === 'browser' ? (
+      <WorkspacePageRow key={key} {...shell} {...row} />
+    ) : (
+      <WorkspaceTerminalRow
+        key={key}
+        {...shell}
+        {...row}
+        pinned={resource.pinned}
+        offline={resource.offline}
+      />
+    )
+  }
+  // Home resumes work: open tabs first, then pinned, then other active items. Still one mixed list.
+  const continueWorking = [
+    ...state.tabs.flatMap((tab) =>
+      resources.filter((resource) => workspaceTabKey(resource.tab) === workspaceTabKey(tab)),
+    ),
+    ...resources.filter((resource) => resource.pinned),
+    ...[...resources]
+      .filter((resource) => resource.status === 'active')
+      .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })),
+  ]
+    .filter(
+      (resource, index, all) =>
+        all.findIndex((item) => workspaceTabKey(item.tab) === workspaceTabKey(resource.tab)) ===
+        index,
+    )
+    .slice(0, 6)
+  const showHome = () => {
+    setState(showWorkspaceOverview)
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>('[data-workspace-input] textarea')?.focus(),
+    )
+  }
+  /** Closing keeps focus in the tab strip, or returns it to Home when no tab remains. */
+  const closeTab = (key: string) => {
+    const next = closeWorkspaceTab(current.current, key)
+    setState(next)
+    requestAnimationFrame(() => {
+      const tab = next.active
+        ? document.getElementById(`workspace-tab-${encodeURIComponent(next.active)}`)
+        : null
+      ;(tab ?? document.querySelector<HTMLElement>('[data-workspace-input] textarea'))?.focus()
+    })
+  }
   // Sections follow the thread workflow; each one mixes threads, pages and terminals.
   const sidebarSections = sections
     .map((section) => ({
@@ -438,31 +647,44 @@ function WorkspaceContent() {
       items: matchingResources.filter((resource) => sectionOf(resource) === section.id),
     }))
     .filter((section) => section.items.length)
-  const label = (tab: WorkspaceTab) =>
-    resources.find((resource) => workspaceTabKey(resource.tab) === workspaceTabKey(tab))?.title ??
-    (tab.kind === 'thread' && !tab.id
+  const label = (tab: WorkspaceTab) => {
+    const listed = resources.find(
+      (resource) => workspaceTabKey(resource.tab) === workspaceTabKey(tab),
+    )?.title
+    if (listed) return listed
+    // Hard-archived threads leave the list but still resolve from their computer's snapshot.
+    const identity =
+      tab.kind === 'browser' ? undefined : workspaceIdentity(tab, { computers, browserTabs })
+    if (identity?.availability === 'present' && tab.id) return identity.title
+    return tab.kind === 'thread' && !tab.id
       ? 'New thread'
       : tab.kind === 'terminal'
         ? 'Terminal session'
-        : `${tab.kind} · ${tab.id === 'new' ? 'New tab' : tab.id}`)
+        : `${tab.kind} · ${tab.id === 'new' ? 'New tab' : tab.id}`
+  }
   const browserTabsChanged = useCallback((tabs: BrowserTab[], activeId: string) => {
     // A new-page selection can arrive before its updated browser tab list commits.
     if (requestedBrowserTab.current && !tabs.some((tab) => tab.id === requestedBrowserTab.current))
       return
     requestedBrowserTab.current = undefined
+    // The pane's explicit tab list is authoritative: drop every workspace ref to a closed page,
+    // but keep the "new" placeholder while its page is still being created.
+    const live = new Set(tabs.map((tab) => tab.id))
     setState((previous) => {
-      const selected = previous.tabs.find((tab) => workspaceTabKey(tab) === previous.active)
-      if (
-        !pendingBrowserAction.current &&
-        selected?.kind === 'browser' &&
-        !tabs.some((tab) => tab.id === selected.id)
+      const stale = previous.tabs.filter(
+        (tab) =>
+          tab.kind === 'browser' &&
+          !live.has(tab.id) &&
+          !(tab.id === 'new' && pendingBrowserAction.current),
       )
-        return openWorkspaceTab(closeWorkspaceTab(previous, previous.active), {
-          kind: 'browser',
-          runtimeId: '',
-          id: activeId,
-        })
-      return previous
+      if (!stale.length) return previous
+      const next = stale.reduce(
+        (state, tab) => closeWorkspaceTab(state, workspaceTabKey(tab)),
+        previous,
+      )
+      return stale.some((tab) => workspaceTabKey(tab) === previous.active)
+        ? openWorkspaceTab(next, { kind: 'browser', runtimeId: '', id: activeId })
+        : next
     })
   }, [])
   return (
@@ -501,9 +723,19 @@ function WorkspaceContent() {
                   </IconButton>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
+                  <button
+                    type="button"
+                    aria-label="Workspace home"
+                    title="Show workspace home; open tabs stay open"
+                    aria-current={!active ? 'page' : undefined}
+                    className={cn(
+                      'min-w-0 flex-1 rounded px-1 text-left text-xs font-medium hover:text-foreground',
+                      active ? 'text-muted-foreground' : 'text-foreground',
+                    )}
+                    onClick={showHome}
+                  >
                     Workspace
-                  </span>
+                  </button>
                   <IconButton
                     label="New thread"
                     title="New thread"
@@ -597,69 +829,7 @@ function WorkspaceContent() {
                         <span className="flex-1 text-left">{section.name}</span>
                         <span className="tabular-nums">{section.items.length}</span>
                       </button>
-                      {expanded &&
-                        section.items.map((resource) => {
-                          const key = workspaceTabKey(resource.tab)
-                          const selected = key === state.active
-                          const Icon = icons[resource.tab.kind]
-                          const busy = pendingActions.has(key)
-                          return (
-                            <div
-                              key={key}
-                              className="studio-thread-row mb-1 flex items-center gap-1"
-                              data-highlighted={selected || undefined}
-                            >
-                              <button
-                                type="button"
-                                disabled={switching}
-                                aria-current={selected ? 'page' : undefined}
-                                className="studio-thread-card flex min-w-0 flex-1 items-center gap-2.5 border px-2.5 py-2.5 text-left hover:bg-accent"
-                                onClick={() => open(resource.tab)}
-                              >
-                                <Icon
-                                  className={cn(
-                                    'size-4 shrink-0',
-                                    selected ? 'text-primary' : 'text-muted-foreground',
-                                  )}
-                                />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-medium">
-                                    {resource.title}
-                                  </span>
-                                  <span className="studio-thread-card-context block truncate text-xs text-muted-foreground">
-                                    {resource.detail}
-                                    {resource.offline ? ' · offline' : ''}
-                                  </span>
-                                </span>
-                                {resource.status === 'settled' && (
-                                  <Check
-                                    className="size-3.5 shrink-0 text-muted-foreground"
-                                    aria-label="Settled"
-                                  />
-                                )}
-                                {resource.status === 'snoozed' && (
-                                  <AlarmClock
-                                    className="size-3.5 shrink-0 text-muted-foreground"
-                                    aria-label="Snoozed"
-                                  />
-                                )}
-                              </button>
-                              <WorkspaceResourceMenu
-                                title={resource.title}
-                                pinned={resource.pinned}
-                                settled={resource.status === 'settled'}
-                                snoozedUntil={resource.snoozedUntil}
-                                disabled={busy || resource.offline}
-                                settleDisabled={resource.settleDisabled}
-                                onPin={() => runLifecycle(resource.tab, resource.pin)}
-                                onSettle={() => runLifecycle(resource.tab, resource.settle)}
-                                onSnooze={(until) =>
-                                  runLifecycle(resource.tab, () => resource.snooze(until))
-                                }
-                              />
-                            </div>
-                          )
-                        })}
+                      {expanded && section.items.map(renderResource)}
                     </section>
                   )
                 })}
@@ -681,6 +851,18 @@ function WorkspaceContent() {
               aria-label="Workspace tabs"
               className="flex min-h-11 shrink-0 items-center gap-1 overflow-x-auto border-b bg-sidebar/40 px-2 py-1"
             >
+              {/* With the sidebar hidden, Home stays one click away; tabs stay mounted. */}
+              {sidebar?.collapsed && (
+                <IconButton
+                  label="Workspace home"
+                  title="Show workspace home; open tabs stay open"
+                  aria-pressed={!active}
+                  className="size-7 shrink-0 text-muted-foreground"
+                  onClick={showHome}
+                >
+                  <House className="size-3.5" />
+                </IconButton>
+              )}
               {state.tabs.map((tab) => {
                 const key = workspaceTabKey(tab),
                   Icon = icons[tab.kind]
@@ -721,6 +903,8 @@ function WorkspaceContent() {
                           [next]?.focus()
                       }}
                       disabled={switching}
+                      // Unresolved tabs stay open; their tooltip says why (loading, offline, unavailable).
+                      title={workspaceIdentity(tab, { computers, browserTabs }).detail}
                       className="flex max-w-52 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground aria-selected:text-foreground"
                       onClick={() => open(tab)}
                     >
@@ -731,7 +915,7 @@ function WorkspaceContent() {
                       label={`Close workspace tab ${label(tab)}`}
                       title="Close this workspace tab; the session remains available in the sidebar."
                       className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                      onClick={() => setState((previous) => closeWorkspaceTab(previous, key))}
+                      onClick={() => closeTab(key)}
                     >
                       <X size={12} />
                     </IconButton>
@@ -741,6 +925,7 @@ function WorkspaceContent() {
               <IconButton
                 label="New workspace tab"
                 title="New thread"
+                disabled={switching || !store.activeRuntimeId}
                 className="size-7 shrink-0 text-muted-foreground"
                 onClick={() =>
                   open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
@@ -764,7 +949,7 @@ function WorkspaceContent() {
             className={
               active
                 ? 'shrink-0 px-4 py-3'
-                : 'flex min-h-0 flex-1 items-center justify-center px-8 py-10'
+                : 'flex min-h-0 flex-1 justify-center overflow-y-auto px-8 py-[12vh]'
             }
           >
             <div className={active ? 'w-full' : 'w-full max-w-xl'}>
@@ -776,13 +961,19 @@ function WorkspaceContent() {
                   </p>
                 </div>
               )}
-              <WorkspaceInput active={active} onOpen={open} onBrowser={openBrowserLink} />
+              <WorkspaceInput
+                active={active}
+                compact={!!active}
+                onOpen={open}
+                onBrowser={openBrowserLink}
+              />
               {!active && (
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     variant="outline"
                     className="gap-2 rounded-lg text-xs"
+                    disabled={switching || !store.activeRuntimeId}
                     onClick={() =>
                       open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
                     }
@@ -810,6 +1001,14 @@ function WorkspaceContent() {
                   </Button>
                 </div>
               )}
+              {!active && !!continueWorking.length && (
+                <section aria-label="Continue working" className="mt-10">
+                  <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
+                    Continue working
+                  </h2>
+                  {continueWorking.map(renderResource)}
+                </section>
+              )}
             </div>
           </div>
           <div
@@ -825,6 +1024,23 @@ function WorkspaceContent() {
                 Opening thread’s computer…
               </p>
             )}
+            {!switching &&
+              active?.kind === 'thread' &&
+              switchFailure?.runtimeId === active.runtimeId && (
+                <div role="alert" className="p-6 text-sm">
+                  <p className="text-destructive">
+                    Couldn’t open this thread’s computer: {switchFailure.message}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => setSwitchAttempt((attempt) => attempt + 1)}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              )}
             {state.tabs
               .filter((tab) => tab.kind !== 'browser')
               .map((tab) => {
@@ -847,7 +1063,6 @@ function WorkspaceContent() {
                           embedded
                           target={tab}
                           onHide={() => setState((previous) => closeWorkspaceTab(previous, key))}
-                          onSelect={(target) => open({ ...target, kind: 'terminal' })}
                           onLifecycleError={setLifecycleError}
                         />
                       ) : owner ? (

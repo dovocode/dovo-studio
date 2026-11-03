@@ -20,7 +20,8 @@ const built = await bundleBrowser(
 import UnifiedWorkspace from './packages/extension-tasks/src/unified/workspace-view';
 import TerminalWorkspace from './packages/extension-tasks/src/terminal/terminal-workspace';
 import {RootFixture} from '@dovo/studio-core';
-window.root=createRoot(document.getElementById('app'));window.render=()=>window.root.render(<RootFixture>{window.terminalOnly?<TerminalWorkspace/>:<UnifiedWorkspace/>}</RootFixture>);window.render();`,
+import {TooltipProvider} from '@dovo/studio-ui';
+window.root=createRoot(document.getElementById('app'));window.render=()=>window.root.render(<TooltipProvider><RootFixture>{window.terminalOnly?<TerminalWorkspace entityId={window.terminalTarget}/>:<UnifiedWorkspace/>}</RootFixture></TooltipProvider>);window.render();`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -39,9 +40,13 @@ window.root=createRoot(document.getElementById('app'));window.render=()=>window.
     {
       path: '@dovo/studio-core',
       contents: `
-import React,{createContext,useContext,useState,useEffect} from 'react';
+import React,{createContext,useContext,useState,useEffect,useCallback} from 'react';
 export {responses} from '${root}/packages/protocol/src/runtime/connection/runtime';
-export {createTask} from '${root}/packages/studio-core/src/workspace/actions';
+export {createTask,updateTask} from '${root}/packages/studio-core/src/workspace/actions';
+export {acpHarnessName,resolveTaskAgent,hasUnviewedTaskCompletion,isSnoozed,compareTaskActivity} from '@dovo/protocol';
+export {providers} from '${root}/packages/studio-core/src/providers';
+export {formatDateTime} from '${root}/packages/studio-core/src/preferences';
+export const useRemoteBrowserProfiles=profile=>({profiles:[{id:'default',name:profile?.id==='remote'?'Remote Default':'Local Default'}],loading:false});
 export const resolveTaskDefaults=()=>({});
 const Store=createContext(null),Host=createContext(null);
 export const useWorkspace=()=>useContext(Store);
@@ -53,18 +58,20 @@ export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{ch
 export function WorkspaceScope({profile,children}){const store=useWorkspace();const owner=store.runtimes.find(entry=>entry.profile.id===profile.id);return <Store.Provider value={{...store,activeRuntimeId:profile.id,connection:profile.connection,snapshot:owner.snapshot,workspace:owner.snapshot.workspace,connected:owner.connected}}>{children}</Store.Provider>}
 export function RootFixture({children}){const [version,update]=useState(0);useEffect(()=>{window.refresh=()=>update(v=>v+1)},[]);
 const active=window.computers.find(entry=>entry.profile.id===window.activeRuntimeId);
-const read=async(profile,path,input)=>{
- window.calls.push({path,input:JSON.parse(JSON.stringify(input)),owner:profile.id});
+const read=useCallback(async(profile,path,input)=>{
+ window.calls.push({path,input:input===undefined?undefined:JSON.parse(JSON.stringify(input)),owner:profile.id});
  const owner=window.computers.find(entry=>entry.profile.id===profile.id);
+ if(path==='/api/snapshot')return owner.snapshot;
+ if(path==='/api/tasks/message'){if(window.messageError)throw Error(window.messageError);return {ok:true}}
  if(path==='/api/tasks/workspace/route'){if(window.routeError)throw Error(window.routeError);if(window.delayRoute)await new Promise(resolve=>window.finishRoute=resolve);return {mode:window.routeMode,reason:'Fixture decision'}}
  if(path==='/api/terminals/shells'){if(window.shellError)throw Error(window.shellError);if(window.delayShellOwner===profile.id)await new Promise(resolve=>window.finishShells=resolve);return {shells:[{id:'default',label:'Default ('+profile.id+')',path:'/bin/bash',args:['-l']},{id:profile.id==='local'?'bash':'fish',label:profile.id==='local'?'Bash':'Fish',path:profile.id==='local'?'/bin/bash':'/usr/bin/fish',args:['-l']}]}}
  if(path==='/api/scm/branches')return {branches:[{ref:'refs/heads/main',name:'main',remote:false,checkedOut:true},{ref:'refs/heads/feature',name:'feature',remote:false,checkedOut:false}],current:'main',revision:'fixture'};
  if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/project/existing',branch:'feature',dirty:true}]};
- if(path==='/api/terminals/workspace'){const id=profile.id+'-created-'+window.calls.length;owner.snapshot.terminals.push({id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)});window.refresh();return {id}}
+ if(path==='/api/terminals/workspace'){const id=profile.id+'-created-'+window.calls.length;const session={id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)};const publish=()=>{owner.snapshot.terminals.push(session);window.refresh()};if(window.delayTerminalSnapshot)window.publishTerminalSnapshot=publish;else publish();return {id}}
  if(path==='/api/terminals/update'){if(window.terminalUpdateError)throw Error(window.terminalUpdateError);const session=owner.snapshot.terminals.find(item=>item.id===input.id);if(input.pinned!==undefined)session.pinned=input.pinned;if(input.settled!==undefined){session.settledAt=input.settled?new Date().toISOString():undefined;session.snoozedUntil=undefined}if(input.snoozedUntil!==undefined){session.snoozedUntil=input.snoozedUntil??undefined;if(input.snoozedUntil)session.settledAt=undefined}window.refresh();return {...session}}
- if(path==='/api/workspace'){const task=owner.snapshot.workspace.tasks.find(item=>item.id===input.id);for(const [key,value] of Object.entries(input.changes))task[key]=value.after;window.refresh();return {applied:true,conflicts:[]}}
+ if(path==='/api/workspace'){let task=owner.snapshot.workspace.tasks.find(item=>item.id===input.id);if(!task&&input.create){task=input.create;owner.snapshot.workspace.tasks.push(task)}for(const [key,value] of Object.entries(input.changes))task[key]=value.after;window.refresh();if(window.delayCreate&&input.create)await new Promise(resolve=>window.finishCreate=resolve);return {applied:true,outcome:'applied',conflicts:[]}}
  return {ok:true};
-};
+},[]);
 const request=(path,input)=>read(active.profile,path,input);
 const store={activeRuntimeId:window.activeRuntimeId,runtimes:window.computers,runtimeRegistry:{profiles:window.computers.map(entry=>entry.profile)},snapshot:active.snapshot,workspace:active.snapshot.workspace,connected:active.connected,request,readRuntime:read,previewTask:async(_connection,_id,_updates,apply)=>apply(),refreshRuntime:async()=>{},refreshRuntimes:async()=>{},switchRuntime:async(id)=>{window.activeRuntimeId=id;window.refresh()},flush:async()=>{},setWorkspace:update=>{active.snapshot.workspace=update(active.snapshot.workspace);window.refresh()}};
 return <Host.Provider value={{navigate:target=>window.navigation.push(target)}}><Store.Provider value={store}>{children}</Store.Provider></Host.Provider>}
@@ -78,6 +85,11 @@ export {Button};
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input';
 export {ComposerSurface,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
+export {ProjectIcon} from '${root}/packages/studio-ui/src/project-icon';
+export {AgentAvatar} from '${root}/packages/studio-ui/src/agent-avatar';
+export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon';
+export {Tooltip,TooltipTrigger,TooltipContent,TooltipProvider} from '${root}/packages/studio-ui/src/components/ui/tooltip';
+export const useModelLabel=()=>undefined;
 export {cn} from '${root}/packages/studio-ui/src/lib/utils';
 export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}/packages/studio-ui/src/components/ui/dialog';
 export const HeaderContent=({children})=><>{children}</>;
@@ -89,7 +101,7 @@ export const ChoicePicker=({onValueChange,...props})=><select {...props} onChang
     {
       path: '../detail/resizable-sidebar',
       importer: root + '/packages/extension-tasks/src/',
-      contents: `export const ResizableSidebar=({children,className})=><aside className={className} style={{width:280,flexShrink:0}}>{children}</aside>;`,
+      contents: `export const ResizableSidebar=({children,className,label})=><aside aria-label={label} className={className} style={{width:280,flexShrink:0}}>{children}</aside>;`,
     },
     {
       path: '../view',
@@ -130,7 +142,7 @@ try {
   const errors = []
   page.on('pageerror', (error) => {
     errors.push(error.message)
-    console.error(error.message)
+    console.error(error.stack)
   })
   await page.goto(origin)
   await page.evaluate(() => {
@@ -158,9 +170,10 @@ try {
     window.routeMode = 'terminal'
     window.activeRuntimeId = 'local'
     const workspace = (id) => ({
+      agents: [],
       repositories: [
         { id: 'scratch', kind: 'scratch', name: 'General', path: '/tmp' },
-        { id: 'project', name: 'Project', path: '/project' },
+        { id: 'project', name: 'Project', path: '/project', branch: 'main' },
       ],
       tasks: [
         {
@@ -192,12 +205,22 @@ try {
         workspace: workspace(id),
         terminals: [
           { id: 'shell', title: id + ' shell', taskId: 'studio:terminals', exited: false },
+          {
+            id: 'thread-shell',
+            title: id + ' thread terminal',
+            taskId: 'thread',
+            exited: false,
+            repositoryId: 'project',
+            directory: '/project',
+          },
         ],
         runtimeHost: id,
+        agents: [],
       },
     }))
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const workspaceRows = page.getByRole('complementary').locator('[data-workspace-kind]')
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const assets = root + '/apps/desktop/dist/assets'
     const css = (await readdir(assets)).find((file) => /^index-.*\.css$/.test(file))
@@ -208,19 +231,70 @@ try {
       document.documentElement.dataset.theme = 'dark'
     })
     await page.getByRole('heading', { name: 'What are you working on?' }).waitFor()
+    const action = page
+      .getByRole('complementary')
+      .getByRole('button', { name: 'Pin local thread', exact: true })
+    const actionOpacity = () =>
+      action.evaluate(
+        (button) =>
+          getComputedStyle(
+            button.closest('.studio-workspace-row').querySelector('[data-workspace-actions]'),
+          ).opacity,
+      )
+    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
+          .opacity === '0',
+    )
+    assert.equal(await actionOpacity(), '0', 'Row actions stay hidden at rest')
+    await workspaceRows
+      .filter({ has: page.getByRole('button', { name: 'Pin local thread', exact: true }) })
+      .hover()
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
+          .opacity === '1',
+    )
+    assert.equal(await actionOpacity(), '1', 'Hover reveals row actions')
+    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
+    await action.focus()
+    assert.equal(await action.evaluate((button) => button.matches(':focus')), true)
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
+          .opacity === '1',
+    )
+    await action.evaluate((button) => button.blur())
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
+          .opacity === '0',
+    )
     await page.screenshot({ path: '/tmp/dovo-unified-overview.png' })
+    await workspaceRows
+      .filter({ has: page.getByRole('button', { name: 'Pin local thread', exact: true }) })
+      .hover()
+    await page.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector('[data-workspace-kind="thread"] > div:last-child'))
+          .opacity === '1',
+    )
+    await page.screenshot({ path: '/tmp/dovo-unified-hover.png' })
+    await page.getByRole('heading', { name: 'What are you working on?' }).hover()
   }
   assert.deepEqual(
-    await page.locator('.studio-thread-card').allTextContents(),
+    await workspaceRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
     [
-      'LAN browserhttp://lan.local:3000/',
-      'local shelllocal · Home folder',
-      'local threadlocal',
-      'remote shellremote · Home folder',
-      'remote threadremote',
+      'Page: LAN browser',
+      'Terminal: local shell',
+      'Thread: local thread',
+      'Terminal: remote shell',
+      'Thread: remote thread',
     ],
-    'Threads, browser pages and terminals share one title order across kinds and computers',
+    'Threads, browser pages and standalone terminals share one title order across computers',
   )
+  assert.equal(await workspaceRows.filter({ hasText: 'thread terminal' }).count(), 0)
   assert.equal(
     await page.getByRole('heading', { name: /^(Threads|Browser|Terminals)$/ }).count(),
     0,
@@ -237,7 +311,11 @@ try {
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByLabel('Workspace computer filter').selectOption('local')
   assert.equal(
-    await page.locator('.studio-thread-card').filter({ hasText: 'remote thread' }).count(),
+    await page
+      .getByRole('complementary')
+      .locator('.studio-thread-card')
+      .filter({ hasText: 'remote thread' })
+      .count(),
     0,
   )
   await page.getByLabel('Workspace computer filter').selectOption('')
@@ -263,8 +341,29 @@ try {
     }
     await page.setViewportSize({ width: 1280, height: 900 })
   }
-  await page.locator('.studio-thread-card').filter({ hasText: 'local thread' }).click()
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'local thread' })
+    .click()
   await page.getByLabel('Thread draft').fill('Keep this draft')
+  await page.getByLabel('Workspace request').fill('Keep the shared draft')
+  await page.getByLabel('Workspace destination').selectOption('browser')
+  const openTabCount = await page.getByRole('tab').count()
+  await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
+  await page.getByRole('region', { name: 'Continue working', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('tab').count(),
+    openTabCount,
+    'Home retains mounted workspace tabs',
+  )
+  assert.equal(await page.getByLabel('Workspace request').inputValue(), 'Keep the shared draft')
+  assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'browser')
+  await page.getByRole('tab', { name: 'local thread', exact: true }).click()
+  assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
+  assert.equal(await page.getByLabel('Workspace request').inputValue(), 'Keep the shared draft')
+  await page.getByLabel('Workspace request').fill('')
+  await page.getByLabel('Workspace destination').selectOption('auto')
   const expandSection = async (name) => {
     const toggle = page
       .getByRole('region', { name: name + ' workspace items' })
@@ -272,19 +371,28 @@ try {
       .first()
     if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
   }
+  const hoverRow = async (title) => {
+    const sidebar = page.getByRole('complementary')
+    const button = page.getByRole('group', { name: `Actions for ${title}`, exact: true })
+    await sidebar
+      .locator('.studio-workspace-row,.studio-thread-row')
+      .filter({ has: button })
+      .last()
+      .hover()
+  }
   const rowAction = async (title, action) => {
+    await hoverRow(title)
     await page
-      .locator('.studio-thread-row')
-      .getByRole('button', { name: `Actions for ${title}`, exact: true })
+      .getByRole('complementary')
+      .getByRole('button', { name: `${action} ${title}`, exact: true })
       .click()
-    await page.getByRole('menuitem', { name: action, exact: true }).click()
   }
   const snoozeRow = async (title, duration = 'For 1 hour') => {
+    await hoverRow(title)
     await page
-      .locator('.studio-thread-row')
-      .getByRole('button', { name: `Actions for ${title}`, exact: true })
+      .getByRole('complementary')
+      .getByRole('button', { name: `Snooze ${title}`, exact: true })
       .click()
-    await page.getByRole('menuitem', { name: 'Snooze', exact: true }).hover()
     await page.getByRole('menuitem', { name: duration, exact: true }).click()
   }
   await rowAction('LAN browser', 'Pin')
@@ -321,7 +429,9 @@ try {
   await rowAction('local thread', 'Pin')
   await page.waitForFunction(() => window.computers[0].snapshot.workspace.tasks[0].pinned === true)
   assert.ok(
-    (await page.locator('.studio-thread-card').first().textContent()).includes('local thread'),
+    (
+      await page.getByRole('complementary').locator('.studio-thread-card').first().textContent()
+    ).includes('local thread'),
     'Pinned items lead the mixed list',
   )
   await rowAction('local thread', 'Unpin')
@@ -330,7 +440,11 @@ try {
     () => window.computers[0].snapshot.workspace.tasks[0].archived === true,
   )
   await expandSection('Settled')
-  await page.locator('.studio-thread-card').filter({ hasText: 'local thread' }).waitFor()
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'local thread' })
+    .waitFor()
   await rowAction('local thread', 'Reopen')
   await page.waitForFunction(
     () => window.computers[0].snapshot.workspace.tasks[0].archived === false,
@@ -339,13 +453,15 @@ try {
     window.computers[0].snapshot.workspace.tasks[0].status = 'running'
     window.refresh()
   })
-  await page.getByRole('button', { name: 'Actions for local thread', exact: true }).click()
+  await hoverRow('local thread')
   assert.equal(
-    await page.getByRole('menuitem', { name: 'Settle', exact: true }).getAttribute('aria-disabled'),
-    'true',
+    await page
+      .getByRole('complementary')
+      .getByRole('button', { name: 'Settle local thread', exact: true })
+      .isDisabled(),
+    true,
     'Working threads cannot be settled',
   )
-  await page.keyboard.press('Escape')
   await page.evaluate(() => {
     window.computers[0].snapshot.workspace.tasks[0].status = 'draft'
     window.refresh()
@@ -394,7 +510,11 @@ try {
   await page.waitForFunction(() => window.computers[1].snapshot.terminals[0].pinned === true)
   await rowAction('remote shell', 'Unpin')
 
-  await page.locator('.studio-thread-card').filter({ hasText: 'remote shell' }).click()
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'remote shell' })
+    .click()
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     const terminal = await page.locator('[data-terminal-primary]').boundingBox()
@@ -414,9 +534,14 @@ try {
   await page.getByRole('tab', { name: 'local thread' }).click()
   assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
   assert.ok((await page.evaluate(() => window.effects)).includes('hide-terminal:shell'))
-  await page.locator('.studio-thread-card').filter({ hasText: 'remote thread' }).click()
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'remote thread' })
+    .click()
   await page.waitForSelector('[data-thread="thread"][data-owner="remote"]')
   assert.equal(await page.evaluate(() => window.activeRuntimeId), 'remote')
+  await page.getByLabel('Workspace input computer').selectOption('remote')
   await page.getByLabel('Workspace request').fill('printf original-input')
   await page.getByRole('button', { name: 'Choose destination' }).click()
   await page.getByRole('button', { name: 'Run command' }).waitFor()
@@ -596,6 +721,77 @@ try {
     'Blank startup input opens a home shell without project or worktree settings',
   )
   await page.evaluate(() => {
+    window.delayRoute = true
+  })
+  await page.getByLabel('Workspace destination').selectOption('auto')
+  await page.getByLabel('Workspace request').fill('Old classification input')
+  await page.getByRole('button', { name: 'Choose destination', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishRoute)
+  await page.getByLabel('Workspace request').fill('New browser draft')
+  await page.getByLabel('Workspace destination').selectOption('browser')
+  await page.evaluate(() => {
+    window.delayRoute = false
+    window.finishRoute()
+  })
+  assert.equal(
+    await page.getByLabel('Workspace destination').inputValue(),
+    'browser',
+    'Late AI suggestions cannot override a manual destination',
+  )
+  assert.equal(await page.getByLabel('Workspace request').inputValue(), 'New browser draft')
+  await page.getByLabel('Workspace destination').selectOption('terminal')
+  await page.getByLabel('Workspace terminal shell').selectOption('fish')
+  await page.getByLabel('Workspace request').fill('printf delayed-snapshot')
+  await page.evaluate(() => {
+    window.delayTerminalSnapshot = true
+  })
+  await page.getByRole('button', { name: 'Run command', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Waiting for terminal session' }).waitFor()
+  const delayedTab = await page.getByRole('tab', { selected: true }).getAttribute('id')
+  await page.evaluate(() => window.refresh())
+  assert.equal(
+    await page.getByRole('tab', { selected: true }).getAttribute('id'),
+    delayedTab,
+    'A delayed terminal snapshot cannot erase a freshly opened tab',
+  )
+  await page.evaluate(() => {
+    window.delayTerminalSnapshot = false
+    window.publishTerminalSnapshot()
+  })
+  await page.waitForSelector('[data-terminal^="remote-created-"][data-owner="remote"]:visible')
+  await page.getByLabel('Workspace destination').selectOption('thread')
+  await page.getByLabel('Workspace request').fill('Retry this captured request')
+  await page.evaluate(() => {
+    window.messageError = 'Computer disconnected'
+  })
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'its message could not be confirmed' }).waitFor()
+  const failedMessage = await page.evaluate(() =>
+    window.calls.filter((c) => c.path === '/api/tasks/message').at(-1),
+  )
+  const createsBeforeRetry = await page.evaluate(
+    () => window.calls.filter((c) => c.path === '/api/workspace' && c.input.create).length,
+  )
+  await page.evaluate(() => {
+    window.messageError = undefined
+  })
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('textarea[aria-label="Workspace request"]').value === '',
+  )
+  const retriedMessage = await page.evaluate(() =>
+    window.calls.filter((c) => c.path === '/api/tasks/message').at(-1),
+  )
+  assert.equal(retriedMessage.input.id, failedMessage.input.id)
+  assert.equal(retriedMessage.input.messageId, failedMessage.input.messageId)
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.path === '/api/workspace' && c.input.create).length,
+    ),
+    createsBeforeRetry,
+    'Retry never creates a duplicate thread',
+  )
+  await page.evaluate(() => {
     window.routeError = 'No utility model configured'
   })
   await page.getByLabel('Workspace request').fill('Investigate the bug')
@@ -608,10 +804,37 @@ try {
     'failed classification retains input for manual override',
   )
   await page.evaluate(() => {
+    window.delayCreate = true
+    window.routeError = undefined
+  })
+  await page.getByLabel('Workspace request').fill('Complete the captured submission')
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishCreate)
+  const savingTask = await page.evaluate(() =>
+    window.calls.filter((c) => c.path === '/api/workspace' && c.input.create).at(-1),
+  )
+  await page.evaluate(() => {
     window.terminalOnly = true
     window.render()
   })
   await page.getByRole('region', { name: 'Terminals workspace' }).waitFor()
+  await page.evaluate(() => {
+    window.delayCreate = false
+    window.finishCreate()
+  })
+  await page.waitForFunction(
+    (id) => window.calls.some((c) => c.path === '/api/tasks/message' && c.input.id === id),
+    savingTask.input.id,
+  )
+  const completedMessage = await page.evaluate(() =>
+    window.calls.filter((c) => c.path === '/api/tasks/message').at(-1),
+  )
+  assert.equal(completedMessage.owner, savingTask.owner)
+  assert.equal(
+    completedMessage.input.text,
+    'Complete the captured submission',
+    'Unmounting input cannot leave an authorized saved thread without its message',
+  )
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
     await page.screenshot({ path: '/tmp/dovo-terminal-starter.png' })
@@ -624,12 +847,18 @@ try {
     }
     await page.setViewportSize({ width: 1280, height: 900 })
   }
-  await page.locator('.studio-thread-card').filter({ hasText: 'remote shell' }).click()
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'remote shell' })
+    .click()
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
   await rowAction('remote shell', 'Pin')
   await rowAction('remote shell', 'Settle')
   assert.ok(
-    (await page.locator('.studio-thread-card').first().textContent()).includes('remote shell'),
+    (
+      await page.getByRole('complementary').locator('.studio-thread-card').first().textContent()
+    ).includes('remote shell'),
     'Pinned settled terminals stay in Pinned',
   )
   await page.waitForSelector('[data-terminal="shell"][data-owner="remote"]')
@@ -652,7 +881,35 @@ try {
   await page.getByRole('heading', { name: 'Snoozed', exact: true }).waitFor()
   await page.clock.fastForward(31_000)
   await page.getByRole('heading', { name: 'Snoozed', exact: true }).waitFor({ state: 'hidden' })
-  await page.locator('.studio-thread-card').filter({ hasText: 'remote shell' }).waitFor()
+  await page
+    .getByRole('complementary')
+    .locator('.studio-thread-card')
+    .filter({ hasText: 'remote shell' })
+    .waitFor()
+  assert.equal(
+    await page
+      .getByRole('complementary')
+      .getByText(/thread terminal/)
+      .count(),
+    0,
+    'Thread shells never appear as standalone sessions',
+  )
+  await page.evaluate(() => {
+    window.root.render(null)
+  })
+  await page.getByRole('region', { name: 'Terminals workspace' }).waitFor({ state: 'hidden' })
+  await page.evaluate(() => {
+    window.terminalTarget = JSON.stringify({ runtimeId: 'remote', id: 'thread-shell' })
+    window.render()
+  })
+  await page.getByText('This terminal belongs to a thread. Open the thread to use it.').waitFor()
+  assert.equal(await page.locator('[data-terminal="thread-shell"]').count(), 0)
+  assert.equal(
+    await page.evaluate(
+      () => window.computers[1].snapshot.terminals.find((s) => s.id === 'thread-shell').exited,
+    ),
+    false,
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Unified workspace: mixed tabs, retained drafts, remote ownership, routing override, HTTP, explicit execution and terminal launcher passed.',

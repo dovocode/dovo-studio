@@ -117,7 +117,7 @@ function TerminalResourceActions({
         responses.terminal,
         'POST',
       )
-      await store.refreshRuntime(owner.profile)
+      await store.refreshRuntime(owner.profile).catch(() => undefined)
     } catch (cause: unknown) {
       onError(
         `Could not update ${session.title}: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -146,13 +146,11 @@ function TerminalResourceActions({
 export function WorkspaceTerminalSurface({
   target,
   onHide,
-  onSelect,
   embedded = false,
   onLifecycleError,
 }: {
   target: TerminalTarget
   onHide: () => void
-  onSelect?: (target: TerminalTarget) => void
   embedded?: boolean
   onLifecycleError?: (message: string) => void
 }) {
@@ -161,7 +159,14 @@ export function WorkspaceTerminalSurface({
   const [error, setError] = useState('')
   const reportError = onLifecycleError ?? setError
   const owner = computers.find((entry) => entry.profile.id === target.runtimeId)
-  const session = owner?.snapshot?.terminals.find((session) => session.id === target.id)
+  const currentSession = owner?.snapshot?.terminals.find((session) => session.id === target.id)
+  // Keep an established pane mounted across delayed snapshots and its own close response.
+  // Only the explicit successful-close callback removes the workspace reference.
+  const knownSession = useRef<{ key: string; session: TerminalInfo } | undefined>(undefined)
+  const targetKey = JSON.stringify([target.runtimeId, target.id])
+  if (knownSession.current?.key !== targetKey) knownSession.current = undefined
+  if (currentSession) knownSession.current = { key: targetKey, session: currentSession }
+  const session = currentSession ?? knownSession.current?.session
   const thread = owner?.snapshot?.workspace.tasks.find((task) => task.id === session?.taskId)
   if (!owner)
     return (
@@ -177,15 +182,42 @@ export function WorkspaceTerminalSurface({
   if (!session)
     return (
       <p role="status" className="p-6 text-sm text-muted-foreground">
-        {owner.connected
-          ? 'Waiting for terminal session… It may have been closed.'
-          : 'This computer is offline. Reconnect to resume its terminals.'}
+        {!owner.snapshot
+          ? 'Loading terminal sessions…'
+          : owner.connected
+            ? 'Waiting for terminal session… It may have been closed.'
+            : 'This computer is offline. Reconnect to resume its terminals.'}
         {error && (
           <span role="alert" className="block text-destructive">
             {error}
           </span>
         )}
       </p>
+    )
+  if (session.taskId !== STUDIO_TERMINAL_SCOPE)
+    return (
+      <div role="status" className="p-6 text-sm text-muted-foreground">
+        <p>This terminal belongs to a thread. Open the thread to use it.</p>
+        <div className="mt-3 flex gap-2">
+          {thread && host.openThread && (
+            <Button
+              size="sm"
+              onClick={() =>
+                host.openThread?.({
+                  runtimeId: target.runtimeId,
+                  threadId: thread.id,
+                  title: thread.title,
+                })
+              }
+            >
+              Open thread <ArrowUpRight className="size-3.5" />
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onHide}>
+            Back to terminals
+          </Button>
+        </div>
+      </div>
     )
   return (
     <WorkspaceScope profile={owner.profile}>
@@ -209,21 +241,6 @@ export function WorkspaceTerminalSurface({
             </p>
           </div>
           <TerminalResourceActions owner={owner} session={session} onError={reportError} />
-          {thread && host.openThread && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                host.openThread?.({
-                  runtimeId: target.runtimeId,
-                  threadId: thread.id,
-                  title: thread.title,
-                })
-              }
-            >
-              Open thread <ArrowUpRight className="size-3.5" />
-            </Button>
-          )}
         </header>
       </HeaderContent>
       {error && (
@@ -236,20 +253,28 @@ export function WorkspaceTerminalSurface({
           Computer offline. Reconnect to resume this session.
         </p>
       )}
+      {owner.connected && !currentSession && (
+        <p role="status" className="border-b p-2 text-xs text-muted-foreground">
+          {!owner.snapshot
+            ? 'Loading terminal sessions…'
+            : 'Waiting for terminal session… This workspace remains open.'}
+        </p>
+      )}
       <div
         className="m-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/60"
         data-terminal-primary
       >
         <TerminalPane
-          key={`${target.runtimeId}:${session.taskId}`}
+          key={targetKey}
           taskId={session.taskId}
           focusId={session.id}
+          sessionScopeId={target.id}
           repositoryId={session.repositoryId}
           autoCreate={false}
           onClose={onHide}
-          onSelectSession={
-            onSelect ? (id) => onSelect({ runtimeId: target.runtimeId, id }) : undefined
-          }
+          onSessionsClosed={(ids) => {
+            if (ids.includes(target.id)) onHide()
+          }}
         />
       </div>
     </WorkspaceScope>
@@ -282,7 +307,9 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   }, [])
   const sidebar = useNavigationSidebar()
   const sessions = computers.flatMap((owner) =>
-    (owner.snapshot?.terminals ?? []).map((session) => ({ owner, session })),
+    (owner.snapshot?.terminals ?? [])
+      .filter((session) => session.taskId === STUDIO_TERMINAL_SCOPE)
+      .map((session) => ({ owner, session })),
   )
   const matches = sessions.filter(({ owner, session }) =>
     `${session.title} ${terminalContext(session, owner.snapshot?.workspace)} ${runtimeComputerName(owner)}`
@@ -356,7 +383,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                       return (
                         <div
                           key={`${owner.profile.id}:${session.id}`}
-                          className="studio-thread-row mb-1 flex items-center"
+                          className="studio-thread-row group/terminal-row relative mb-1 flex items-center"
                           data-highlighted={active || undefined}
                         >
                           <button
@@ -374,7 +401,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                               )}
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">
+                              <span className="block truncate text-sm font-medium group-hover/terminal-row:pr-28 group-focus-within/terminal-row:pr-28 [@media(hover:none)]:pr-28">
                                 {session.title}
                               </span>
                               <span className="studio-thread-card-context block truncate text-xs text-muted-foreground">
@@ -409,11 +436,16 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                               }
                             />
                           </button>
-                          <TerminalResourceActions
-                            owner={owner}
-                            session={session}
-                            onError={setLifecycleError}
-                          />
+                          <div
+                            data-workspace-actions
+                            className="absolute right-2 top-1 pointer-events-none opacity-0 transition-opacity group-hover/terminal-row:pointer-events-auto group-hover/terminal-row:opacity-100 group-focus-within/terminal-row:pointer-events-auto group-focus-within/terminal-row:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+                          >
+                            <TerminalResourceActions
+                              owner={owner}
+                              session={session}
+                              onError={setLifecycleError}
+                            />
+                          </div>
                         </div>
                       )
                     })}
@@ -439,7 +471,6 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
           <WorkspaceTerminalSurface
             target={selected}
             onHide={() => setSelected(undefined)}
-            onSelect={setSelected}
             onLifecycleError={setLifecycleError}
           />
         ) : (
