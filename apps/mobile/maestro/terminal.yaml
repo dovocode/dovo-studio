@@ -61,6 +61,7 @@ appId: com.dovo.studio
 - tapOn:
     id: Terminal surface
 - assertVisible: Hide terminal keyboard
+- assertVisible: '(space|spatie)'
 - assertVisible: Esc
 - assertVisible: Tab
 - assertVisible: Shift
@@ -70,6 +71,7 @@ appId: com.dovo.studio
 - assertVisible: Show terminal keyboard
 - tapOn: Show terminal keyboard
 - assertVisible: Hide terminal keyboard
+- assertVisible: '(space|spatie)'
 # Cancel a composed word before running the proof command. If Ctrl is ignored,
 # the invalid command prefix prevents the proof file from being created.
 - inputText: terminal-input-should-cancel

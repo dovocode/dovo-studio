@@ -20,7 +20,9 @@ public final class DovoKeyboardCommandsView: ExpoView {
   private let emptyInputView = UIView(frame: .zero)
 
   public override var canBecomeFirstResponder: Bool { true }
-  public override var inputView: UIView? { emptyInputView }
+  // UIKit also queries ancestors for a custom input view. Returning our empty
+  // keyboard while a child terminal is focused suppresses its system keyboard.
+  public override var inputView: UIView? { isFirstResponder ? emptyInputView : nil }
 
   public required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
