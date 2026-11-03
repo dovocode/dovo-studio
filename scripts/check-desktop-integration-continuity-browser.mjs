@@ -49,8 +49,9 @@ const stubs = [
     './task-notifications': 'export const useTaskNotifications=()=>({});',
     './extension-catalog':
       'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
+    // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
     './activity-bar':
-      'export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
+      'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=({views,onSelect})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}</nav>;',
     './settings-nav': 'export const SettingsNav=()=>null;',
     './title-bar': 'export const TitleBar=()=>null;',
     './command-palette': 'export const CommandPalette=()=>null;',
