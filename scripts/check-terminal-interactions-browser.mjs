@@ -287,6 +287,80 @@ try {
       `DPI ${deviceScaleFactor} preserves text and blank cells`,
     )
   }
+  const altClick = async (x, y) => {
+    const point = await page.evaluate(
+      ({ x, y }) => {
+        const rect = document.querySelector('.dovo-terminal-canvas').getBoundingClientRect()
+        const m = window.terminalViewport.metrics
+        return { x: rect.left + (x + 0.5) * m.cellWidth, y: rect.top + (y + 0.5) * m.cellHeight }
+      },
+      { x, y },
+    )
+    await page.keyboard.down('Alt')
+    await page.mouse.click(point.x, point.y)
+    await page.keyboard.up('Alt')
+  }
+  output('\x1b[2J\x1b[H$ abcdef')
+  await page.waitForFunction(
+    () => window.terminalViewport.cursor.x === 8 && window.terminalViewport.cursor.y === 0,
+  )
+  await altClick(3, 0)
+  await assertEventually(() => inputs.join('') === '\x1b[D'.repeat(5))
+  assert.equal(
+    await page.evaluate(() => window.terminalSelection),
+    '',
+    'Alt-click moves without selecting',
+  )
+  inputs.length = 0
+  output('\x1b[2J\x1b[H' + 'w'.repeat(cols + 8))
+  await page.waitForFunction(
+    () => window.terminalViewport.cursor.x === 8 && window.terminalViewport.cursor.y === 1,
+  )
+  await altClick(cols - 2, 0)
+  await assertEventually(() => inputs.join('') === '\x1b[D'.repeat(10))
+  inputs.length = 0
+  output('\x1b[2J\x1b[H$ a中b')
+  await page.waitForFunction(
+    () => window.terminalViewport.cursor.x === 6 && window.terminalViewport.cursor.y === 0,
+  )
+  await altClick(4, 0)
+  await assertEventually(() => inputs.join('') === '\x1b[D'.repeat(2))
+  inputs.length = 0
+  output('\x1b[3G')
+  await page.waitForFunction(() => window.terminalViewport.cursor.x === 2)
+  await altClick(5, 0)
+  await assertEventually(() => inputs.join('') === '\x1b[C'.repeat(2))
+  inputs.length = 0
+  output('\x1b[?1h\x1b[2J\x1b[H$ abcdef')
+  await page.waitForFunction(() => window.terminalViewport.cursor.x === 8)
+  await altClick(3, 0)
+  await assertEventually(() => inputs.join('') === '\x1bOD'.repeat(5))
+  inputs.length = 0
+  output('\x1b[?1l\x1b[?1049h\x1b[5;9H')
+  await page.waitForFunction(
+    () => window.terminalViewport.cursor.x === 8 && window.terminalViewport.cursor.y === 4,
+  )
+  await altClick(3, 2)
+  await assertEventually(() => inputs.join('') === '\x1b[A'.repeat(2) + '\x1b[D'.repeat(5))
+  inputs.length = 0
+  output('\x1b[?1049l')
+  await page.waitForFunction(
+    () => window.terminalViewport.cursor.x === 8 && window.terminalViewport.cursor.y === 0,
+  )
+  inputs.length = 0
+  await page.evaluate(() => window.setState({ readOnly: true }))
+  await page.waitForFunction(() => window.state.readOnly)
+  await altClick(3, 0)
+  assert.deepEqual(inputs, [], 'Alt-click respects read-only terminals')
+  await page.evaluate(() => window.setState({ readOnly: false }))
+  await page.waitForFunction(() => !window.state.readOnly)
+  output('\x1b[?1l\x1b[?1000h\x1b[?1006h')
+  await page.waitForFunction(() => window.terminalViewport.mouseTracking)
+  await altClick(3, 0)
+  await assertEventually(() => inputs.includes('\x1b[<8;4;1M') && inputs.includes('\x1b[<8;4;1m'))
+  inputs.length = 0
+  output('\x1b[?1000l\x1b[?1006l')
+  await page.waitForFunction(() => !window.terminalViewport.mouseTracking)
   assert.equal(connections, 1, 'DPI changes preserve the terminal session')
   await canvas.screenshot({ path: '/tmp/dovo-terminal-sharp-text.png' })
   for (const field of ['connected', 'active']) {
@@ -314,7 +388,7 @@ try {
   await assertEventually(() => inputs.join('') === "'/tmp/with spaces.txt' '/tmp/it'\\''s.txt' ")
   assert.deepEqual(errors, [])
   console.log(
-    'Terminal: file drops, read-only cancellation, pointer reporting, Shift selection and live DPI changes passed.',
+    'Terminal: file drops, read-only cancellation, pointer reporting, Alt-click cursor movement, Shift selection and live DPI changes passed.',
   )
 } finally {
   await browser.close()

@@ -38,7 +38,7 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
   [
     {
       path: 'react-native',
-      contents: `import {forwardRef} from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.appState=value=>{AppState.currentState=value;listeners.forEach(fn=>fn(value))};export const Keyboard={addListener:()=>({remove(){}})};export const Platform={get OS(){return window.platformOS}};export const View=forwardRef(({children,testID,style},ref)=><div ref={ref} data-testid={testID} data-pointer-events={[style].flat(9).filter(Boolean).reduce((value,item)=>item.pointerEvents??value,undefined)}>{children}</div>);`,
+      contents: `import {forwardRef,useImperativeHandle} from 'react';const keyboardListeners=new Map();window.keyboardEvent=(name,event)=>{for(const fn of keyboardListeners.get(name)??[])fn(event)};const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.appState=value=>{AppState.currentState=value;listeners.forEach(fn=>fn(value))};export const Keyboard={addListener:(name,fn)=>{const set=keyboardListeners.get(name)??new Set();keyboardListeners.set(name,set);set.add(fn);return {remove:()=>set.delete(fn)}}};export const Platform={get OS(){return window.platformOS}};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Text=({children})=><span>{children}</span>;export const View=forwardRef(({children,testID,style},ref)=>{useImperativeHandle(ref,()=>({measureInWindow:fn=>fn(0,100,400,600)}));return <div data-testid={testID} data-pointer-events={[style].flat(9).filter(Boolean).reduce((value,item)=>item.pointerEvents??value,undefined)}>{children}</div>});`,
     },
     {
       path: 'expo',
@@ -47,7 +47,7 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
     {
       path: 'expo-libghostty',
       // Mirrors expo-libghostty 0.8.1: imperative calls queue until the first grid size.
-      contents: `import {useEffect,useImperativeHandle} from 'react';export function TerminalView(props){const {ref,fontSize,theme,onInput,onResize}=props;window.props=props;window.fontFallback=(fontFamily,message)=>props.onFontFallback({nativeEvent:{fontFamily,message}});useImperativeHandle(ref,()=>({writeText:async text=>{window.writes.push(text)},write:async base64=>{window.writes.push(new TextDecoder().decode(Uint8Array.from(atob(base64),c=>c.charCodeAt(0))))},finish:async()=>{}}),[]);useEffect(()=>{window.mounts++;window.fontSizes.push(fontSize);window.themes.push(theme);window.input=text=>onInput({nativeEvent:{text,data:btoa(text)}});window.resize=(cols,rows)=>onResize({nativeEvent:{cols,rows}});onResize({nativeEvent:{cols:80,rows:24}})},[]);return <div data-testid="ghostty"/>}`,
+      contents: `import {useEffect,useImperativeHandle} from 'react';export function TerminalView(props){const {ref,fontSize,theme,onInput,onResize}=props;window.props=props;window.fontFallback=(fontFamily,message)=>props.onFontFallback({nativeEvent:{fontFamily,message}});useImperativeHandle(ref,()=>({focus:async()=>{window.focusCalls=(window.focusCalls??0)+1;window.keyboardEvent('keyboardWillChangeFrame',{endCoordinates:{screenY:500}})},blur:async()=>{window.blurCalls=(window.blurCalls??0)+1;window.keyboardEvent('keyboardWillHide')},writeText:async text=>{window.writes.push(text)},write:async base64=>{window.writes.push(new TextDecoder().decode(Uint8Array.from(atob(base64),c=>c.charCodeAt(0))))},finish:async()=>{}}),[]);useEffect(()=>{window.mounts++;window.fontSizes.push(fontSize);window.themes.push(theme);window.input=text=>onInput({nativeEvent:{text,data:btoa(text)}});window.resize=(cols,rows)=>onResize({nativeEvent:{cols,rows}});onResize({nativeEvent:{cols:80,rows:24}})},[]);return <div data-testid="ghostty"/>}`,
     },
     {
       path: './webview-terminal-session',
@@ -172,6 +172,13 @@ try {
     () => !document.body.textContent.includes('Replaying terminal history…'),
   )
   assert.equal(await surface(), 'auto')
+  await page.getByRole('button', { name: 'Show terminal keyboard' }).click()
+  await page.getByRole('button', { name: 'Hide terminal keyboard' }).waitFor()
+  assert.equal(await page.evaluate(() => window.focusCalls), 1)
+  await page.getByRole('button', { name: 'Hide terminal keyboard' }).click()
+  await page.getByRole('button', { name: 'Show terminal keyboard' }).waitFor()
+  assert.equal(await page.evaluate(() => window.blurCalls), 1)
+
   await page.evaluate(() => {
     window.input('ls -la\r')
     window.input('\x03')

@@ -5,7 +5,16 @@ import { requireOptionalNativeModule } from 'expo'
 import type { TerminalTheme, TerminalViewProps, TerminalViewRef } from 'expo-libghostty'
 import type { ComponentRef, ComponentType } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { AppState, Keyboard, Platform, View, type StyleProp, type ViewStyle } from 'react-native'
+import {
+  AppState,
+  Keyboard,
+  Platform,
+  Pressable,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 import { createRuntimeClient, type RuntimeConnection } from '@dovo/protocol'
 import { startReconnecting } from '@dovo/client-runtime'
 import {
@@ -256,6 +265,36 @@ export function NativeTerminalSession({
       ]}
       accessibilityState={{ disabled: !inputReady }}
     >
+      {platform === 'ios' && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            keyboardInset > 0 ? 'Hide terminal keyboard' : 'Show terminal keyboard'
+          }
+          disabled={!inputReady}
+          onPress={() => {
+            const view = terminal.current
+            if (!view || !inputReady) return
+            void (keyboardInset > 0 ? view.blur() : view.focus()).catch((cause: unknown) =>
+              setError(
+                cause instanceof Error
+                  ? cause.message
+                  : 'Could not change terminal keyboard visibility.',
+              ),
+            )
+          }}
+          style={{
+            alignSelf: 'flex-end',
+            minHeight: 40,
+            paddingHorizontal: 12,
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ color: theme.foreground ?? '#ededee', opacity: inputReady ? 1 : 0.5 }}>
+            {keyboardInset > 0 ? 'Hide keyboard' : 'Show keyboard'}
+          </Text>
+        </Pressable>
+      )}
       <TerminalView
         key={viewKey}
         ref={terminal}

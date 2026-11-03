@@ -635,6 +635,39 @@ for (let index = 0; index < 26; index++)
 for (let index = 0; index < 10; index++)
   keyMap[`Digit${index}`] = index === 0 ? Key.ZERO : Key.ONE + index - 1
 for (let index = 1; index <= 12; index++) keyMap[`F${index}`] = Key.F1 + index - 1
+function moveCursor(point: TerminalPoint) {
+  // History and a replay are snapshots, not positions in the shell's current input.
+  const history = terminal.getScrollbackLength()
+  const target = {
+    x: Math.min(terminal.cols - 1, point.x),
+    y: point.y - history,
+  }
+  if (replaying || target.y < 0 || target.y >= terminal.rows) return
+  const targetCells = terminal.getLine(target.y)
+  while (target.x > 0 && targetCells?.[target.x]?.width === 0) target.x--
+  const cursor = terminal.getCursor()
+  const sequence = (direction: string) => `\x1b${terminal.getMode(1) ? 'O' : '['}${direction}`
+  let text = ''
+  let start = cursor.y * terminal.cols + cursor.x
+  const end = target.y * terminal.cols + target.x
+  if (terminal.isAlternateScreen()) {
+    text = sequence(target.y < cursor.y ? 'A' : 'B').repeat(Math.abs(target.y - cursor.y))
+    start = target.y * terminal.cols + cursor.x
+  }
+  // Shell line editors wrap with left/right. Up/down would recall command history.
+  // A wide character occupies two columns but takes one arrow press.
+  let steps = 0
+  const from = Math.min(start, end),
+    to = Math.max(start, end)
+  for (let row = Math.floor(from / terminal.cols); row * terminal.cols < to; row++) {
+    const cells = terminal.getLine(row)
+    const first = Math.max(0, from - row * terminal.cols)
+    const last = Math.min(terminal.cols, to - row * terminal.cols)
+    for (let x = first; x < last; x++) if (cells?.[x]?.width !== 0) steps++
+  }
+  text += sequence(end < start ? 'D' : 'C').repeat(steps)
+  if (text) input(text)
+}
 function pointer(message: Extract<TerminalWorkerRequest, { type: 'pointer' }>) {
   const point = {
     x: Math.min(terminal.cols, Math.max(0, message.point.x)),
@@ -660,6 +693,11 @@ function pointer(message: Extract<TerminalWorkerRequest, { type: 'pointer' }>) {
         ? `\x1b[<${code};${x};${y}${message.phase === 'up' ? 'm' : 'M'}`
         : `\x1b[M${String.fromCharCode(32 + code, Math.min(255, 32 + x), Math.min(255, 32 + y))}`,
     )
+    return
+  }
+  if (message.alt && !message.shift && message.button === 0) {
+    selecting = false
+    if (message.phase === 'down') moveCursor(point)
     return
   }
   if (message.phase === 'down') {

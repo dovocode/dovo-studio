@@ -60,13 +60,24 @@ appId: com.dovo.studio
 # Tapping the native Ghostty surface focuses it and raises the keyboard.
 - tapOn:
     id: Terminal surface
+- assertVisible: Hide terminal keyboard
+- assertVisible: Esc
+- assertVisible: Tab
+- assertVisible: Shift
+- assertVisible: Ctrl
+- assertVisible: Alt
+- tapOn: Hide terminal keyboard
+- assertVisible: Show terminal keyboard
+- tapOn: Show terminal keyboard
+- assertVisible: Hide terminal keyboard
 - inputText: printf mobile-terminal-ok > terminal-proof.txt
 - pressKey: Enter
 - takeScreenshot: dovo-mobile-terminal-keyboard
 - tapOn: Task tools
 - tapOn: Chat
 - tapOn: Terminal
-- assertVisible: Close shell
-- tapOn: Close shell
+- assertVisible: Close terminal tab 1
+- tapOn: Close terminal tab 1
+- tapOn: Close terminal
 - tapOn: Back
 - runFlow: reset-computers.yaml
