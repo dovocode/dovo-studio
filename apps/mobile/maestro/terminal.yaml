@@ -70,6 +70,11 @@ appId: com.dovo.studio
 - assertVisible: Show terminal keyboard
 - tapOn: Show terminal keyboard
 - assertVisible: Hide terminal keyboard
+# Cancel a composed word before running the proof command. If Ctrl is ignored,
+# the invalid command prefix prevents the proof file from being created.
+- inputText: terminal-input-should-cancel
+- tapOn: Ctrl
+- inputText: c
 - inputText: printf mobile-terminal-ok > terminal-proof.txt
 - pressKey: Enter
 - takeScreenshot: dovo-mobile-terminal-keyboard

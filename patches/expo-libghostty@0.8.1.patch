@@ -309,18 +309,19 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..2e201ec3ec6e7ab3699c1b1a3e09e59d
    func write(_ data: Data) {
      session?.receive(data)
 diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
-index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d1e9a6c85 100644
+index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..6ddeaba8dd19f6b8920f26b816a01ce88bdf3e87 100644
 --- a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
 +++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
-@@ -59,6 +59,7 @@
+@@ -58,7 +58,7 @@
+         }
  
          func refreshContent() {
-             let hasMarkedText = terminalView?.inputHandler.hasMarkedText ?? false
+-            let hasMarkedText = terminalView?.inputHandler.hasMarkedText ?? false
 +            let shiftActivation = terminalView?.stickyModifiers.shift ?? .inactive
              let ctrlActivation = terminalView?.stickyModifiers.ctrl ?? .inactive
              let altActivation = terminalView?.stickyModifiers.alt ?? .inactive
              let commandActivation = terminalView?.stickyModifiers.command ?? .inactive
-@@ -67,6 +68,7 @@
+@@ -67,11 +67,12 @@
  
              for (modifier, button) in modifierButtons {
                  let activation = switch modifier {
@@ -328,7 +329,13 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
                  case .ctrl: ctrlActivation
                  case .alt: altActivation
                  case .command: commandActivation
-@@ -129,7 +131,7 @@
+                 }
+-                button.applyModifierStyle(activation, isDisabled: hasMarkedText, style: style)
++                button.applyModifierStyle(activation, isDisabled: false, style: style)
+             }
+         }
+ 
+@@ -129,7 +130,7 @@
              stackView.translatesAutoresizingMaskIntoConstraints = false
              stackView.axis = .horizontal
              stackView.alignment = .center
@@ -337,7 +344,7 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
              scrollView.addSubview(stackView)
  
              NSLayoutConstraint.activate([
-@@ -162,19 +164,22 @@
+@@ -162,19 +163,22 @@
          private func makeView(for item: TerminalInputAccessoryItem) -> UIView {
              switch item {
              case .esc:
@@ -364,7 +371,7 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
  
              case .arrowLeft:
                  makeTrackedKeyButton(title: "Left", systemImage: "arrowtriangle.left.fill", key: .arrowLeft)
-@@ -201,7 +206,7 @@
+@@ -201,7 +205,7 @@
  
          private func makeTrackedModifierButton(
              title: String,
@@ -373,7 +380,7 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
              modifier: TerminalStickyModifierState.Modifier
          ) -> AccessoryButton {
              let button = makeModifierButton(
-@@ -225,14 +230,19 @@
+@@ -225,14 +229,22 @@
  
          private func makeModifierButton(
              title: String,
@@ -382,6 +389,9 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
              modifier: TerminalStickyModifierState.Modifier
          ) -> AccessoryButton {
              let button = AccessoryButton(size: buttonSize) { [weak terminalView] in
++                // Finish IME composition before arming the next terminal key.
++                // Disabling modifiers during composition silently loses Ctrl/Shift taps.
++                terminalView?.inputHandler.unmarkText(applyingStickyModifiers: false)
                  terminalView?.stickyModifiers.toggle(modifier)
              }
              button.accessibilityLabel = title
@@ -395,7 +405,7 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
              return button
          }
  
-@@ -375,6 +385,7 @@
+@@ -375,6 +387,7 @@
              isEnabled = true
              alpha = 1
              tintColor = style.regularForeground
@@ -403,7 +413,7 @@ index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..552d7a473f86c5d19618fc549c0c007d
              backgroundColor = style.regularBackground
              lockIndicator.isHidden = true
              lockIndicator.backgroundColor = tintColor
-@@ -391,6 +402,7 @@
+@@ -391,6 +404,7 @@
  
              let isActive = activation != .inactive
              tintColor = isActive ? style.activeForeground : style.regularForeground
