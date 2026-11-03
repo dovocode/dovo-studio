@@ -36,6 +36,14 @@ it('isolates page discovery, forwards CDP, blocks application targets and revoke
   try {
     const endpoint = bridge.register('1', 'task-a', 'work', contents)
     bridge.register('2', 'task-b', 'personal', contents)
+    bridge.register('3', 'studio:browser', 'work', contents, 'tab-shared')
+    const hostFile = JSON.parse(
+      readFileSync(join(directory, 'desktop-browser-host.json'), 'utf8'),
+    ) as { targets: { taskId: string; tabId?: string; profileId: string }[] }
+    expect(hostFile.targets).toContainEqual(
+      expect.objectContaining({ taskId: 'studio:browser', tabId: 'tab-shared', profileId: 'work' }),
+    )
+    expect(hostFile.targets.find((target) => target.taskId === 'task-a')?.tabId).toBeUndefined()
     const url = new URL(endpoint)
     const token = url.pathname.split('/')[1]
     const discovery = await fetch(`http://${url.host}/${token}/json/list`)

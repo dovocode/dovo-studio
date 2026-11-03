@@ -15,6 +15,7 @@ const commandSchema = mutableStruct({
 })
 type Target = {
   taskId: string
+  tabId?: string
   profileId: string
   contents: Pick<WebContents, 'debugger' | 'getTitle' | 'getURL' | 'isDestroyed'>
   token: string
@@ -38,6 +39,7 @@ export async function createBrowserCdp(directory: string) {
           pid: process.pid,
           targets: [...targets].map(([id, target]) => ({
             taskId: target.taskId,
+            ...(target.tabId ? { tabId: target.tabId } : {}),
             profileId: target.profileId,
             endpoint: websocketUrl(id, target),
           })),
@@ -192,15 +194,20 @@ export async function createBrowserCdp(directory: string) {
       taskId: string,
       profileId: string,
       contents: Pick<WebContents, 'debugger' | 'getTitle' | 'getURL' | 'isDestroyed'>,
+      tabId?: string,
     ) {
       if (!targets.has(id)) {
         targets.set(id, {
           taskId,
+          tabId,
           profileId,
           contents,
           token: randomBytes(32).toString('hex'),
           clients: new Set(),
         })
+        save()
+      } else if (targets.get(id)?.tabId !== tabId) {
+        targets.get(id)!.tabId = tabId
         save()
       }
       const target = targets.get(id)

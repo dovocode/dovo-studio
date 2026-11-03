@@ -137,3 +137,62 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
     await rm(directory, { recursive: true, force: true })
   }
 }, 60000)
+
+it('exposes live Browser workspace tabs to Studio Tools by tab alias, never private tabs', async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html')
+    response.end('<title>Workspace tab</title><h1>Shared page</h1>')
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing test server address')
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-workspace-browser-'))
+  const browsers = new RemoteBrowsers(directory)
+  const authorize = () => {}
+  const url = `http://127.0.0.1:${address.port}`
+  const resource = JSON.stringify(['studio:browser', 'tab-work', 'work'])
+  const privateProfile = 'private-123e4567-e89b-12d3-a456-426614174000'
+  const privateResource = JSON.stringify(['studio:browser', 'tab-private', privateProfile])
+  try {
+    await browsers.open(resource, 'studio:browser', 'work', url)
+    await browsers.open(privateResource, 'studio:browser', privateProfile, url)
+    const sessions = await browsers.studioList()
+    expect(sessions).toContainEqual(
+      expect.objectContaining({
+        id: 'workspace:tab-work',
+        kind: 'workspace',
+        tabId: 'tab-work',
+        profileId: 'work',
+        title: 'Workspace tab',
+      }),
+    )
+    expect(sessions.some((session) => session.tabId === 'tab-private')).toBe(false)
+    const snapshot = await browsers.agentCommand(
+      'task-a',
+      { action: 'snapshot' },
+      authorize,
+      'workspace:tab-work',
+    )
+    expect('snapshot' in snapshot && snapshot.snapshot).toContain('Shared page')
+    expect(await browsers.studioList()).toContainEqual(
+      expect.objectContaining({ id: 'workspace:tab-work', agentActiveAt: expect.any(String) }),
+    )
+    expect(await browsers.studioLogs('workspace:tab-work')).toEqual({ entries: [] })
+    await expect(
+      browsers.agentCommand('task-a', { action: 'snapshot' }, authorize, 'workspace:tab-private'),
+    ).rejects.toThrow('Private browser tabs')
+    await expect(browsers.studioLogs('workspace:tab-private')).rejects.toThrow(
+      'Private browser tabs',
+    )
+    await expect(
+      browsers.agentCommand('task-a', { action: 'snapshot' }, authorize, 'workspace:missing'),
+    ).rejects.toThrow('open it in Studio first')
+  } finally {
+    await browsers.dispose()
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    )
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 60000)

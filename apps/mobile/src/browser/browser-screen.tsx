@@ -22,6 +22,7 @@ import {
   responses,
   selectedBrowserText,
   STUDIO_BROWSER_SCOPE,
+  studioReference,
   isPrivateBrowserProfile,
   browserTabCategory,
   tomorrowBrowserTabWake,
@@ -1338,6 +1339,24 @@ export function BrowserScreen() {
               })
             }
           />
+          {active.kind === 'remote' && !isPrivateBrowserProfile(active.profileId) && (
+            <Action
+              secondary
+              label="Copy Studio ID (for agents)"
+              onPress={() =>
+                void act(async () => {
+                  await Clipboard.setStringAsync(
+                    studioReference(
+                      owner?.profile.connection.runtimeId ?? active.runtimeId,
+                      'browser',
+                      `workspace:${active.id}`,
+                    ),
+                  )
+                  setNotice('Studio ID copied.')
+                })
+              }
+            />
+          )}
           <Action
             secondary
             label={

@@ -41,6 +41,8 @@ import {
   snoozeBrowserTab,
   tomorrowBrowserTabWake,
   cleanBrowserTabs,
+  STUDIO_BROWSER_SCOPE,
+  studioReference,
   browserTabActivitySchema,
   type BrowserTabCategory,
   type BrowserTabState,
@@ -257,6 +259,33 @@ function BrowserContent({
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
+  // Shared workspace tabs join the desktop CDP host while Studio Browsers is on locally.
+  const localOverview = runtimes.find((entry) => entry.profile.id === store.localRuntimeId)
+  const studioBrowsersLocal =
+    (localOverview?.snapshot ?? (store.localRuntimeId === activeRuntimeId ? snapshot : null))
+      ?.studioTools?.browsers ?? false
+  /** Unified Studio reference + agent reachability for one sidebar tab. */
+  const tabStudio = (tab: BrowserTab) => {
+    if (isPrivateBrowserProfile(tab.profileId)) return {}
+    const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+    const reachable = tab.kind === 'remote' || !!browser
+    const agentAccessible = reachable && (owner?.snapshot?.studioTools?.browsers ?? false)
+    if (!reachable) return { agentAccessible }
+    const runtime =
+      owner?.snapshot?.runtimeId ?? owner?.profile.connection.runtimeId ?? tab.runtimeId ?? 'local'
+    try {
+      return {
+        agentAccessible,
+        studioId: studioReference(
+          runtime,
+          'browser',
+          tab.kind === 'web' ? `desktop:${tab.id}` : `workspace:${tab.id}`,
+        ),
+      }
+    } catch {
+      return { agentAccessible }
+    }
+  }
   const previewLinks = useRef(true)
   previewLinks.current = preferences.browserLinkOpening !== 'tab'
   const [homeEditor, setHomeEditor] = useApplicationState<{ tabId: string; url: string } | null>(
@@ -1192,8 +1221,11 @@ function BrowserContent({
               workspaceBrowser: shared,
               keepAwake: selectedTab.keepAwake,
               profileId,
-              taskId: shared ? undefined : taskId,
-              agentAccess: shared ? false : agentAccess,
+              taskId: shared ? STUDIO_BROWSER_SCOPE : taskId,
+              tabId: shared ? selectedTab.id : undefined,
+              agentAccess: shared
+                ? studioBrowsersLocal && !isPrivateBrowserProfile(profileId)
+                : agentAccess,
               key: browserKey,
               url: url || 'about:blank',
               viewport:
@@ -1324,6 +1356,8 @@ function BrowserContent({
     profileId,
     taskId,
     agentAccess,
+    studioBrowsersLocal,
+    selectedTab.id,
     selectedTab.keepAwake,
   ])
   const deviceAction = (
@@ -1706,6 +1740,7 @@ function BrowserContent({
       state={
         tab.kind === 'web' ? tabStates.find((state) => state.key === nativeKey(tab.id)) : undefined
       }
+      {...(shared ? tabStudio(tab) : {})}
       onMute={
         browser && tab.kind === 'web'
           ? () => {
