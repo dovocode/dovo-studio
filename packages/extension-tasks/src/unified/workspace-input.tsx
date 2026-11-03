@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ArrowUpRight, Globe2, MessageSquare, Monitor, Sparkles, Terminal } from 'lucide-react'
 import { randomUUID, runtimeComputerName, workspaceRouteSchema, type Task } from '@dovo/protocol'
 import { createTask, resolveTaskDefaults, responses, useWorkspace } from '@dovo/studio-core'
 import { Button, ChoicePicker, Input } from '@dovo/studio-ui'
@@ -137,20 +138,43 @@ export function WorkspaceInput({
       if (generation === attempt.current) setBusy(false)
     }
   }
+  const actionLabel = busy
+    ? 'Working…'
+    : mode === 'auto'
+      ? 'Choose destination'
+      : mode === 'browser'
+        ? 'Open browser'
+        : mode === 'terminal'
+          ? 'Run command'
+          : continuing
+            ? 'Send to thread'
+            : 'Start thread'
+  const Icon =
+    mode === 'terminal'
+      ? Terminal
+      : mode === 'browser'
+        ? Globe2
+        : mode === 'thread'
+          ? MessageSquare
+          : Sparkles
+  const computer = runtimeComputerName(
+    store.runtimes.find((owner) => owner.profile.id === store.activeRuntimeId) ?? {},
+  )
   return (
     <form
       aria-label="Workspace input"
-      className="space-y-2 border-b p-3"
+      className="space-y-2"
       onSubmit={(event) => {
         event.preventDefault()
         void submit()
       }}
     >
-      <div className="flex flex-wrap gap-2">
+      <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-background p-2 shadow-sm focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
+        <Icon className="ml-1.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Input
           aria-label="Workspace request"
-          className="min-w-48 flex-1"
-          placeholder="Enter a URL, shell command, or request…"
+          className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0 md:text-sm"
+          placeholder="Search the web, run a command, or ask anything…"
           maxLength={20000}
           value={text}
           disabled={busy}
@@ -161,12 +185,14 @@ export function WorkspaceInput({
             setError('')
           }}
         />
-        <ChoicePicker
+        <select
           aria-label="Workspace destination"
-          className="w-40 shrink-0"
+          title="Override the destination"
+          className="h-8 max-w-24 shrink-0 rounded-md border-0 bg-muted/50 px-2 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={mode}
           disabled={busy}
-          onValueChange={(value) => {
+          onChange={(event) => {
+            const value = event.target.value
             if (
               value === 'auto' ||
               value === 'browser' ||
@@ -179,39 +205,42 @@ export function WorkspaceInput({
             }
           }}
         >
-          <option value="auto">Auto · AI routing</option>
+          <option value="auto">Auto</option>
           <option value="browser">Browser</option>
           <option value="terminal">Terminal</option>
           <option value="thread">Thread</option>
-        </ChoicePicker>
+        </select>
         <Button
           type="submit"
           size="sm"
+          aria-label={actionLabel}
+          title={actionLabel}
+          className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs"
           disabled={busy || !text.trim() || (mode !== 'browser' && !store.connected)}
         >
-          {busy
-            ? 'Working…'
-            : mode === 'auto'
-              ? 'Choose destination'
-              : mode === 'browser'
-                ? 'Open browser'
-                : mode === 'terminal'
-                  ? 'Run command'
-                  : continuing
-                    ? 'Send to thread'
-                    : 'Start thread'}
+          <span className="hidden sm:inline">
+            {mode === 'auto' && !busy ? 'Route' : actionLabel}
+          </span>
+          <ArrowUpRight className="size-3.5" />
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Computer:{' '}
-        {runtimeComputerName(
-          store.runtimes.find((owner) => owner.profile.id === store.activeRuntimeId) ?? {},
-        )}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground">
+        <span role={reason ? 'status' : undefined}>
+          {reason
+            ? `Suggested ${mode}: ${reason}`
+            : mode === 'auto'
+              ? 'AI suggests a destination. Review it before opening or running.'
+              : 'Destination selected. Ready when you are.'}
+        </span>
+        <span className="inline-flex min-w-0 items-center gap-1" title={`Computer: ${computer}`}>
+          <Monitor className="size-3 shrink-0" />
+          <span className="max-w-40 truncate">{computer}</span>
+        </span>
+      </div>
       {(mode === 'terminal' || mode === 'thread') && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-3 px-1 text-xs">
           {mode === 'thread' && active?.kind === 'thread' && active.id && (
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-muted-foreground">
               <input
                 type="checkbox"
                 checked={newThread}
@@ -224,7 +253,7 @@ export function WorkspaceInput({
           {(!continuing || mode === 'terminal') && (
             <ChoicePicker
               aria-label="Workspace input project"
-              className="w-48"
+              className="h-7 w-48 border-transparent bg-muted/40 text-xs shadow-none"
               value={repositoryId}
               disabled={busy}
               onValueChange={setRepositoryId}
@@ -239,26 +268,10 @@ export function WorkspaceInput({
                 ))}
             </ChoicePicker>
           )}
-          {mode === 'terminal' && (
-            <span className="text-muted-foreground">
-              Runs the original input in a new terminal on the current computer.
-            </span>
-          )}
         </div>
       )}
-      {reason && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Suggested {mode}: {reason} Change the destination above to override.
-        </p>
-      )}
-      {mode === 'auto' && (
-        <p className="text-xs text-muted-foreground">
-          Uses the utility model configured in Settings → Agents. Classification never executes the
-          input.
-        </p>
-      )}
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="px-1 text-xs text-destructive">
           {error}
         </p>
       )}

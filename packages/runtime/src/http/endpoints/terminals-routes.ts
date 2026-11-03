@@ -6,7 +6,7 @@ import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { mutableStruct, threadServerRequestSchema, stopThreadServerSchema } from '@dovo/protocol'
-import { STUDIO_TERMINAL_SCOPE } from '@dovo/protocol'
+import { STUDIO_TERMINAL_SCOPE, updateTerminalSchema } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
@@ -55,6 +55,13 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/terminals/update') {
+        const input = decode(updateTerminalSchema, yield* serviceResult(body(request)))
+        return yield* runtimeOperation(() => {
+          s.devices.authenticate(token)
+          return s.terminals.update(input)
+        })
+      }
       if (method === 'POST' && path === '/api/terminals/workspace') {
         const { repositoryId, command } = decode(
           mutableStruct({

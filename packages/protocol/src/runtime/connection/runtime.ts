@@ -16,7 +16,7 @@ import { artifactRetentionSchema } from '../../conversation/artifacts.js'
 import { repositoryOpenTargetsSchema } from '../../scm/repositories/repository-tools.js'
 export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
-import { mutableStruct, mutableArray } from '../../shared/schema.js'
+import { mutableStruct, mutableArray, isoDateTime } from '../../shared/schema.js'
 import { minValue, urlSchema, refine, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
 import {
@@ -63,8 +63,18 @@ export const terminalSchema = mutableStruct({
   taskId: Schema.String,
   title: Schema.String,
   exited: Schema.Boolean,
+  pinned: Schema.optional(Schema.Boolean),
+  settledAt: Schema.optional(isoDateTime(Schema.String)),
+  snoozedUntil: Schema.optional(isoDateTime(Schema.String)),
   exitCode: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
+export const updateTerminalSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 200),
+  pinned: Schema.optional(Schema.Boolean),
+  settled: Schema.optional(Schema.Boolean),
+  snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
+})
+export type UpdateTerminal = Schema.Schema.Type<typeof updateTerminalSchema>
 export const jobRunStepSchema = mutableStruct({
   nodeId: Schema.String,
   label: Schema.String,

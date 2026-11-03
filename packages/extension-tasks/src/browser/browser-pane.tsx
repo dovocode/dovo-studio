@@ -52,11 +52,14 @@ import { Effect } from 'effect'
 import { useCommittedCallback } from '../detail/use-committed-callback'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useCallback,
   useEffect,
   useRef,
   useId,
   useState,
+  type Dispatch,
   type DragEvent,
+  type SetStateAction,
   type ReactNode,
   type RefObject,
 } from 'react'
@@ -148,7 +151,28 @@ export type BrowserWorkspaceControl = {
   onSelect: (id: string) => void
   onTabsChange: (tabs: BrowserTab[], activeId: string) => void
   newTabRequest?: string
+  /**
+   * Optional owner of the authoritative tab list (including previews). Until `tabs` is set,
+   * the pane keeps its own restored list and hands it to `onSetTabs` once to hydrate the owner.
+   */
+  tabs?: BrowserTab[]
+  onSetTabs?: Dispatch<SetStateAction<BrowserTab[]>>
+  /**
+   * False while another workspace item is shown. The pane stays mounted so tab cleanup, native
+   * sync and persistence keep running, but it releases the native view, header and shortcuts.
+   */
+  visible?: boolean
+  /** Runs the pane's own Pin / Settle / Snooze / Wake path once per request ID. */
+  lifecycleRequest?: BrowserLifecycleRequest
+  /** Called once each request has been applied, ignored (unknown page) or failed. */
+  onLifecycleHandled?: (requestId: string) => void
+  /** Errors raised while `visible` is false, when the pane's own banner cannot be seen. */
+  onError?: (message: string) => void
 }
+export type BrowserLifecycleRequest = { requestId: string; tabId: string } & (
+  | { action: 'pin' | 'unpin' | 'settle' | 'wake' }
+  | { action: 'snooze'; until: number }
+)
 type OpenLink = { id: string; url: string; remote?: boolean }
 type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
@@ -158,6 +182,39 @@ const restorableTab = (tab: BrowserTab) =>
   !tab.previewOf &&
   !isPrivateBrowserProfile(tab.profileId) &&
   (!tab.url || /^https?:\/\//i.test(tab.url))
+const sharedBrowserScope = (windowId?: string) => `studio:browser:${windowId ?? 'main'}`
+/** Storage window for shared tabs; pop-out threads never overwrite the main browser workspace. */
+export function sharedBrowserWindowId(host: { browserWindowId?: string; threadWindow?: boolean }) {
+  return host.browserWindowId ?? (host.threadWindow ? threadBrowserWindowId : undefined)
+}
+/** Latest shared tabs for this renderer session, exactly as a remounted BrowserPane restores them. */
+export function restoredSharedBrowserTabs(windowId?: string): BrowserTab[] | undefined {
+  return (
+    savedTabs.get(sharedBrowserScope(windowId))?.tabs ?? readSharedBrowserTabs(windowId).state?.tabs
+  )
+}
+const emptyBrowserTab: BrowserTab = {
+  id: 'empty',
+  url: '',
+  title: '',
+  kind: 'web',
+  profileId: 'default',
+}
+/** Storage projection: an empty fallback replaces stale pages when nothing is restorable. */
+function persistedBrowserTabs(
+  tabs: BrowserTab[],
+  active: string,
+  closed: BrowserTab[],
+  fallback: BrowserTab,
+): BrowserTabs {
+  const restorable = tabs.filter(restorableTab)
+  const saved = restorable.length ? restorable : [fallback]
+  return {
+    tabs: saved,
+    active: saved.some((tab) => tab.id === active) ? active : saved[0].id,
+    closed: closed.filter(restorableTab),
+  }
+}
 export function BrowserPane({
   taskId,
   onClose,
@@ -208,11 +265,11 @@ function PreviewPane({
   const { connection } = useWorkspace()
   const { browserWindowId, threadWindow } = useStudioHost()
   // Pop-out threads must not overwrite the main browser workspace.
-  const [storageWindowId] = useApplicationState(
-    () => browserWindowId ?? (threadWindow ? threadBrowserWindowId : undefined),
+  const [storageWindowId] = useApplicationState(() =>
+    sharedBrowserWindowId({ browserWindowId, threadWindow }),
   )
   const scope = shared
-    ? `studio:browser:${storageWindowId ?? 'main'}`
+    ? sharedBrowserScope(storageWindowId)
     : `${connection?.address ?? ''}:${taskId}`
   return (
     <BrowserContent
@@ -327,7 +384,7 @@ function BrowserContent({
     back: false,
     forward: false,
   })
-  const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
+  const [ownTabs, setOwnTabs] = useApplicationState<BrowserTab[]>(
     () =>
       saved?.tabs ?? [
         {
@@ -344,6 +401,24 @@ function BrowserContent({
         },
       ],
   )
+  // A workspace owner may hold the authoritative list so it stays current while this pane is hidden.
+  const tabsControl = useRef(workspaceControl)
+  tabsControl.current = workspaceControl
+  const tabs = (workspaceControl?.onSetTabs && workspaceControl.tabs) || ownTabs
+  const setTabs = useCallback<Dispatch<SetStateAction<BrowserTab[]>>>(
+    (action) => {
+      const control = tabsControl.current
+      if (control?.onSetTabs && control.tabs) control.onSetTabs(action)
+      else setOwnTabs(action)
+    },
+    [setOwnTabs],
+  )
+  const tabsHydrated = !!workspaceControl?.tabs
+  // Owners keep a hidden pane mounted as a background service; only presentation is gated.
+  const paneVisible = workspaceControl?.visible !== false
+  useEffect(() => {
+    if (!tabsHydrated) tabsControl.current?.onSetTabs?.(ownTabs)
+  }, [tabsHydrated, ownTabs])
   const [activeTab, setActiveTab] = useApplicationState(() => saved?.active ?? tabs[0].id)
   const activeTabRef = useRef(activeTab)
   activeTabRef.current = activeTab
@@ -444,14 +519,16 @@ function BrowserContent({
   const [zoomFactor, setZoomFactor] = useState(1)
   useEffect(
     () =>
-      onBrowserContextAction?.((action) => {
-        if (action.action === 'close-find' && action.key === browserKey) setFindOpen(false)
-        if (action.action === 'find' && action.key === browserKey) {
-          setFindOpen(true)
-          setFindRequest((value) => value + 1)
-        }
-      }),
-    [onBrowserContextAction, browserKey],
+      paneVisible
+        ? onBrowserContextAction?.((action) => {
+            if (action.action === 'close-find' && action.key === browserKey) setFindOpen(false)
+            if (action.action === 'find' && action.key === browserKey) {
+              setFindOpen(true)
+              setFindRequest((value) => value + 1)
+            }
+          })
+        : undefined,
+    [onBrowserContextAction, browserKey, paneVisible],
   )
   useEffect(() => {
     if (!browser || !shared) return
@@ -526,10 +603,18 @@ function BrowserContent({
     if (tab) selectTab(tab, false)
   }, [workspaceControl?.focusTabId])
   const selectTab = (tab: BrowserTab, notify = true) => {
-    if (notify) workspaceControl?.onSelect(tab.id)
+    // A hidden pane may follow native/agent focus, but never pulls the owner to the browser.
+    if (notify && paneVisible) workspaceControl?.onSelect(tab.id)
     previewRequest.current++
     setPendingPreview(undefined)
-    if (tab.id === activeTab) return
+    if (tab.id === activeTab) {
+      // A page settled or snoozed elsewhere while selected wakes when it is chosen again.
+      if (browserTabCategory(tab) !== 'active')
+        setTabs((previous) =>
+          previous.map((item) => (item.id === tab.id ? wakeBrowserTab(item) : item)),
+        )
+      return
+    }
     const now = Date.now()
     setTabs((previous) =>
       previous.map((item) =>
@@ -693,12 +778,21 @@ function BrowserContent({
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(restored.error ?? library.error ?? ''),
     [reload, setReload] = useApplicationState(0)
+  const reportedError = useRef('')
+  /** Hidden panes hand failures to their owner; the banner still shows them once visible. */
+  const reportHidden = (message: string) => {
+    reportedError.current = message
+    if (message && !paneVisible) workspaceControlRef.current?.onError?.(message)
+  }
+  useEffect(() => {
+    if (error === reportedError.current) return
+    reportHidden(error)
+  }, [error])
   useEffect(() => {
     if (!shared) return
     let persisted = false
     try {
       // Extension pages require their existing native view; never restore stale extension URLs.
-      const restorable = tabs.filter(restorableTab)
       let source = selectedTab
       const seen = new Set<string>()
       while (source.previewOf && !seen.has(source.id)) {
@@ -707,24 +801,12 @@ function BrowserContent({
         if (!parent) break
         source = parent
       }
-      const fallback: BrowserTab = {
-        id: 'empty',
-        url: '',
-        title: '',
-        kind: browser ? 'web' : 'remote',
-        profileId: 'default',
-        runtimeId: activeRuntimeId ?? undefined,
-      }
       saveSharedBrowserTabs(
-        {
-          tabs: restorable.length ? restorable : [fallback],
-          active: restorable.some((tab) => tab.id === activeTab)
-            ? activeTab
-            : (restorable.find((tab) => tab.id === source.id)?.id ??
-              restorable[0]?.id ??
-              fallback.id),
-          closed: closed.filter(restorableTab),
-        },
+        persistedBrowserTabs(tabs, restorableTab(selectedTab) ? activeTab : source.id, closed, {
+          ...emptyBrowserTab,
+          kind: browser ? 'web' : 'remote',
+          runtimeId: activeRuntimeId ?? undefined,
+        }),
         storageWindowId,
       )
       persisted = true
@@ -906,13 +988,13 @@ function BrowserContent({
     })
   })
   useEffect(() => {
-    if (!shared || !browser || !openBrowserWindow) return
+    if (!shared || !browser || !openBrowserWindow || !paneVisible) return
     return registerCommand({
       id: 'browser.detach',
       title: 'Detach browser',
       run: detachBrowser,
     })
-  }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser])
+  }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser, paneVisible])
   const loadDevices = async () => {
     const hosts = await request(
       '/api/device-hosts',
@@ -1247,7 +1329,7 @@ function BrowserContent({
     const update = () => {
       frame = undefined
       if (!alive) return
-      const rect = slot.current && nativeBrowserBounds(slot.current)
+      const rect = paneVisible && slot.current ? nativeBrowserBounds(slot.current) : undefined
       const occlusion = slot.current && rect && nativeBrowserOcclusion(slot.current, rect)
       const obscured = !!occlusion
       const command =
@@ -1395,6 +1477,7 @@ function BrowserContent({
     studioBrowsersLocal,
     selectedTab.id,
     selectedTab.keepAwake,
+    paneVisible,
   ])
   const deviceAction = (
     device: PreviewDevice,
@@ -1602,7 +1685,7 @@ function BrowserContent({
     preferences.browserAutoSettleMinutes,
     preferences.browserCloseSettledMinutes,
   ])
-  const moveTab = (tab: BrowserTab, until?: number) => {
+  const moveTab = (tab: BrowserTab, until?: number, notify = true) => {
     const now = Date.now()
     const next = currentTabs.current.map((item) =>
       item.id === tab.id
@@ -1617,8 +1700,9 @@ function BrowserContent({
     const available = recentBrowserTabs(next, sortByActivity).filter((item) => item.id !== tab.id)
     const target =
       available.find((item) => browserTabCategory(item, now) === 'active') ?? available[0]
-    if (target) selectTab(target)
-    else
+    if (target) selectTab(target, notify)
+    // A hidden pane never opens a page in front of the user; the settled page stays selected.
+    else if (notify)
       newTab(
         '',
         tab.kind,
@@ -1662,7 +1746,7 @@ function BrowserContent({
     if (key === 'd') toggleBookmark()
   }
   useEffect(() => {
-    if (!shared) return
+    if (!shared || !paneVisible) return
     const shortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
       if (
@@ -1728,6 +1812,37 @@ function BrowserContent({
       ),
     )
   }
+  const lifecycleRequest = workspaceControl?.lifecycleRequest
+  const handledLifecycle = useRef('')
+  useEffect(() => {
+    if (!lifecycleRequest || handledLifecycle.current === lifecycleRequest.requestId) return
+    handledLifecycle.current = lifecycleRequest.requestId
+    const tab = currentTabs.current.find((item) => item.id === lifecycleRequest.tabId)
+    try {
+      if (!tab) return
+      if (lifecycleRequest.action === 'pin' || lifecycleRequest.action === 'unpin') {
+        if (!!tab.pinned !== (lifecycleRequest.action === 'pin')) togglePin(tab)
+      } else if (lifecycleRequest.action === 'wake')
+        setTabs((previous) =>
+          previous.map((item) => (item.id === tab.id ? wakeBrowserTab(item) : item)),
+        )
+      // Same path as the pane's own menu: a selected page hands focus to the next active page,
+      // but only notifies the owner while visible so a hidden pane never steals focus.
+      else
+        moveTab(
+          tab,
+          lifecycleRequest.action === 'snooze' ? lifecycleRequest.until : undefined,
+          paneVisible,
+        )
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      // Report every failed request, even when it repeats the current banner message.
+      reportHidden(message)
+      setError(message)
+    } finally {
+      workspaceControlRef.current?.onLifecycleHandled?.(lifecycleRequest.requestId)
+    }
+  }, [lifecycleRequest?.requestId])
   const returnHome = (tab: BrowserTab) => {
     if (!tab.homeUrl) return
     selectTab(tab)
@@ -3126,19 +3241,19 @@ function BrowserContent({
         </div>
       )}
       {(mode === 'web' || mode === 'remote') &&
-        (shared ? (
-          <HeaderContent>
-            <header
-              className="studio-browser-header @container/browser"
-              data-window-edge
-              data-window-right-edge
-            >
-              {navigation}
-            </header>
-          </HeaderContent>
-        ) : (
-          navigation
-        ))}
+        (shared
+          ? paneVisible && (
+              <HeaderContent>
+                <header
+                  className="studio-browser-header @container/browser"
+                  data-window-edge
+                  data-window-right-edge
+                >
+                  {navigation}
+                </header>
+              </HeaderContent>
+            )
+          : navigation)}
       {mode === 'web' && browser && url && (
         <BrowserFindBar
           key={browserKey}
@@ -3147,7 +3262,7 @@ function BrowserContent({
           url={url}
           open={findOpen}
           onOpenChange={setFindOpen}
-          globalShortcut={shared}
+          globalShortcut={shared && paneVisible}
           focusRequest={findRequest}
           pageRevision={pageRevision}
         />
@@ -3198,7 +3313,8 @@ function BrowserContent({
                 profileId={tab.profileId}
                 initialUrl={tab.url}
                 tabId={tab.id}
-                active={mode === 'remote' && activeTab === tab.id}
+                // A background pane pauses the remote stream and input; tab state still updates.
+                active={paneVisible && mode === 'remote' && activeTab === tab.id}
                 reloadToken={activeTab === tab.id ? turnReload : undefined}
                 onClosed={() => closeTab(tab)}
                 onState={(state) => {

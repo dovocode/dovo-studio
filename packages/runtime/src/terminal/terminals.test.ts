@@ -306,3 +306,44 @@ it('reclaims exited unattended sessions while preserving observed output and the
     await f.cleanup()
   }
 })
+
+it('retains pinned exited sessions at capacity until unpinned or explicitly closed', async () => {
+  const f = await fixture()
+  const terminals = new Terminals()
+  try {
+    const pinned = Array.from({ length: 20 }, () => {
+      const terminal = terminals.createCommand(
+        'task',
+        f.directory,
+        { command: process.execPath, args: ['-e', 'console.log("pinned-output")'], env: {} },
+        'Pinned',
+      )
+      terminals.update({ id: terminal.id, pinned: true })
+      return terminal.id
+    })
+    await vi.waitFor(() => expect(terminals.list().every((session) => session.exited)).toBe(true), {
+      timeout: 10000,
+    })
+    expect(() => terminals.create('task', f.directory)).toThrow(
+      'Close a terminal before opening another (limit 20)',
+    )
+    expect(terminals.list().map((session) => session.id)).toEqual(pinned)
+    expect(terminals.get(pinned[0]!).buffer).toContain('pinned-output')
+
+    const candidate = pinned.at(-1)!
+    terminals.update({ id: candidate, pinned: false })
+    const replacement = terminals.create('task', f.directory)
+    expect(terminals.list()).toHaveLength(20)
+    expect(() => terminals.get(candidate)).toThrow('Terminal not found')
+    for (const id of pinned.slice(0, -1)) expect(terminals.get(id).info.pinned).toBe(true)
+    expect(terminals.get(replacement.id).info.exited).toBe(false)
+
+    await terminals.close(pinned[0]!)
+    expect(() => terminals.get(pinned[0]!)).toThrow('Terminal not found')
+    terminals.create('task', f.directory)
+    expect(terminals.list()).toHaveLength(20)
+  } finally {
+    await terminals.dispose()
+    await f.cleanup()
+  }
+})

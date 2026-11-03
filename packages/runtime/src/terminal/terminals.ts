@@ -1,12 +1,12 @@
 import type { AcpLaunch } from '../agents/execution/types.js'
-import { decode } from '@dovo/protocol'
+import { decode, updateTerminalSchema } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { defaultShell, shellArguments } from './shell.js'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import type * as pty from 'node-pty'
-import type { TerminalInfo } from '@dovo/protocol'
+import type { TerminalInfo, UpdateTerminal } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
 import { HttpError } from '../errors.js'
 import { stopUnixTerminal } from './stop-terminal.js'
@@ -145,10 +145,11 @@ export class Terminals {
     repositoryId?: string,
   ) {
     // Retained output is bounded by the same cap, but finished unattended shells
-    // must not permanently consume slots needed by new work. Attached output stays.
+    // must not permanently consume slots needed by new work. Pinned and attached output stays.
     for (const [id, session] of this.sessions) {
       if (this.sessions.size < 20) break
-      if (session.info.exited && !session.listeners.size) void this.close(id)
+      if (session.info.exited && !session.info.pinned && !session.listeners.size)
+        void this.close(id)
     }
     if (this.sessions.size >= 20)
       throw new HttpError(409, 'Close a terminal before opening another (limit 20)')
@@ -226,6 +227,30 @@ export class Terminals {
     const session = this.sessions.get(id)
     if (!session) throw new HttpError(404, 'Terminal not found')
     return session
+  }
+  update(input: UpdateTerminal) {
+    const { id, pinned, settled, snoozedUntil } = decode(updateTerminalSchema, input)
+    const session = this.get(id)
+    if (snoozedUntil != null && Date.parse(snoozedUntil) <= Date.now())
+      throw new HttpError(400, 'Choose a future snooze time')
+    const info = { ...session.info }
+    if (pinned !== undefined) info.pinned = pinned
+    if (settled !== undefined) {
+      if (settled) info.settledAt = new Date().toISOString()
+      else delete info.settledAt
+      delete info.snoozedUntil
+    }
+    // An explicit future snooze wins over settled in a combined update.
+    if (snoozedUntil !== undefined) {
+      if (snoozedUntil === null) delete info.snoozedUntil
+      else {
+        info.snoozedUntil = snoozedUntil
+        delete info.settledAt
+      }
+    }
+    session.info = info
+    this.activity?.add('terminal', id, 'Terminal updated', { taskId: info.taskId })
+    return info
   }
   attach(id: string, listener: (data: string) => void) {
     const session = this.get(id)
