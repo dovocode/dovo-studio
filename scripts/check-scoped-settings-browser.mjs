@@ -335,16 +335,16 @@ try {
     })
     await resume.waitFor()
     if (!mobile) {
-      await page.getByText('Saves separately', { exact: true }).waitFor()
+      await page.getByText('Save to apply', { exact: true }).waitFor()
       await page.evaluate(() => window.setLifecycleSupport(false))
       assert.equal(
-        await page.getByText('Saves separately', { exact: true }).count(),
+        await page.getByText('Save to apply', { exact: true }).count(),
         0,
         'Unsupported lifecycle never asks to save read-only fields',
       )
       assert.equal(await resume.isDisabled(), true)
       await page.evaluate(() => window.setLifecycleSupport(true))
-      await page.getByText('Saves separately', { exact: true }).waitFor()
+      await page.getByText('Save to apply', { exact: true }).waitFor()
     }
 
     await choose(resume, 'on', 'On')

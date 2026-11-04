@@ -10,6 +10,7 @@ export default function AgentsView() {
     <SettingsScopePage
       title="Agents"
       description="Agent profiles: the provider, model, access and instructions each coding agent uses."
+      saveInfo="Use Save changes to apply profile edits."
       wide
     >
       {({ scope, repository }) => (

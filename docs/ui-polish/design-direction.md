@@ -23,8 +23,9 @@ grouping and workflow control. Thread info remains an overlay that clears the co
    width determines label/control layout. Dirty actions identify the edited profile and target.
 4. **Reduce competing framing and type choices.** Runtime computers and settings become flatter
    sections. Computer rows emphasize Manage, with secondary/recovery/destructive actions in More.
-   Shared page, section, row, metadata and machine-fact type tokens retain user text scaling. Thread
-   rows keep their three-line anatomy and required icons, with tighter spacing.
+   Shared page, section, row, metadata and machine-fact type tokens retain user text scaling.
+   Instructions and substantial explanatory content span the form; concise selects stay aligned.
+   Thread rows keep their three-line anatomy and required icons, with tighter spacing.
 5. **Verify composition and behavior together.** Inspect populated, dirty, scrolled, narrow and
    legacy Settings states in both themes. Verify keyboard selection, sticky context, save failures,
    scope changes and draft protection. Check dense thread/PR/issue lists, Browser and file

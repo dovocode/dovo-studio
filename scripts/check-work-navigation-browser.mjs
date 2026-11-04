@@ -74,6 +74,18 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const connections = page.getByRole('button', { name: 'Connections', exact: true })
+  await connections.waitFor()
+  assert.equal(await connections.locator('svg.lucide-plug').count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'Sources', exact: true }).count(), 0)
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Filters', exact: true })
+      .locator('svg.lucide-sliders-horizontal')
+      .count(),
+    1,
+    'Connection management and list filters have distinct controls',
+  )
   const issueState = page
     .getByRole('button', { name: /Fix issue/ })
     .locator('.studio-collection-status')

@@ -238,6 +238,10 @@ try {
   assert.equal(await heading.evaluate((element) => element.getBoundingClientRect().top), headingTop)
   await detail.getByRole('button', { name: 'View pull request checks', exact: true }).click()
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).waitFor()
+  const neutralCheckCountColor = await detail
+    .getByRole('tab', { name: 'Checks (1)', exact: true })
+    .getByText('1', { exact: true })
+    .evaluate((node) => getComputedStyle(node).color)
   assert.equal(
     await detail
       .getByRole('tab', { name: 'Checks (1)', exact: true })
@@ -371,13 +375,13 @@ try {
   ])
     assert.equal(await headerStatus.getByText(status, { exact: true }).count(), 0)
   await mergeDialog
-    .getByText('I acknowledge the current failures: Pipeline runs: 1 failed.', { exact: true })
+    .getByText(/I also acknowledge the current failures: Linked pipelines: 1 failed\./)
     .waitFor()
   const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
   assert.equal(
     await mergeDialog
       .getByRole('checkbox', {
-        name: 'Confirm merge of reviewed commit. Acknowledge current failures: Pipeline runs: 1 failed',
+        name: 'Confirm merge of reviewed commit. Acknowledge current failures: Linked pipelines: 1 failed',
         exact: true,
       })
       .count(),
@@ -614,6 +618,14 @@ try {
   })
   const checksTab = page.getByRole('tab', { name: 'Checks (1)', exact: true })
   await waitForCheckFailure('Pipeline failed')
+  assert.equal(
+    await checksTab
+      .getByText('1', { exact: true })
+      .evaluate((node) => getComputedStyle(node).color),
+    neutralCheckCountColor,
+    'Passed check-report count stays neutral when a linked pipeline fails',
+  )
+  assert.equal(await checksTab.locator('svg.lucide-circle-alert').count(), 1)
   await headerStatus.getByText('Repository merge status: Ready to merge', { exact: true }).waitFor()
   assert.equal(
     await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
@@ -696,6 +708,7 @@ try {
   await checksTab.click()
   await reportsSection.getByText('Unknown', { exact: true }).waitFor()
   assert.equal(await checksTab.getByText(/failed/i).count(), 0)
+  assert.equal(await checksTab.locator('svg.lucide-circle-alert').count(), 0)
   await page.evaluate(() => {
     window.detail.checks = window.pipelineTestChecks
   })
@@ -897,9 +910,15 @@ try {
     await sourceValue(autoDialog, name, value).waitFor()
   await autoDialog
     .getByText(
-      'I acknowledge the current failures: Check reports: 1 failed; Pipeline runs: 1 failed; CI failed.',
-      { exact: true },
+      /I also acknowledge the current failures: Check reports: 1 failed; Linked pipelines: 1 failed; Repository CI: failed\./,
     )
+    .waitFor()
+  assert.equal(await autoDialog.getByRole('checkbox').count(), 1)
+  await autoDialog
+    .getByRole('checkbox', {
+      name: 'Confirm merge of reviewed commit. Acknowledge current failures: Check reports: 1 failed; Linked pipelines: 1 failed; Repository CI: failed',
+      exact: true,
+    })
     .waitFor()
   const autoSubmit = autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true })
   await page.evaluate(() => {

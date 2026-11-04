@@ -199,7 +199,7 @@ export function PairingClient({
         <div className="flex flex-wrap gap-2">
           <ComputerUpdates />
           <LinuxSetupGuide onConnect={openNewConnection} />
-          <Button size="sm" variant="outline" onClick={openNewConnection}>
+          <Button size="sm" onClick={openNewConnection}>
             <Plus size={14} className="mr-1.5" />
             Connect computer
           </Button>

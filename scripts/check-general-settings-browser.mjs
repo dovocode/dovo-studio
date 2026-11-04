@@ -554,7 +554,7 @@ try {
     .waitFor()
   await page
     .locator('section[data-setting-label="Snoozing"]')
-    .getByText('Saves separately', { exact: true })
+    .getByText('Save to apply', { exact: true })
     .waitFor()
   const discardSettings = page.getByRole('dialog', {
     name: 'Discard unsaved settings changes?',
@@ -939,7 +939,7 @@ try {
   const localProfiles = page
     .getByRole('heading', { name: 'Local browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
-  await localProfiles.getByText('Saves separately', { exact: true }).waitFor()
+  await localProfiles.getByText('Save to apply', { exact: true }).waitFor()
   await localProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Local work')
   await localProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await localProfiles.getByRole('textbox', { name: 'Name for Local work' }).waitFor()
@@ -947,7 +947,7 @@ try {
   const remoteProfiles = page
     .getByRole('heading', { name: 'Remote browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
-  await remoteProfiles.getByText('Saves separately', { exact: true }).waitFor()
+  await remoteProfiles.getByText('Save to apply', { exact: true }).waitFor()
   await remoteProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Remote work')
   await remoteProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remoteProfiles.getByRole('textbox', { name: 'Name for Remote work' }).waitFor()

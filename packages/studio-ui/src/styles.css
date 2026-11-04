@@ -3404,7 +3404,7 @@ a.studio-project-row:hover {
   line-height: var(--dovo-type-page-line);
   font-weight: var(--dovo-type-page-weight);
 }
-.studio-settings-group-heading > h2 {
+.studio-settings-content h2 {
   font-size: var(--dovo-type-section-size);
   line-height: var(--dovo-type-section-line);
   font-weight: var(--dovo-type-section-weight);
@@ -3424,6 +3424,14 @@ a.studio-project-row:hover {
 .studio-collection-context .font-mono {
   font-size: var(--dovo-type-machine-size);
   line-height: var(--dovo-type-machine-line);
+}
+
+.studio-agent-editor .studio-agent-instructions label[data-setting-label] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.studio-agent-editor .studio-agent-instructions label[data-setting-label] > span:first-child {
+  padding-top: 0;
 }
 .studio-task-sidebar .studio-thread-card:not([data-compact]) {
   min-height: 2.75rem;

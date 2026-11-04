@@ -319,6 +319,11 @@ function PullActionDialog({
           .map((signal) => signal.label)
       : []
   const failureIdentity = JSON.stringify(currentFailures)
+  const failureLabels = currentFailures.map((failure) =>
+    failure === 'CI failed'
+      ? 'Repository CI: failed'
+      : failure.replace(/^Pipeline runs: /, 'Linked pipelines: '),
+  )
   useEffect(() => setConfirmed(false), [failureIdentity, setConfirmed])
   const provider = forgeLabels[detail.pull.provider ?? 'github']
   const list = (value: string) => [...new Set(value.split(/[\s,]+/).filter(Boolean))]
@@ -698,7 +703,7 @@ function PullActionDialog({
                       ? 'Confirm merge of current source branch'
                       : 'Confirm merge of reviewed commit') +
                     (currentFailures.length > 0
-                      ? `. Acknowledge current failures: ${currentFailures.join('; ')}`
+                      ? `. Acknowledge current failures: ${failureLabels.join('; ')}`
                       : '')
                   }
                 />
@@ -721,9 +726,7 @@ function PullActionDialog({
                     </>
                   )}
                   {currentFailures.length > 0 && (
-                    <span className="mt-1 block font-medium text-foreground">
-                      I acknowledge the current failures: {currentFailures.join('; ')}.
-                    </span>
+                    <> I also acknowledge the current failures: {failureLabels.join('; ')}.</>
                   )}
                 </span>
               </label>

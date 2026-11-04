@@ -656,6 +656,56 @@
       "verdict": "ship; no visible blockers",
       "gallery": 48,
       "coverage": "All21 contact sheets inventoried; about40 full-size frames. Static visual review; interaction behavior not inferred from stills."
+    },
+    {
+      "round": "independent50",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent50_sol_a",
+      "status": "completed",
+      "gallery": 50,
+      "score": 8.2,
+      "verdict": "conditional ship; requested image-editor anomaly investigation (root pixel comparison rejects anomaly)",
+      "coverage": "94 full-size frames,47 per theme;336 paired frames inventoried."
+    },
+    {
+      "round": "independent50",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent50_sol_b",
+      "status": "completed",
+      "gallery": 50,
+      "score": 8.1,
+      "verdict": "ship; focused refinements requested",
+      "coverage": "80 full-size frames,40 per theme;336 paired frames inventoried."
+    },
+    {
+      "round": "independent50",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent50_sol_c",
+      "status": "completed",
+      "gallery": 50,
+      "score": 8.5,
+      "verdict": "ship; focused refinements requested",
+      "coverage": "72 full-size frames,36 per theme;336 paired frames inventoried."
+    },
+    {
+      "round": "independent50",
+      "model": "Opus 5.5",
+      "id": "3e5e51f8-16b3-431c-9c7d-9270d0da2a4b",
+      "status": "completed",
+      "gallery": 50,
+      "score": 7.5,
+      "verdict": "ship; focused refinements requested",
+      "coverage": "56 full-size frames,29 dark/27 light; complete inventory."
+    },
+    {
+      "round": "independent50",
+      "model": "Opus 5.5",
+      "id": "43dd4719-0ea3-4753-8066-aaef50e4a445",
+      "status": "completed",
+      "gallery": 50,
+      "score": 7.5,
+      "verdict": "ship; focused refinements requested",
+      "coverage": "50 full-size frames,25 per theme;336-frame inventory."
     }
   ],
   "remaining": [
@@ -738,45 +788,45 @@
   "pendingReviews": [
     {
       "round": "independent50",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent50_sol_a",
-      "status": "running",
-      "gallery": 50
-    },
-    {
-      "round": "independent50",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent50_sol_b",
-      "status": "running",
-      "gallery": 50
-    },
-    {
-      "round": "independent50",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent50_sol_c",
-      "status": "running",
-      "gallery": 50
-    },
-    {
-      "round": "independent50",
-      "model": "Opus 5.5",
-      "id": "3e5e51f8-16b3-431c-9c7d-9270d0da2a4b",
-      "status": "running",
-      "gallery": 50
-    },
-    {
-      "round": "independent50",
-      "model": "Opus 5.5",
-      "id": "43dd4719-0ea3-4753-8066-aaef50e4a445",
-      "status": "running",
-      "gallery": 50
-    },
-    {
-      "round": "independent50",
       "model": "Muse muse-wonder-full-1.0",
       "id": "4c8074bb-19a6-44d5-be61-3d127c757b94",
       "status": "running",
       "gallery": 50
+    },
+    {
+      "round": "independent51",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent51_sol_a",
+      "status": "running",
+      "gallery": 51
+    },
+    {
+      "round": "independent51",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent51_sol_b",
+      "status": "running",
+      "gallery": 51
+    },
+    {
+      "round": "independent51",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent51_sol_c",
+      "status": "running",
+      "gallery": 51
+    },
+    {
+      "round": "independent51",
+      "model": "Opus 5.5",
+      "id": "544eaa18-4cf5-454c-ab4d-8d614a5de5a3",
+      "status": "running",
+      "gallery": 51
+    },
+    {
+      "round": "independent51",
+      "model": "Opus 5.5",
+      "id": "9aabda9c-7c93-4117-b8f0-f69e56944ff5",
+      "status": "running",
+      "gallery": 51
     }
   ],
   "queuedReviews": [
@@ -786,6 +836,13 @@
       "status": "unavailable",
       "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued.",
       "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
+    },
+    {
+      "round": "independent51",
+      "model": "Muse muse-wonder-full-1.0",
+      "status": "waiting for live independent50 Muse review",
+      "gallery": 51,
+      "reason": "Avoid duplicate simultaneous Muse review while its prior live handle is confirmed running. Start a fresh key on completion, without past or target scores."
     }
   ],
   "supersededReviews": [
@@ -836,6 +893,11 @@
       "round": "pass50",
       "summary": "Implemented Opus Quiet Instrument direction: small common navigation marker, shared type/surface tokens, tighter thread/list rhythm; sticky scoped Settings targets with accurate defaults/override context, actual-content responsive240px controls, flat save areas and responsive Agent master/detail/picker. Runtime uses flat sections and Manage/More computer actions, preserving recovery/destructive guards and HTTP/pairing policies. Native service URL form submission remains explicit and protected. Generated gpt-image-2.5 layout reference documented separately from real captures.",
       "verification": "Production web/desktop builds, affected types, lint/format/diff passed; all34 palette/theme cases, custom effects/text scale and seven forced-color selection markers per mode; wide/compact/mobile Agent and shared Settings target/save guards; Runtime/service URL/pairing/recovery; composer/PR list/workspace/navigation; thread/sidebar/file-tree and corrected Browser fixtures.336 frozen captures across168 pairs, no capture errors/alerts, exact #080808 sampled in chat/Browser; lossless exports verified."
+    },
+    {
+      "round": "pass51",
+      "summary": "Full-width six-line Agent Instructions and substantial Cloud/Access help, with accessible descriptions; concise selects remain aligned. Truthful Stored at intro and initial explicit-save scope cues. Shared Settings section scale and Save to apply labels; primary Connect computer. Read-only Git Previous/Next stays within staged/unstaged group, preserves partial staging/draft/selection/Back focus and ignores stale previews; Commit has a separate heading/divider. PR check-report count stays neutral with separate failure indicator; merge consent is one continuous checkbox label with named Repository CI/Linked pipeline failures, leaving acknowledgement identity/guards/payload intact. Issues Connections has Plug icon. Drawing-only controls hide in Pan as in Crop. Light image-editor anomaly rejected using exact cross-theme source-pixel equality.",
+      "verification": "Production web/desktop/client-runtime/design builds, affected types and scoped lint/format/diff checks passed. Agent layout/save guards at wide/compact/mobile, Settings target/scope/save/navigation and service URL suites passed; image pan/source-coordinate/pixel/export suite passed. Git multi-file/stale-preview/draft/index guards, PR workspace and work navigation passed. All34 Appearance palette/modes and shared-control/forced-color checks passed; small/default/large heading size and full-width Instructions verified in web/desktop."
     }
   ],
   "designConsultations": [
@@ -873,6 +935,13 @@
       "id": "5578358e-ca6a-49a8-8917-d4674a625fc5",
       "status": "completed",
       "summary": "Requested decisive system-level instructions without scores. Quiet Instrument direction: common selection, typography/row/surface grammar; pinned Settings target and responsive Agent composition; coherent action hierarchy. Next implementation pass will preserve explicit save boundaries, requested sections and merge-readiness safeguards rather than adopt all recommendations literally."
+    }
+  ],
+  "findingTriage": [
+    {
+      "round": "independent50",
+      "finding": "Light image-editor blank-image claim",
+      "result": "Not reproduced in the exact cited screenshots. Root viewed light editor/annotated/crop and corresponding dark frames; each800x500 source-image rectangle is pixel-identical across themes, containing746/839/980 distinct colors respectively. The source image, arrow and crop are visibly present. No rendering patch applied."
     }
   ]
 }

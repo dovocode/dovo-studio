@@ -26,7 +26,7 @@ const built = await build({
       import {useState,useCallback} from 'react';import {createRoot} from 'react-dom/client';
       import {RepositoryActions} from '../extension-scm/src/connections/repository-actions';
       import {RuntimeRequestError} from '@dovo/protocol';
-      window.reads=[];window.writes=[];window.previews=[];window.connection={id:'runtime'};
+      window.reads=[];window.writes=[];window.previews=[];window.pendingPreviews=[];window.connection={id:'runtime'};
       window.gitState={dirty:true,branch:'feature',ahead:0,behind:0,tracking:true,canPush:true};
       function App(){
         const [taskId,setTaskId]=useState('first'),[connected,setConnected]=useState(true),[connection,setConnection]=useState(window.connection),[revision,setRevision]=useState(0),[reviewing,setReviewing]=useState(false);
@@ -45,9 +45,9 @@ const built = await build({
             window.previews.push(input);
             if(window.unsupportedPreview)throw new RuntimeRequestError({kind:'request',status:window.unsupportedPreview,message:'Endpoint not found'});
             if(window.failPreview)throw new Error('Git changed while loading this comparison');
-            if(window.holdPreview)await new Promise(resolve=>window.releasePreview=resolve);
-            const before=input.comparison==='staged'?'HEAD contents':'INDEX contents';
-            const after=input.comparison==='staged'?'INDEX contents':'WORKING contents';
+            if(window.holdPreview)await new Promise(resolve=>window.pendingPreviews.push({resolve,input}));
+            const before=input.path==='image.png'?'INDEX image':input.comparison==='staged'?'HEAD contents':'INDEX contents';
+            const after=input.path==='image.png'?'WORKING image':input.comparison==='staged'?'INDEX contents':'WORKING contents';
             if(window.longPreview){
               const lines=label=>Array.from({length:200},(_,i)=>label+' '+i+' '+('long source line '.repeat(30)));
               const oldLines=lines(before),newLines=lines(after);
@@ -138,6 +138,7 @@ try {
   await page.getByLabel('Push status').filter({ hasText: 'Checking branch status' }).waitFor()
   await finish(0, [
     { path: 'src/one.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
+    { path: 'staged-only.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
     { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
   ])
   await all.waitFor()
@@ -172,8 +173,24 @@ try {
   await page.getByText('Untracked', { exact: true }).waitFor()
   await page
     .getByLabel('Staging summary')
-    .filter({ hasText: '1 staged file · 2 with unstaged changes' })
+    .filter({ hasText: '2 staged files · 2 with unstaged changes' })
     .waitFor()
+  const commitHeading = page.getByRole('heading', { name: 'Commit', exact: true })
+  assert.equal(
+    await commitHeading.evaluate(
+      (heading) =>
+        !!(
+          document.querySelector('[aria-label="Unstaged"]').compareDocumentPosition(heading) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+    ),
+    true,
+  )
+  assert.ok(
+    await message
+      .locator('xpath=ancestor::form')
+      .evaluate((form) => parseFloat(getComputedStyle(form).borderTopWidth) > 0),
+  )
   assert.equal(await stage.isDisabled(), true)
   await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).check()
   assert.equal(await all.getAttribute('aria-checked'), 'mixed')
@@ -183,12 +200,27 @@ try {
   // displays HEAD→index separately from index→disk even when a path is in both groups.
   await message.fill('Keep this commit draft')
   const back = page.getByRole('button', { name: '← Back to staging', exact: true })
+  const previous = page.getByRole('button', { name: 'Previous', exact: true })
+  const next = page.getByRole('button', { name: 'Next', exact: true })
   await page.getByRole('button', { name: 'Review staged src/one.ts', exact: true }).click()
   await page.getByRole('region', { name: 'Staged file review' }).waitFor()
   await page.getByText('HEAD contents', { exact: true }).waitFor()
   await page.getByText('INDEX contents', { exact: true }).waitFor()
   assert.equal(await page.getByText('WORKING contents', { exact: true }).count(), 0)
   assert.equal(await message.isVisible(), false)
+  const stagedNavigation = page.getByRole('navigation', { name: 'Staged file navigation' })
+  await stagedNavigation.getByText('1 of 2', { exact: true }).waitFor()
+  assert.equal(await previous.isDisabled(), true)
+  assert.equal(await next.isDisabled(), false)
+  await next.click()
+  await page.getByRole('heading', { name: 'staged-only.ts', exact: true }).waitFor()
+  await page.getByText('HEAD contents', { exact: true }).waitFor()
+  await stagedNavigation.getByText('2 of 2', { exact: true }).waitFor()
+  assert.equal(await previous.isDisabled(), false)
+  assert.equal(await next.isDisabled(), true)
+  await previous.click()
+  await page.getByRole('heading', { name: 'src/one.ts', exact: true }).waitFor()
+  await page.getByText('INDEX contents', { exact: true }).waitFor()
   await back.click()
   assert.equal(await message.inputValue(), 'Keep this commit draft')
   await page.waitForFunction(
@@ -202,12 +234,63 @@ try {
   await page.getByText('INDEX contents', { exact: true }).waitFor()
   await page.getByText('WORKING contents', { exact: true }).waitFor()
   assert.equal(await page.getByText('HEAD contents', { exact: true }).count(), 0)
+  const unstagedNavigation = page.getByRole('navigation', { name: 'Unstaged file navigation' })
+  await unstagedNavigation.getByText('1 of 2', { exact: true }).waitFor()
+  assert.equal(await previous.isDisabled(), true)
+  await next.click()
+  await page.getByRole('heading', { name: 'image.png', exact: true }).waitFor()
+  await page.getByText('WORKING image', { exact: true }).waitFor()
+  await unstagedNavigation.getByText('2 of 2', { exact: true }).waitFor()
+  assert.equal(await next.isDisabled(), true)
+  await previous.click()
+  await page.getByText('WORKING contents', { exact: true }).waitFor()
   await back.click()
   assert.equal(await message.inputValue(), 'Keep this commit draft')
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Review unstaged src/one.ts',
+  )
+  assert.equal(
+    await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).isChecked(),
+    true,
+  )
   assert.deepEqual(await page.evaluate(() => window.previews), [
     { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'staged' },
+    { repositoryId: 'repo', taskId: 'first', path: 'staged-only.ts', comparison: 'staged' },
+    { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'staged' },
+    { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'unstaged' },
+    { repositoryId: 'repo', taskId: 'first', path: 'image.png', comparison: 'unstaged' },
     { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'unstaged' },
   ])
+  assert.deepEqual(await page.evaluate(() => window.writes), [])
+  // A slow earlier file cannot replace the latest file, and Back returns to the opening row.
+  await page.evaluate(() => {
+    window.holdPreview = true
+  })
+  await page.getByRole('button', { name: 'Review unstaged src/one.ts', exact: true }).click()
+  await page.waitForFunction(() => window.pendingPreviews.length === 1)
+  await next.click()
+  await page.waitForFunction(() => window.pendingPreviews.length === 2)
+  await page.evaluate(() => {
+    window.holdPreview = false
+    window.pendingPreviews[1].resolve()
+  })
+  await page.getByText('WORKING image', { exact: true }).waitFor()
+  await page.evaluate(async () => {
+    window.pendingPreviews[0].resolve()
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })
+  assert.equal(await page.getByText('WORKING contents', { exact: true }).count(), 0)
+  await page.getByText('WORKING image', { exact: true }).waitFor()
+  await back.click()
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Review unstaged src/one.ts',
+  )
+  assert.equal(await message.inputValue(), 'Keep this commit draft')
+  assert.equal(
+    await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).isChecked(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Review staged staged-only.ts', exact: true }).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes), [])
   // A large comparison scrolls inside its workspace while Back and the comparison context stay put.
   await page.evaluate(() => {
@@ -232,7 +315,11 @@ try {
     assert.ok((await comparison.boundingBox()).height > 400)
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     assert.equal(await review.getByRole('textbox').count(), 0)
-    assert.equal(await review.getByRole('button').count(), 1, 'Comparison only exposes Back')
+    assert.equal(
+      await review.getByRole('button').count(),
+      3,
+      'Comparison only exposes Back and read-only file navigation',
+    )
   }
   await back.click()
   await page.setViewportSize({ width: 1280, height: 900 })

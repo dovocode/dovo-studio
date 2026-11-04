@@ -289,9 +289,13 @@ function CheckoutActions({
   if (review)
     return (
       <StagingFilePreview
-        key={`${review.comparison}:${review.path}`}
+        key={review.comparison}
         {...input}
         {...review}
+        paths={(review.comparison === 'staged' ? stagedFiles : unstagedFiles).map(
+          (file) => file.path,
+        )}
+        onNavigate={(path) => setReview({ ...review, path })}
         onBack={() => {
           setReview(null)
           requestAnimationFrame(() =>
@@ -544,7 +548,7 @@ function CheckoutActions({
         )}
         {files.length > 0 && (
           <form
-            className="space-y-2"
+            className="space-y-2 border-t pt-4"
             onSubmit={(event) => {
               event.preventDefault()
               if (!canCommit) return
@@ -563,6 +567,7 @@ function CheckoutActions({
               })
             }}
           >
+            <h3 className="text-xs font-medium">Commit</h3>
             {!loading && !loadError && connected && (
               <>
                 <p className="text-xs text-muted-foreground" aria-label="Staging summary">

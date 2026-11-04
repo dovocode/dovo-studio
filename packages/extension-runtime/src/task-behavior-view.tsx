@@ -38,6 +38,7 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
     <SettingsScopePage
       title="Thread lifecycle"
       description="Recovery, settling and archiving for new and existing threads."
+      saveInfo="Use Save changes to apply edits."
     >
       {({ scope, repository }) => (
         <>

@@ -119,7 +119,7 @@ export const designTokens = {
   },
   typography: {
     page: { size: 20, line: 28, weight: 600 },
-    section: { size: 13, line: 20, weight: 600 },
+    section: { size: 14, line: 20, weight: 600 },
     row: { size: 13, line: 18, weight: 500 },
     meta: { size: 12, line: 16, weight: 400 },
     machine: { size: 12, line: 16, weight: 400 },

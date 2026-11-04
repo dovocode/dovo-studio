@@ -17,6 +17,7 @@ import {
   CircleCheck,
   GitBranch,
   Monitor,
+  Plug,
   RefreshCw,
   SlidersHorizontal,
   Plus,
@@ -478,12 +479,12 @@ function WorkView({
                 <Button
                   size="sm"
                   variant="ghost"
-                  aria-label="Sources"
+                  aria-label="Connections"
                   disabled={opening}
                   onClick={() => void chooseSource('settings')}
                 >
-                  <SlidersHorizontal className="size-3.5" />
-                  <span className="sr-only sm:not-sr-only">Sources</span>
+                  <Plug className="size-3.5" />
+                  <span className="sr-only sm:not-sr-only">Connections</span>
                 </Button>
               )}
               <Button

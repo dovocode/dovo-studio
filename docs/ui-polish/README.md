@@ -26,16 +26,18 @@ control styles make the workspace and its secondary surfaces feel consistent.
 - **Settings:** page-specific breadcrumbs, aligned fields, consistent section hierarchy and labeled
   project/computer targets pinned during scoped editing. Controls respond to the actual content
   width; Agent profiles switch between flat master/detail and a searchable compact picker. Automatic
-  and explicit saves remain clearly distinguished. Agent draft actions stay reachable in an opaque
-  footer that identifies the profile and target. Instructions has six readable lines. Appearance
-  retains all palettes and font previews, with a bounded terminal size stepper. Search, legacy
-  notices, separately saved groups and unsaved-navigation guards remain.
+  and explicit saves remain clearly distinguished, including an initial save cue on scoped forms.
+  Agent draft actions stay reachable in an opaque footer that identifies the profile and target.
+  Instructions spans the form with six readable lines; substantial help uses full-width rows.
+  Appearance retains all palettes and font previews, with a bounded terminal size stepper. Search,
+  legacy notices, explicit-save groups and unsaved-navigation guards remain.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Commit controls show the inspected branch/checkout; readable filenames retain full-path tooltips.
-  Per-file comparisons are read-only and preserve Back/draft/selection context. Push reflects branch
-  tracking. PR lists reserve a responsive readiness column and keep the target branch visible.
-  Issues keep stable Open/Closed filters. Merge readiness separates repository status, check reports
-  and linked pipelines; failure consent is visible, accessible and invalidated by status changes.
+  Per-file comparisons are read-only, offer Previous/Next within their comparison group, and
+  preserve Back/draft/selection context. Push reflects branch tracking. PR lists reserve a
+  responsive readiness column and keep the target branch visible. Issues keep stable Open/Closed
+  filters. Merge readiness separates repository status, check reports and linked pipelines; failure
+  consent is visible, accessible and invalidated by status changes.
 - **Dialogs and images:** shared themed confirmations preserve Cancel/return focus, drafts and
   queued decisions, and reject stale runtime/caller/target decisions. MCP details scroll without
   losing consent. Project-deletion blockers provide a safe route to active work. Image

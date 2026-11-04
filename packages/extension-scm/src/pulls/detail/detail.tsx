@@ -36,6 +36,7 @@ import {
 import {
   ArrowLeft,
   ArrowUpRight,
+  CircleAlert,
   FileDiff,
   GitBranch,
   ListChecks,
@@ -592,18 +593,18 @@ function PullDetailContent({
                     onClick={() => selectTab(item.id)}
                     className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                   >
-                    <item.icon
-                      aria-hidden
-                      className={`size-3.5 ${item.id === 'checks' && checkFailure ? 'text-status-error' : ''}`}
-                    />
+                    <item.icon aria-hidden className="size-3.5" />
                     {item.label}
                     {item.count !== undefined && (
                       <span
                         aria-hidden
-                        className={`rounded px-1.5 text-[0.625rem] tabular-nums ${item.id === 'checks' && checkFailure ? 'bg-status-error/10 text-status-error' : 'bg-muted text-muted-foreground'}`}
+                        className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
                       >
                         {item.count}
                       </span>
+                    )}
+                    {item.id === 'checks' && checkFailure && (
+                      <CircleAlert aria-hidden className="size-3.5 text-status-error" />
                     )}
                   </button>
                 ))}

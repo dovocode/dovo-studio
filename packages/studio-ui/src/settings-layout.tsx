@@ -108,7 +108,7 @@ export function SettingsGroup({
             {title}
             {saveRequired && (
               <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                Saves separately
+                Save to apply
               </span>
             )}
             {description && (
@@ -142,7 +142,7 @@ export function SettingsGroup({
               id={`${id}-save`}
               className="shrink-0 text-[11px] font-normal tracking-normal text-muted-foreground"
             >
-              Saves separately
+              Save to apply
             </span>
           )}
         </h2>

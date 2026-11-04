@@ -132,16 +132,20 @@ try {
         `Control is obscured: ${(await locator.getAttribute('aria-label')) ?? (await locator.textContent())}`,
       )
     }
-    const assertInstructionTypography = async (editor) => {
+    const assertAgentContentLayout = async (editor) => {
       const instructions = editor.getByLabel('Instructions', { exact: true })
       const typography = await instructions.evaluate((element) => {
         const style = getComputedStyle(element)
         const inputStyle = getComputedStyle(element.closest('form').querySelector('input'))
+        const field = element.closest('[data-setting-label]')
         return {
           fontSize: style.fontSize,
           inputFontSize: inputStyle.fontSize,
           fontWeight: style.fontWeight,
           rows: element.rows,
+          input: element.getBoundingClientRect().toJSON(),
+          field: field.getBoundingClientRect().toJSON(),
+          label: field.querySelector(':scope > span').getBoundingClientRect().toJSON(),
           readableLines: Math.round(
             (element.clientHeight -
               parseFloat(style.paddingTop) -
@@ -154,6 +158,35 @@ try {
       assert.equal(typography.fontWeight, '400')
       assert.equal(typography.rows, 6)
       assert.ok(typography.readableLines >= 6)
+      assert.ok(typography.label.bottom <= typography.input.y, 'Instructions label sits above text')
+      assert.ok(
+        Math.abs(typography.input.width - typography.field.width) < 1,
+        'Instructions use the full form width',
+      )
+      for (const name of ['Cloud integrations', 'Access mode']) {
+        const geometry = await editor
+          .getByRole('combobox', { name, exact: true })
+          .evaluate((element) => {
+            const description = document.getElementById(element.getAttribute('aria-describedby'))
+            const field = element.closest('[data-setting-label]')
+            return {
+              control: element.getBoundingClientRect().toJSON(),
+              field: field.getBoundingClientRect().toJSON(),
+              description: description?.getBoundingClientRect().toJSON(),
+            }
+          })
+        assert.ok(geometry.description, `${name} has an associated explanation`)
+        assert.ok(
+          Math.abs(geometry.description.width - geometry.field.width) < 1,
+          `${name} explanation uses the full row width`,
+        )
+        assert.ok(
+          geometry.description.y >= geometry.field.bottom,
+          `${name} explanation sits below its field`,
+        )
+        if (geometry.field.width >= 560)
+          assert.ok(Math.abs(geometry.control.width - 240) < 1, `${name} keeps its aligned select`)
+      }
     }
     const setCloudIntegrations = async (value, label) => {
       const scope = (await page.getByRole('dialog').count()) ? page.getByRole('dialog') : page
@@ -237,6 +270,7 @@ try {
         : page.getByLabel('Name', { exact: true })
     ).waitFor()
     if (!mobile) {
+      await page.getByText('Use Save changes to apply profile edits.', { exact: true }).waitFor()
       await assertProfileComposition()
       if (initialWidth === 1100) await selectProfile('Writer', 'gpt-6.1')
       else {
@@ -267,7 +301,7 @@ try {
         assert.ok(noteBounds.y >= helperBounds.y + helperBounds.height)
         await assertUnobstructed(helper)
       }
-      await assertInstructionTypography(page)
+      await assertAgentContentLayout(page)
     }
     assert.equal(await page.getByLabel('Configuration scope', { exact: true }).count(), 0)
     await page.getByLabel('Name', { exact: true }).fill('Project writer')
@@ -328,7 +362,7 @@ try {
         { width: 390, height: 540 },
       ]) {
         await page.setViewportSize({ width, height })
-        await assertInstructionTypography(editor)
+        await assertAgentContentLayout(editor)
         await assertUnobstructed(editor.getByLabel('Environment variables', { exact: true }))
         await assertUnobstructed(
           editor.getByRole('button', { name: 'Add agent profile', exact: true }),
@@ -466,7 +500,7 @@ try {
           .locator('html')
           .evaluate((element, dark) => element.classList.toggle('dark', dark), dark)
         await assertProfileComposition()
-        await assertInstructionTypography(page)
+        await assertAgentContentLayout(page)
         for (const position of [0, 0.45, 1]) {
           await scroll.evaluate((element, position) => {
             element.scrollTop = position * (element.scrollHeight - element.clientHeight)

@@ -14,17 +14,22 @@ export function StagingFilePreview({
   taskId,
   path,
   comparison,
+  paths,
+  onNavigate,
   onBack,
 }: {
   repositoryId: string
   taskId?: string
   path: string
   comparison: 'staged' | 'unstaged'
+  paths: readonly string[]
+  onNavigate: (path: string) => void
   onBack: () => void
 }) {
   const { request, connected } = useWorkspace()
   const [attempt, setAttempt] = useState(0)
   const [result, setResult] = useState<{
+    path: string
     preview?: FilePreview
     error?: string
     unsupported?: true
@@ -41,14 +46,14 @@ export function StagingFilePreview({
         filePreviewSchema,
       ).then(
         (preview) => {
-          if (active) setResult({ preview })
+          if (active) setResult({ path, preview })
         },
         (error: unknown) => {
           if (active)
             setResult(
               error instanceof RuntimeRequestError && [404, 405].includes(error.status ?? 0)
-                ? { unsupported: true }
-                : { error: String(error) },
+                ? { path, unsupported: true }
+                : { path, error: String(error) },
             )
         },
       )
@@ -56,7 +61,11 @@ export function StagingFilePreview({
       active = false
     }
   }, [request, connected, repositoryId, taskId, path, comparison, attempt])
-  const preview = connected ? result?.preview : undefined
+  const currentResult = result?.path === path ? result : null
+  const preview = connected ? currentResult?.preview : undefined
+  const position = paths.indexOf(path)
+  const previous = position > 0 ? paths[position - 1] : undefined
+  const next = position >= 0 ? paths[position + 1] : undefined
   const complete =
     preview &&
     [preview.before, preview.after].every(
@@ -70,9 +79,39 @@ export function StagingFilePreview({
       aria-label={`${comparison === 'staged' ? 'Staged' : 'Unstaged'} file review`}
       className="flex h-full min-h-0 min-w-0 flex-col gap-3 pt-1"
     >
-      <Button ref={back} size="sm" variant="ghost" className="shrink-0 self-start" onClick={onBack}>
-        ← Back to staging
-      </Button>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <Button ref={back} size="sm" variant="ghost" onClick={onBack}>
+          ← Back to staging
+        </Button>
+        <nav
+          aria-label={`${comparison === 'staged' ? 'Staged' : 'Unstaged'} file navigation`}
+          className="flex items-center gap-2"
+        >
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!previous}
+            onClick={() => {
+              if (previous) onNavigate(previous)
+            }}
+          >
+            Previous
+          </Button>
+          <span aria-live="polite" aria-atomic="true" className="text-xs text-muted-foreground">
+            {position >= 0 ? `${position + 1} of ${paths.length}` : 'File no longer listed'}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!next}
+            onClick={() => {
+              if (next) onNavigate(next)
+            }}
+          >
+            Next
+          </Button>
+        </nav>
+      </div>
       <div className="shrink-0">
         <h3 className="break-all font-mono text-xs font-medium">{path}</h3>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -85,15 +124,15 @@ export function StagingFilePreview({
         <p role="status" className="text-xs text-muted-foreground">
           Connect to the runtime to review this file.
         </p>
-      ) : result?.unsupported ? (
+      ) : currentResult?.unsupported ? (
         <p role="status" className="text-xs text-muted-foreground">
           Update Dovo on this computer to review staged and unstaged changes. Your commit draft and
           selections are kept.
         </p>
-      ) : result?.error ? (
+      ) : currentResult?.error ? (
         <div className="space-y-2 text-xs">
           <p role="alert" className="break-words text-destructive">
-            Could not load this comparison: {result.error}
+            Could not load this comparison: {currentResult.error}
           </p>
           <Button size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>
             Retry preview

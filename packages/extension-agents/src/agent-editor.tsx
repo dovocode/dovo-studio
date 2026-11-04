@@ -4,7 +4,7 @@ import { secretReferenceIssue, responses } from '@dovo/protocol'
 import { SecretEnvironmentEditor } from './secret-environment-editor'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { Schema } from 'effect'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
 import {
   agentConnectionValue,
@@ -72,6 +72,8 @@ export function AgentEditor({
   const { connected, snapshot, request } = useWorkspace()
   const pending = useRef(false)
   const form = useRef<HTMLFormElement>(null)
+  const cloudHelpId = useId()
+  const accessHelpId = useId()
   const [busy, setBusy] = useApplicationState(false)
   const [agent, setAgent] = useApplicationState(initial)
   const [error, setError] = useApplicationState('')
@@ -290,8 +292,8 @@ export function AgentEditor({
                     )}
                     <ModelSettings agent={agent} onChange={setAgent} />
                     {(agent.provider === 'claude' || agent.provider === 'codex') && (
-                      <FormField layout="settings" label="Cloud integrations">
-                        <div className="space-y-2">
+                      <div className="space-y-2">
+                        <FormField layout="settings" label="Cloud integrations">
                           <Select
                             value={
                               agent.cloudIntegrations === undefined
@@ -307,7 +309,11 @@ export function AgentEditor({
                               })
                             }}
                           >
-                            <SelectTrigger aria-label="Cloud integrations" className="h-9 text-xs">
+                            <SelectTrigger
+                              aria-label="Cloud integrations"
+                              aria-describedby={cloudHelpId}
+                              className="h-9 text-xs"
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -316,17 +322,20 @@ export function AgentEditor({
                               <SelectItem value="false">Disabled</SelectItem>
                             </SelectContent>
                           </Select>
-                          <p className="text-xs font-normal leading-relaxed text-muted-foreground">
-                            Use apps already connected to your{' '}
-                            {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
-                            Google Drive or Slack. Requires account sign-in on the computer running
-                            the thread. Provider restrictions and tool approvals still apply.
-                          </p>
-                        </div>
-                      </FormField>
+                        </FormField>
+                        <p
+                          id={cloudHelpId}
+                          className="text-xs font-normal leading-relaxed text-muted-foreground"
+                        >
+                          Use apps already connected to your{' '}
+                          {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
+                          Google Drive or Slack. Requires account sign-in on the computer running
+                          the thread. Provider restrictions and tool approvals still apply.
+                        </p>
+                      </div>
                     )}
-                    <FormField layout="settings" label="Access mode">
-                      <div className="space-y-2">
+                    <div className="space-y-2">
+                      <FormField layout="settings" label="Access mode">
                         <Select
                           value={
                             permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission
@@ -342,7 +351,11 @@ export function AgentEditor({
                             )
                           }}
                         >
-                          <SelectTrigger aria-label="Access mode" className="h-9 text-xs">
+                          <SelectTrigger
+                            aria-label="Access mode"
+                            aria-describedby={accessHelpId}
+                            className="h-9 text-xs"
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -363,11 +376,14 @@ export function AgentEditor({
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs font-normal leading-relaxed text-muted-foreground">
-                          {accessModes.find((mode) => mode.id === agent.permission)?.description}
-                        </p>
-                      </div>
-                    </FormField>
+                      </FormField>
+                      <p
+                        id={accessHelpId}
+                        className="text-xs font-normal leading-relaxed text-muted-foreground"
+                      >
+                        {accessModes.find((mode) => mode.id === agent.permission)?.description}
+                      </p>
+                    </div>
                     <PermissionPolicyFields
                       value={agent}
                       layout="settings"
@@ -380,18 +396,20 @@ export function AgentEditor({
                         Choose an access mode supported by this provider.
                       </p>
                     )}
-                    <FormField layout="settings" label="Instructions">
-                      <Textarea
-                        aria-label="Instructions"
-                        rows={6}
-                        className="min-h-36 font-normal leading-relaxed text-foreground max-md:text-base!"
-                        value={agent.instructions}
-                        placeholder="Optional. Added to every thread that uses this profile…"
-                        onChange={(event) =>
-                          setAgent({ ...agent, instructions: event.target.value })
-                        }
-                      />
-                    </FormField>
+                    <div className="studio-agent-instructions">
+                      <FormField layout="settings" label="Instructions">
+                        <Textarea
+                          aria-label="Instructions"
+                          rows={6}
+                          className="min-h-36 font-normal leading-relaxed text-foreground max-md:text-base!"
+                          value={agent.instructions}
+                          placeholder="Optional. Added to every thread that uses this profile…"
+                          onChange={(event) =>
+                            setAgent({ ...agent, instructions: event.target.value })
+                          }
+                        />
+                      </FormField>
+                    </div>
                   </section>
                   <Disclosure title={<> Connection & account </>}>
                     <div className="mt-4 space-y-4">
@@ -615,7 +633,8 @@ function EditorShell({
         <DialogHeader>
           <DialogTitle>{creating ? 'Add agent profile' : 'Edit agent profile'}</DialogTitle>
           <DialogDescription>
-            Saved at {computerName} and inherited by more specific settings levels.
+            Stored at {computerName} and inherited by more specific settings levels.{' '}
+            {creating ? 'Add the profile to save these settings.' : 'Save changes to apply edits.'}
           </DialogDescription>
         </DialogHeader>
         {children}

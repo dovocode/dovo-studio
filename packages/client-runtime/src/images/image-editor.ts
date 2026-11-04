@@ -61,7 +61,7 @@ button:hover:not(:disabled){background:var(--hover)}button[aria-pressed=true]{ba
 button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,summary:focus-visible,canvas:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .tools{gap:4px;padding-block:8px}.icon-button{background:transparent;width:36px;height:36px;min-height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}.icon-button svg{width:18px;height:18px;pointer-events:none}
 .tool-divider{width:1px;height:20px;background:var(--edge);margin:0 8px}
-body:has([data-tool=crop][aria-pressed=true]) .brush{display:none}
+body:has([data-tool=crop][aria-pressed=true],#pan[aria-pressed=true]) .brush{display:none}
 .brush{padding:0;margin-left:auto;gap:16px;color:var(--muted)}.brush input{width:84px;accent-color:var(--focus)}.brush input[type=color]{width:32px;height:28px;border:1px solid var(--edge);border-radius:6px;background:var(--field);padding:3px}
 #stage{flex:1 1 80px;min-width:0;min-height:80px;display:flex;align-items:safe center;justify-content:safe center;overflow:auto;padding:10px;background:var(--canvas);border-block:1px solid var(--edge)}
 canvas{flex-shrink:0;touch-action:none;background:repeating-conic-gradient(var(--checker-a) 0% 25%,var(--checker-b) 0% 50%) 50%/16px 16px;cursor:crosshair}

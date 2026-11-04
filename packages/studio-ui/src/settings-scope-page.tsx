@@ -19,11 +19,13 @@ export function SettingsScopePage({
   description,
   children,
   wide = false,
+  saveInfo,
   localChildren,
 }: {
   localChildren?: ReactNode
   title: string
   wide?: boolean
+  saveInfo?: string
   description: string
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
@@ -58,9 +60,12 @@ export function SettingsScopePage({
           data-override={scope !== 'global' || undefined}
           aria-label="Settings target"
         >
-          <p className="studio-settings-target-context mb-3 text-xs font-medium">
-            Editing {projectName} on {computerName}
-          </p>
+          <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <p className="studio-settings-target-context text-xs font-medium">
+              Editing {projectName} on {computerName}
+            </p>
+            {saveInfo && <p className="text-xs text-muted-foreground">{saveInfo}</p>}
+          </div>
           <div className="studio-settings-target-inner flex flex-wrap items-end gap-x-4 gap-y-3 text-xs">
             <div className="studio-settings-target-field min-w-0 max-w-full">
               <span className="studio-settings-target-label">Scope</span>
