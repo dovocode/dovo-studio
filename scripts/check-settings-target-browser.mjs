@@ -1,10 +1,25 @@
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `export {useState as useApplicationState} from 'react';`
 const controls = `import {cloneElement,isValidElement,useState,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const Sheet=({children})=>children;export const useInsideSheet=()=>false;export const Icon=()=> <span aria-hidden='true'/>;export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark',palette:'dovo'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled})=><input type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};`
+const cssServer = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  server: { middlewareMode: true },
+  logLevel: 'error',
+})
+let css
+try {
+  css = (await cssServer.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await cssServer.close()
+}
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
@@ -50,6 +65,7 @@ try {
             b.onResolve({ filter: /.*/ }, ({ path }) => {
               if (/ui\/layout\/sheet$/.test(path)) return { path: 'controls', namespace: 'mock' }
               if (mocks[path]) return { path, namespace: 'mock' }
+              if (!mobile && /choice-picker$/.test(path)) return
               if (
                 /components\/ui\/(button|input|textarea)$|components\/form-field$|choice-picker$|model-settings$|ui\/controls\/(choice|field|action|switch|use-action|icon)$|ui\/content\/text$|ui\/theme$/.test(
                   path,
@@ -77,6 +93,7 @@ try {
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<div id="app"></div>')
+    if (!mobile) await page.addStyleTag({ content: css })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
     if (mobile) await page.getByText('All projects on all computers', { exact: true }).waitFor()
@@ -88,22 +105,35 @@ try {
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Shared across paired computers', { exact: true }).waitFor()
     if (!mobile) await page.keyboard.press('Escape')
-    const projects = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environments = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
-      exact: true,
-    })
+    const projects = mobile
+      ? page.getByLabel('Project', { exact: true })
+      : page.getByRole('button', { name: 'Settings project', exact: true })
+    const environments = mobile
+      ? page.getByLabel('Computer', { exact: true })
+      : page.getByRole('button', { name: 'Settings computer', exact: true })
+    const select = async (picker, value) => {
+      if (mobile) return picker.selectOption(value)
+      await picker.click()
+      await page.locator(`[role="option"][data-value='${value}']`).click()
+    }
+    const value = (picker) => (mobile ? picker.inputValue() : picker.getAttribute('data-value'))
     await projects.waitFor()
-    assert.equal(await environments.locator('option').first().textContent(), 'All computers')
-    assert.equal(await projects.locator('option').first().textContent(), 'All projects')
+    if (mobile) {
+      assert.equal(await environments.locator('option').first().textContent(), 'All computers')
+      assert.equal(await projects.locator('option').first().textContent(), 'All projects')
+    } else {
+      assert.equal(await environments.innerText(), 'All computers')
+      assert.equal(await projects.innerText(), 'All projects')
+    }
     assert.equal(await page.getByRole('button', { name: /Edit .* settings/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Change scope', exact: true }).count(), 0)
     assert.equal(await page.getByLabel('Settings scope', { exact: true }).count(), 0)
-    await projects.selectOption('git:github.com/team/repo')
-    await environments.selectOption('linux')
+    await select(projects, 'git:github.com/team/repo')
+    await select(environments, 'linux')
     if (mobile) await page.getByText('Shared project on Linux', { exact: true }).waitFor()
     else {
-      assert.equal(await projects.inputValue(), 'git:github.com/team/repo')
-      assert.equal(await environments.inputValue(), 'linux')
+      assert.equal(await value(projects), 'git:github.com/team/repo')
+      assert.equal(await value(environments), 'linux')
     }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Saved on Linux', { exact: true }).waitFor()
@@ -114,24 +144,24 @@ try {
       await page.getByRole('button', { name: 'Show Advanced workspace setup', exact: true }).click()
     await page.getByLabel('Setup command', { exact: true }).fill('project setup')
     if (!mobile) {
-      await environments.selectOption('mac')
+      await select(environments, 'mac')
       const discard = page.getByRole('dialog', {
         name: 'Discard unsaved settings changes?',
         exact: true,
       })
       await discard.getByRole('button', { name: 'Cancel', exact: true }).click()
-      assert.equal(await environments.inputValue(), 'linux')
+      assert.equal(await value(environments), 'linux')
       assert.equal(
         await page.getByLabel('Setup command', { exact: true }).inputValue(),
         'project setup',
       )
       assert.equal(await page.evaluate(() => window.writes.length), 0)
-      await environments.selectOption('mac')
+      await select(environments, 'mac')
       await discard.getByRole('button', { name: 'Discard changes', exact: true }).click()
       await page.waitForFunction(
-        () => document.querySelector('[aria-label="Settings computer"]')?.value === 'mac',
+        () => document.querySelector('[aria-label="Settings computer"]')?.dataset.value === 'mac',
       )
-      await environments.selectOption('linux')
+      await select(environments, 'linux')
       await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
       await page.getByLabel('Setup command', { exact: true }).fill('project setup')
     }
@@ -150,19 +180,19 @@ try {
       { host: 'linux', scope: 'environment-project', repo: 'linux-repo' },
     )
     await page.getByRole('button', { name: 'Tools page', exact: true }).click()
-    assert.equal(await projects.inputValue(), 'git:github.com/team/repo')
-    assert.equal(await environments.inputValue(), 'linux')
+    assert.equal(await value(projects), 'git:github.com/team/repo')
+    assert.equal(await value(environments), 'linux')
     await assertTarget('environment-project:linux-repo')
-    await environments.selectOption('empty')
+    await select(environments, 'empty')
     await page
       .getByText('This project is not available on the selected computer. Choose another target.', {
         exact: true,
       })
       .waitFor()
     assert.equal(await page.getByTestId('target').count(), 0)
-    await environments.selectOption('')
+    await select(environments, '')
     await assertTarget('project:mac-repo')
-    await projects.selectOption('')
+    await select(projects, '')
     await assertTarget('global:')
     await page.getByRole('button', { name: 'Defaults page', exact: true }).click()
     if (!mobile)
@@ -194,15 +224,15 @@ try {
     await page
       .getByRole('button', { name: 'Open Computer settings for Linux', exact: true })
       .click()
-    assert.equal(await environments.inputValue(), 'linux')
-    assert.equal(await projects.inputValue(), '')
+    assert.equal(await value(environments), 'linux')
+    assert.equal(await value(projects), '')
     if (mobile) await page.getByText('Linux defaults', { exact: true }).waitFor()
-    else assert.equal(await environments.inputValue(), 'linux')
+    else assert.equal(await value(environments), 'linux')
     if (mobile) await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
     else
       assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /overridden at/ }).count(), 0)
-    await environments.selectOption('')
+    await select(environments, '')
     if (!mobile)
       await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
     else
@@ -221,34 +251,123 @@ try {
     assert.equal(reset.host, 'linux')
     assert.equal(reset.scope, 'environment')
     assert.equal(reset.after.taskDefaults.setupCommand, undefined)
-    // A sole computer needs no picker; shared defaults and overrides remain reachable.
+    // Desktop uses the same picker for one or many computers; mobile keeps its shortcut.
     await page.getByRole('button', { name: 'Tools page', exact: true }).click()
     await page.evaluate(() => window.configureSources(1))
-    await environments.waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
+    if (mobile) {
+      await environments.waitFor({ state: 'detached' })
+      await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
+    } else {
+      await environments.waitFor()
+      assert.equal(
+        await page
+          .getByRole('button', { name: /Edit (computer overrides|shared defaults)/ })
+          .count(),
+        0,
+      )
+      await select(environments, 'mac')
+    }
     if (mobile) await page.getByText('Mac defaults', { exact: true }).waitFor()
     else {
-      await page.getByText('Mac', { exact: true }).waitFor()
+      assert.equal(await environments.innerText(), 'Mac')
       await page.getByText('Computer overrides', { exact: true }).waitFor()
     }
     await assertTarget('environment:')
-    await projects.selectOption('git:github.com/team/repo')
+    await select(projects, 'git:github.com/team/repo')
     await assertTarget('environment-project:mac-repo')
-    await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+    if (mobile)
+      await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+    else await select(environments, '')
     await assertTarget('project:mac-repo')
-    await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
-    await projects.selectOption('local:["mac","local-folder"]')
+    if (mobile)
+      await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
+    else await select(environments, 'mac')
+    await select(projects, 'local:["mac","local-folder"]')
     await assertTarget('environment-project:local-folder')
-    await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+    if (mobile)
+      await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+    else await select(environments, '')
+    if (!mobile) {
+      await page
+        .getByText(
+          'This project is not available on the selected computer. Choose another target.',
+          { exact: true },
+        )
+        .waitFor()
+      assert.equal(await value(projects), 'local:["mac","local-folder"]')
+      await select(projects, '')
+    }
     await assertTarget('global:')
     await page.evaluate(() => window.configureSources(2, true))
     await environments.waitFor()
-    assert.equal(await environments.locator('option').last().textContent(), 'Linux · Offline')
+    if (mobile)
+      assert.equal(await environments.locator('option').last().textContent(), 'Linux · Offline')
+    else {
+      await environments.click()
+      await page.getByRole('option', { name: 'Linux · Offline', exact: true }).click()
+      await page
+        .getByText('Linux is offline. Reconnect to make changes.', { exact: true })
+        .waitFor()
+      await select(environments, '')
+      await page.evaluate(() => window.configureSources(1, true))
+      await environments.click()
+      await page.getByRole('option', { name: 'Mac · Offline', exact: true }).click()
+      await page.getByText('Mac is offline. Reconnect to make changes.', { exact: true }).waitFor()
+      await select(environments, '')
+    }
     await page.evaluate(() => window.configureSources(0))
     await environments.waitFor({ state: 'detached' })
     await page
       .getByText('Connect a computer to configure defaults and project tools.', { exact: true })
       .waitFor()
+    if (!mobile) {
+      for (const hasTouch of [false, true]) {
+        const layoutPage = await browser.newPage({ hasTouch })
+        layoutPage.on('pageerror', (error) => errors.push(error.message))
+        await layoutPage.setContent('<div id="app"></div>')
+        await layoutPage.addStyleTag({ content: css })
+        await layoutPage.addScriptTag({ content: built.outputFiles[0].text })
+        await layoutPage.getByRole('button', { name: 'Tools page', exact: true }).click()
+        await layoutPage.evaluate(() => window.configureSources(1))
+        for (const width of [320, 390, 976]) {
+          await layoutPage.setViewportSize({ width, height: 700 })
+          const target = layoutPage.getByLabel('Settings target', { exact: true })
+          const fields = target.locator('.studio-settings-target-field')
+          assert.equal(await fields.count(), 3)
+          const heights = await fields.evaluateAll((elements) =>
+            elements.map((element) => element.lastElementChild.getBoundingClientRect().height),
+          )
+          assert.deepEqual(heights, [hasTouch ? 44 : 36, hasTouch ? 44 : 36, hasTouch ? 44 : 36])
+          assert.equal(
+            await target.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+            true,
+          )
+          if (width === 976) {
+            const labels = await target
+              .locator('.studio-settings-target-label')
+              .evaluateAll((elements) =>
+                elements.map((element) => element.getBoundingClientRect().y),
+              )
+            assert.equal(
+              Math.max(...labels) - Math.min(...labels),
+              0,
+              'Scope, Project and Computer labels align',
+            )
+          }
+        }
+        // Container queries also support a narrow pane inside a wide window.
+        await layoutPage.evaluate(() => {
+          document.getElementById('app').style.width = '320px'
+        })
+        assert.equal(
+          await layoutPage
+            .getByLabel('Settings target', { exact: true })
+            .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+          true,
+        )
+        await layoutPage.close()
+      }
+    }
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

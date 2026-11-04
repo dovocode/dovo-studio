@@ -1,6 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { nativeAgentWorking, taskFamilyIds } from '@dovo/protocol'
-import { responses, useWorkspace, type Repository } from '@dovo/studio-core'
+import { responses, useStudioHost, useWorkspace, type Repository } from '@dovo/studio-core'
+import { AlertTriangle } from 'lucide-react'
 import {
   Button,
   Dialog,
@@ -18,6 +19,7 @@ export function ProjectDeletion({
   repository: Repository
   onDeleted?: (refreshError?: string) => void
 }) {
+  const host = useStudioHost()
   const { connected, activeRuntimeId, readRuntime, refreshRuntime, runtimes, workspace, snapshot } =
     useWorkspace()
   const [confirmation, setConfirmation] = useApplicationState<{
@@ -55,32 +57,36 @@ export function ProjectDeletion({
       .map((flow) => flow.id),
   )
   let activeWorkReason = ''
-  if (
-    guardedTasks.some(
-      (task) => task.status === 'running' || task.subagents?.some(nativeAgentWorking),
-    )
+  const activeTurn = guardedTasks.find(
+    (task) => task.status === 'running' || task.subagents?.some(nativeAgentWorking),
   )
-    activeWorkReason = 'Stop active turns and agents before deleting this project.'
-  else if (
-    snapshot?.questions.some((question) => guardedIds.has(question.taskId)) ||
-    snapshot?.approvals.some((approval) => guardedIds.has(approval.taskId))
+  const pendingDecision =
+    snapshot?.questions.find((question) => guardedIds.has(question.taskId)) ??
+    snapshot?.approvals.find((approval) => guardedIds.has(approval.taskId))
+  const activeTerminal = snapshot?.terminals.find(
+    (terminal) => guardedIds.has(terminal.taskId) && !terminal.exited,
   )
+  const watchedThread = guardedTasks.find((task) =>
+    task.threadWatches?.some((watch) => watch.status === 'watching'),
+  )
+  const activeAutomation = snapshot?.runs.find(
+    (run) =>
+      (run.status === 'running' || run.status === 'waiting') &&
+      (affectedFlows.has(run.automationId) || run.taskIds.some((id) => guardedIds.has(id))),
+  )
+  const activeWorkThreadId =
+    activeTurn?.id ??
+    pendingDecision?.taskId ??
+    activeTerminal?.taskId ??
+    watchedThread?.id ??
+    activeAutomation?.taskIds.find((id) => guardedIds.has(id))
+  if (activeTurn) activeWorkReason = 'Stop active turns and agents before deleting this project.'
+  else if (pendingDecision)
     activeWorkReason = 'Finish pending questions or approvals before deleting this project.'
-  else if (
-    snapshot?.terminals.some((terminal) => guardedIds.has(terminal.taskId) && !terminal.exited)
-  )
-    activeWorkReason = 'Close active terminals before deleting this project.'
-  else if (
-    guardedTasks.some((task) => task.threadWatches?.some((watch) => watch.status === 'watching'))
-  )
+  else if (activeTerminal) activeWorkReason = 'Close active terminals before deleting this project.'
+  else if (watchedThread)
     activeWorkReason = 'Stop linked active threads before deleting this project.'
-  else if (
-    snapshot?.runs.some(
-      (run) =>
-        (run.status === 'running' || run.status === 'waiting') &&
-        (affectedFlows.has(run.automationId) || run.taskIds.some((id) => guardedIds.has(id))),
-    )
-  )
+  else if (activeAutomation)
     activeWorkReason = 'Finish or cancel active automations before deleting this project.'
   const open =
     confirmation?.repositoryId === repository.id && confirmation.runtimeId === activeRuntimeId
@@ -171,9 +177,32 @@ export function ProjectDeletion({
             </DialogDescription>
           </DialogHeader>
           {activeWorkReason && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {activeWorkReason}
-            </p>
+            <div
+              role="status"
+              className="flex items-start gap-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-xs"
+            >
+              <AlertTriangle
+                className="mt-0.5 size-4 shrink-0 text-status-warning"
+                aria-hidden="true"
+              />
+              <div className="space-y-2">
+                <p className="font-medium text-foreground">Active work prevents deletion</p>
+                <p className="leading-relaxed text-muted-foreground">{activeWorkReason}</p>
+                {activeWorkThreadId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setConfirmation(null)
+                      host.navigate({ viewId: 'tasks', entityId: activeWorkThreadId })
+                    }}
+                  >
+                    Open affected thread
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
           {error && (
             <p role="alert" className="text-sm text-destructive">

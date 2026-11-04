@@ -83,7 +83,7 @@ export function HostSettingsPage({
       description={description}
       toolbar={
         source && (
-          <div className="studio-settings-target border-b px-4 py-3 sm:px-10">
+          <div className="studio-settings-target">
             <div className="studio-settings-target-inner flex max-w-3xl flex-wrap items-center gap-3">
               <span
                 className="min-w-0 truncate text-xs font-medium"

@@ -107,7 +107,7 @@ try {
     assert.equal(await save.isDisabled(), true)
     if (kind === 'desktop') {
       const group = page.getByRole('heading', { name: 'Dovo services', exact: true }).locator('..')
-      await group.getByText('Save required', { exact: true }).waitFor()
+      await group.getByText('Saves separately', { exact: true }).waitFor()
     }
     await connect.fill('https://user:secret@connect.example.com/path')
     if (kind === 'desktop') {

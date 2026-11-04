@@ -60,11 +60,11 @@ export function PullStatus({
         {checksReady && (
           <section className="min-w-0 rounded-xl border">
             <h3 className="border-b px-4 py-3 text-sm font-medium">
-              Checks <span className="text-muted-foreground">{checks.length}</span>
+              Check reports <span className="text-muted-foreground">{checks.length}</span>
             </h3>
             {!checks.length && (
               <p className="p-4 text-xs text-muted-foreground">
-                No checks returned. See any loading warnings above.
+                No check reports returned. See any loading warnings above.
               </p>
             )}
             <div className="divide-y">

@@ -1,22 +1,37 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from 'playwright'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
+const cssServer = await createServer({
+  configFile: false,
+  root: new URL('../', import.meta.url).pathname,
+  plugins: [tailwindcss()],
+  server: { middlewareMode: true },
+  logLevel: 'error',
+})
+let stylesheet
+try {
+  stylesheet = (await cssServer.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await cssServer.close()
+}
 const built = await build({
   stdin: {
     resolveDir,
     loader: 'tsx',
     contents: `
-      import {useState} from 'react';import {createRoot} from 'react-dom/client';
+      import {useState,useCallback} from 'react';import {createRoot} from 'react-dom/client';
       import {RepositoryActions} from '../extension-scm/src/connections/repository-actions';
       import {RuntimeRequestError} from '@dovo/protocol';
       window.reads=[];window.writes=[];window.previews=[];window.connection={id:'runtime'};
       window.gitState={dirty:true,branch:'feature',ahead:0,behind:0,tracking:true,canPush:true};
       function App(){
-        const [taskId,setTaskId]=useState('first'),[connected,setConnected]=useState(true),[connection,setConnection]=useState(window.connection),[revision,setRevision]=useState(0);
+        const [taskId,setTaskId]=useState('first'),[connected,setConnected]=useState(true),[connection,setConnection]=useState(window.connection),[revision,setRevision]=useState(0),[reviewing,setReviewing]=useState(false);
         window.configure=changes=>{if('taskId'in changes)setTaskId(changes.taskId);if('connected'in changes)setConnected(changes.connected);if('connection'in changes)setConnection(changes.connection);setRevision(value=>value+1)};
-        window.store={connection,connected,request:async(path,input)=>{
+        window.store={connection,connected,request:useCallback(async(path,input)=>{
           if(path==='/api/scm/action-state'){
             const state={...window.gitState};
             if(window.holdActionState)await new Promise(resolve=>window.releaseActionState=resolve);
@@ -33,6 +48,11 @@ const built = await build({
             if(window.holdPreview)await new Promise(resolve=>window.releasePreview=resolve);
             const before=input.comparison==='staged'?'HEAD contents':'INDEX contents';
             const after=input.comparison==='staged'?'INDEX contents':'WORKING contents';
+            if(window.longPreview){
+              const lines=label=>Array.from({length:200},(_,i)=>label+' '+i+' '+('long source line '.repeat(30)));
+              const oldLines=lines(before),newLines=lines(after);
+              return {before:{kind:'text',text:oldLines.join('\\n'),size:20000,truncated:false},after:{kind:'text',text:newLines.join('\\n'),size:20000,truncated:false},patch:'@@ -1,200 +1,200 @@\\n'+oldLines.map(line=>'-'+line).join('\\n')+'\\n'+newLines.map(line=>'+'+line).join('\\n')+'\\n'};
+            }
             return {before:{kind:'text',text:before,size:before.length,truncated:false},after:{kind:'text',text:after,size:after.length,truncated:false},patch:'--- a/'+input.path+'\\n+++ b/'+input.path+'\\n@@ -1 +1 @@\\n-'+before+'\\n+'+after+'\\n'};
           }
           if(path==='/api/scm/branches')return {current:'feature',revision:'revision',branches:[]};
@@ -45,8 +65,8 @@ const built = await build({
           }
           if(path==='/api/scm/push'){if(window.failPush)throw new Error('Push unavailable');window.gitState.ahead=0;window.gitState.tracking=true;}
           return {ok:true};
-        }};
-        return <RepositoryActions repo={{id:'repo',name:'Project',path:'/repo',branch:'main'}} taskId={taskId}/>;
+        },[connection])};
+        return <main style={{display:'flex',flexDirection:'column',height:'85dvh',maxWidth:reviewing?1152:672,margin:'auto'}}><h1>Git &amp; project actions</h1><div style={{flex:1,minHeight:0,overflow:'auto'}}><RepositoryActions repo={{id:'repo',name:'Project',path:'/repo',branch:'main'}} taskId={taskId} onReviewChange={setReviewing}/></div></main>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -82,11 +102,12 @@ const built = await build({
 })
 const browser = await chromium.launch({ headless: true })
 try {
-  const page = await browser.newPage()
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   page.setDefaultTimeout(5000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
+  await page.addStyleTag({ content: stylesheet })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const reads = (count) => page.waitForFunction((count) => window.reads.length === count, count)
   const finish = (index, paths) =>
@@ -184,6 +205,41 @@ try {
     { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'unstaged' },
   ])
   assert.deepEqual(await page.evaluate(() => window.writes), [])
+  // A large comparison scrolls inside its workspace while Back and the comparison context stay put.
+  await page.evaluate(() => {
+    window.longPreview = true
+  })
+  await page.getByRole('button', { name: 'Review staged src/one.ts', exact: true }).click()
+  const review = page.getByRole('region', { name: 'Staged file review', exact: true })
+  const comparison = review.locator(':scope > div.overflow-auto')
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.waitForFunction(() => {
+      const comparison = document.querySelector(
+        '[aria-label="Staged file review"] > .overflow-auto',
+      )
+      return comparison && comparison.scrollHeight > comparison.clientHeight
+    })
+    const beforeScroll = await back.boundingBox()
+    await comparison.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    assert.deepEqual(await back.boundingBox(), beforeScroll)
+    assert.ok((await comparison.boundingBox()).height > 400)
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    assert.equal(await review.getByRole('textbox').count(), 0)
+    assert.equal(await review.getByRole('button').count(), 1, 'Comparison only exposes Back')
+  }
+  await back.click()
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.evaluate(() => {
+    window.longPreview = false
+  })
+  assert.equal(await message.inputValue(), 'Keep this commit draft')
+  assert.equal(
+    await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).isChecked(),
+    true,
+  )
   // Older computers keep the draft and staging selection while explaining the required update.
   for (const status of [404, 405]) {
     await page.evaluate((status) => {

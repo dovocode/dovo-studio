@@ -40,7 +40,7 @@ export function SettingsScopePage({
           <div className="studio-settings-target-inner flex flex-wrap items-end gap-x-4 gap-y-3 text-xs">
             <div className="studio-settings-target-field min-w-0 max-w-full">
               <span className="studio-settings-target-label">Scope</span>
-              <div className="flex h-8 items-center gap-1">
+              <div className="studio-settings-target-summary flex min-h-9 items-center gap-1">
                 <span className="break-words font-medium">
                   {target.environmentId ? 'Computer overrides' : 'Shared defaults'}
                 </span>
@@ -79,7 +79,7 @@ export function SettingsScopePage({
               <span className="studio-settings-target-label">Project</span>
               <ChoicePicker
                 aria-label="Settings project"
-                className="h-8 w-auto min-w-40 max-w-full bg-background/60"
+                className="h-9 w-auto min-w-40 max-w-full bg-background/60"
                 value={target.projectId}
                 onValueChange={(projectId) => setTarget({ ...target, projectId })}
               >
@@ -96,12 +96,12 @@ export function SettingsScopePage({
                 ))}
               </ChoicePicker>
             </label>
-            {sources.length > 1 && (
+            {sources.length > 0 && (
               <label className="studio-settings-target-field min-w-0 max-w-full">
                 <span className="studio-settings-target-label">Computer</span>
                 <ChoicePicker
                   aria-label="Settings computer"
-                  className="h-8 w-auto min-w-40 max-w-full bg-background/60"
+                  className="h-9 w-auto min-w-40 max-w-full bg-background/60"
                   value={target.environmentId}
                   onValueChange={(environmentId) => setTarget({ ...target, environmentId })}
                 >
@@ -118,35 +118,6 @@ export function SettingsScopePage({
                   ))}
                 </ChoicePicker>
               </label>
-            )}
-            {sources.length === 1 && (
-              <div className="studio-settings-target-field min-w-0 max-w-full">
-                <span className="studio-settings-target-label">Computer</span>
-                <span className="flex h-8 items-center text-muted-foreground">
-                  {target.environmentId
-                    ? (source?.name ?? 'Computer unavailable')
-                    : 'All computers'}
-                </span>
-              </div>
-            )}
-            {sources.length === 1 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="min-h-9"
-                onClick={() => {
-                  const environmentId = target.environmentId ? '' : sources[0].profile.id
-                  const choices = settingsProjectChoices(sources, environmentId)
-                  void setTarget({
-                    environmentId,
-                    projectId: choices.some((project) => project.id === target.projectId)
-                      ? target.projectId
-                      : '',
-                  })
-                }}
-              >
-                {target.environmentId ? 'Edit shared defaults' : 'Edit computer overrides'}
-              </Button>
             )}
           </div>
         </div>

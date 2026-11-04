@@ -2,7 +2,22 @@ import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
+const cssServer = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  server: { middlewareMode: true },
+  logLevel: 'error',
+})
+let stylesheet
+try {
+  stylesheet = (await cssServer.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await cssServer.close()
+}
 const controls = `export const Icon=()=>null;import {cloneElement,isValidElement,useState,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)&&children.type!=='div'?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><span>{children}</span>;export const Platform={OS:'ios'};export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={row:{}};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark',palette:'dovo'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=View;export const DialogDescription=Text;export const DialogHeader=View;export const DialogTitle=Text;export const useInsideSheet=()=>false;export const Sheet=({children,title})=><div role="dialog">{title}{children}</div>;export const AgentAvatar=()=>null;export const agentIconChoices={};export const PageHeader=({title})=><h1>{title}</h1>;export const ScreenHeader=PageHeader;export const TaskDefaultSettings=()=> <p>Default agent settings</p>;export const HarnessLabel=({agent})=><span>{agent.provider}</span>;export const ModelLabel=({agent})=><span>{agent.model}</span>;`
 const state = `export {useState as useApplicationState} from 'react';`
 const browser = await chromium.launch()
@@ -83,14 +98,15 @@ try {
         },
       ],
     })
-    const page = await browser.newPage()
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
     const errors = []
     page.on('pageerror', (error) => {
       errors.push(error.message)
       console.error(error.message)
     })
     page.on('dialog', (dialog) => dialog.accept())
-    await page.setContent('<div id="app"></div>')
+    await page.setContent('<div id="app" style="display:flex;height:100dvh"></div>')
+    if (!mobile) await page.addStyleTag({ content: stylesheet })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const setCloudIntegrations = async (value, label) => {
       const scope = (await page.getByRole('dialog').count()) ? page.getByRole('dialog') : page
@@ -281,6 +297,32 @@ try {
       assert.equal(await page.evaluate(() => window.writes.length), writesBefore)
       await env.fill('EXAMPLE=value')
       await page.getByLabel('Instructions', { exact: true }).fill('Updated instructions')
+      const scroll = page.getByRole('region', { name: 'Agents settings', exact: true })
+      const saveActions = page.getByRole('group', { name: 'Settings save actions', exact: true })
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 })
+        for (const position of [0, 0.45, 1]) {
+          await scroll.evaluate((element, position) => {
+            element.scrollTop = position * (element.scrollHeight - element.clientHeight)
+          }, position)
+          const bounds = await saveActions.boundingBox()
+          assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width)
+          assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 800)
+          await saveActions.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+          await saveActions.getByRole('button', { name: 'Discard', exact: true }).waitFor()
+        }
+      }
+      // Discard stays reachable from the top of a long profile and restores every draft field.
+      await scroll.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      await saveActions.getByRole('button', { name: 'Discard', exact: true }).click()
+      assert.equal(await page.getByLabel('Instructions', { exact: true }).inputValue(), '')
+      assert.equal(await env.inputValue(), '')
+      await env.fill('EXAMPLE=value')
+      await page.getByLabel('Instructions', { exact: true }).fill('Updated instructions')
+      await setCloudIntegrations('false', 'Disabled')
+      await page.setViewportSize({ width: 1280, height: 800 })
       await page.evaluate(() => (window.rejectSave = true))
       await page.getByRole('button', { name: 'Save changes', exact: true }).click()
       await page.getByRole('alert').filter({ hasText: 'Save rejected' }).waitFor()

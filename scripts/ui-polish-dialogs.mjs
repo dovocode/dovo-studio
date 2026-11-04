@@ -65,6 +65,59 @@ export async function captureFollowUpDialogs(page, origin, output) {
     assert.equal(await button('Stage selected').count(), 0)
     assert.equal(await button('Commit staged').count(), 0)
   }
+  const denseGitPath =
+    'packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.ts'
+  const openDenseGit = async () => {
+    await info()
+    await button('Git actions').click()
+    await menu('Stage, commit & push…').click()
+    await button(`Review staged ${denseGitPath}`).waitFor()
+    await button(`Review unstaged ${denseGitPath}`).waitFor()
+    await button(
+      'Review unstaged packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.test.ts',
+    ).waitFor()
+    await button('Review staged docs/runtime-connections.md').waitFor()
+  }
+  const reviewDenseGit =
+    (comparison, scrolled = false) =>
+    async () => {
+      await openDenseGit()
+      await button(`Review ${comparison} ${denseGitPath}`).click()
+      await page.waitForFunction(
+        (expected) =>
+          [...document.querySelectorAll('diffs-container')].some((element) => {
+            const text = element.shadowRoot?.querySelector('pre')?.textContent ?? ''
+            return expected.every((line) => text.includes(line))
+          }),
+        comparison === 'staged'
+          ? [
+              'snapshot !== undefined',
+              'snapshot?.connected === true',
+              'if (selected) return selected',
+            ]
+          : ['Reconnect to continue', 'Choose a computer', 'projectRuntimeLabel'],
+      )
+      const viewport = page
+        .locator(
+          `section[aria-label="${comparison === 'staged' ? 'Staged' : 'Unstaged'} file review"] .overflow-auto`,
+        )
+        .first()
+      const range = await viewport.evaluate(
+        (element) => element.scrollHeight - element.clientHeight,
+      )
+      assert.ok(range > 100, 'Real multiline Git comparison scrolls in its production viewport')
+      if (scrolled) {
+        await viewport.evaluate((element) => {
+          element.scrollTop = element.scrollHeight - element.clientHeight
+        })
+        assert.ok(
+          await viewport.evaluate((element) => element.scrollTop > 100),
+          'Comparison reaches later TypeScript context',
+        )
+      }
+      assert.equal(await button('Stage selected').count(), 0)
+      assert.equal(await button('Commit staged').count(), 0)
+    }
   /** @type {Array<[string, string, () => Promise<void>]>} */
   const scenarios = [
     [
@@ -194,6 +247,22 @@ export async function captureFollowUpDialogs(page, origin, output) {
       'git-actions-review-unstaged',
       'tasks&thread=preview-task&changes=1',
       reviewGitFile('unstaged'),
+    ],
+    ['git-actions-dense', 'tasks&thread=preview-task&git-dense=1', openDenseGit],
+    [
+      'git-actions-review-long-staged',
+      'tasks&thread=preview-task&git-dense=1',
+      reviewDenseGit('staged'),
+    ],
+    [
+      'git-actions-review-long-unstaged',
+      'tasks&thread=preview-task&git-dense=1',
+      reviewDenseGit('unstaged'),
+    ],
+    [
+      'git-actions-review-long-scrolled',
+      'tasks&thread=preview-task&git-dense=1',
+      reviewDenseGit('unstaged', true),
     ],
     [
       'thread-archive-confirm',

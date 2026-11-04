@@ -32,16 +32,19 @@ export function pullState(pull: Pick<PullSummary, 'state' | 'draft'>): PullSigna
   return pull.draft ? { label: 'Draft', tone: 'neutral' } : { label: 'Open', tone: 'positive' }
 }
 export function pullChecks(pull: PullSummary): PullSignal {
-  if (pull.statusError) return { label: 'Checks unavailable', tone: 'warning' }
-  if (pull.checksState === undefined) return { label: 'Checks not loaded', tone: 'neutral' }
-  if (pull.checksState === null) return { label: 'No checks', tone: 'neutral' }
-  if (pull.checksState === 'SUCCESS') return { label: 'Checks passed', tone: 'positive' }
-  if (['FAILURE', 'ERROR'].includes(pull.checksState))
-    return { label: 'Checks failed', tone: 'danger' }
-  if (['PENDING', 'EXPECTED'].includes(pull.checksState))
-    return { label: 'Checks pending', tone: 'warning' }
+  if (pull.statusError) return { label: 'CI status unavailable', tone: 'warning' }
+  if (pull.checksState === undefined) return { label: 'CI status not loaded', tone: 'neutral' }
+  if (pull.checksState === null) return { label: 'No CI status reported', tone: 'neutral' }
+  const status = pull.checksState.toUpperCase()
+  if (status === 'SUCCESS') return { label: 'CI status: passed', tone: 'positive' }
+  if (['FAILURE', 'FAILED', 'ERROR'].includes(status))
+    return { label: 'CI status: failed', tone: 'danger' }
+  if (['PENDING', 'EXPECTED'].includes(status))
+    return { label: 'CI status: pending', tone: 'warning' }
+  if (['RUNNING', 'IN_PROGRESS', 'QUEUED', 'WAITING'].includes(status))
+    return { label: `CI status: ${checkSignal(status).label.toLowerCase()}`, tone: 'warning' }
   return {
-    label: `Checks: ${pull.checksState.toLowerCase().replaceAll('_', ' ')}`,
+    label: `CI status: ${pull.checksState.toLowerCase().replaceAll('_', ' ')}`,
     tone: 'neutral',
   }
 }
@@ -79,11 +82,11 @@ export function pullNextStep(pull: PullSummary): PullSignal {
     }
   if (['FAILURE', 'ERROR'].includes(pull.checksState ?? ''))
     return {
-      label: pull.viewerIsAuthor ? 'Fix failing checks' : 'Inspect failing checks',
+      label: pull.viewerIsAuthor ? 'Fix failing CI' : 'Inspect failing CI',
       tone: 'danger',
     }
   if (['PENDING', 'EXPECTED'].includes(pull.checksState ?? ''))
-    return { label: 'Waiting for checks', tone: 'neutral' }
+    return { label: 'Waiting for CI', tone: 'neutral' }
   if (pull.reviewDecision === 'REVIEW_REQUIRED')
     return { label: 'Waiting for review', tone: 'neutral' }
   if (
@@ -137,16 +140,30 @@ export function checkSignal(status: string): PullSignal {
   const label =
     status === 'SUCCESS'
       ? 'Passed'
-      : status === 'FAILURE'
+      : ['FAILURE', 'FAILED'].includes(status)
         ? 'Failed'
         : readable.charAt(0).toUpperCase() + readable.slice(1)
   return {
     label,
-    tone: ['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STALE'].includes(
-      status,
-    )
+    tone: [
+      'FAILURE',
+      'FAILED',
+      'ERROR',
+      'TIMED_OUT',
+      'CANCELLED',
+      'ACTION_REQUIRED',
+      'STALE',
+    ].includes(status)
       ? 'danger'
-      : ['PENDING', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED', 'EXPECTED'].includes(status)
+      : [
+            'PENDING',
+            'QUEUED',
+            'IN_PROGRESS',
+            'RUNNING',
+            'WAITING',
+            'REQUESTED',
+            'EXPECTED',
+          ].includes(status)
         ? 'warning'
         : status === 'SUCCESS'
           ? 'positive'
@@ -187,9 +204,9 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
   if (pull.reviewDecision === 'CHANGES_REQUESTED')
     return { label: 'Changes requested', tone: 'danger' }
   if (['FAILURE', 'ERROR'].includes(pull.checksState ?? ''))
-    return { label: 'Checks failing', tone: 'danger' }
+    return { label: 'CI failed', tone: 'danger' }
   if (['PENDING', 'EXPECTED'].includes(pull.checksState ?? ''))
-    return { label: 'Waiting for checks', tone: 'warning' }
+    return { label: 'Waiting for CI', tone: 'warning' }
   if (pull.reviewDecision === 'REVIEW_REQUIRED')
     return { label: 'Waiting for required reviews', tone: 'warning' }
   switch (pull.mergeStateStatus) {
@@ -198,7 +215,7 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
     case 'BEHIND':
       return { label: 'Branch update required', tone: 'warning' }
     case 'UNSTABLE':
-      return { label: 'Checks not passing', tone: 'warning' }
+      return { label: 'CI not passing', tone: 'warning' }
     case 'CLEAN':
     case 'HAS_HOOKS':
       return { label: 'Ready to merge', tone: 'positive' }
@@ -210,9 +227,7 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
     ? { label: 'No merge conflicts', tone: 'positive' }
     : { label: 'Merge conflicts', tone: 'danger' }
 }
-export function pullDetailChecks(detail: PullDetail): PullSignal {
-  if (!detail.checks.length && (detail.pull.checksState !== undefined || detail.pull.statusError))
-    return pullChecks(detail.pull)
+export function pullDetailChecks(detail: Pick<PullDetail, 'checks'>): PullSignal {
   const failed = detail.checks.filter((check) => checkSignal(check.status).tone === 'danger').length
   const pending = detail.checks.filter(
     (check) => checkSignal(check.status).tone === 'warning',
@@ -229,7 +244,7 @@ export function pullDetailChecks(detail: PullDetail): PullSignal {
     : {
         label: detail.checks.length
           ? `${detail.checks.length} check${detail.checks.length === 1 ? '' : 's'} reported`
-          : 'No checks returned',
+          : 'No check reports returned',
         tone: 'neutral',
       }
 }

@@ -1,12 +1,13 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, LockKeyhole } from 'lucide-react'
 import { useState } from 'react'
 import { defaultThreadSectionOrder, moveThreadSection, threadSections } from '@dovo/protocol'
-import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
+import { updateAppPreferences, useAppPreferences, useStudioHost } from '@dovo/studio-core'
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
 
 export function SectionOrderDialog() {
   const [open, setOpen] = useState(false)
   const preferences = useAppPreferences()
+  const host = useStudioHost()
   const order = [
     'pinned' as const,
     ...(preferences.threadSectionOrder ?? defaultThreadSectionOrder).filter(
@@ -88,6 +89,15 @@ export function SectionOrderDialog() {
             }
           >
             Reset section order
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setOpen(false)
+              host.navigate({ viewId: 'task-list-settings' })
+            }}
+          >
+            Grouping and sorting…
           </Button>
         </DialogContent>
       </Dialog>

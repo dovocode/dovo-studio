@@ -422,7 +422,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             saving={busy}
             disabled={!connected || !baseline}
             saved={saved}
-            description="Changes apply to new processes. Save to apply."
+            description="Changes apply to new processes."
             onSave={() => form.current?.requestSubmit()}
             onDiscard={() => {
               if (baseline) change(baseline)

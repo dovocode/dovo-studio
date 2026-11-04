@@ -195,7 +195,7 @@ export function TaskBehaviorSettings({
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
           title="Automation & limits"
-          saveRequired
+          saveRequired={supported && connected && !!loaded}
           description="Applies to existing and new threads. Inherit uses the parent scope."
         >
           {fields.map(([key, label, description]) => (
@@ -455,7 +455,7 @@ export function TaskBehaviorSettings({
         saving={busy}
         disabled={!supported || !loaded || !connected || invalidDays}
         saved={saved}
-        description="Changes apply to existing threads too. Save to apply."
+        description="Changes apply to existing threads too."
         onSave={() => void save()}
         onDiscard={() => {
           setDraft(loaded?.value.taskBehavior ?? {})

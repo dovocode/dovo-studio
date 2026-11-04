@@ -2944,6 +2944,14 @@ a.studio-project-row:hover {
 .studio-settings-storage {
   padding: 5px 0;
 }
+.studio-terminal-size-input {
+  appearance: textfield;
+}
+.studio-terminal-size-input::-webkit-inner-spin-button,
+.studio-terminal-size-input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
 .studio-settings-group-heading > h2 {
   display: flex;
   flex-wrap: wrap;
@@ -2975,6 +2983,12 @@ a.studio-project-row:hover {
   color: var(--muted-foreground);
   font-size: 11px;
   line-height: 1.25;
+}
+@media (pointer: coarse) {
+  .studio-settings-target-summary,
+  .studio-settings-target-field > [data-choice-picker] {
+    min-height: 44px;
+  }
 }
 .studio-settings-savebar {
   box-shadow: 0 6px 24px #00000018;

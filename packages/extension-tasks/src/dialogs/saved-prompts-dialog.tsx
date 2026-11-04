@@ -161,7 +161,7 @@ export function SavedPromptsDialog({
                 }}
                 aria-invalid={issues.has(`${row.id}:text`)}
                 aria-describedby={`${row.id}-text-help`}
-                placeholder="Reproduce the bug first, then fix it with a test that fails before the fix."
+                placeholder="Write the instructions this saved prompt should insert…"
                 value={row.text}
                 maxLength={20000}
                 onChange={(event) => change(row.id, { text: event.target.value })}

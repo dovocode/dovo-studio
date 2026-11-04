@@ -175,7 +175,7 @@ export function ScopedAgents({
           ))}
         </ChoicePicker>
       </div>
-      <div className="grid overflow-hidden rounded-xl border border-border/60 bg-muted/20 lg:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="grid overflow-clip rounded-xl border border-border/60 bg-muted/20 lg:grid-cols-[14rem_minmax(0,1fr)]">
         <nav
           aria-label="Provider configurations"
           className="hidden min-w-0 border-r border-border/60 bg-background/40 lg:block"

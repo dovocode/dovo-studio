@@ -43,6 +43,8 @@ const meta = {
       control: 'select',
       options: [
         'populated',
+        'git-review-dense',
+        'lists-dense',
         'busy',
         'busy-long-draft',
         'idle',
@@ -166,10 +168,12 @@ export const WorkspaceOffline: Story = { args: { state: 'offline' } }
 export const Artifacts: Story = { args: { route: 'artifacts' } }
 export const ArchivedTasks: Story = { args: { route: 'archived-tasks' } }
 export const Issues: Story = { args: { route: 'issues' } }
+export const DenseIssues: Story = { args: { route: 'issues', state: 'lists-dense' } }
 export const Jira: Story = { args: { route: 'jira' } }
 export const Pipelines: Story = { args: { route: 'pipelines' } }
 export const SourceControl: Story = { args: { route: 'source-control' } }
 export const Pulls: Story = { args: { route: 'pulls' } }
+export const DensePulls: Story = { args: { route: 'pulls', state: 'lists-dense' } }
 export const Resources: Story = { args: { route: 'resources' } }
 export const TextGeneration: Story = { args: { route: 'text-generation' } }
 export const Agents: Story = { args: { route: 'agents' } }

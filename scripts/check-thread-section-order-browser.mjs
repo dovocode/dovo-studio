@@ -95,7 +95,11 @@ try {
         agents: [],
       },
     }
-    window.host = {}
+    window.host = {
+      navigate: (target) => {
+        window.lastNavigation = target
+      },
+    }
     window.store = {
       request: async () => {
         throw Error('Reordering must not send runtime mutations')
@@ -303,6 +307,21 @@ try {
     await dialog.getByRole('button', { name: 'Move settled down', exact: true }).isDisabled(),
     true,
   )
+  const orderBeforeSettings = await page.evaluate(() => window.savedOrder())
+  const collapsedBeforeSettings = await page.evaluate(() => window.collapsedSections())
+  await page.evaluate(() => {
+    window.host.navigate = (target) => {
+      window.lastNavigation = target
+    }
+  })
+  await dialog.getByRole('button', { name: 'Grouping and sorting…', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(await page.evaluate(() => window.lastNavigation), {
+    viewId: 'task-list-settings',
+  })
+  assert.deepEqual(await page.evaluate(() => window.savedOrder()), orderBeforeSettings)
+  assert.deepEqual(await page.evaluate(() => window.collapsedSections()), collapsedBeforeSettings)
+  await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   await resetOrder.click()
   assert.equal(
     await resetOrder.isDisabled(),

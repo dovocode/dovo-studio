@@ -68,12 +68,12 @@ export function StagingFilePreview({
   return (
     <section
       aria-label={`${comparison === 'staged' ? 'Staged' : 'Unstaged'} file review`}
-      className="min-w-0 space-y-3 pt-1"
+      className="flex h-full min-h-0 min-w-0 flex-col gap-3 pt-1"
     >
-      <Button ref={back} size="sm" variant="ghost" onClick={onBack}>
+      <Button ref={back} size="sm" variant="ghost" className="shrink-0 self-start" onClick={onBack}>
         ← Back to staging
       </Button>
-      <div>
+      <div className="shrink-0">
         <h3 className="break-all font-mono text-xs font-medium">{path}</h3>
         <p className="mt-1 text-xs text-muted-foreground">
           {comparison === 'staged'
@@ -104,7 +104,7 @@ export function StagingFilePreview({
           Loading comparison…
         </p>
       ) : (
-        <div className="max-h-[50dvh] min-w-0 overflow-auto rounded-lg border">
+        <div className="max-h-[70dvh] min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border">
           {complete && patch && preview.before?.text !== preview.after?.text ? (
             <PullPatch
               file={{

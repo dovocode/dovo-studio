@@ -16,7 +16,7 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:'',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:key==='checks'?(window.checksError??''):'',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
@@ -81,6 +81,8 @@ const browser = await chromium.launch()
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.setDefaultTimeout(8000)
+  const screenshot = (options) =>
+    process.env.DOVO_BROWSER_SCREENSHOTS === '0' ? Promise.resolve() : page.screenshot(options)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('https://avatars.example/**', (route) =>
@@ -121,10 +123,13 @@ try {
     assert.equal(await list.getByRole('button', { name, exact: true }).isVisible(), false)
   await list.getByRole('button', { name: 'Authored by me', exact: true }).waitFor()
   assert.equal(await list.getByText(/loaded pull requests?/).count(), 0)
+  await row('Improve pull request reviews')
+    .getByText('CI status: passed', { exact: true })
+    .waitFor()
   const avatar = row('Improve pull request reviews').locator('img')
   assert.equal(await avatar.getAttribute('src'), 'https://avatars.example/dominic.png')
   await avatar.evaluate((element) => element.decode())
-  await page.screenshot({ path: '/tmp/dovo-pull-list-clean.png' })
+  await screenshot({ path: '/tmp/dovo-pull-list-clean.png' })
   // Failed profile images retain a compact author initial without breaking the row.
   await avatar.dispatchEvent('error')
   assert.equal(await row('Improve pull request reviews').locator('img').count(), 0)
@@ -150,7 +155,7 @@ try {
     await row('Improve pull request reviews').evaluate((element) => element.clientHeight < 90),
     true,
   )
-  await page.screenshot({ path: '/tmp/dovo-pull-list.png' })
+  await screenshot({ path: '/tmp/dovo-pull-list.png' })
   await list.getByRole('button', { name: 'Actions for PR #7', exact: true }).click()
   assert.equal(
     await page.getByRole('menuitem', { name: 'Open in browser', exact: true }).getAttribute('href'),
@@ -212,7 +217,7 @@ try {
     (await page.locator('.studio-titlebar').boundingBox()).y,
     'PR and sidebar branding share one row',
   )
-  await page.screenshot({ path: '/tmp/dovo-pull-overview.png' })
+  await screenshot({ path: '/tmp/dovo-pull-overview.png' })
   await detail.getByRole('button', { name: 'Reviews 1', exact: true }).click()
   assert.equal(await detail.getByText('Please add a test', { exact: true }).isVisible(), false)
   await detail.getByText('Looks good to me', { exact: true }).waitFor()
@@ -235,7 +240,7 @@ try {
   await detail.getByText('All tests passed', { exact: true }).waitFor()
   await detail.getByText('Check output', { exact: true }).click()
   await detail.getByText('2 tests completed', { exact: true }).waitFor()
-  await page.screenshot({ path: '/tmp/dovo-pull-checks.png' })
+  await screenshot({ path: '/tmp/dovo-pull-checks.png' })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).press('Home')
   assert.equal(
     await detail.getByRole('tab', { name: 'Overview', exact: true }).getAttribute('aria-selected'),
@@ -256,7 +261,7 @@ try {
     .getByRole('navigation', { name: 'Changed files' })
     .getByText('2 files', { exact: true })
     .waitFor()
-  await page.screenshot({ path: '/tmp/dovo-pull-summary-expanded.png' })
+  await screenshot({ path: '/tmp/dovo-pull-summary-expanded.png' })
   await changes.getByRole('button', { name: 'Filter Code: 2 files', exact: true }).click()
   assert.equal(
     await changes
@@ -306,7 +311,7 @@ try {
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail
     .getByRole('tab', { name: 'Checks (1)', exact: true })
-    .getByText('Failed', { exact: true })
+    .getByText('Pipeline failed', { exact: true })
     .waitFor()
   assert.match(
     await detail
@@ -327,6 +332,7 @@ try {
   for (const status of [
     'Pipeline runs: 1 failed',
     'Check reports: 1 check passed',
+    'CI status: passed',
     'Review required',
   ]) {
     await detail
@@ -356,10 +362,10 @@ try {
   await page.evaluate(() => {
     window.pipelineRuns = []
   })
-  await page.screenshot({ path: '/tmp/dovo-pull-workspace.png' })
+  await screenshot({ path: '/tmp/dovo-pull-workspace.png' })
   await page.getByRole('tab', { name: /Changes/ }).click()
   await page.getByRole('button', { name: '2 files · 1 viewed', exact: true }).waitFor()
-  await page.screenshot({ path: '/tmp/dovo-pull-changes.png' })
+  await screenshot({ path: '/tmp/dovo-pull-changes.png' })
   await page.setViewportSize({ width: 390, height: 844 })
   for (const name of ['Overview', 'Changes (2)', 'Checks (1)']) {
     await detail.getByRole('tab', { name, exact: true }).click()
@@ -375,13 +381,13 @@ try {
   await summaryToggle.click()
   await changes.getByRole('navigation', { name: 'Changed files' }).waitFor()
   await noOverflow()
-  await page.screenshot({ path: '/tmp/dovo-pull-summary-narrow.png' })
+  await screenshot({ path: '/tmp/dovo-pull-summary-narrow.png' })
   await summaryToggle.click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await content.evaluate((element) => {
     element.scrollTop = 0
   })
-  await page.screenshot({ path: '/tmp/dovo-pull-overview-narrow.png' })
+  await screenshot({ path: '/tmp/dovo-pull-overview-narrow.png' })
   await page.evaluate(() => {
     window.detail.pull.title = 'A very long pull request title '.repeat(12)
     window.detail.pull.head = 'feature/' + 'long-branch-name'.repeat(12)
@@ -404,7 +410,7 @@ try {
   await fullWidthList()
   await noOverflow()
   assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
-  await page.screenshot({ path: '/tmp/dovo-pull-list-narrow.png' })
+  await screenshot({ path: '/tmp/dovo-pull-list-narrow.png' })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => {
     window.store.connected = true
@@ -561,8 +567,44 @@ try {
   })
   await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
   await page.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  const checksTab = page.getByRole('tab', { name: 'Checks (1)', exact: true })
+  await checksTab.getByText('Pipeline failed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.pipelineRuns = []
+    window.detail.checks = [{ name: 'Tests', status: 'FAILURE' }]
+    window.showDestination('overview', 'report-failure')
+  })
+  await checksTab.getByText('Checks failed', { exact: true }).waitFor()
+  await page.getByText('Check reports: 1 failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.pipelineRuns = [{ status: 'failure' }]
+    window.showDestination('overview', 'both-failed')
+  })
+  await checksTab.getByText('CI failed', { exact: true }).waitFor()
+  // Saved failures retain their source, and explicitly disclose offline data.
+  await page.evaluate(() => {
+    window.store.connected = false
+    window.showDestination('overview', 'offline-failures')
+  })
+  await checksTab.getByText('CI failed', { exact: true }).waitFor()
+  await page.getByText('Check reports: 1 failed · offline', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.store.connected = true
+    window.checksError = 'Reports unavailable'
+    window.showDestination('overview', 'unavailable-reports')
+  })
+  await page.getByText('Check reports unavailable', { exact: true }).waitFor()
+  // A report read error cannot suppress an independently known pipeline failure.
+  await checksTab.getByText('Pipeline failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.checksError = ''
+    window.pipelineRuns = []
+    window.detail.checks = [{ name: 'Tests', status: 'UNKNOWN' }]
+    window.showDestination('overview', 'unknown-report')
+  })
+  await page.getByText('Check reports: 1 check reported', { exact: true }).waitFor()
+  assert.equal(await checksTab.getByText(/failed/i).count(), 0)
+  await page.evaluate(() => {
     window.detail.checks = window.pipelineTestChecks
   })
   // Overview loads check reports too, and never substitutes an aggregate passed state.
@@ -637,7 +679,7 @@ try {
   const basicAvatar = row('Base change').locator('img')
   await basicAvatar.evaluate((element) => element.decode())
   await noOverflow()
-  await page.screenshot({ path: '/tmp/dovo-pull-basic-stacks-desktop.png' })
+  await screenshot({ path: '/tmp/dovo-pull-basic-stacks-desktop.png' })
   await page.evaluate(() => window.showBasicList(false))
   await row('Dependent change').getByText('Stack · partial · #7', { exact: true }).waitFor()
   for (const width of [760, 360]) {
@@ -651,7 +693,7 @@ try {
   await row('Dependent change').getByText('onto main', { exact: true }).waitFor()
   assert.doesNotMatch(await row('Dependent change').innerText(), /Base PR|undefined|#7 → #8/)
   await noOverflow()
-  await page.screenshot({ path: '/tmp/dovo-pull-native-stack-desktop.png' })
+  await screenshot({ path: '/tmp/dovo-pull-native-stack-desktop.png' })
   await page.evaluate(() => {
     window.detail.pull.provider = 'bitbucket'
     window.detail.capabilities = {

@@ -319,7 +319,7 @@ try {
             )
             window.render()
           })
-          await first.getByText('Checks failed', { exact: true }).waitFor({ state: 'detached' })
+          await first.getByText('CI status: failed', { exact: true }).waitFor({ state: 'detached' })
           assert.equal(
             await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns),
             columns,

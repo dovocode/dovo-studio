@@ -82,7 +82,11 @@ function fileStagingDescription(file: ChangedFile) {
     .join(' · ')
 }
 
-export function RepositoryActions(props: { repo: Repository; taskId?: string }) {
+export function RepositoryActions(props: {
+  repo: Repository
+  taskId?: string
+  onReviewChange?: (reviewing: boolean) => void
+}) {
   const { connection } = useWorkspace()
   return (
     <CheckoutActions
@@ -92,7 +96,15 @@ export function RepositoryActions(props: { repo: Repository; taskId?: string }) 
   )
 }
 
-function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }) {
+function CheckoutActions({
+  repo,
+  taskId,
+  onReviewChange,
+}: {
+  repo: Repository
+  taskId?: string
+  onReviewChange?: (reviewing: boolean) => void
+}) {
   const openRepository = useRepositoryOpen()
   const host = useStudioHost()
   const { request, connected } = useWorkspace(),
@@ -111,6 +123,9 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
       comparison: 'staged' | 'unstaged'
     } | null>(null)
   const reviewOrigin = useRef<string | null>(null)
+  useEffect(() => {
+    onReviewChange?.(review !== null)
+  }, [review, onReviewChange])
   const stagingBody = useRef<HTMLDivElement>(null)
   const input = {
     repositoryId: repo.id,
@@ -265,7 +280,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
       />
     )
   return (
-    <div ref={stagingBody} className="mt-1 divide-y">
+    <div ref={stagingBody} data-git-changes={files.length > 0} className="mt-1 divide-y">
       <section className="space-y-3 pb-4">
         <div className="flex items-center justify-between gap-3">
           <h3 ref={changesHeading} tabIndex={-1} className="text-xs font-medium">

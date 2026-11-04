@@ -544,7 +544,7 @@ export default function BrowserSettings() {
       )}
       <SettingsGroup
         title="Remote browser profiles"
-        saveRequired
+        saveRequired={runtime?.connected === true}
         description="Used by remote tabs. Profile names and saved logins stay on the selected computer."
       >
         <div className="space-y-3 p-4">

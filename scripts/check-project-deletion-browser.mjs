@@ -9,7 +9,7 @@ const mocks = [
     path: '@dovo/studio-core',
     importer,
     contents:
-      "export {responses} from './packages/protocol/src/index';export const useWorkspace=()=>window.store;",
+      "export {responses} from './packages/protocol/src/index';export const useWorkspace=()=>window.store;export const useStudioHost=()=>window.host;",
   },
   {
     path: '@dovo/studio-core/state',
@@ -31,7 +31,7 @@ const built = await bundleBrowser(
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {ProjectDeletion} from './packages/extension-scm/src/connections/project-deletion';
-window.calls=[];window.refreshes=[];window.deleted=[];window.fail=false;
+window.calls=[];window.refreshes=[];window.deleted=[];window.fail=false;window.navigations=[];window.host={navigate:target=>window.navigations.push(target)};
 window.store={connected:true,activeRuntimeId:'machine',workspace:{tasks:[],automations:[]},snapshot:{questions:[],approvals:[],terminals:[],runs:[]},runtimes:[{profile:{id:'machine'}},{profile:{id:'other-machine'}}],
 readRuntime:async(profile,path,input)=>{window.calls.push({runtimeId:profile.id,path,input});if(window.fail)throw Error('Project has active work');return {ok:true}},
 refreshRuntime:async profile=>{window.refreshes.push(profile.id)}};
@@ -138,6 +138,22 @@ try {
     assert.equal(await confirm.isDisabled(), true)
     assert.equal(await page.evaluate(() => window.calls.length), 0)
   }
+  await page.evaluate(
+    (task) =>
+      window.setActivity({ tasks: [task] }, { terminals: [{ taskId: task.id, exited: false }] }),
+    task,
+  )
+  await dialog.getByRole('button', { name: 'Open affected thread', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(await page.evaluate(() => window.navigations), [
+    { viewId: 'tasks', entityId: 'thread' },
+  ])
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    0,
+    'Opening active work never deletes the project or closes terminals',
+  )
+  await page.getByRole('button', { name: 'Delete My project…', exact: true }).click()
   // Work on another project, finished terminals, and old agent metadata do not block deletion.
   await page.evaluate(
     (task) =>

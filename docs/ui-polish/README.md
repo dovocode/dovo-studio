@@ -46,7 +46,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 300 captures: production desktop routes/compositions in both themes,
+The refreshed gallery includes 316 captures: production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -112,6 +112,14 @@ as Off or a percentage and includes live font previews. Settings search waits fo
 approval before highlighting a field, and scroll-aware fades soften sidebar edges. Dovo services
 have field-level help and unsaved-navigation protection. Supported and legacy Remote desktop states
 are captured separately. All Settings sections and preferences remain.
+
+The latest evidence includes 14-row PR and Issues lists, long paths, real multiline staged and
+unstaged comparisons, a scrolled Git review, and the embedded Agent form with unsaved edits. The
+Agent save footer stays reachable while scrolling; Git comparisons retain their review space. PR
+status labels distinguish provider CI, returned check reports and linked pipeline runs. Settings use
+matching project/computer pickers, one computer-scope divider, explicit selected palettes and a
+single terminal-size stepper. Read-only runtime states do not request saving. Known deletion
+blockers provide a safe route to the affected thread.
 
 Council review is **in progress**. Fresh reviewers assess the current UI without past ratings,
 target scores or historical findings in their briefs. Earlier numeric reviews are historical
@@ -340,3 +348,16 @@ The starting captures are retained for comparison: [welcome](screenshots/before-
 
 Thread info immediately before its redesign: [dark](screenshots/before-thread-info-dark.webp),
 [light](screenshots/before-thread-info-light.webp).
+
+## Dense workflow evidence
+
+| Surface                          | Dark                                                                 | Light                                                                 |
+| -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| pulls-dense                      | [Screenshot](screenshots/pulls-dense-dark.webp)                      | [Screenshot](screenshots/pulls-dense-light.webp)                      |
+| pulls-dense-row-menu             | [Screenshot](screenshots/pulls-dense-row-menu-dark.webp)             | [Screenshot](screenshots/pulls-dense-row-menu-light.webp)             |
+| issues-dense                     | [Screenshot](screenshots/issues-dense-dark.webp)                     | [Screenshot](screenshots/issues-dense-light.webp)                     |
+| agents-dirty                     | [Screenshot](screenshots/agents-dirty-dark.webp)                     | [Screenshot](screenshots/agents-dirty-light.webp)                     |
+| git-actions-dense                | [Screenshot](screenshots/git-actions-dense-dark.webp)                | [Screenshot](screenshots/git-actions-dense-light.webp)                |
+| git-actions-review-long-staged   | [Screenshot](screenshots/git-actions-review-long-staged-dark.webp)   | [Screenshot](screenshots/git-actions-review-long-staged-light.webp)   |
+| git-actions-review-long-unstaged | [Screenshot](screenshots/git-actions-review-long-unstaged-dark.webp) | [Screenshot](screenshots/git-actions-review-long-unstaged-light.webp) |
+| git-actions-review-long-scrolled | [Screenshot](screenshots/git-actions-review-long-scrolled-dark.webp) | [Screenshot](screenshots/git-actions-review-long-scrolled-light.webp) |

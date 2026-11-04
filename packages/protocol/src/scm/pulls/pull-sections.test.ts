@@ -53,7 +53,7 @@ it('combines independent resources without letting their failures mark the overv
   expect(result?.files).toHaveLength(1)
   expect(result?.stale).toBeUndefined()
   expect(result?.refreshError).toBeUndefined()
-  expect(pullDetailChecks(result)).toEqual({ label: 'Checks failed', tone: 'danger' })
+  expect(pullDetailChecks(result)).toEqual({ label: 'No check reports returned', tone: 'neutral' })
   expect(pullDetailReviews(result)).toEqual({ label: 'Changes requested', tone: 'danger' })
 })
 it('uses fresh lifecycle status only for the matching PR revision and account', () => {

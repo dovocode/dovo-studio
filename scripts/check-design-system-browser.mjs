@@ -238,9 +238,12 @@ try {
     await page.getByText('Dovo Studio project defaults', { exact: true }).waitFor()
     assert.equal(
       await page.getByRole('button', { name: 'Settings computer', exact: true }).count(),
-      0,
+      1,
     )
-    await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).click()
+    await page.getByRole('option', { name: 'All computers', exact: true }).waitFor()
+    await page.getByRole('option', { name: 'Preview computer', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
     const inactiveSetting = page.getByRole('combobox', {
       name: 'Auto-settle inactive tasks',
       exact: true,

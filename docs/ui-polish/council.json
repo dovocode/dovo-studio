@@ -512,11 +512,56 @@
       "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews.",
       "score": 8.7,
       "shipVerdict": "ship; nonblocking discoverability refinements"
+    },
+    {
+      "round": "independent46",
+      "model": "Opus 5.5",
+      "id": "0897f7a2-183d-49f3-a795-cd09f49b6bbe",
+      "score": 7.5,
+      "shipVerdict": "ship after source-specific CI labels, computer scope alignment, readonly save cues and duplicate stepper fixes"
+    },
+    {
+      "round": "independent46",
+      "model": "Opus 5.5",
+      "id": "da4d167e-aaea-49bf-9864-4bf568944b51",
+      "score": 7.5,
+      "shipVerdict": "ship; Settings target/save presentation, Git review space, Agent save visibility and clearer CI sources recommended"
+    },
+    {
+      "round": "independent46",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent46_sol_a",
+      "score": 8.3,
+      "shipVerdict": "ship; wider Git review recommended"
+    },
+    {
+      "round": "independent46",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent46_sol_b",
+      "score": 8.5,
+      "shipVerdict": "ship; wider Git review and reachable embedded Agent save actions recommended"
+    },
+    {
+      "round": "independent46",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent46_sol_c",
+      "score": 8.6,
+      "shipVerdict": "ship; organization-settings shortcut recommended"
+    },
+    {
+      "round": "independent46",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "d94ae9d2-0d2e-453b-9939-94a262f6be52",
+      "score": 7.5,
+      "shipVerdict": "ship with refinements; scope/save and source-specific CI clarity recommended",
+      "coverage": "19 contact sheets; 35 exact full-size frames. No source inspected.",
+      "verification": "Title tooltips already exist; HEAD/index/working comparisons are distinct; alleged Review selected and repeated selection strings are absent. These unsupported claims were not implemented. Dense evidence and save/source presentation subsequently improved.",
+      "brief": "Fresh context; no historical findings, previous scores or target ratings supplied."
     }
   ],
   "remaining": [
-    "Obtain fresh independent final reviews of frozen gallery46",
-    "Finish PR #50 after quality gate"
+    "Verify refreshed dense screenshot gallery and obtain fresh independent reviews",
+    "Finish PR #50 after council quality gate"
   ],
   "approvalTarget": {
     "model": "Opus 5.5",
@@ -525,11 +570,12 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 46,
-    "captures": 300,
-    "corePass": 46,
-    "dialogPass": 46,
-    "settingsPass": 46
+    "round": 47,
+    "captures": 316,
+    "corePass": 47,
+    "dialogPass": 47,
+    "settingsPass": 47,
+    "note": "18 Git frames refreshed after compact clean-dialog correction; all other frames unchanged. Core122 and dialog158 manifest states report no errors/alerts."
   },
   "unavailableReviews": [
     {
@@ -591,40 +637,46 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent46",
-      "model": "Opus 5.5",
-      "id": "0897f7a2-183d-49f3-a795-cd09f49b6bbe",
-      "status": "running"
+      "round": "independent47",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent47_sol_a",
+      "status": "running",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
     },
     {
-      "round": "independent46",
-      "model": "Opus 5.5",
-      "id": "da4d167e-aaea-49bf-9864-4bf568944b51",
-      "status": "running"
+      "round": "independent47",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent47_sol_b",
+      "status": "running",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
     },
     {
-      "round": "independent46",
+      "round": "independent47",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent47_sol_c",
+      "status": "running",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "Opus 5.5",
+      "id": "c3459600-02af-446f-bc8a-0d62c8989e8b",
+      "status": "running",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "Opus 5.5",
+      "id": "8a067021-1386-4200-a767-cdc3e8162d5c",
+      "status": "running",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
+    },
+    {
+      "round": "independent47",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "d94ae9d2-0d2e-453b-9939-94a262f6be52",
-      "status": "running"
-    },
-    {
-      "round": "independent46",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent46_sol_a",
-      "status": "running"
-    },
-    {
-      "round": "independent46",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent46_sol_b",
-      "status": "running"
-    },
-    {
-      "round": "independent46",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent46_sol_c",
-      "status": "running"
+      "id": "fb603463-a707-4fb6-9da3-13c1322ff3f3",
+      "status": "running",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
     }
   ],
   "queuedReviews": [
@@ -666,6 +718,10 @@
     {
       "round": "pass46",
       "summary": "Settings scope/storage cues moved into intro column; save-required group markers; compact Agents; readable inherited policy; terminal numeric stepper; calmer Working text with semantic icon; aligned shared select width; per-file read-only staging review preserving commit draft and index; explicit PR failure tab badge. Generated gpt-image-2.5 Settings reference, separate from actual app captures."
+    },
+    {
+      "round": "pass47",
+      "summary": "Unified Settings project/computer pickers and target heights; removed nested computer-scope padding/divider; separately saved group grammar and truthful readonly cues; one terminal numeric stepper; explicit palette selection; sticky embedded Agent Save/Discard/errors; contextual project-deletion warning and safe affected-thread navigation; source-specific CI/check-report/pipeline labels; stable taller/wider Git review. Added14-row collection fixtures, long partial-staging comparisons and embedded dirty-Agent evidence. Production builds, affected types and targeted browser suites passed."
     }
   ],
   "designConsultations": [

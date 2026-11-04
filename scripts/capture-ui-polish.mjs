@@ -67,7 +67,7 @@ window.uiSetPreferences=updateAppPreferences;
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
 updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
-function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("changes")?"git-changes":query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
+function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("git-dense")?"git-review-dense":query.has("dense")?"lists-dense":query.has("changes")?"git-changes":query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     plugins: [
@@ -143,6 +143,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         ['busy-mid-scroll', 'tasks', 'preview-task', 'mid-scroll', 'busy'],
         ['busy-sections', 'tasks', 'preview-task', undefined, 'busy'],
         ['pulls', 'pulls'],
+        ['pulls-dense', 'pulls', undefined, undefined, 'lists-dense'],
+        ['pulls-dense-row-menu', 'pulls', undefined, 'dense-row-menu', 'lists-dense'],
+        ['issues-dense', 'issues', undefined, undefined, 'lists-dense'],
+        ['agents-dirty', 'agents', undefined, 'agents-dirty'],
         ['settings', 'general'],
         ...(all
           ? [
@@ -185,7 +189,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .includes(name),
     )) {
       await page.goto(
-        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'legacy' ? '&legacy' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy' ? '&busy' : ''}`,
+        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'lists-dense' ? '&dense' : state === 'legacy' ? '&legacy' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy' ? '&busy' : ''}`,
       )
       await page.locator('.studio').waitFor()
       await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
@@ -194,7 +198,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .getByRole('textbox', { name: 'Message thread', exact: true })
           .waitFor({ state: 'visible' })
       }
-      if (action && !action.startsWith('pull-') && action !== 'mid-scroll') {
+      if (
+        action &&
+        !action.startsWith('pull-') &&
+        !['mid-scroll', 'agents-dirty', 'dense-row-menu'].includes(action)
+      ) {
         if (['terminal', 'unified'].includes(action))
           await page.getByRole('button', { name: 'Show bottom terminal', exact: true }).click()
         if (action === 'info') {
@@ -227,6 +235,65 @@ createRoot(document.getElementById('app')).render(<App/>);`,
             document.body.innerText.includes(text),
           ),
       )
+      if (state === 'lists-dense') {
+        if (route === 'pulls') {
+          const menus = page.getByRole('button', { name: /^Actions for PR #/ })
+          await menus.first().waitFor()
+          assert.equal(
+            await menus.count(),
+            14,
+            'Dense PR fixture contains fourteen production rows',
+          )
+          if (action === 'dense-row-menu') {
+            await menus.first().click()
+            await page.getByRole('menuitem', { name: 'Copy PR link', exact: true }).waitFor()
+          }
+        } else {
+          await page
+            .getByRole('button')
+            .filter({ hasText: 'Reconnect to a paired computer' })
+            .waitFor()
+          assert.equal(
+            await page.locator('button.studio-collection-row').count(),
+            14,
+            'Dense issue fixture contains fourteen production rows',
+          )
+        }
+        assert.ok(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          'Dense lists stay within the page viewport',
+        )
+      }
+      if (action === 'agents-dirty') {
+        await page.getByLabel('Name', { exact: true }).fill('Runtime navigation reviewer')
+        await page
+          .getByLabel('Instructions', { exact: true })
+          .fill(
+            'Review the runtime selection and reconnect flow. Preserve HTTP access over LAN and VPN, and verify unsaved drafts remain available when switching project tools.',
+          )
+        await page.getByText('Connection & account', { exact: true }).click()
+        const region = page.getByRole('region', { name: 'Agents settings', exact: true })
+        await region.evaluate((element) => {
+          element.scrollTop = (element.scrollHeight - element.clientHeight) * 0.45
+        })
+        const actions = page.getByRole('group', { name: 'Settings save actions', exact: true })
+        await actions
+          .getByRole('button', { name: 'Save changes', exact: true })
+          .waitFor({ state: 'visible' })
+        await actions
+          .getByRole('button', { name: 'Discard', exact: true })
+          .waitFor({ state: 'visible' })
+        const bounds = await actions.boundingBox()
+        assert.ok(
+          bounds && bounds.y >= 0 && bounds.y + bounds.height <= 960,
+          'Unsaved agent actions remain visible while settings scroll',
+        )
+        assert.equal(
+          await page.getByRole('dialog').count(),
+          0,
+          'Agent draft uses the embedded settings editor',
+        )
+      }
       await page.evaluate(() => document.fonts.ready)
       await page.waitForFunction(() => {
         const navigation = document.querySelector('[aria-label="Settings navigation"]')
@@ -394,8 +461,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       assert.equal(await page.evaluate(() => document.fonts.check('400 14px Inter')), true)
       assert.equal(Math.round((await page.locator('.studio').boundingBox()).height), 960)
       assert.ok(
-        (await page.getByRole('navigation', { name: 'Main navigation', exact: true }).boundingBox())
-          .width <= 64,
+        (
+          await page
+            .getByRole('navigation', { name: 'Main navigation', exact: true, includeHidden: true })
+            .boundingBox()
+        ).width <= 64,
         'Activity bar stays thin',
       )
       if (mode === 'dark')

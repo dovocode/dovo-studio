@@ -513,18 +513,18 @@ export function AgentEditor({
                   </Disclosure>
                 </>
               )}
-              {error && (
-                <p role="alert" className="text-xs text-destructive">
-                  {error}
-                </p>
-              )}
             </div>
           </fieldset>
         </div>
         <fieldset
           disabled={busy || !connected}
-          className={`min-w-0 shrink-0 ${inline ? '' : 'sticky bottom-0 z-10 bg-card pt-1'}`}
+          className="sticky bottom-0 z-10 min-w-0 shrink-0 space-y-3 bg-background pt-3"
         >
+          {error && (
+            <p role="alert" className="break-words text-xs text-destructive">
+              {error}
+            </p>
+          )}
           {!creating ? (
             <SettingsSaveBar
               changes={settingsChanges(
@@ -538,7 +538,7 @@ export function AgentEditor({
                 !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
                 !supportsAccess(agent.provider, agent.permission)
               }
-              description={`Changes apply to new turns on ${computerName}. Save to apply.`}
+              description={`Changes apply to new turns on ${computerName}.`}
               onDiscard={discard}
               onSave={() => form.current?.requestSubmit()}
             />

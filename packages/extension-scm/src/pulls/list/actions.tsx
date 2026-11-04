@@ -39,6 +39,7 @@ type ActionKind = PullAction['action']
 type MergeStatus = {
   headSha: string
   signals: PullSignal[]
+  providerCI?: PullSignal
   warnings: string[]
   checks: {
     busy: boolean
@@ -638,6 +639,11 @@ function PullActionDialog({
                 {mergeStatus?.headSha === scope.headSha ? (
                   <>
                     <ul className="space-y-2">
+                      {mergeStatus.providerCI && (
+                        <li>
+                          <Signal signal={mergeStatus.providerCI} />
+                        </li>
+                      )}
                       {mergeStatus.signals.map((signal, index) => (
                         <li key={index}>
                           <Signal signal={signal} />

@@ -22,7 +22,10 @@ import {
   screenPipeline,
   screenIssuePage,
   screenPipelinePage,
+  denseScreenPullPage,
+  denseScreenIssuePage,
 } from './desktop-screens-data'
+import { denseGitComparisons, denseGitFiles } from './desktop-review-density'
 import sampleImage from './assets/ui-polish-image.png'
 import { ComposerFixtureProvider } from './composer-fixture'
 import {
@@ -53,6 +56,8 @@ const readCache: RuntimeReadCache = {
 
 export type DesktopScreenState =
   | 'git-changes'
+  | 'git-review-dense'
+  | 'lists-dense'
   | 'legacy'
   | 'populated'
   | 'busy'
@@ -197,24 +202,26 @@ function ScreenWorkspace({
         '/api/tasks/files/list': { files: ['src/navigation.tsx', 'README.md'] },
         '/api/scm/changes': {
           files:
-            state === 'git-changes'
-              ? [
-                  {
-                    path: 'src/navigation.tsx',
-                    before: gitNavigationContents.head,
-                    after: gitNavigationContents.working,
-                    viewed: false,
-                    gitStatus: { index: 'modified', workingTree: 'modified' },
-                  },
-                  {
-                    path: 'README.md',
-                    before: '# Workspace\n',
-                    after: '# Dovo workspace\n',
-                    viewed: false,
-                    gitStatus: { index: 'unchanged', workingTree: 'modified' },
-                  },
-                ]
-              : [],
+            state === 'git-review-dense'
+              ? denseGitFiles
+              : state === 'git-changes'
+                ? [
+                    {
+                      path: 'src/navigation.tsx',
+                      before: gitNavigationContents.head,
+                      after: gitNavigationContents.working,
+                      viewed: false,
+                      gitStatus: { index: 'modified', workingTree: 'modified' },
+                    },
+                    {
+                      path: 'README.md',
+                      before: '# Workspace\n',
+                      after: '# Dovo workspace\n',
+                      viewed: false,
+                      gitStatus: { index: 'unchanged', workingTree: 'modified' },
+                    },
+                  ]
+                : [],
         },
         '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'main' },
         '/api/terminals/ticket': { ticket: 'catalog-preview' },
@@ -250,7 +257,7 @@ function ScreenWorkspace({
           truncated: false,
         },
         '/api/scm/action-state': {
-          dirty: state === 'git-changes',
+          dirty: state === 'git-changes' || state === 'git-review-dense',
           branch: 'main',
           ahead: 0,
           behind: 0,
@@ -267,14 +274,18 @@ function ScreenWorkspace({
           destination: 'preview-destination',
         },
         '/api/scm/pulls/detail': screenPull,
-        '/api/scm/pulls/overview': { pulls: [screenPull.pull], page: 1, hasMore: false },
+        '/api/scm/pulls/overview':
+          state === 'lists-dense'
+            ? denseScreenPullPage
+            : { pulls: [screenPull.pull], page: 1, hasMore: false },
         '/api/scm/work/options': {
           provider: 'github',
           issues: true,
           pipelines: true,
           pipelineActions: [],
         },
-        '/api/scm/work/issues/list': screenIssuePage,
+        '/api/scm/work/issues/list':
+          state === 'lists-dense' ? denseScreenIssuePage : screenIssuePage,
         '/api/scm/work/issues/detail': screenIssue,
         '/api/scm/work/pipelines/list': screenPipelinePage,
         '/api/scm/work/pipelines/detail': screenPipeline,
@@ -301,6 +312,13 @@ function ScreenWorkspace({
         })
       if (path === '/api/scm/file-preview') {
         const query = Schema.decodeUnknownSync(stagingFilePreviewQuerySchema)(input)
+        if (state === 'git-review-dense') {
+          const comparisons = Object.entries(denseGitComparisons).find(
+            ([path]) => path === query.path,
+          )?.[1]
+          if (!comparisons) throw new Error('Catalog preview: no Git comparison for this file.')
+          return Schema.decodeUnknownSync(schema)(comparisons[query.comparison])
+        }
         if (state !== 'git-changes' || query.path !== 'src/navigation.tsx')
           throw new Error('Catalog preview: no Git comparison for this file.')
         const before =

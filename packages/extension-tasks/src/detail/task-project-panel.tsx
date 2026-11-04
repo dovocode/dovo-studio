@@ -126,6 +126,7 @@ export function TaskProjectPanel({
     }
   }
   const [gitOpen, setGitOpen] = useApplicationState(false)
+  const [gitReview, setGitReview] = useApplicationState(false)
   const [linking, setLinking] = useApplicationState(false)
   const [openError, setOpenError] = useApplicationState('')
   const [openBusy, setOpenBusy] = useApplicationState(false)
@@ -813,13 +814,16 @@ export function TaskProjectPanel({
       </div>
       {gitOpen && repo && (
         <Dialog open onOpenChange={setGitOpen}>
-          <DialogContent className="max-h-[85dvh] overflow-y-auto">
+          <DialogContent
+            className={`flex flex-col overflow-hidden has-[[data-git-changes=true]]:h-[min(48rem,85dvh)] ${gitReview ? 'h-[min(48rem,85dvh)] max-w-6xl' : 'max-w-2xl'}`}
+          >
             <DialogTitle>Git &amp; project actions</DialogTitle>
             <DialogDescription>
-              Stage and commit changes, push your branch, or open this thread’s working folder on
-              the runtime computer.
+              Review, stage and commit changes in this thread’s working folder.
             </DialogDescription>
-            <RepositoryActions repo={repo} taskId={task.id} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <RepositoryActions repo={repo} taskId={task.id} onReviewChange={setGitReview} />
+            </div>
           </DialogContent>
         </Dialog>
       )}

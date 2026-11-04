@@ -332,11 +332,13 @@ try {
   })
   const choose = async (label, option) => {
     const select = page.getByRole('combobox', { name: label, exact: true })
+    const picker = page.getByRole('button', { name: label, exact: true })
+    await select.or(picker).waitFor({ state: 'visible' })
     if (await select.count()) {
       await select.click()
       await page.getByRole('option', { name: option, exact: true }).click()
     } else {
-      await page.getByRole('button', { name: label, exact: true }).click()
+      await picker.click()
       await page.getByRole('dialog').getByRole('option', { name: option, exact: true }).click()
     }
   }
@@ -493,7 +495,7 @@ try {
     .waitFor()
   await page
     .locator('section[data-setting-label="Snoozing"]')
-    .getByText('Save required', { exact: true })
+    .getByText('Saves separately', { exact: true })
     .waitFor()
   const discardSettings = page.getByRole('dialog', {
     name: 'Discard unsaved settings changes?',
@@ -635,11 +637,8 @@ try {
   assert.equal(writes.at(-1).after.taskBehavior.archiveAfterSettledDays, 12)
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
-  assert.equal(
-    await page.getByRole('button', { name: 'Settings computer', exact: true }).count(),
-    0,
-  )
-  await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings computer', exact: true }).waitFor()
+  await choose('Settings computer', 'MacBook Pro')
   await page
     .getByLabel('Settings target', { exact: true })
     .getByText('MacBook Pro', { exact: true })
@@ -670,14 +669,14 @@ try {
   )
   await settingsSidebar.getByRole('button', { name: 'Thread defaults', exact: true }).click()
   await choose('Working directory', 'New worktree')
-  await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+  await choose('Settings computer', 'All computers')
   await page
     .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
     .getByRole('button', { name: 'Cancel', exact: true })
     .click()
   assert.equal(
-    await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).count(),
-    1,
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).innerText(),
+    'MacBook Pro',
   )
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
@@ -873,7 +872,7 @@ try {
   const localProfiles = page
     .getByRole('heading', { name: 'Local browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
-  await localProfiles.getByText('Save required', { exact: true }).waitFor()
+  await localProfiles.getByText('Saves separately', { exact: true }).waitFor()
   await localProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Local work')
   await localProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await localProfiles.getByRole('textbox', { name: 'Name for Local work' }).waitFor()
@@ -881,7 +880,7 @@ try {
   const remoteProfiles = page
     .getByRole('heading', { name: 'Remote browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
-  await remoteProfiles.getByText('Save required', { exact: true }).waitFor()
+  await remoteProfiles.getByText('Saves separately', { exact: true }).waitFor()
   await remoteProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Remote work')
   await remoteProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remoteProfiles.getByRole('textbox', { name: 'Name for Remote work' }).waitFor()
@@ -895,6 +894,27 @@ try {
     )
     .waitFor()
   await page.getByText('Computer: MacBook Pro', { exact: true }).waitFor()
+  const hostTarget = page.locator('.studio-settings-intro .studio-settings-target')
+  const hostGeometry = await hostTarget.evaluate((node) => {
+    const content = node.closest('.studio-settings-content').getBoundingClientRect()
+    const target = node.getBoundingClientRect()
+    const name = node.querySelector('[title^="Computer:"]').getBoundingClientRect()
+    return {
+      left: target.left - content.left,
+      nameLeft: name.left - content.left,
+      border: getComputedStyle(node).borderBottomWidth,
+    }
+  })
+  assert.ok(
+    Math.abs(hostGeometry.left) <= 1 && Math.abs(hostGeometry.nameLeft) <= 1,
+    'Computer target shares the page content gutter',
+  )
+  assert.equal(
+    hostGeometry.border,
+    '0px',
+    'Computer target does not nest a second divider inside the intro',
+  )
+
   assert.equal(
     await page.getByText('This device · saved automatically', { exact: true }).count(),
     0,

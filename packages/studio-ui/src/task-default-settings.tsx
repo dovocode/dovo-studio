@@ -839,7 +839,7 @@ function TaskDefaultSettingsForm({
         saving={busy}
         disabled={!!policyIssue || disabled}
         saved={saved}
-        description="Changes apply to new threads. Save to apply."
+        description="Changes apply to new threads."
         onSave={() => void save()}
         onDiscard={() => {
           setDraft(settings?.value.taskDefaults ?? {})

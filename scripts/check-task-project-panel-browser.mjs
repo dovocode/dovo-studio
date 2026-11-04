@@ -56,7 +56,7 @@ const mocks = {
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectSettings=()=> <p>Project defaults</p>;',
   '@dovo/extension-scm/repository-actions':
-    'export const RepositoryActions=()=> <p>Advanced Git actions</p>;',
+    'export const RepositoryActions=({onReviewChange})=> <div data-git-changes="true"><p>Advanced Git actions</p><button onClick={()=>onReviewChange(true)}>Review fixture file</button><button onClick={()=>onReviewChange(false)}>Back to staging fixture</button></div>;',
   '../dialogs/task-pull-link-dialog': 'export const TaskPullLinkDialog=()=>null;',
   '../dialogs/task-templates-dialog': 'export const TaskTemplatesDialog=()=>null;',
   '../dialogs/saved-prompts-dialog': 'export const SavedPromptsDialog=()=>null;',
@@ -646,6 +646,17 @@ try {
     }
     await page.getByRole('menuitem', { name: 'Stage, commit & push…', exact: true }).click()
     await page.getByRole('dialog', { name: 'Git & project actions', exact: true }).waitFor()
+    const gitDialog = page.getByRole('dialog', { name: 'Git & project actions', exact: true })
+    const stagingBounds = await gitDialog.boundingBox()
+    await gitDialog.getByRole('button', { name: 'Review fixture file', exact: true }).click()
+    const reviewBounds = await gitDialog.boundingBox()
+    assert.equal(reviewBounds.height, stagingBounds.height, 'Review keeps the Git workspace height')
+    if (!mobile) assert.ok(reviewBounds.width > stagingBounds.width + 300)
+    assert.ok(
+      reviewBounds.x >= 0 && reviewBounds.x + reviewBounds.width <= page.viewportSize().width,
+    )
+    await gitDialog.getByRole('button', { name: 'Back to staging fixture', exact: true }).click()
+    assert.deepEqual(await gitDialog.boundingBox(), stagingBounds)
     await page.keyboard.press('Escape')
     await page
       .getByRole('dialog', { name: 'Git & project actions', exact: true })

@@ -94,7 +94,7 @@ export default function AppearanceSettings() {
                 return (
                   <label
                     key={id}
-                    className={`relative min-w-0 cursor-pointer rounded-lg border p-2.5 focus-within:ring-2 focus-within:ring-ring ${themePalette === id ? 'border-primary/50 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60 hover:border-muted-foreground/60 hover:bg-muted/50'}`}
+                    className={`relative min-w-0 cursor-pointer rounded-lg border p-2.5 focus-within:ring-2 focus-within:ring-ring ${themePalette === id ? 'border-primary outline-1 outline-offset-1 outline-primary/60 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60 hover:border-muted-foreground/60 hover:bg-muted/50'}`}
                   >
                     <input
                       type="radio"
@@ -115,12 +115,12 @@ export default function AppearanceSettings() {
                     <span className="flex items-center justify-between gap-1 text-xs font-medium">
                       {palette.name}
                       <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
-                        {id === 'dovo' && (
-                          <span className="text-[10px] font-normal text-muted-foreground">
-                            Default
-                          </span>
+                        {themePalette === id && (
+                          <>
+                            <span className="text-[10px] font-normal">Selected</span>
+                            <Check className="size-3.5" aria-hidden="true" />
+                          </>
                         )}
-                        {themePalette === id && <Check className="size-3.5" aria-hidden="true" />}
                       </span>
                     </span>
                     <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
@@ -359,7 +359,7 @@ export default function AppearanceSettings() {
                 min={8}
                 max={32}
                 step={1}
-                className="min-w-0 flex-1 text-center tabular-nums"
+                className="studio-terminal-size-input min-w-0 flex-1 text-center tabular-nums"
                 value={terminalSizeInput ?? String(terminalFontSize)}
                 onChange={(event) => {
                   const value = event.currentTarget.value

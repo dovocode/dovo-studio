@@ -16,6 +16,7 @@ import { usePullDetail } from './use-pull-detail'
 import {
   useWorkspace,
   pullState,
+  pullChecks,
   pullDetailChecks,
   pullDetailReviews,
   pullMergeability,
@@ -170,7 +171,17 @@ function PullDetailContent({
     detail && (sections.status.ready || sections.discussion.ready)
       ? pullDetailReviews(detail)
       : { label: 'Review status not loaded', tone: 'neutral' }
-  const checksFailed = failedRuns > 0 || (checksReady && checkSummary.tone === 'danger')
+  const reportsFailed =
+    checksReady && !sections.checks.error && !!detail && pullDetailChecks(detail).tone === 'danger'
+  const checkFailure =
+    failedRuns > 0 && reportsFailed
+      ? 'CI failed'
+      : failedRuns > 0
+        ? 'Pipeline failed'
+        : reportsFailed
+          ? 'Checks failed'
+          : undefined
+  const ciSummary = detail ? pullChecks(detail.pull) : undefined
   const previousChanges = useRef<typeof detail>(null)
   const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
   useEffect(() => {
@@ -334,6 +345,7 @@ function PullDetailContent({
                   readConnected: sections.checks.readConnected,
                   refresh: sections.checks.refresh,
                 },
+                providerCI: pullChecks(detail.pull),
                 signals: [
                   checkSummary,
                   pipelineRuns.runs.length
@@ -522,7 +534,8 @@ function PullDetailContent({
                     aria-description={
                       item.id === 'checks'
                         ? [
-                            checksReady ? checkSummary.label : '',
+                            ciSummary?.label,
+                            checkSummary.label,
                             pipelineRuns.runs.length ? pipelineSummary.label : '',
                           ]
                             .filter(Boolean)
@@ -555,15 +568,15 @@ function PullDetailContent({
                   >
                     <item.icon
                       aria-hidden
-                      className={`size-3.5 ${item.id === 'checks' && checksFailed ? 'text-status-error' : ''}`}
+                      className={`size-3.5 ${item.id === 'checks' && checkFailure ? 'text-status-error' : ''}`}
                     />
                     {item.label}
-                    {(item.count !== undefined || (item.id === 'checks' && checksFailed)) && (
+                    {(item.count !== undefined || (item.id === 'checks' && checkFailure)) && (
                       <span
                         aria-hidden
-                        className={`rounded px-1.5 text-[0.625rem] tabular-nums ${item.id === 'checks' && checksFailed ? 'bg-status-error/10 text-status-error' : 'bg-muted text-muted-foreground'}`}
+                        className={`rounded px-1.5 text-[0.625rem] tabular-nums ${item.id === 'checks' && checkFailure ? 'bg-status-error/10 text-status-error' : 'bg-muted text-muted-foreground'}`}
                       >
-                        {item.id === 'checks' && checksFailed ? 'Failed' : item.count}
+                        {item.id === 'checks' && checkFailure ? checkFailure : item.count}
                       </span>
                     )}
                   </button>
@@ -573,6 +586,7 @@ function PullDetailContent({
                 className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2"
                 aria-label="Pull request status"
               >
+                {ciSummary && <Signal signal={ciSummary} />}
                 <button
                   type="button"
                   aria-label="View pull request checks"
@@ -816,7 +830,7 @@ function PullDetailContent({
                     active={tab === 'checks'}
                   />
                 )}
-                <PullSectionStatus label="Checks" section={sections.checks} />
+                <PullSectionStatus label="Check reports" section={sections.checks} />
                 <PullSectionStatus label="Reviews" section={sections.discussion} />
               </PullStatus>
             </section>
