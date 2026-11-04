@@ -45,6 +45,12 @@ export async function captureFollowUpDialogs(page, origin, output) {
           .getByRole('dialog', { name: 'Project actions', exact: true })
           .getByRole('button', { name: 'Save', exact: true })
           .click()
+        const command = page
+          .getByRole('dialog', { name: 'Project actions', exact: true })
+          .getByRole('textbox', { name: 'Command', exact: true })
+        assert.equal(await command.getAttribute('aria-invalid'), 'true')
+        assert.equal(await command.evaluate((element) => element === document.activeElement), true)
+        await page.getByRole('alert').filter({ hasText: 'Enter a command' }).waitFor()
       },
     ],
     [
@@ -104,7 +110,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
       'tasks',
       async () => {
         await info()
-        await button('Git actions and pull requests').click()
+        await button('Git actions').click()
       },
     ],
     [
@@ -112,7 +118,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
       'tasks',
       async () => {
         await info()
-        await button('Git actions and pull requests').click()
+        await button('Git actions').click()
         await menu('Advanced Git actions…').click()
       },
     ],
@@ -352,7 +358,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
           await page.waitForFunction(
             () => !document.body.innerText.includes('Loading provider models…'),
           )
-          const completion = dialog.getByRole('button', { name: 'Add configuration', exact: true })
+          const completion = dialog.getByRole('button', { name: 'Add agent profile', exact: true })
           const completionBox = await completion.boundingBox()
           const dialogBox = await dialog.boundingBox()
           assert.ok(

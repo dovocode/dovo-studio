@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 import {
@@ -712,8 +713,7 @@ function AcpAuthentication({
           Sign out
         </Button>
       )}
-      <details className="rounded border p-2 text-xs">
-        <summary className="cursor-pointer text-muted-foreground">Saved agent sessions</summary>
+      <Disclosure title={<> Saved agent sessions </>}>
         <div className="mt-2 grid gap-2">
           <p className="text-muted-foreground">
             Sessions this agent keeps on the computer, including their saved context.
@@ -776,7 +776,7 @@ function AcpAuthentication({
             </p>
           )}
         </div>
-      </details>
+      </Disclosure>
       {!!terminal && (
         <div className="grid gap-2">
           <p className="text-xs text-muted-foreground">

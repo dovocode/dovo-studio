@@ -101,3 +101,5 @@ export { ChangeTypeFilters, ChangeTypeIndicator } from './review/change-types'
 export { ChangeSummary } from './review/change-summary'
 
 export { ImageViewer } from './image-viewer'
+
+export { Disclosure } from './disclosure'

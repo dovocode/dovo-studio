@@ -209,6 +209,7 @@
   border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
 }
 .dovo-dialog-content textarea {
+  font-size: 0.8125rem;
   resize: none;
   border-radius: 8px;
 }
@@ -254,8 +255,8 @@
   margin-top: -10px;
 }
 .dovo-dialog-content :is([data-choice-picker], [data-slot='select-trigger']) {
-  background-color: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
-  border-color: var(--input);
+  background-color: var(--dialog-field);
+  color: var(--foreground);
   border-radius: 8px;
   padding-inline: 12px;
   font-size: 0.8125rem;
@@ -327,4 +328,9 @@
 
 .is-user .dovo-message-content {
   background-color: color-mix(in srgb, var(--foreground) 5%, var(--background));
+}
+
+.dovo-dialog-content
+  :is([data-choice-picker], [data-slot='select-trigger']):not([aria-invalid='true']) {
+  border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
 }

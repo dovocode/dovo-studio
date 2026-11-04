@@ -133,12 +133,38 @@
       "score": 7.5,
       "id": "de6ad69f-a27b-4696-8b4c-8d64bd4b6d4e",
       "note": "Intermediate gallery; remaining findings include disclosure styles, Thread info customization labels, repeated PR actions, scope indicators and select affordance."
+    },
+    {
+      "round": "reset22",
+      "model": "GPT-6.1 Sol",
+      "score": 8.2,
+      "id": "db26f9c7-54e1-4c69-8872-7bb21c4b80ca",
+      "note": "Intermediate gallery before rounded sidebars and the shared disclosure/control consistency pass."
+    },
+    {
+      "round": "reset22",
+      "model": "GPT-6.1 Sol",
+      "score": 8.3,
+      "id": "378eae17-83fd-4934-8535-dc4a8672091b",
+      "note": "Intermediate gallery before rounded sidebars and the shared disclosure/control consistency pass."
+    },
+    {
+      "round": "reset22",
+      "model": "GPT-6.1 Sol",
+      "score": 8.2,
+      "id": "6f1e0507-eba6-442f-b61a-2e2760a02529",
+      "note": "Intermediate gallery before rounded sidebars and the shared disclosure/control consistency pass."
     }
   ],
   "remaining": [
-    "Complete five-member review against frozen 264-capture gallery22",
-    "Address verified council findings and recapture affected surfaces",
-    "Obtain unanimous honest final 10/10 reviews",
-    "Finish draft PR #50 after final gates"
-  ]
+    "Review latest rounded-sidebars / flat-main-surfaces gallery with both Opus reviewers",
+    "Address verified findings until both Opus reviewers award at least 9/10",
+    "Refresh evidence, complete final checks and finish PR #50"
+  ],
+  "approvalTarget": {
+    "model": "Opus 5.5",
+    "reviewers": 2,
+    "minimumScore": 9,
+    "reason": "Dominic changed the target to Opus 9/10."
+  }
 }

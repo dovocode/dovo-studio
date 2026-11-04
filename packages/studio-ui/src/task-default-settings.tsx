@@ -1,3 +1,4 @@
+import { Disclosure } from './disclosure'
 import {
   settingsChangeCount,
   settingsChanges,
@@ -282,8 +283,8 @@ function TaskDefaultSettingsForm({
       )}
       <fieldset disabled={disabled} className="min-w-0 space-y-6">
         <SettingsGroup
-          title="New tasks"
-          description="Applies when you create a task. Existing conversations keep their agent and permissions."
+          title="New threads"
+          description="Applies when you create a thread. Existing conversations keep their agent and permissions."
         >
           {repository && scope === 'project' && runtimes.length > 1 && (
             <SettingRow
@@ -524,10 +525,7 @@ function TaskDefaultSettingsForm({
               />
             </div>
             {harness.provider !== 'cursor' && (
-              <details className="p-4">
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                  Connection override
-                </summary>
+              <Disclosure title={<> Connection override </>}>
                 <div className="mt-3 space-y-2">
                   <label className="text-xs" htmlFor="default-agent-connection">
                     {harness.provider === 'opencode' ? 'Server URL' : 'Executable (optional)'}
@@ -550,7 +548,7 @@ function TaskDefaultSettingsForm({
                     }
                   />
                 </div>
-              </details>
+              </Disclosure>
             )}
           </SettingsGroup>
         )}

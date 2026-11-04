@@ -2879,3 +2879,77 @@ a.studio-project-row:hover {
   > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts']) {
   border-bottom: 0;
 }
+
+/* Disclosures share a quiet row; the contents carry their own fields and grouping. */
+.studio-disclosure {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.studio-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.studio-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.studio-disclosure > summary > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  transform: rotate(-90deg);
+}
+.studio-disclosure[open] > summary > svg {
+  transform: rotate(0);
+}
+.studio-disclosure > :not(summary) {
+  margin-top: 12px;
+}
+.studio-disclosure > summary:hover {
+  color: var(--foreground);
+}
+
+/* Softly outlined workspace panes retain the compact composition. */
+@media (min-width: 768px) {
+  .studio-overview-pane,
+  .studio-thread-tools-panel {
+    margin: 6px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .studio-header-layout[data-compact='false']
+    .studio-body:has(> .studio-navigation[aria-label='Main navigation'])
+    .studio-overview-pane {
+    margin-left: 6px;
+  }
+}
+
+@media (min-width: 768px) {
+  .studio-navigation[aria-label='Main navigation'] {
+    margin: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+  }
+}
+
+@media (min-width: 768px) {
+  .studio-tools-navigation {
+    margin: 6px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+  }
+  .studio-thread-tools-panel:has(.studio-browser-header) {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}

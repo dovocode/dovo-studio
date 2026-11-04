@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import {
   Button,
@@ -75,8 +76,7 @@ export function ModelSettings({
           await refreshRuntimes()
         }}
       />
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer">Where model favorites are saved</summary>
+      <Disclosure title={<> Where model favorites are saved </>}>
         <div className="mt-3 grid gap-3 rounded-md border p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-sm leading-relaxed">
@@ -128,7 +128,7 @@ export function ModelSettings({
             </div>
           )}
         </div>
-      </details>
+      </Disclosure>
       {!!error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

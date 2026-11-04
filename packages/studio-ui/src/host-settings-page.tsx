@@ -72,9 +72,9 @@ export function HostSettingsPage({
       description={description}
       headerActions={
         source && (
-          <div className="flex w-80 min-w-0 max-w-full items-center gap-2">
+          <div className="flex min-w-0 max-w-full items-center justify-end gap-2">
             <span
-              className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+              className="min-w-0 truncate rounded-md border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground"
               title={`${localSettings ? 'Computer settings on' : 'Saved on'} ${source.name}`}
             >
               {localSettings ? 'Computer settings on' : 'Saved on'} {source.name}

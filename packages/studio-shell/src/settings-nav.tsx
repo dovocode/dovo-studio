@@ -267,7 +267,6 @@ export function SettingsNav({
   )
   const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
   const activeView = views.find((view) => view.id === activeId)
-  const inherited = activeView?.settingsScope === 'inherited'
   const scopeLabel = pageStorage(activeView)?.label ?? 'History on paired computers'
   const [sidebarVisible] = useLeftSidebar()
   useEffect(() => {
@@ -499,14 +498,6 @@ export function SettingsNav({
           <p role="status" className="px-2 text-xs text-muted-foreground">
             {searchStatus}
           </p>
-        )}
-        {!inherited && (
-          <aside
-            aria-label="Settings storage"
-            className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
-          >
-            <p className="font-medium">Scope: {scopeLabel}</p>
-          </aside>
         )}
       </div>
     </nav>

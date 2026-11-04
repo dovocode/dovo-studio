@@ -26,37 +26,37 @@ import { SettingSource } from './setting-source'
 const fields = [
   [
     'quotaResume',
-    'Auto-resume limited tasks',
-    'Continue at the provider’s reported reset time. Each task can cancel its continuation.',
+    'Auto-resume limited threads',
+    'Continue at the provider’s reported reset time. Each thread can cancel its continuation.',
   ],
   [
     'quotaSnooze',
-    'Snooze limited tasks',
+    'Snooze limited threads',
     'Hide quota stops until their reported reset time. Combine with auto-resume to continue when they wake.',
   ],
   [
     'settleMerged',
-    'Auto-settle merged tasks',
-    'Move idle tasks to Settled when their pull request merges.',
+    'Auto-settle merged threads',
+    'Move idle threads to Settled when their pull request merges.',
   ],
   [
     'settleClosed',
-    'Auto-settle closed tasks',
-    'Move idle tasks to Settled when their pull request closes.',
+    'Auto-settle closed threads',
+    'Move idle threads to Settled when their pull request closes.',
   ],
   [
     'settleInactive',
-    'Auto-settle inactive tasks',
-    'Settle idle tasks after the selected period. Pins, drafts and pending work are protected.',
+    'Auto-settle inactive threads',
+    'Settle idle threads after the selected period. Pins, drafts and pending work are protected.',
   ],
   [
     'autoArchiveSettled',
-    'Auto-archive settled tasks',
-    'Archive tasks after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.',
+    'Auto-archive settled threads',
+    'Archive threads after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.',
   ],
   [
     'continueAfterRestart',
-    'Continue tasks after restarts',
+    'Continue threads after restarts',
     'Resume interrupted turns after a runtime update, crash or computer restart.',
   ],
 ] as const

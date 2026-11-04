@@ -484,7 +484,10 @@ function PullDetailContent({
                   <Signal
                     signal={
                       sections.status.ready || sections.checks.ready
-                        ? pullDetailChecks(detail)
+                        ? {
+                            ...pullDetailChecks(detail),
+                            label: `PR checks: ${pullDetailChecks(detail).label}`,
+                          }
                         : { label: 'Loading checks…', tone: 'neutral' }
                     }
                   />

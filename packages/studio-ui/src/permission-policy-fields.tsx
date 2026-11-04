@@ -1,3 +1,4 @@
+import { Disclosure } from './disclosure'
 import {
   approvalPolicySchema,
   sandboxModeSchema,
@@ -74,10 +75,7 @@ export function PermissionPolicyFields({
   const effective = effectivePermissionPolicy(displayed)
   const issue = permissionPolicyIssue(displayed)
   return (
-    <details className="space-y-3">
-      <summary className="cursor-pointer text-xs text-muted-foreground">
-        Advanced · {permissionPolicyLabel(displayed)}
-      </summary>
+    <Disclosure title={<> Advanced · {permissionPolicyLabel(displayed)} </>}>
       <p className="text-xs text-muted-foreground">{permissionPolicySummary(displayed)}</p>
       {(value.approvalPolicy ||
         value.sandboxMode ||
@@ -184,7 +182,7 @@ export function PermissionPolicyFields({
       <p className="text-xs text-muted-foreground">
         Wider access applies on the next turn. Tightening access stops affected running agents.
       </p>
-    </details>
+    </Disclosure>
   )
 }
 

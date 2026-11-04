@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useEffect, useRef } from 'react'
 import { useStudioHost, useWorkspace, useSettingsTarget } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
@@ -34,14 +35,13 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
     >
       {({ scope, repository }) => (
         <>
-          <details className="text-xs text-muted-foreground">
-            <summary className="cursor-pointer">How inherited lifecycle rules work</summary>
+          <Disclosure title="How inherited lifecycle rules work">
             <p className="mt-2">
               Project on computer overrides Project, then Computer, then shared defaults. Restart
               and PR settling fall back to the computer defaults when all levels inherit. Archiving
               falls back to the computer’s inactivity policy when no scoped rule is set.
             </p>
-          </details>
+          </Disclosure>
           <ComputerDefaultsLink />
           <TaskBehaviorSettings scope={scope} repository={repository} />
         </>

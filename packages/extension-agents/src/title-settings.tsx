@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { settingsChanges, supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -218,10 +219,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 </p>
               </FormField>
               {settings.harness && !(selection && settings.inheritTitleModel) && (
-                <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Connection (optional)
-                  </summary>
+                <Disclosure title={<> Connection (optional) </>}>
                   <div className="mt-3 grid gap-3">
                     <FormField layout="settings" label="Executable or server URL">
                       <Input
@@ -257,7 +255,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                       </FormField>
                     )}
                   </div>
-                </details>
+                </Disclosure>
               )}
               {harness?.provider === 'acp' && (
                 <AcpRegistry
@@ -295,10 +293,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 </p>
               )}
               {selection && (
-                <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Additional prompts (optional)
-                  </summary>
+                <Disclosure title={<> Additional prompts (optional) </>}>
                   <div className="mt-3 grid gap-3">
                     <p className="text-xs text-muted-foreground">
                       Add preferences to the built-in selection instructions. Leave blank to use
@@ -323,7 +318,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                       </FormField>
                     ))}
                   </div>
-                </details>
+                </Disclosure>
               )}
               <SettingsSaveBar
                 saveLabel={selection ? 'Save selection model' : 'Save title settings'}

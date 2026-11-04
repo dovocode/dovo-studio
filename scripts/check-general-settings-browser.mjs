@@ -34,6 +34,7 @@ export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.ts
 export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';
 export {AgentAvatar,agentIconChoices} from '${root}/packages/studio-ui/src/agent-avatar.tsx';
 export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';
+export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';
 export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';
 export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';
 export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';
@@ -223,7 +224,9 @@ try {
   const navigation = page.getByRole('region', { name: 'Settings navigation', exact: true })
   const settingsSidebar = page.getByRole('navigation', { name: 'Settings sections', exact: true })
   const brandBefore = await page.locator('.studio-titlebar').boundingBox()
-  const storageBefore = await settingsSidebar.getByLabel('Settings storage').boundingBox()
+  const storageBefore = await page
+    .getByText('This device · saved automatically', { exact: true })
+    .boundingBox()
   assert.ok(
     storageBefore.y + storageBefore.height <= 420,
     'Storage explanation fits a short window',
@@ -257,7 +260,7 @@ try {
     'Settings title stays fixed',
   )
   assert.deepEqual(
-    await settingsSidebar.getByLabel('Settings storage').boundingBox(),
+    await page.getByText('This device · saved automatically', { exact: true }).boundingBox(),
     storageBefore,
     'Storage explanation stays visible while settings links scroll',
   )
@@ -519,10 +522,10 @@ try {
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
   await page.getByRole('button', { name: 'Open task defaults', exact: true }).click()
   await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Auto-resume limited tasks', exact: true }).waitFor()
+  await page.getByRole('combobox', { name: 'Auto-resume limited threads', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
-  await choose('Auto-resume limited tasks', 'Off')
-  await choose('Auto-archive settled tasks', 'On')
+  await choose('Auto-resume limited threads', 'Off')
+  await choose('Auto-archive settled threads', 'On')
   await page
     .getByRole('textbox', { name: 'Days in Settled before archiving', exact: true })
     .fill('12')
@@ -549,14 +552,14 @@ try {
         element.scrollIntoView({ block: 'start' })
       })
   await screenshotThemes('task-defaults-project-computer-desktop')
-  await choose('Auto-resume limited tasks', 'On')
+  await choose('Auto-resume limited threads', 'On')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
   writes = await page.evaluate(() => window.writes)
   assert.equal(writes.at(-1).scope, 'environment-project')
   assert.equal(writes.at(-1).repositoryId, 'project')
   await page
-    .getByRole('button', { name: 'Use inherited auto-resume limited tasks: Off', exact: true })
+    .getByRole('button', { name: 'Use inherited auto-resume limited threads: Off', exact: true })
     .click()
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.waitForFunction(
@@ -744,10 +747,11 @@ try {
     await page.getByText('This device · saved automatically', { exact: true }).count(),
     0,
   )
-  await settingsSidebar
-    .getByLabel('Settings storage')
-    .getByText('Scope: This device + computer', { exact: true })
-    .waitFor()
+  assert.equal(
+    await settingsSidebar.getByLabel('Settings storage').count(),
+    0,
+    'Mixed scope is explained once in page content',
+  )
   assert.equal(await settingsSidebar.getByLabel('Inherited settings target').count(), 0)
   await choose('Default viewport', 'Phone')
   assert.equal(await preference('browserViewport'), 'phone')
@@ -786,10 +790,11 @@ try {
   assert.equal(await preference('diffLayout'), 'split')
   assert.equal(await preference('diffHighlight'), 'char')
   await openLocal('Usage & limits')
-  await settingsSidebar
-    .getByLabel('Settings storage')
-    .getByText('Scope: Across computers', { exact: true })
-    .waitFor()
+  assert.equal(
+    await settingsSidebar.getByLabel('Settings storage').count(),
+    0,
+    'Usage does not repeat scope in the sidebar',
+  )
   await choose('Period', 'Last 30 days')
   await page.getByRole('radio', { name: 'Limits', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'No account limits reported' }).waitFor()

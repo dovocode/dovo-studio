@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useEffect } from 'react'
 import { Copy, Star, Plus, Search } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -353,15 +354,14 @@ export function ScopedAgents({
                   {notice}
                 </p>
               )}
-              <details className="mt-4 border-t pt-4 text-xs text-muted-foreground">
-                <summary className="cursor-pointer">Check installation & sign-in</summary>
+              <Disclosure title={<> Check installation & sign-in </>}>
                 <ProviderCheck
                   key={JSON.stringify(selected)}
                   agent={selected}
                   repositoryId={repository?.id}
                   settingsScope={scope}
                 />
-              </details>
+              </Disclosure>
             </>
           ) : !settings ? (
             <div

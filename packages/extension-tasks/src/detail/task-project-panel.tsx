@@ -294,7 +294,7 @@ export function TaskProjectPanel({
                 size="sm"
                 variant="ghost"
                 className="studio-project-chevron"
-                aria-label="Git actions and pull requests"
+                aria-label="Git actions"
               >
                 <ChevronDown className="size-3" />
               </Button>
@@ -334,36 +334,6 @@ export function TaskProjectPanel({
                     Push branch
                   </DropdownMenu.Item>
                 )}
-                {!!linkedPulls.length && (
-                  <DropdownMenu.Label className="px-2 pt-2 pb-1 text-muted-foreground">
-                    Linked pull requests
-                  </DropdownMenu.Label>
-                )}
-                {linkedPulls.map((pull) => (
-                  <DropdownMenu.Item
-                    key={pull.url}
-                    className="flex max-w-80 items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
-                    onSelect={() => openPull(pull.url)}
-                  >
-                    <GitPullRequest className="size-3.5 shrink-0" />
-                    <span className="truncate">
-                      #{pull.number} · {pull.title}
-                    </span>
-                  </DropdownMenu.Item>
-                ))}
-                <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                <DropdownMenu.Item
-                  className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
-                  onSelect={() => setLinking(true)}
-                >
-                  Manage PR links…
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
-                  onSelect={() => host.navigate({ viewId: 'pulls', entityId: repo.id })}
-                >
-                  Pull requests…
-                </DropdownMenu.Item>
                 <DropdownMenu.Item
                   className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                   onSelect={() => setGitOpen(true)}

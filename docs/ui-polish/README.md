@@ -6,8 +6,8 @@ PRs, terminal, panels and settings into one visual system.
 
 Thread info now floats over the chat without resizing the conversation, bounded to the chat pane
 and clear of its composer. Flat project, checkout and action sections retain their customization order and
-visibility, portal state and close/Escape controls. The shell uses flush columns, neutral selections
-and restrained separators instead of nested panel frames.
+visibility, portal state and close/Escape controls. Sidebars retain softly outlined rounded corners; the main chat and Browser surfaces stay flat
+and borderless. Neutral selections and restrained separators keep the composition calm.
 
 ## Review the result
 
@@ -41,7 +41,7 @@ and restrained separators instead of nested panel frames.
 
 ## Evidence and limits
 
-The current gallery includes 264 captures: 49 production desktop routes/compositions in both themes,
+The checked-in round 22 gallery includes 264 captures: 49 production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -59,10 +59,9 @@ Council review is **in progress**. Dominic rejected the earlier direction as 7/1
 approvals do not count. Round 19 scored 8.3, 8.5 and 8.5 from the three Sol reviewers. The most recent Opus
 round (21) scored 7.5 from both reviewers. Their findings led to themed artifact-export controls, shared
 import-dialog pickers and footers, clearer settings scope and PR acknowledgements, consistent list
-search/refresh controls, and simpler Thread info grouping. The complete 264-capture round 22 gallery is frozen and fresh
-reviews are underway; unanimous approval has not been earned. The latest review record is in
-[council.json](council.json). Final review requires three GPT-6.1 Sol and two Opus 5.5 reviewers on
-the same final screenshots. Scores are subjective; interaction and accessibility checks are
+search/refresh controls, and simpler Thread info grouping. The next full gallery (round 26) is being captured after the shared disclosure, field, scope and rounded-sidebar refinements; the current Opus target has not yet been earned. The latest review record is in
+[council.json](council.json). Dominic subsequently changed the approval target to at least 9/10 from both Opus 5.5 reviewers
+on the same final screenshots. Sol findings continue to inform the implementation. Scores are subjective; interaction and accessibility checks are
 separate.
 
 ## Verification

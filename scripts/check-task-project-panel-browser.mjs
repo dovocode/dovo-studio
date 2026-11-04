@@ -483,7 +483,7 @@ try {
     assert.equal(await page.locator('.studio-project-path').getAttribute('title'), '/project')
     await page.getByText('Uncommitted changes · Synced', { exact: true }).waitFor()
     await page.getByRole('button', { name: /^Changes · 1 file/ }).waitFor()
-    await page.getByRole('button', { name: 'Git actions and pull requests', exact: true }).click()
+    await page.getByRole('button', { name: 'Git actions', exact: true }).click()
     if (stylesheet) {
       const menu = page.getByRole('menu').filter({ hasText: 'Advanced Git actions…' })
       const advanced = menu.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true })

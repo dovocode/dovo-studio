@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { settingsChanges } from '@dovo/protocol'
 import { secretReferenceIssue, responses } from '@dovo/protocol'
 import { SecretEnvironmentEditor } from './secret-environment-editor'
@@ -205,14 +206,11 @@ export function AgentEditor({
                         </Button>
                       ))}
                   </div>
-                  <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                    <summary className="cursor-pointer text-xs font-medium">
-                      More agents from the ACP registry
-                    </summary>
+                  <Disclosure title={<> More agents from the ACP registry </>}>
                     <div className="mt-3">
                       <AcpRegistry agent={changeAgentProvider(agent, 'acp')} onChange={setAgent} />
                     </div>
-                  </details>
+                  </Disclosure>
                 </section>
               )}
               {(step === 1 || !creating) && (
@@ -250,11 +248,7 @@ export function AgentEditor({
                       </Select>
                     </FormField>
                   )}
-                  <details
-                    className="text-xs text-muted-foreground"
-                    open={creating ? true : undefined}
-                  >
-                    <summary className="cursor-pointer">Profile icon</summary>
+                  <Disclosure open={creating ? true : undefined} title={<> Profile icon </>}>
                     <div
                       role="group"
                       aria-label="Agent icon"
@@ -285,7 +279,7 @@ export function AgentEditor({
                         </label>
                       ))}
                     </div>
-                  </details>
+                  </Disclosure>
                 </section>
               )}
               {step === 2 && (
@@ -398,10 +392,7 @@ export function AgentEditor({
                       />
                     </FormField>
                   </section>
-                  <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                    <summary className="cursor-pointer text-xs font-medium">
-                      Connection & account
-                    </summary>
+                  <Disclosure title={<> Connection & account </>}>
                     <div className="mt-4 space-y-4">
                       <p className="text-xs leading-relaxed text-muted-foreground">
                         Optional. Leave blank to use the provider installed and signed in on the
@@ -520,7 +511,7 @@ export function AgentEditor({
                         />
                       )}
                     </div>
-                  </details>
+                  </Disclosure>
                 </>
               )}
               {error && (
@@ -577,7 +568,7 @@ export function AgentEditor({
                         !supportsAccess(agent.provider, agent.permission)))
                   }
                 >
-                  {busy ? 'Saving…' : step < 2 ? 'Next' : 'Add configuration'}
+                  {busy ? 'Saving…' : step < 2 ? 'Next' : 'Add agent profile'}
                 </Button>
               </div>
             </div>

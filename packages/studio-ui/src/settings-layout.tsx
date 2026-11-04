@@ -43,7 +43,7 @@ export function SettingsPage({
         tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-7 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
       >
-        <div className={`${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-8 pb-24`}>
+        <div className={`${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}>
           <div className="space-y-2">
             <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
             {description && (
@@ -133,7 +133,7 @@ export function SettingRow({
     <div
       data-setting-label={label}
       tabIndex={-1}
-      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
+      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">

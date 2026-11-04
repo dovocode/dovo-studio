@@ -1,3 +1,5 @@
+import { RefreshCw } from 'lucide-react'
+import { Disclosure } from './disclosure'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
@@ -114,27 +116,41 @@ export function ModelSettings({
   return (
     <div className="grid gap-3">
       <FormField label="Model" layout={layout}>
-        <ChoicePicker
-          aria-label="Model"
-          className="h-9 rounded-md border bg-background px-2 text-xs"
-          value={custom ? '__custom__' : agent.model}
-          onValueChange={(selection) => {
-            const value = selection
-            setCustom(value === '__custom__')
-            if (value !== '__custom__') changeModel(value)
-          }}
-        >
-          <option value="">Provider default</option>
-          {agent.model && !selected && (
-            <option value={agent.model}>{modelDisplayName(agent.model)} (saved/custom)</option>
-          )}
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name}
-            </option>
-          ))}
-          <option value="__custom__">Custom model…</option>
-        </ChoicePicker>
+        <div className="flex min-w-0 items-center gap-1">
+          <ChoicePicker
+            aria-label="Model"
+            className="h-9 flex-1 rounded-md border bg-background px-2 text-xs"
+            value={custom ? '__custom__' : agent.model}
+            onValueChange={(selection) => {
+              const value = selection
+              setCustom(value === '__custom__')
+              if (value !== '__custom__') changeModel(value)
+            }}
+          >
+            <option value="">Provider default</option>
+            {agent.model && !selected && (
+              <option value={agent.model}>{modelDisplayName(agent.model)} (saved/custom)</option>
+            )}
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+            <option value="__custom__">Custom model…</option>
+          </ChoicePicker>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            aria-label="Refresh models"
+            title="Refresh models"
+            disabled={!connected || loading}
+            onClick={() => setRefresh((value) => value + 1)}
+          >
+            <RefreshCw className="size-3.5" />
+          </Button>
+        </div>
       </FormField>
       {(custom || (!!agent.model && !selected)) && (
         <Input
@@ -233,8 +249,7 @@ export function ModelSettings({
             )
           })}
           {!!catalog.acp.commands.length && (
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Supported commands</summary>
+            <Disclosure title={<> Supported commands </>}>
               <ul className="mt-2 grid gap-1">
                 {catalog.acp.commands.map((command) => (
                   <li key={command.name}>
@@ -244,7 +259,7 @@ export function ModelSettings({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </ProviderOptions>
       )}
@@ -325,21 +340,9 @@ export function ModelSettings({
                   ? 'Select a model that advertises reasoning options.'
                   : selected?.description}
         </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={!connected || loading}
-          onClick={() => setRefresh((value) => value + 1)}
-        >
-          Refresh models
-        </Button>
       </div>
       {onPreference && (
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Model visibility & favorites
-          </summary>
+        <Disclosure title={<> Model visibility & favorites </>}>
           <div className="mt-2 max-h-60 overflow-y-auto">
             {allModels.map((model) => {
               const key = preferenceKey(model.id)
@@ -371,7 +374,7 @@ export function ModelSettings({
               )
             })}
           </div>
-        </details>
+        </Disclosure>
       )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
@@ -385,11 +388,8 @@ export function ModelSettings({
 function ProviderOptions({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (!collapsed) return <>{children}</>
   return (
-    <details className="rounded-lg border p-3">
-      <summary className="cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        Advanced provider options
-      </summary>
+    <Disclosure title={<> Advanced provider options </>}>
       <div className="mt-3 grid gap-3">{children}</div>
-    </details>
+    </Disclosure>
   )
 }

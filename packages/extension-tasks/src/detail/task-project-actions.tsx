@@ -1,5 +1,15 @@
-import { useState } from 'react'
-import { Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
+import {
+  Hash,
+  LayoutTemplate,
+  Play,
+  Plus,
+  Settings2,
+  Trash2,
+  ChevronDown,
+  FileText,
+  ShieldCheck,
+} from 'lucide-react'
 import { confirmDiscardChanges } from '../dialogs/unsaved-changes'
 import { TaskTemplatesDialog } from '../dialogs/task-templates-dialog'
 import { SavedPromptsDialog } from '../dialogs/saved-prompts-dialog'
@@ -65,10 +75,11 @@ export function TaskProjectActions({
             title={error || 'Project actions'}
             aria-label="Project actions"
           >
-            <Plus className="size-3.5" />
+            <Play className="size-3.5" />
             <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
               Project actions
             </span>
+            <ChevronDown className="size-3.5 text-muted-foreground" />
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
@@ -112,10 +123,10 @@ export function TaskProjectActions({
               <LayoutTemplate className="size-3.5" /> Manage task templates…
             </DropdownMenu.Item>
             <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
-              <Settings2 className="size-3.5" /> Manage approval rules…
+              <ShieldCheck className="size-3.5" /> Manage approval rules…
             </DropdownMenu.Item>
             <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
-              <Settings2 className="size-3.5" /> Edit project instructions…
+              <FileText className="size-3.5" /> Edit project instructions…
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
@@ -253,14 +264,21 @@ function ProjectActionsDialog({
     if (confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
   }
   const [error, setError] = useState('')
+  const [attempted, setAttempted] = useState(false)
+  const errorId = useId()
+  const inputs = useRef(new Map<string, HTMLInputElement>())
   const change = (id: string, changes: Partial<ProjectAction>) =>
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...changes } : row)))
   const save = () => {
     const cleaned = rows
       .map((row) => ({ ...row, name: row.name.trim(), command: row.command.trim() }))
       .filter((row) => row.name || row.command)
-    if (cleaned.some((row) => !row.name || !row.command)) {
-      setError('Give every action a name and a command, or remove it.')
+    const invalid = cleaned.find((row) => !row.name || !row.command)
+    setAttempted(true)
+    if (invalid) {
+      const field = !invalid.name ? 'name' : 'command'
+      setError(`Enter a ${field} for this action, or remove it.`)
+      inputs.current.get(`${invalid.id}:${field}`)?.focus()
       return
     }
     try {
@@ -295,6 +313,14 @@ function ProjectActionsDialog({
           {rows.map((row) => (
             <div key={row.id} className="flex items-start gap-2">
               <Input
+                ref={(node) => {
+                  if (node) inputs.current.set(`${row.id}:name`, node)
+                  else inputs.current.delete(`${row.id}:name`)
+                }}
+                aria-invalid={
+                  attempted && !!(row.name.trim() || row.command.trim()) && !row.name.trim()
+                }
+                aria-describedby={attempted && !row.name.trim() ? errorId : undefined}
                 aria-label="Action name"
                 placeholder="Name"
                 value={row.name}
@@ -303,6 +329,14 @@ function ProjectActionsDialog({
                 className="h-8 w-36 text-xs"
               />
               <Input
+                ref={(node) => {
+                  if (node) inputs.current.set(`${row.id}:command`, node)
+                  else inputs.current.delete(`${row.id}:command`)
+                }}
+                aria-invalid={
+                  attempted && !!(row.name.trim() || row.command.trim()) && !row.command.trim()
+                }
+                aria-describedby={attempted && !row.command.trim() ? errorId : undefined}
                 aria-label="Command"
                 placeholder="pnpm test"
                 value={row.command}
@@ -332,7 +366,7 @@ function ProjectActionsDialog({
           <Plus className="size-3.5" /> Add action
         </Button>
         {error && (
-          <p role="alert" className="text-xs text-destructive">
+          <p id={errorId} role="alert" className="text-xs text-destructive">
             {error}
           </p>
         )}
