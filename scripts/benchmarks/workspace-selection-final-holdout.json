@@ -1,0 +1,208 @@
+{
+  "description": "Final manual catalog-generalization set authored while run-03 was training, before inspecting its results. No training or refinement uses these strings.",
+  "catalogs": {
+    "runtime": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "orion",
+        "label": "runtime: Orion Desktop"
+      },
+      {
+        "id": "vega",
+        "label": "runtime: Vega Laptop"
+      }
+    ],
+    "model": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "cobalt",
+        "label": "model: Cobalt 4.8"
+      },
+      {
+        "id": "mercury",
+        "label": "model: Mercury Max"
+      },
+      {
+        "id": "quartz",
+        "label": "model: Quartz 2.9"
+      }
+    ],
+    "project": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "tide",
+        "label": "project: Tide Client"
+      },
+      {
+        "id": "nova",
+        "label": "project: Nova Analytics"
+      }
+    ],
+    "profile": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "reading",
+        "label": "profile: Reading"
+      },
+      {
+        "id": "business",
+        "label": "profile: Business"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "text": "Let Cobalt debug the terminal renderer in project Tide Client on Orion Desktop",
+      "expected": {
+        "destination": "thread",
+        "runtime": "orion",
+        "model": "cobalt",
+        "project": "tide"
+      }
+    },
+    {
+      "text": "Use Mercury to investigate this exception",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "mercury",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Ask Quartz to repair Nova Analytics on Vega Laptop",
+      "expected": {
+        "destination": "thread",
+        "runtime": "vega",
+        "model": "quartz",
+        "project": "nova"
+      }
+    },
+    {
+      "text": "Use Cobalt without a project to explain memory allocation",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "cobalt",
+        "project": "none"
+      }
+    },
+    {
+      "text": "Use Mercury Max on Orion Desktop in project Tide Client to fix the failing tests",
+      "expected": {
+        "destination": "thread",
+        "runtime": "orion",
+        "model": "mercury",
+        "project": "tide"
+      }
+    },
+    {
+      "text": "Compare Cobalt with Mercury Max",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Can you explain an error message mentioning Vega Laptop?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Start a thread with Unlisted 9 and explain this stack trace",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "open https://paper.example.net in the Reading browser profile on Vega Laptop",
+      "expected": {
+        "destination": "browser",
+        "runtime": "vega",
+        "profile": "reading"
+      }
+    },
+    {
+      "text": "Visit http://100.64.17.8:4090 with profile Business",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "business"
+      }
+    },
+    {
+      "text": "Open https://dashboard.example.org using the Default browser profile",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      }
+    },
+    {
+      "text": "dashboard.example.org/?q=Mercury",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      }
+    },
+    {
+      "text": "Computer: Orion Desktop\nProject: No Project\nCommand: ls -la",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "orion",
+        "project": "none"
+      }
+    },
+    {
+      "text": "On Vega Laptop: git log --oneline -5",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "vega",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Computer: Orion Desktop\nProject: Tide Client\nCommand: pnpm dev",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "orion",
+        "project": "tide"
+      }
+    },
+    {
+      "text": "Make my CLI accept claude -p \"hello\" and domains such as paper.example.net",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    }
+  ]
+}

@@ -239,6 +239,7 @@ export const snapshotSchema = mutableStruct({
   queueRestoreReceiptsSupported: Schema.optional(Schema.Literal(true)),
   checkedDraftMoveSupported: Schema.optional(Schema.Literal(true)),
   threadServersSupported: Schema.optional(Schema.Boolean),
+  workspaceRoutingSelectionsSupported: Schema.optional(Schema.Literal(true)),
   terminalRecoverySupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),

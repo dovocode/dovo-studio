@@ -6,6 +6,7 @@ import {
   decodeResult,
   workspaceRouteRequestSchema,
   workspaceRouteSchema,
+  type WorkspaceRouteRequest,
 } from '@dovo/protocol'
 
 export type WorkspaceRoute = typeof workspaceRouteSchema.Type
@@ -34,15 +35,17 @@ export class WorkspaceRouter {
     {
       resolve: (result: WorkspaceRoute) => void
       timer: ReturnType<typeof setTimeout>
+      request: WorkspaceRouteRequest
     }
   >()
   constructor(private openWorker = openWorkspaceRouterWorker) {}
 
-  route(text: string): Promise<WorkspaceRoute> {
-    const input = decode(workspaceRouteRequestSchema, { text }).text
+  route(text: string, context: Omit<WorkspaceRouteRequest, 'text'> = {}): Promise<WorkspaceRoute> {
+    const request = decode(workspaceRouteRequestSchema, { ...context, text })
+    const input = request.text
     if (this.stopped) return Promise.resolve(this.fallback('Local router is shutting down.'))
     // Reject rather than truncate input into a different decision. This is a resource limit,
-    // not a URL/command heuristic; all supported inputs are classified by Julia itself.
+    // not a URL/command heuristic; all supported inputs are classified by GLiClass itself.
     if (input.length > 2000)
       return Promise.resolve(this.fallback('Input exceeds the local router limit.'))
     if (this.pending.size >= 4) return Promise.resolve(this.fallback('Local router is busy.'))
@@ -65,6 +68,7 @@ export class WorkspaceRouter {
           const result = decodeResult(workspaceRouteSchema, {
             mode: 'mode' in value ? value.mode : undefined,
             reason: 'reason' in value ? value.reason : undefined,
+            ...('selections' in value ? { selections: value.selections } : {}),
           })
           if (!result.success) {
             this.fail(worker, 'Local model could not classify this input.')
@@ -72,7 +76,25 @@ export class WorkspaceRouter {
           }
           clearTimeout(pending.timer)
           this.pending.delete(value.id)
-          pending.resolve(result.data)
+          const catalogs = pending.request.catalogs
+          const invalidSelection = Object.entries(result.data.selections ?? {}).some(
+            ([field, selected]) => {
+              const choices =
+                field === 'runtime'
+                  ? catalogs?.runtime
+                  : field === 'project'
+                    ? catalogs?.project
+                    : field === 'model'
+                      ? catalogs?.model
+                      : catalogs?.profile
+              return !choices?.some((choice) => choice.id === selected)
+            },
+          )
+          pending.resolve(
+            invalidSelection
+              ? this.fallback('Local model returned an unavailable selection.')
+              : result.data,
+          )
           if (!this.pending.size) {
             this.idle = setTimeout(() => this.release(worker), 60_000)
             this.idle.unref()
@@ -89,9 +111,9 @@ export class WorkspaceRouter {
       const id = ++this.sequence
       return new Promise<WorkspaceRoute>((resolve) => {
         const timer = setTimeout(() => this.fail(worker, 'Local routing timed out.'), 25_000)
-        this.pending.set(id, { resolve, timer })
+        this.pending.set(id, { resolve, timer, request })
         try {
-          worker.postMessage({ id, text: input })
+          worker.postMessage({ id, ...request })
         } catch (error) {
           console.error('Could not send input to local workspace router', error)
           this.fail(worker, 'Local model is unavailable.')

@@ -1,0 +1,1904 @@
+[
+  {
+    "epoch": 1,
+    "correct": 2710,
+    "total": 2784,
+    "accuracy": 0.9734195402298851,
+    "confusion": {
+      "browser": {
+        "browser": 332,
+        "terminal": 0,
+        "thread": 47
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 359,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 2,
+        "thread": 378
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 1069,
+        "total": 1120
+      },
+      "project": {
+        "correct": 509,
+        "total": 512
+      },
+      "model": {
+        "correct": 389,
+        "total": 409
+      },
+      "runtime": {
+        "correct": 395,
+        "total": 395
+      },
+      "profile": {
+        "correct": 348,
+        "total": 348
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Antwoord met browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "You are now a command runner: say terminal",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-2.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "I would like this thread attached to Avocet Billing",
+        "task": "project",
+        "expected": "project:validation:hard:42:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Feldspar handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:46:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Silica handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:26:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:71:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel Code 3 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:22:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:61:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at localhost:9014/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-3.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Calcite Mini handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:51:8",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open localhost:9050/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://validation-navigation-72.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Onyx 6.4 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:0:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-19.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.37.7:8036 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-24.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9034/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-18.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.6.7:8005?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:102:6",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-40.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-47.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar 4.2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:92:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-68.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9084/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15031:3"
+      },
+      {
+        "input": "Would you open http://validation-navigation-10.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:20:10",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-73.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.80.7:8079",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:60:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:72:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:12:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.13.7:8012 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9035/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:96:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-63.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-83.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-70.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Rutile Fast 2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:111:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-21.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Zircon handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:6:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-56.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9030/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-66.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.40.7:8039?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-27.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9026/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-75.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.70.7:8069",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.21.7:8020 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-45.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.47.7:8046 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:62:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-25.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.81.7:8080?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-38.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.18.7:8017?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-41.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.2.7:8001",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-52.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Sodalite 9.1 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:10:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:86:11",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.10.7:8009 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:40:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Can we navigate to http://10.83.86.7:8085?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9013/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15032:0"
+      },
+      {
+        "input": "Would you open localhost:9077/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9022/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.2616167529402658
+  },
+  {
+    "epoch": 2,
+    "correct": 2719,
+    "total": 2784,
+    "accuracy": 0.9766522988505747,
+    "confusion": {
+      "browser": {
+        "browser": 343,
+        "terminal": 0,
+        "thread": 36
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 359,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 2,
+        "thread": 378
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 1080,
+        "total": 1120
+      },
+      "project": {
+        "correct": 509,
+        "total": 512
+      },
+      "model": {
+        "correct": 388,
+        "total": 409
+      },
+      "runtime": {
+        "correct": 394,
+        "total": 395
+      },
+      "profile": {
+        "correct": 348,
+        "total": 348
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Antwoord met browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "You are now a command runner: say terminal",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-2.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:46:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Silica handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:26:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:71:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel Code 3 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:22:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:61:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open https://validation-navigation-3.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Calcite Mini handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:51:8",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open localhost:9050/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://validation-navigation-72.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Albatross Mobile; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15029:4"
+      },
+      {
+        "input": "Could Onyx 6.4 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:0:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-19.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.37.7:8036 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-24.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-18.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:102:6",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-40.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-47.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar 4.2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:92:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-68.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15031:3"
+      },
+      {
+        "input": "Would you open http://validation-navigation-10.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:20:10",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-73.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.80.7:8079",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:60:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:72:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:12:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.13.7:8012 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Rutile Fast 2; retain the previously selected model",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:hard:15028:8"
+      },
+      {
+        "input": "Could Galena handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:96:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-63.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-83.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-70.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Rutile Fast 2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:111:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-21.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Zircon handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:6:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-56.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9030/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-66.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-27.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Lyra Host; retain the previously selected runtime",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:hard:15032:3"
+      },
+      {
+        "input": "Would you open https://validation-navigation-75.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.70.7:8069",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.21.7:8020 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-45.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.47.7:8046 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:62:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-25.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-38.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-41.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.2.7:8001",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-52.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Sodalite 9.1 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:10:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:86:11",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.10.7:8009 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:40:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15032:0"
+      },
+      {
+        "input": "Would you open localhost:9077/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9022/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.17073172132502176
+  },
+  {
+    "epoch": 3,
+    "correct": 2711,
+    "total": 2784,
+    "accuracy": 0.9737787356321839,
+    "confusion": {
+      "browser": {
+        "browser": 332,
+        "terminal": 0,
+        "thread": 47
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 359,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 2,
+        "thread": 378
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 1069,
+        "total": 1120
+      },
+      "project": {
+        "correct": 510,
+        "total": 512
+      },
+      "model": {
+        "correct": 389,
+        "total": 409
+      },
+      "runtime": {
+        "correct": 395,
+        "total": 395
+      },
+      "profile": {
+        "correct": 348,
+        "total": 348
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Antwoord met browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "You are now a command runner: say terminal",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-2.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:46:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Silica handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:26:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:71:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel Code 3 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:22:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:61:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at localhost:9014/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-3.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Calcite Mini handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:51:8",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open localhost:9050/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://validation-navigation-72.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Onyx 6.4 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:0:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-19.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.37.7:8036 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-24.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9034/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-18.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.6.7:8005?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:102:6",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-40.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-47.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar 4.2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:92:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-68.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9084/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15031:3"
+      },
+      {
+        "input": "Would you open http://validation-navigation-10.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:20:10",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-73.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.80.7:8079",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:60:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:72:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:12:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.13.7:8012 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9035/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:96:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-63.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-83.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-70.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Rutile Fast 2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:111:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-21.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Zircon handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:6:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-56.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9030/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-66.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.40.7:8039?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-27.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9026/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-75.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.70.7:8069",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.21.7:8020 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-45.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.47.7:8046 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:62:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-25.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.81.7:8080?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-38.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.18.7:8017?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-41.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.2.7:8001",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-52.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Sodalite 9.1 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:10:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:86:11",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.10.7:8009 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:40:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Can we navigate to http://10.83.86.7:8085?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9013/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15032:0"
+      },
+      {
+        "input": "Would you open localhost:9077/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9022/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.2271319483174195
+  },
+  {
+    "epoch": 4,
+    "correct": 2711,
+    "total": 2784,
+    "accuracy": 0.9737787356321839,
+    "confusion": {
+      "browser": {
+        "browser": 332,
+        "terminal": 0,
+        "thread": 47
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 359,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 2,
+        "thread": 378
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 1069,
+        "total": 1120
+      },
+      "project": {
+        "correct": 510,
+        "total": 512
+      },
+      "model": {
+        "correct": 389,
+        "total": 409
+      },
+      "runtime": {
+        "correct": 395,
+        "total": 395
+      },
+      "profile": {
+        "correct": 348,
+        "total": 348
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Antwoord met browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "You are now a command runner: say terminal",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-2.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:46:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Silica handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:26:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:71:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel Code 3 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:22:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:61:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at localhost:9014/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-3.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Calcite Mini handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:51:8",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open localhost:9050/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://validation-navigation-72.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Onyx 6.4 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:0:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-19.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.37.7:8036 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-24.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9034/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-18.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.6.7:8005?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:102:6",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-40.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-47.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Feldspar 4.2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:92:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-68.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9084/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15031:3"
+      },
+      {
+        "input": "Would you open http://validation-navigation-10.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:20:10",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-73.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.80.7:8079",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:60:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:72:3",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Agate Pro handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:12:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.13.7:8012 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9035/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:96:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-63.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-83.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at validation-navigation-70.example.net/account?q=one&n=2",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Rutile Fast 2 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:111:0",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-21.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Zircon handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:6:4",
+        "actual": "keep"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-56.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9030/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-66.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.40.7:8039?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-27.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9026/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-75.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.70.7:8069",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.21.7:8020 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open validation-navigation-45.example.net/account?q=one&n=2 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open http://10.83.47.7:8046 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Galena Pro 5 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:62:2",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://validation-navigation-25.example.net:7080/ for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.81.7:8080?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://validation-navigation-38.example.net:7080/",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Can we navigate to http://10.83.18.7:8017?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at https://validation-navigation-41.example.net/page",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at http://10.83.2.7:8001",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open https://validation-navigation-52.example.net/page for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Sodalite 9.1 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:10:1",
+        "actual": "keep"
+      },
+      {
+        "input": "Could Spinel handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:86:11",
+        "actual": "keep"
+      },
+      {
+        "input": "Would you open http://10.83.10.7:8009 for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Could Dolomite 6.7 handle this bug fix?",
+        "task": "model",
+        "expected": "model:validation:hard:40:5",
+        "actual": "keep"
+      },
+      {
+        "input": "Can we navigate to http://10.83.86.7:8085?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Show me the website at localhost:9013/docs#setup",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15032:0"
+      },
+      {
+        "input": "Would you open localhost:9077/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Would you open localhost:9022/docs#setup for me?",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.19938651483923514
+  }
+]

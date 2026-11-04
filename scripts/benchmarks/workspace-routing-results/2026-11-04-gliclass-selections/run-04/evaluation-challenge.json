@@ -1,0 +1,279 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "challenge": {
+      "fp32": {
+        "correct": 87,
+        "total": 90,
+        "accuracy": 0.9666666666666667,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 29,
+            "thread": 1
+          },
+          "thread": {
+            "browser": 2,
+            "terminal": 0,
+            "thread": 28
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 87,
+            "total": 90
+          }
+        },
+        "mistakes": [
+          {
+            "input": "opencode",
+            "expected": "terminal",
+            "actual": "thread",
+            "ms": 19.744917000934947,
+            "logits": [-18.80449676513672, -10.621338844299316, -9.704103469848633],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 615, 11478, 2
+            ]
+          },
+          {
+            "input": "Please browse the release notes",
+            "expected": "thread",
+            "actual": "browser",
+            "ms": 19.946708001953084,
+            "logits": [8.712911605834961, -19.189512252807617, 5.5301666259765625],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 863, 6835, 262,
+              1270, 2501, 2
+            ]
+          },
+          {
+            "input": "browser",
+            "expected": "thread",
+            "actual": "browser",
+            "ms": 19.933750001655426,
+            "logits": [-0.9978216886520386, -17.3990478515625, -11.379427909851074],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2672, 2
+            ]
+          }
+        ],
+        "medianMs": 20.309896499384195,
+        "p95Ms": 22.900832998857368
+      },
+      "q8": {
+        "correct": 87,
+        "total": 90,
+        "accuracy": 0.9666666666666667,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 29,
+            "thread": 1
+          },
+          "thread": {
+            "browser": 2,
+            "terminal": 0,
+            "thread": 28
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 87,
+            "total": 90
+          }
+        },
+        "mistakes": [
+          {
+            "input": "opencode",
+            "expected": "terminal",
+            "actual": "thread",
+            "ms": 36.615624998376006,
+            "logits": [-18.756505966186523, -11.484086990356445, -9.230680465698242],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 615, 11478, 2
+            ]
+          },
+          {
+            "input": "Please browse the release notes",
+            "expected": "thread",
+            "actual": "browser",
+            "ms": 41.826165997918,
+            "logits": [8.450248718261719, -19.1199951171875, 5.196412086486816],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 863, 6835, 262,
+              1270, 2501, 2
+            ]
+          },
+          {
+            "input": "browser",
+            "expected": "thread",
+            "actual": "browser",
+            "ms": 43.39741700096056,
+            "logits": [-2.793419122695923, -17.397525787353516, -11.150468826293945],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2672, 2
+            ]
+          }
+        ],
+        "medianMs": 41.7967494995537,
+        "p95Ms": 42.49899999922491
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 0.00014334917068481445,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "challengeSha256": "2114a7cf11eaf6ff2427ea4bc190bd7d0719a06a7a11b19a3c315539c1ed3682",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-04/"
+}

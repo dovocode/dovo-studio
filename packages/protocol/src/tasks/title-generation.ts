@@ -47,13 +47,47 @@ export const cleanupDictationSchema = strictStruct({
 export const cleanedDictationSchema = strictStruct({
   text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 16000),
 })
+const workspaceChoiceSchema = strictStruct({
+  id: maxValue(minValue(Schema.String, 1), 500),
+  label: maxValue(minValue(Schema.String, 1), 500),
+})
+const workspaceChoicesSchema = mutableArray(workspaceChoiceSchema).pipe(
+  Schema.check(Schema.isMinLength(1)),
+  Schema.check(Schema.isMaxLength(512)),
+  Schema.check(
+    Schema.makeFilter(
+      (choices) => new Set(choices.map((choice) => choice.id)).size === choices.length,
+    ),
+  ),
+)
+const workspaceModeSchema = Schema.Literals(['browser', 'terminal', 'thread'])
 export const workspaceRouteRequestSchema = strictStruct({
   text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
+  mode: Schema.optional(workspaceModeSchema),
+  catalogs: Schema.optional(
+    strictStruct({
+      runtime: Schema.optional(workspaceChoicesSchema),
+      model: Schema.optional(workspaceChoicesSchema),
+      project: Schema.optional(workspaceChoicesSchema),
+      profile: Schema.optional(workspaceChoicesSchema),
+    }),
+  ),
 })
 export const workspaceRouteSchema = strictStruct({
-  mode: Schema.Literals(['browser', 'terminal', 'thread']),
+  mode: workspaceModeSchema,
   reason: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 500),
+  selections: Schema.optional(
+    strictStruct({
+      runtime: Schema.optional(maxValue(Schema.String, 500)),
+      model: Schema.optional(maxValue(Schema.String, 500)),
+      project: Schema.optional(maxValue(Schema.String, 500)),
+      profile: Schema.optional(maxValue(Schema.String, 500)),
+    }),
+  ),
 })
+export type WorkspaceChoice = typeof workspaceChoiceSchema.Type
+export type WorkspaceRouteRequest = typeof workspaceRouteRequestSchema.Type
+export type WorkspaceRouteSuggestion = typeof workspaceRouteSchema.Type
 export type TitleGenerationSettings = Schema.Schema.Type<typeof titleGenerationSettingsSchema>
 
 /** Utility model selection is independent of the task model, even when sharing its provider. */

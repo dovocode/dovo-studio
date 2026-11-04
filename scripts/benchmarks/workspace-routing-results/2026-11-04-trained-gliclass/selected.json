@@ -1,0 +1,38 @@
+{
+  "epoch": 3,
+  "validation": {
+    "correct": 634,
+    "total": 636,
+    "accuracy": 0.9968553459119497,
+    "confusion": {
+      "browser": {
+        "browser": 212,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 210,
+        "thread": 1
+      },
+      "thread": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 212
+      }
+    },
+    "mistakes": [
+      {
+        "input": "file logo.png",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname",
+        "expected": "terminal",
+        "actual": "browser"
+      }
+    ],
+    "loss": 0.015982574553518078
+  }
+}

@@ -7,6 +7,16 @@ const workspace = root + 'apps/mobile/src/workspace/'
 const mobile = root + 'apps/mobile/src/'
 const stubs = [
   {
+    path: '../../modules/dovo-webkit-browser',
+    importer: workspace,
+    contents: 'export const DovoWebKitBrowserView=null;',
+  },
+  {
+    path: '../runtime/preferences/app-preferences',
+    importer: workspace,
+    contents: `export const useMobilePreferences=()=>({browserProfiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]});`,
+  },
+  {
     path: 'react-native',
     contents: `
 export const Keyboard={dismiss(){}};
@@ -121,7 +131,10 @@ const owner=id=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',to
 window.publish=()=>{window.version++;listeners.forEach(fn=>fn())};
 window.refresh=async()=>{if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}};
 window.request=async(profile,path,input)=>{window.requests.push({owner:profile.id,path,input});
-if(path==='/api/tasks/workspace/route'){if(window.holdRoute)await new Promise(resolve=>window.finishRoute=resolve);return window.decision??{mode:'terminal',reason:'A shell command'}};
+if(path==='/api/tasks/workspace/route'){if(window.selectionMode)return {mode:window.selectionMode,reason:'GLiClass suggestion',selections:input.catalogs?.runtime?{runtime:'runtime:b'}:input.catalogs?.project?{project:window.selectionMode==='terminal'?'none':'project:project'}:input.catalogs?.model?{model:input.catalogs.model.find(item=>item.label.includes('Opus')).id}:{profile:'profile:work'}};if(window.holdRoute)await new Promise(resolve=>window.finishRoute=resolve);return window.decision??{mode:'terminal',reason:'A shell command'}};
+if(path==='/api/previews/browser/profiles/read')return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};
+if(path==='/api/agents/availability')return [{id:'harness:codex',available:true},{id:'agent:dovo:codex',available:true},{id:'agent:dovo:claude',available:true}];
+if(path==='/api/agents/models/cached')return {models:[{id:'gpt-6.1-sol',name:'Sol 6.1'},{id:'claude-opus-5-5',name:'Opus 5.5'}],reasoning:[]};
 if(path==='/api/terminals/shells')return {shells:[{id:'default',label:'Default '+profile.id,path:'/bin/zsh',args:[]},{id:'bash',label:'Bash '+profile.id,path:'/bin/bash',args:[]}]};
 if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
 if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/worktree-'+profile.id,branch:'branch-'+profile.id}]};
@@ -307,6 +320,48 @@ try {
   for (let i = 0; i < 8; i++)
     for (const mode of ['terminal', 'browser', 'thread', 'auto'])
       await page.getByLabel('Destination', { exact: true }).selectOption(mode)
+  await reset()
+  await page.evaluate(() => {
+    window.selectionMode = 'thread'
+    for (const owner of window.owners) owner.snapshot.workspaceRoutingSelectionsSupported = true
+  })
+  await request.fill('Use Opus on b in Project b to fix the app')
+  await page.getByRole('button', { name: 'Choose destination', exact: true }).click()
+  await page.getByRole('button', { name: 'Start thread', exact: true }).waitFor()
+  assert.equal(await page.getByLabel('Computer', { exact: true }).inputValue(), 'b')
+  assert.equal(await page.getByLabel('Project', { exact: true }).inputValue(), 'project')
+  assert.equal(
+    await page.evaluate(() => window.requests.some((r) => r.path === '/api/workspace')),
+    false,
+  )
+  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.waitForFunction(() => window.routes.length)
+  const inferred = await page.evaluate(() =>
+    window.requests.find((r) => r.path === '/api/workspace'),
+  )
+  assert.equal(inferred.owner, 'b')
+  assert.equal(inferred.input.create.harness.model, 'claude-opus-5-5')
+
+  await reset()
+  await page.evaluate(() => {
+    window.selectionMode = 'browser'
+  })
+  await request.fill('open http://app.lan:3000/?lol=1 in Work on b')
+  await page.getByRole('button', { name: 'Choose destination', exact: true }).click()
+  await page.getByRole('button', { name: 'Open browser', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Workspace options', exact: true }).click()
+  await page.getByLabel('Browser profile', { exact: true }).waitFor()
+  assert.equal(await page.getByLabel('Browser profile', { exact: true }).inputValue(), 'work')
+  assert.equal(await page.getByLabel('Browser computer', { exact: true }).inputValue(), 'b')
+  await page.getByLabel('Browser profile', { exact: true }).selectOption('default')
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await page.getByRole('button', { name: 'Open browser', exact: true }).click()
+  await page.waitForFunction(() => window.routes.length)
+  const tab = await page.evaluate(() => window.tabs.at(-1))
+  assert.equal(tab.kind, 'remote')
+  assert.equal(tab.runtimeId, 'b')
+  assert.equal(tab.profileId, 'default')
+  assert.equal(tab.url, 'http://app.lan:3000/?lol=1')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile workspace: AI review/override, HTTP pages, remote shells, home/worktrees, recovery settings, safe retries, thread continuation and stale routing checks pass. Native controls use browser adapters.',

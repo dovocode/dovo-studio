@@ -106,29 +106,52 @@ example, a program can report that it needs approval with:
 printf '\033]7501;state=blocked:kind=permission:app=my-agent\033\\'
 ```
 
-The shared input uses the bundled **SupersonicLabs/Julia-1** decision model (144.3 million
-parameters) to suggest **Browser**, **Terminal** or **Thread**. Its pinned official ONNX weights and
-strict Rust/WASM tokenizer run on the owning runtime's CPU, in a separate lazy worker. No provider,
-API key, title-model setting or network download is needed for inference. Mobile uses the same
-bundled model on its paired runtime, rather than running it on the phone. Model assets add about 617
-MB to the runtime before compression, plus the native inference library. The worker unloads after a
-minute without routing requests.
+The shared input uses the **post-trained Dovo GLiClass run-09** classifier, based on
+`knowledgator/gliclass-base-v3.0` (186.5 million parameters). The exact Mac Studio export is pinned
+by SHA-256 in `scripts/packaging/workspace-router-model.mjs`; its weights, official standalone
+tokenizer and licenses total **206.3 MB**. Builds download verified assets from the repository's
+[model asset release](https://github.com/dovocode/dovo-studio/releases/tag/workspace-router-gliclass-20261104-r09).
+Inference never downloads anything or uses provider credentials. One lazy CPU worker on the owning
+runtime serves desktop, web and paired mobile clients, then unloads after a minute without requests.
+Mobile does not load the model into the phone's process.
 
-Julia chooses directly among the three descriptions; URL and shell rules do not override its choice.
-This model is not fine-tuned for Dovo: it can confidently misidentify common commands, addresses and
-requests. The suggestion is always reviewable and its scores are not presented as calibrated
-confidence. Missing assets, inference failures, capacity limits and inputs over 2,000 characters
-select Thread with an explicit fallback explanation, preserving the original draft. The current
-25-input workspace sample scores 14/25; this is an integration sample, not a general accuracy
-benchmark. `test:workspace-router:model` prints every mismatch to keep this visible. Classification
-has no tools and returns only a destination and explanation. Review or override the destination,
-then use **Open browser**, **Run command**, or **Start/Send to thread**. Terminal commands use the
-original input in a new shell on the explicitly selected computer, with an installed shell picker
-and optional project folder. Use **New terminal** for the complete worktree starter. Thread requests
-start a new thread or continue the explicitly chosen thread. The input keeps its computer and
-destination while you switch workspace items; changing items never silently retargets a draft.
-Routing failures preserve the input and allow a manual destination. Explicit HTTP addresses retain
-HTTP for LAN and VPN use.
+The model chooses **Browser**, **Terminal** or **Thread**, then suggests an available computer. The
+client loads that computer's project and browser-profile choices. New thread suggestions also use
+the inferred project's available harnesses and cached model names. Only display labels and opaque
+choice IDs enter classification; harness configuration and credentials stay outside it. The user
+reviews and can override computer, project, thread model, browser profile, destination and terminal
+shell before explicitly opening or submitting anything. Continuing an explicitly selected thread
+keeps that thread's own model and project. Older runtimes without the picker-suggestion capability
+continue accepting destination-only requests.
+
+All routing and picker inference comes from model logits. URL/shell rules do not override its
+choice, and scores are not presented as calibrated confidence. Capability discussion such as “Could
+Opus handle this bug fix?” retains the current model; an explicit request to use Opus selects it.
+This distinction is learned and imperfect: some advice prompts still select a named model. Measured
+export quality is **1,460/1,461 synthetic regression questions** and **49/50 fresh complete
+suggestions**; these do not establish 99.9% real-world reliability. The
+[training report](workspace-selection-hardening.md) retains failures and evaluation provenance.
+
+The graph supports 16 choices and 384 tokens per comparison. Larger catalogs are compared in bounded
+groups and then among model-selected finalists; entries are not silently dropped. This catalog
+reduction is an integration behavior, not part of the reported 16-choice accuracy score. Missing
+assets, inference failures, worker capacity limits, input over 2,000 characters and inputs that
+exceed the token budget select Thread with a review explanation, preserving the draft. No routing
+request creates a task, opens a page or executes a command. Stale draft/computer responses are
+discarded.
+
+After accepting Browser, a single address in input such as `open dovocode.com in Work` is extracted
+for navigation, and the chosen profile/computer is passed to the page. This extraction never chooses
+the destination; inputs without one clear address retain normal browser-search behavior. Explicit
+HTTP remains HTTP for LAN and VPN connections. Terminal submission uses the exact original input,
+without stripping computer/project prose or rewriting commands. Review or edit it before running;
+manual destination selection allows editing without reclassification. Thread submission preserves
+the request and applies an explicitly chosen model only to a new thread. **New terminal** retains
+the complete shell/worktree starter.
+
+The [small-model comparison](workspace-routing-model-comparison.md) records the earlier Julia, Laya,
+Kev and instruction-model experiments. GLiClass training/export measurements are recorded
+separately.
 
 Verification: `pnpm test:unified-workspace:browser` covers mixed views, draft retention, owner
 selection, lifecycle actions, routing overrides, HTTP preservation, shell selection, all checkout
@@ -138,16 +161,19 @@ options, stale computer responses, catalog retries and explicit command executio
 output validation. Title-service tests verify routing needs no configured utility provider and
 creates no tasks. `pnpm prepare:workspace-router` fetches SHA-256-verified, revision-pinned assets
 during development; release runtime preparation includes this step automatically.
-`pnpm test:workspace-router:model` checks all 100 published PyTorch parity cases offline, reports
-workspace routing quality separately, and exercises the actual worker. Packaged runtime smoke checks
-verify native inference from the deployed dependency tree. `pnpm test:workspace-submit:browser`
-mounts the actual workspace, thread, browser and terminal components to check submissions and
-retained local/remote views through repeated swaps, preserving drafts and terminal replay.
-`pnpm test:workspace-modes:browser` exercises the actual Workbench and extension catalog through
-mode changes, restored threads/pages, incoming snapshots, compact layout and sidebar collapse.
-Terminal metadata tests cover fragmented sequences, bounds, PTY output preservation, renaming and
-runtime snapshot synchronization. `packages/runtime/src/terminal/recovery.test.ts` covers generated
-lifecycle adapters, configuration preservation, exact concurrent conversation recovery through
-runtime recreation, canonical multiplexer targets, smart sleep, concurrent restores, explicit close
-and missing-folder recovery. These automated checks use fake CLI executables; a physical reboot and
-complete native tool sessions still need manual verification.
+`pnpm test:workspace-router:model` checks 100 frozen Mac export references and 32 complete
+acceptance scenarios offline, checks a catalog with more than 16 entries, and exercises the actual
+worker. Packaged runtime smoke checks verify native inference from the deployed dependency tree.
+`pnpm test:workspace-submit:browser` mounts the actual workspace, thread, browser and terminal
+components to check submissions and retained local/remote views through repeated swaps, preserving
+drafts and terminal replay. It also checks inferred owner/project/model/profile selections, visible
+overrides and explicit execution; `test:mobile-workspaces:browser` covers the mobile equivalents
+with browser adapters. `pnpm test:workspace-modes:browser` exercises the actual Workbench and
+extension catalog through mode changes, restored threads/pages, incoming snapshots, compact layout
+and sidebar collapse. Terminal metadata tests cover fragmented sequences, bounds, PTY output
+preservation, renaming and runtime snapshot synchronization.
+`packages/runtime/src/terminal/recovery.test.ts` covers generated lifecycle adapters, configuration
+preservation, exact concurrent conversation recovery through runtime recreation, canonical
+multiplexer targets, smart sleep, concurrent restores, explicit close and missing-folder recovery.
+These automated checks use fake CLI executables; a physical reboot and complete native tool sessions
+still need manual verification.

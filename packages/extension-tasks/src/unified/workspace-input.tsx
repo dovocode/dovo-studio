@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Globe2,
@@ -16,6 +17,16 @@ import {
   terminalShellsResponseSchema,
   workspacePatchResultSchema,
   workspaceRouteSchema,
+  browserProfilesResultSchema,
+  modelCatalogSchema,
+  modelDiscoveryInput,
+  suggestWorkspace,
+  workspaceBrowserInput,
+  workspaceModelChoices,
+  harnessAvailabilitySchema,
+  type WorkspaceModelChoice,
+  type TaskHarness,
+  type BrowserProfile,
   type Task,
   type TerminalShell,
 } from '@dovo/protocol'
@@ -61,10 +72,10 @@ export function WorkspaceInput({
   active?: WorkspaceTab
   children?: ReactNode
   onOpen: (tab: WorkspaceTab) => void
-  onBrowser: (url: string) => Promise<void>
+  onBrowser: (url: string, target?: { runtimeId: string; profileId: string }) => Promise<void>
 }) {
   const store = useWorkspace()
-  const { minimalComposer } = useAppPreferences()
+  const { minimalComposer, browserProfiles } = useAppPreferences()
   const [editorFocused, setEditorFocused] = useState(false)
   const [text, setText] = useState('')
   const [mode, setMode] = useState<Destination | 'auto'>('auto')
@@ -78,6 +89,17 @@ export function WorkspaceInput({
   )
   const [repositoryId, setRepositoryId] = useState('')
   const [threadId, setThreadId] = useState('')
+  const [profileId, setProfileId] = useState('default')
+  const [profiles, setProfiles] = useState<{ ownerId: string; items: BrowserProfile[] }>({
+    ownerId: '',
+    items: [],
+  })
+  const [models, setModels] = useState<{ key: string; items: WorkspaceModelChoice[] }>({
+    key: '',
+    items: [],
+  })
+  const [model, setModel] = useState<{ key: string; harness: TaskHarness } | null>(null)
+  const modelKey = JSON.stringify([runtimeId, repositoryId])
   const [shellId, setShellId] = useState('default')
   const [rememberSession, setRememberSession] = useState(true)
   const [shellRetry, setShellRetry] = useState(0)
@@ -110,6 +132,10 @@ export function WorkspaceInput({
     repositoryId ? repo.id === repositoryId : repo.kind === 'scratch',
   )
   const computer = runtimeComputerName(entry ?? {})
+  const runtimeKey = JSON.stringify([runtimeId, entry?.profile.connection])
+  const currentRuntimeKey = useRef(runtimeKey)
+  currentRuntimeKey.current = runtimeKey
+  const visibleModels = models.key === modelKey ? models.items : []
   const readRuntime = store.readRuntime
   useEffect(() => {
     mounted.current = true
@@ -148,6 +174,82 @@ export function WorkspaceInput({
       current = false
     }
   }, [mode, runtimeId, connected, readRuntime, shellRetry])
+  const loadProfiles = async (id: string) => {
+    if (id === store.localRuntimeId && browserProfiles?.length) return browserProfiles
+    const owner = store.runtimes.find((entry) => entry.profile.id === id)
+    if (!owner) throw new Error('This computer is no longer paired.')
+    return (
+      await readRuntime(
+        owner.profile,
+        '/api/previews/browser/profiles/read',
+        {},
+        browserProfilesResultSchema,
+        'POST',
+      )
+    ).profiles
+  }
+  const loadModels = async (id: string, projectId: string) => {
+    const owner = store.runtimes.find((entry) => entry.profile.id === id)
+    const state = id === store.activeRuntimeId ? store.snapshot : owner?.snapshot
+    if (!owner || !state) throw new Error('This computer is no longer available.')
+    const availability = await readRuntime(
+      owner.profile,
+      '/api/agents/availability',
+      { repositoryId: projectId || undefined },
+      harnessAvailabilitySchema,
+      'POST',
+    )
+    return workspaceModelChoices(
+      state,
+      projectId,
+      (agent) =>
+        readRuntime(
+          owner.profile,
+          '/api/agents/models/cached',
+          modelDiscoveryInput(agent),
+          Schema.NullOr(modelCatalogSchema),
+          'POST',
+        ),
+      new Set(availability.filter((item) => item.available).map((item) => item.id)),
+    )
+  }
+  useEffect(() => {
+    if (mode !== 'browser' || (!connected && runtimeId !== store.localRuntimeId)) return
+    let current = true
+    void loadProfiles(runtimeId)
+      .then((items) => {
+        if (current) {
+          setProfiles({ ownerId: runtimeId, items })
+          setProfileId((id) => (items.some((profile) => profile.id === id) ? id : 'default'))
+        }
+      })
+      .catch((cause: unknown) => {
+        if (current) setError(`Could not load browser profiles: ${String(cause)}`)
+      })
+    return () => {
+      current = false
+    }
+  }, [mode, runtimeId, connected])
+  useEffect(() => {
+    if (
+      mode !== 'thread' ||
+      threadId ||
+      !connected ||
+      !snapshot?.workspaceRoutingSelectionsSupported
+    )
+      return
+    let current = true
+    void loadModels(runtimeId, repositoryId)
+      .then((items) => {
+        if (current) setModels({ key: modelKey, items })
+      })
+      .catch((cause: unknown) => {
+        if (current) setError(`Could not load model choices: ${String(cause)}`)
+      })
+    return () => {
+      current = false
+    }
+  }, [mode, modelKey, threadId, connected, snapshot?.workspaceRoutingSelectionsSupported])
   const shells = catalog.ownerId === runtimeId ? catalog.shells : undefined
   const shellReady = !!shells?.some((shell) => shell.id === shellId)
   const busy = phase === 'submitting'
@@ -176,14 +278,15 @@ export function WorkspaceInput({
   const submit = async () => {
     const original = draft.current
     if (pending.current || !original.trim()) return
-    if (mode !== 'browser' && (!entry || !connected)) {
+    if ((mode !== 'browser' || runtimeId !== store.localRuntimeId) && (!entry || !connected)) {
       setError('Choose an online computer before continuing.')
       return
     }
     const token = {}
     const version = revision.current
     const navigationKey = navigation.current
-    const valid = () => mounted.current && revision.current === version
+    const valid = () =>
+      mounted.current && revision.current === version && currentRuntimeKey.current === runtimeKey
     pending.current = token
     routing.current = mode === 'auto'
     setPhase(mode === 'auto' ? 'routing' : 'submitting')
@@ -192,14 +295,53 @@ export function WorkspaceInput({
     try {
       if (mode === 'auto') {
         if (!entry) return
-        const decision = await readRuntime(
-          entry.profile,
-          '/api/tasks/workspace/route',
-          { text: original },
-          workspaceRouteSchema,
-          'POST',
-        )
+        const decision = await suggestWorkspace({
+          text: original,
+          runtimeId,
+          repositoryId,
+          continueThread: !!threadId,
+          current: valid,
+          computers: store.runtimes
+            .filter((owner) =>
+              owner.profile.id === store.activeRuntimeId ? store.connected : owner.connected,
+            )
+            .map((owner) => ({
+              id: owner.profile.id,
+              name: runtimeComputerName(owner),
+              snapshot:
+                owner.profile.id === store.activeRuntimeId ? store.snapshot : owner.snapshot,
+            })),
+          route: (id, input) => {
+            const owner = store.runtimes.find((owner) => owner.profile.id === id)
+            if (!owner) throw new Error('This computer is no longer paired.')
+            return readRuntime(
+              owner.profile,
+              '/api/tasks/workspace/route',
+              input,
+              workspaceRouteSchema,
+              'POST',
+            )
+          },
+          models: loadModels,
+          profiles: loadProfiles,
+        })
         if (valid()) {
+          const changedOwner = decision.runtimeId !== runtimeId
+          setRuntimeId(decision.runtimeId)
+          setRepositoryId(decision.repositoryId)
+          if (changedOwner) {
+            setThreadId('')
+            setShellId('default')
+            setModel(null)
+          }
+          if (decision.model)
+            setModel({
+              key: JSON.stringify([decision.runtimeId, decision.repositoryId]),
+              harness: decision.model.harness,
+            })
+          if (decision.profileId) setProfileId(decision.profileId)
+          if (decision.profiles)
+            setProfiles({ ownerId: decision.runtimeId, items: decision.profiles })
           setMode(decision.mode)
           setSuggested(true)
           setReason(decision.reason)
@@ -208,9 +350,9 @@ export function WorkspaceInput({
         return
       }
       if (mode === 'browser') {
-        const url = browserAddress(original)
+        const url = browserAddress(workspaceBrowserInput(original))
         if (!url) throw new Error('Enter a browser address.')
-        await onBrowser(url)
+        await onBrowser(url, { runtimeId, profileId })
       } else {
         if (!entry) throw new Error('This computer is no longer paired.')
         const key = JSON.stringify([
@@ -219,6 +361,7 @@ export function WorkspaceInput({
           mode === 'thread' ? threadId : '',
           repositoryId,
           mode === 'terminal' ? shellId : '',
+          mode === 'thread' && model?.key === modelKey ? model.harness : null,
           mode === 'terminal'
             ? rememberSession && snapshot?.terminalRecoverySupported === true
             : false,
@@ -287,6 +430,9 @@ export function WorkspaceInput({
               objective: '',
               agentId: '',
               ...resolveTaskDefaults(defaults, taskRepository),
+              ...(model?.key === modelKey
+                ? { harness: model.harness, harnessCustomized: true, modelSelection: undefined }
+                : {}),
               repositoryId: taskRepository.id,
             })
           }
@@ -478,6 +624,62 @@ export function WorkspaceInput({
                   <option value="terminal">Terminal</option>
                   <option value="thread">Thread</option>
                 </ChoicePicker>
+                {mode === 'thread' && !threadId && (
+                  <ChoicePicker
+                    aria-label="Workspace thread model"
+                    className="h-7 max-w-48 border-0 bg-transparent text-xs shadow-none"
+                    disabled={busy || !connected}
+                    value={
+                      model?.key === modelKey
+                        ? (visibleModels.find(
+                            (item) =>
+                              JSON.stringify(item.harness) === JSON.stringify(model.harness),
+                          )?.id ?? 'selected')
+                        : ''
+                    }
+                    onValueChange={(value) => {
+                      invalidate()
+                      const selected =
+                        models.key === modelKey
+                          ? visibleModels.find((item) => item.id === value)
+                          : undefined
+                      setModel(selected ? { key: modelKey, harness: selected.harness } : null)
+                    }}
+                  >
+                    <option value="">Current model</option>
+                    {models.key === modelKey &&
+                      visibleModels.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    {model?.key === modelKey &&
+                      !visibleModels.some(
+                        (item) => JSON.stringify(item.harness) === JSON.stringify(model.harness),
+                      ) && <option value="selected">{model.harness.model}</option>}
+                  </ChoicePicker>
+                )}
+                {mode === 'browser' && (
+                  <ChoicePicker
+                    aria-label="Workspace browser profile"
+                    className="h-7 max-w-44 border-0 bg-transparent text-xs shadow-none"
+                    value={profileId}
+                    disabled={busy || profiles.ownerId !== runtimeId}
+                    onValueChange={(id) => {
+                      invalidate()
+                      setProfileId(id)
+                    }}
+                  >
+                    {(profiles.ownerId === runtimeId
+                      ? profiles.items
+                      : [{ id: 'default', name: 'Default' }]
+                    ).map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                )}
                 {mode === 'terminal' && (
                   <ChoicePicker
                     aria-label="Workspace terminal shell"
@@ -518,7 +720,7 @@ export function WorkspaceInput({
                 disabled={
                   !!phase ||
                   !text.trim() ||
-                  (mode !== 'browser' && !connected) ||
+                  ((mode !== 'browser' || runtimeId !== store.localRuntimeId) && !connected) ||
                   (mode === 'terminal' && !shellReady) ||
                   (mode === 'thread' && !!threadId && !thread)
                 }
@@ -562,74 +764,69 @@ export function WorkspaceInput({
           <span className="sr-only" aria-label="Workspace input target">
             {target}
           </span>
-          {mode !== 'browser' && (
-            <ComposerWorkspaceBar>
-              {mode === 'terminal' && (
-                <TerminalRecoveryControl
-                  enabled={rememberSession}
-                  supported={snapshot?.terminalRecoverySupported === true}
-                  disabled={busy}
-                  onChange={(enabled) => {
-                    invalidate()
-                    setRememberSession(enabled)
-                  }}
-                />
+          <ComposerWorkspaceBar>
+            {mode === 'terminal' && (
+              <TerminalRecoveryControl
+                enabled={rememberSession}
+                supported={snapshot?.terminalRecoverySupported === true}
+                disabled={busy}
+                onChange={(enabled) => {
+                  invalidate()
+                  setRememberSession(enabled)
+                }}
+              />
+            )}
+            <ChoicePicker
+              aria-label="Workspace input computer"
+              icons={Object.fromEntries(
+                store.runtimes.map((owner) => [owner.profile.id, <Monitor className="size-3.5" />]),
               )}
+              className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
+              value={runtimeId}
+              disabled={busy}
+              onValueChange={(id) => {
+                invalidate()
+                setRuntimeId(id)
+                setRepositoryId('')
+                setShellId('default')
+                setThreadId('')
+                setProfileId('default')
+                setModel(null)
+              }}
+            >
+              {!store.runtimes.length && <option value="">No paired computers</option>}
+              {store.runtimes.map((owner) => (
+                <option key={owner.profile.id} value={owner.profile.id}>
+                  {runtimeComputerName(owner)}
+                  {(owner.profile.id === store.activeRuntimeId ? store.connected : owner.connected)
+                    ? ''
+                    : ' · offline'}
+                </option>
+              ))}
+            </ChoicePicker>
+            {mode === 'thread' && (
               <ChoicePicker
-                aria-label="Workspace input computer"
-                icons={Object.fromEntries(
-                  store.runtimes.map((owner) => [
-                    owner.profile.id,
-                    <Monitor className="size-3.5" />,
-                  ]),
-                )}
-                className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
-                value={runtimeId}
+                aria-label="Workspace thread target"
+                className="h-7 max-w-56 border-transparent bg-transparent text-xs shadow-none"
+                value={threadId}
                 disabled={busy}
                 onValueChange={(id) => {
                   invalidate()
-                  setRuntimeId(id)
-                  setRepositoryId('')
-                  setShellId('default')
-                  setThreadId('')
+                  setThreadId(id)
                 }}
               >
-                {!store.runtimes.length && <option value="">No paired computers</option>}
-                {store.runtimes.map((owner) => (
-                  <option key={owner.profile.id} value={owner.profile.id}>
-                    {runtimeComputerName(owner)}
-                    {(
-                      owner.profile.id === store.activeRuntimeId ? store.connected : owner.connected
-                    )
-                      ? ''
-                      : ' · offline'}
+                <option value="">New thread</option>
+                {threadId && (
+                  <option value={threadId}>
+                    Continue: {thread?.title ?? 'Unavailable thread'}
                   </option>
-                ))}
+                )}
+                {activeThread && activeThread.id !== threadId && (
+                  <option value={activeThread.id}>Continue: {activeThread.title}</option>
+                )}
               </ChoicePicker>
-              {mode === 'thread' && (
-                <ChoicePicker
-                  aria-label="Workspace thread target"
-                  className="h-7 max-w-56 border-transparent bg-transparent text-xs shadow-none"
-                  value={threadId}
-                  disabled={busy}
-                  onValueChange={(id) => {
-                    invalidate()
-                    setThreadId(id)
-                  }}
-                >
-                  <option value="">New thread</option>
-                  {threadId && (
-                    <option value={threadId}>
-                      Continue: {thread?.title ?? 'Unavailable thread'}
-                    </option>
-                  )}
-                  {activeThread && activeThread.id !== threadId && (
-                    <option value={activeThread.id}>Continue: {activeThread.title}</option>
-                  )}
-                </ChoicePicker>
-              )}
-            </ComposerWorkspaceBar>
-          )}
+            )}
+          </ComposerWorkspaceBar>
           {(reason || phase === 'routing') && (
             <p
               role="status"

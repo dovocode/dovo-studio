@@ -1,0 +1,123 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 111,
+        "total": 111,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 9,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 8,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 15
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 32,
+            "total": 32
+          },
+          "runtime": {
+            "correct": 32,
+            "total": 32
+          },
+          "project": {
+            "correct": 23,
+            "total": 23
+          },
+          "profile": {
+            "correct": 9,
+            "total": 9
+          },
+          "model": {
+            "correct": 15,
+            "total": 15
+          }
+        },
+        "completePlans": {
+          "correct": 32,
+          "total": 32
+        },
+        "mistakes": [],
+        "medianMs": 18.869333998736693,
+        "p95Ms": 20.99087500027963
+      },
+      "q8": {
+        "correct": 111,
+        "total": 111,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 9,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 8,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 15
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 32,
+            "total": 32
+          },
+          "runtime": {
+            "correct": 32,
+            "total": 32
+          },
+          "project": {
+            "correct": 23,
+            "total": 23
+          },
+          "profile": {
+            "correct": 9,
+            "total": 9
+          },
+          "model": {
+            "correct": 15,
+            "total": 15
+          }
+        },
+        "completePlans": {
+          "correct": 32,
+          "total": 32
+        },
+        "mistakes": [],
+        "medianMs": 37.59254100077669,
+        "p95Ms": 42.13187500135973
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 4.57763671875e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "304e2542c79db0f192126cb67ae0306d1cbba0b00e48a715467b518d26b7524b",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-02/"
+}

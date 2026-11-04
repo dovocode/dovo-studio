@@ -1,3 +1,5 @@
+import { Schema } from 'effect'
+import { DovoWebKitBrowserView } from '../../modules/dovo-webkit-browser'
 import { useEffect, useRef, useState } from 'react'
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native'
 import { router } from 'expo-router'
@@ -10,11 +12,20 @@ import {
   terminalShellsResponseSchema,
   workspacePatchResultSchema,
   workspaceRouteSchema,
+  browserProfilesResultSchema,
+  modelCatalogSchema,
+  modelDiscoveryInput,
+  suggestWorkspace,
+  workspaceBrowserInput,
+  workspaceModelChoices,
+  harnessAvailabilitySchema,
+  type BrowserProfile,
   worktreeChoicesSchema,
   type Task,
   type TerminalShell,
   type CreateWorkspaceTerminal,
 } from '@dovo/protocol'
+import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
 import { taskHref } from '../shell/task-route'
@@ -44,7 +55,7 @@ type Receipt = {
   terminalId?: string
   tab?: BrowserTab
 }
-/** AI only proposes a destination. A second explicit submit performs the selected action. */
+/** AI proposes a destination and picker selections. A second explicit submit performs the selected action. */
 export function WorkspaceStarter({
   initialMode,
   embedded = false,
@@ -54,6 +65,7 @@ export function WorkspaceStarter({
 }) {
   const runtime = useRuntime()
   const browser = useBrowserWorkspace()
+  const preferences = useMobilePreferences()
   const { focused } = useNavigation()
   const { styles, colors } = useTheme()
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -75,6 +87,11 @@ export function WorkspaceStarter({
   const [checkout, setCheckout] = useState<'main' | 'existing' | 'worktree'>('main')
   const [checkoutValue, setCheckoutValue] = useState('')
   const [browserSource, setBrowserSource] = useState('device')
+  const [profileId, setProfileId] = useState('default')
+  const [browserProfiles, setBrowserProfiles] = useState<{ key: string; items: BrowserProfile[] }>({
+    key: '',
+    items: [],
+  })
   const [reason, setReason] = useState('')
   const [suggested, setSuggested] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -196,6 +213,62 @@ export function WorkspaceStarter({
       alive = false
     }
   }, [checkoutKey, connected, mode, readRuntime, checkoutRetry])
+  const loadProfiles = async (id: string, explicit = false) => {
+    if (!explicit && browserSource === 'device')
+      return DovoWebKitBrowserView
+        ? preferences.browserProfiles
+        : [{ id: 'default', name: 'Default' }]
+    const target = runtime.overviews.find((owner) => owner.profile.id === id)
+    if (!target) throw new Error('This computer is no longer paired.')
+    return (
+      await readRuntime(
+        target.profile,
+        '/api/previews/browser/profiles/read',
+        {},
+        browserProfilesResultSchema,
+      )
+    ).profiles
+  }
+  const loadModels = async (id: string, projectId: string) => {
+    const target = runtime.overviews.find((owner) => owner.profile.id === id)
+    if (!target?.snapshot) throw new Error('This computer is no longer available.')
+    const availability = await readRuntime(
+      target.profile,
+      '/api/agents/availability',
+      { repositoryId: projectId || undefined },
+      harnessAvailabilitySchema,
+    )
+    return workspaceModelChoices(
+      target.snapshot,
+      projectId,
+      (agent) =>
+        readRuntime(
+          target.profile,
+          '/api/agents/models/cached',
+          modelDiscoveryInput(agent),
+          Schema.NullOr(modelCatalogSchema),
+        ),
+      new Set(availability.filter((item) => item.available).map((item) => item.id)),
+    )
+  }
+  const browserProfilesKey = JSON.stringify([ownerKey, browserSource])
+  useEffect(() => {
+    if (mode !== 'browser') return
+    let current = true
+    void loadProfiles(runtimeId, browserSource !== 'device')
+      .then((items) => {
+        if (current) {
+          setBrowserProfiles({ key: browserProfilesKey, items })
+          setProfileId((id) => (items.some((item) => item.id === id) ? id : 'default'))
+        }
+      })
+      .catch((cause: unknown) => {
+        if (current) setError(`Could not load browser profiles: ${String(cause)}`)
+      })
+    return () => {
+      current = false
+    }
+  }, [mode, browserProfilesKey])
   const availableShells = shells.key === ownerKey ? shells.items : undefined
   const availableCheckouts = choices.key === checkoutKey ? choices.items : undefined
   const shellReady = !!availableShells?.some((shell) => shell.id === shellId)
@@ -231,13 +304,67 @@ export function WorkspaceStarter({
       if (mode === 'auto') {
         if (!profile || !connected)
           throw new Error('Choose an online computer to suggest a destination.')
-        const result = await readRuntime(
-          profile,
-          '/api/tasks/workspace/route',
-          { text: original },
-          workspaceRouteSchema,
-        )
+        const result = await suggestWorkspace({
+          text: original,
+          runtimeId,
+          repositoryId,
+          continueThread: !!threadId,
+          current: valid,
+          computers: runtime.overviews
+            .filter((owner) => owner.connected)
+            .map((owner) => ({
+              id: owner.profile.id,
+              name: runtimeComputerName(owner),
+              snapshot: owner.snapshot,
+            })),
+          route: (id, input) => {
+            const target = runtime.overviews.find((owner) => owner.profile.id === id)
+            if (!target) throw new Error('This computer is no longer paired.')
+            return readRuntime(
+              target.profile,
+              '/api/tasks/workspace/route',
+              input,
+              workspaceRouteSchema,
+            )
+          },
+          models: loadModels,
+          profiles: loadProfiles,
+        })
         if (valid()) {
+          const changed = result.runtimeId !== runtimeId
+          const next = runtime.overviews.find((owner) => owner.profile.id === result.runtimeId)
+          setRuntimeId(result.runtimeId)
+          setRepositoryId(result.repositoryId)
+          if (changed) {
+            setThreadId('')
+            setShellId('default')
+            setModel(null)
+          }
+          if (changed || result.repositoryId !== repositoryId) {
+            setCheckout('main')
+            setCheckoutValue('')
+          }
+          if (result.model)
+            setModel({
+              key: JSON.stringify([
+                JSON.stringify([result.runtimeId, next?.profile.connection]),
+                result.repositoryId,
+              ]),
+              fields: {
+                agentId: '',
+                harness: result.model.harness,
+                harnessCustomized: true,
+                agentOverrides: undefined,
+                modelSelection: undefined,
+              },
+            })
+          if (
+            result.mode === 'browser' &&
+            result.selections?.runtime &&
+            result.selections.runtime !== 'keep'
+          )
+            setBrowserSource(result.runtimeId)
+          if (result.profileId) setProfileId(result.profileId)
           setMode(result.mode)
           setReason(result.reason)
           setSuggested(true)
@@ -255,6 +382,7 @@ export function WorkspaceStarter({
         checkoutValue,
         remember,
         browserSource,
+        profileId,
         model?.key === modelKey ? model.fields : null,
       ])
       if (receipt.current?.key !== key) receipt.current = { key, messageId: randomUUID() }
@@ -263,8 +391,11 @@ export function WorkspaceStarter({
         if (!submission.tab) {
           const common = {
             id: randomUUID(),
-            profileId: browserSource === 'device' ? 'device' : 'default',
-            url: browserAddress(original),
+            profileId:
+              browserSource === 'device' && !DovoWebKitBrowserView && profileId === 'default'
+                ? 'device'
+                : profileId,
+            url: browserAddress(workspaceBrowserInput(original)),
             title: '',
             visitedAt: Date.now(),
           }
@@ -724,6 +855,7 @@ export function WorkspaceStarter({
               onChange={(id) => {
                 invalidate()
                 setBrowserSource(id)
+                setProfileId('default')
                 if (id !== 'device' && id !== runtimeId) {
                   setRuntimeId(id)
                   setRepositoryId('')
@@ -732,6 +864,21 @@ export function WorkspaceStarter({
                   setCheckout('main')
                   setCheckoutValue('')
                 }
+              }}
+            />
+          )}
+          {mode === 'browser' && (
+            <Choice
+              label="Browser profile"
+              value={profileId}
+              disabled={busy || browserProfiles.key !== browserProfilesKey}
+              items={(browserProfiles.key === browserProfilesKey
+                ? browserProfiles.items
+                : [{ id: 'default', name: 'Default' }]
+              ).map((profile) => ({ id: profile.id, name: profile.name }))}
+              onChange={(id) => {
+                invalidate()
+                setProfileId(id)
               }}
             />
           )}

@@ -173,7 +173,13 @@ export type BrowserLifecycleRequest = { requestId: string; tabId: string } & (
   | { action: 'pin' | 'unpin' | 'settle' | 'wake' }
   | { action: 'snooze'; until: number }
 )
-type OpenLink = { id: string; url: string; remote?: boolean }
+type OpenLink = {
+  id: string
+  url: string
+  remote?: boolean
+  runtimeId?: string | null
+  profileId?: string
+}
 type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
@@ -762,10 +768,16 @@ function BrowserContent({
     if (
       !newTab(
         previewUrl(openLink.url),
-        browser && !openLink.remote ? 'web' : 'remote',
-        browser && !openLink.remote
-          ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
-          : 'default',
+        browser &&
+          !openLink.remote &&
+          (!openLink.runtimeId || openLink.runtimeId === store.localRuntimeId)
+          ? 'web'
+          : 'remote',
+        openLink.profileId ??
+          (browser && !openLink.remote
+            ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
+            : 'default'),
+        openLink.runtimeId ?? activeRuntimeId ?? undefined,
       )
     ) {
       workspaceControl?.onSelect(activeTab)

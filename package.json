@@ -108,7 +108,7 @@
     "test:mobile-device-hosts:browser": "node apps/mobile/scripts/check-device-hosts.mjs",
     "test:title-settings:browser": "node scripts/check-title-settings-browser.mjs",
     "test:unified-workspace:browser": "pnpm --filter @dovo/protocol build && node scripts/check-unified-workspace-browser.mjs",
-    "test:workspace-submit:browser": "pnpm --filter @dovo/protocol build && node scripts/check-workspace-submit-browser.mjs",
+    "test:workspace-submit:browser": "pnpm --filter @dovo/protocol build && node scripts/check-workspace-submit-browser.mjs && node scripts/check-workspace-suggestions-browser.mjs",
     "test:workspace-modes:browser": "pnpm --filter @dovo/protocol build && node scripts/check-workspace-modes-browser.mjs",
     "test:terminal-layout:browser": "node scripts/check-terminal-layout-browser.mjs && node scripts/check-mobile-terminal-visibility-browser.mjs && node scripts/check-mobile-terminal-close-browser.mjs",
     "test:sharing-lifecycle:browser": "node scripts/check-sharing-waiting-lifecycle-browser.mjs",

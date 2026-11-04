@@ -1,0 +1,722 @@
+{
+  "artifactRun": "run-04",
+  "suites": {
+    "test": {
+      "fp32": {
+        "correct": 1449,
+        "total": 1461,
+        "accuracy": 0.9917864476386037,
+        "confusion": {
+          "browser": {
+            "browser": 302,
+            "terminal": 1,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 265,
+            "thread": 2
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 1,
+            "thread": 265
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 832,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 175,
+            "total": 175
+          },
+          "model": {
+            "correct": 142,
+            "total": 145
+          },
+          "project": {
+            "correct": 155,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "medianMs": 20.00324999971781,
+        "p95Ms": 22.877040999446763
+      },
+      "q8": {
+        "correct": 1450,
+        "total": 1461,
+        "accuracy": 0.9924709103353867,
+        "confusion": {
+          "browser": {
+            "browser": 302,
+            "terminal": 1,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 265,
+            "thread": 2
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 266
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 833,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 175,
+            "total": 175
+          },
+          "model": {
+            "correct": 142,
+            "total": 145
+          },
+          "project": {
+            "correct": 155,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "medianMs": 41.2579999974696,
+        "p95Ms": 42.60433300078148
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 1
+    },
+    "regression": {
+      "fp32": {
+        "correct": 24,
+        "total": 25,
+        "accuracy": 0.96,
+        "confusion": {
+          "browser": {
+            "browser": 5,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 11,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 1,
+            "thread": 8
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 24,
+            "total": 25
+          }
+        },
+        "medianMs": 20.261833000404295,
+        "p95Ms": 22.624083001574036
+      },
+      "q8": {
+        "correct": 24,
+        "total": 25,
+        "accuracy": 0.96,
+        "confusion": {
+          "browser": {
+            "browser": 5,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 11,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 1,
+            "thread": 8
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 24,
+            "total": 25
+          }
+        },
+        "medianMs": 41.73349999837228,
+        "p95Ms": 42.489667001063935
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 0
+    },
+    "evaluation": {
+      "fp32": {
+        "correct": 90,
+        "total": 90,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 30,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 30
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 90,
+            "total": 90
+          }
+        },
+        "medianMs": 20.147707999058184,
+        "p95Ms": 22.414541999751236
+      },
+      "q8": {
+        "correct": 90,
+        "total": 90,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 30,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 30
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 90,
+            "total": 90
+          }
+        },
+        "medianMs": 41.86756250055623,
+        "p95Ms": 42.49083299873746
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 0
+    },
+    "challenge": {
+      "fp32": {
+        "correct": 87,
+        "total": 90,
+        "accuracy": 0.9666666666666667,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 29,
+            "thread": 1
+          },
+          "thread": {
+            "browser": 2,
+            "terminal": 0,
+            "thread": 28
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 87,
+            "total": 90
+          }
+        },
+        "medianMs": 20.309896499384195,
+        "p95Ms": 22.900832998857368
+      },
+      "q8": {
+        "correct": 87,
+        "total": 90,
+        "accuracy": 0.9666666666666667,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 29,
+            "thread": 1
+          },
+          "thread": {
+            "browser": 2,
+            "terminal": 0,
+            "thread": 28
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 87,
+            "total": 90
+          }
+        },
+        "medianMs": 41.7967494995537,
+        "p95Ms": 42.49899999922491
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 0
+    },
+    "acceptance": {
+      "fp32": {
+        "correct": 110,
+        "total": 111,
+        "accuracy": 0.990990990990991,
+        "confusion": {
+          "browser": {
+            "browser": 9,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 8,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 15
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 32,
+            "total": 32
+          },
+          "runtime": {
+            "correct": 32,
+            "total": 32
+          },
+          "project": {
+            "correct": 22,
+            "total": 23
+          },
+          "profile": {
+            "correct": 9,
+            "total": 9
+          },
+          "model": {
+            "correct": 15,
+            "total": 15
+          }
+        },
+        "completePlans": {
+          "correct": 31,
+          "total": 32
+        },
+        "medianMs": 18.948166998598026,
+        "p95Ms": 20.590374999301275
+      },
+      "q8": {
+        "correct": 110,
+        "total": 111,
+        "accuracy": 0.990990990990991,
+        "confusion": {
+          "browser": {
+            "browser": 9,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 8,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 15
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 32,
+            "total": 32
+          },
+          "runtime": {
+            "correct": 32,
+            "total": 32
+          },
+          "project": {
+            "correct": 22,
+            "total": 23
+          },
+          "profile": {
+            "correct": 9,
+            "total": 9
+          },
+          "model": {
+            "correct": 15,
+            "total": 15
+          }
+        },
+        "completePlans": {
+          "correct": 31,
+          "total": 32
+        },
+        "medianMs": 40.20466599831707,
+        "p95Ms": 42.27858300146181
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 0
+    },
+    "holdout": {
+      "fp32": {
+        "correct": 62,
+        "total": 63,
+        "accuracy": 0.9841269841269841,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 4,
+            "thread": 1
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 17,
+            "total": 18
+          },
+          "runtime": {
+            "correct": 18,
+            "total": 18
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 14,
+            "total": 14
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 17,
+          "total": 18
+        },
+        "medianMs": 17.096583000238752,
+        "p95Ms": 20.958417000656482
+      },
+      "q8": {
+        "correct": 62,
+        "total": 63,
+        "accuracy": 0.9841269841269841,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 4,
+            "thread": 1
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 17,
+            "total": 18
+          },
+          "runtime": {
+            "correct": 18,
+            "total": 18
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 14,
+            "total": 14
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 17,
+          "total": 18
+        },
+        "medianMs": 37.23362500022631,
+        "p95Ms": 42.030000000522705
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 0
+    },
+    "final-holdout": {
+      "fp32": {
+        "correct": 57,
+        "total": 57,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 3,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 16,
+            "total": 16
+          },
+          "runtime": {
+            "correct": 16,
+            "total": 16
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 12,
+            "total": 12
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 16,
+          "total": 16
+        },
+        "medianMs": 16.55666700025904,
+        "p95Ms": 20.788417001313064
+      },
+      "q8": {
+        "correct": 57,
+        "total": 57,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 3,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 16,
+            "total": 16
+          },
+          "runtime": {
+            "correct": 16,
+            "total": 16
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 12,
+            "total": 12
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 16,
+          "total": 16
+        },
+        "medianMs": 37.0981660016696,
+        "p95Ms": 42.20304199770908
+      },
+      "nativeDisagreements": 0,
+      "quantizedChangedPredictions": 0
+    }
+  },
+  "bundle": {
+    "files": [
+      {
+        "path": "LICENSE-APACHE-2.0.txt",
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "path": "LICENSE-DEBERTA-MIT.txt",
+        "bytes": 1141,
+        "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+      },
+      {
+        "path": "LICENSE-TOKENIZERS.txt",
+        "bytes": 11357,
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      },
+      {
+        "path": "NOTICE.txt",
+        "bytes": 658,
+        "sha256": "01b40f5e784aabcb683dae926d62e25634b9f7a8a7228eac873a5b4ebeef4b78"
+      },
+      {
+        "path": "README.md",
+        "bytes": 2852,
+        "sha256": "1d253245482abae57958c632a06d999472defcc45b68a6c9ac2241b4d75fbd95"
+      },
+      {
+        "path": "config.json",
+        "bytes": 3752,
+        "sha256": "a3f2055042b9baeaf32a6f105959614d00049e470efe30a1cffa3b2ef785efc7"
+      },
+      {
+        "path": "model.onnx",
+        "bytes": 197828922,
+        "sha256": "d47272eea674c551acb87179b291f43d9885d02c44e66478a0719d8a89e6e253"
+      },
+      {
+        "path": "routing.json",
+        "bytes": 3444,
+        "sha256": "d6632ffa009854734cc344f7b4e9ba478a7c0d53a5b852c8d576f5e1f62a0a14"
+      },
+      {
+        "path": "tokenizer.json",
+        "bytes": 8332640,
+        "sha256": "f600de7df2f264c0a832209d2984d512f956e77b8ec80a90914b794ebb27713c"
+      },
+      {
+        "path": "tokenizer.mjs",
+        "bytes": 98937,
+        "sha256": "1c4a848f86156201c033d6cd08c4cf81ae1088552acec3367f31ef086edf5af0"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "bytes": 635,
+        "sha256": "2fcf7b3f79e70fc1671316cc32fbc72f91b5fe8bf0f95806f6f831e0cd74795e"
+      }
+    ],
+    "totalBytes": 206295696,
+    "archive": {
+      "path": "dovo-workspace-selections-gliclass-int8-20261104.tar.gz",
+      "bytes": 177763419,
+      "sha256": "8156beade6e951aed9ae789b56437e63c0d8bfd7d09dbffd7afaa2cd443eb8d8"
+    }
+  },
+  "macFullProposalLatency": {
+    "platform": "macOS-27.3-arm64-arm-64bit",
+    "onnxruntime": "1.31.1",
+    "cpuThreads": 4,
+    "correct": 31,
+    "total": 32,
+    "medianMs": 123.71758299923385,
+    "p95Ms": 156.23020899874973,
+    "peakRssBytes": 1031864320,
+    "notes": "10 full-proposal warmups; 3-4 sequential classifiers per proposal; no torch import."
+  },
+  "scope": "Training/export only; production still uses Julia-1. Picker UI integration is pending.",
+  "limitations": [
+    "Synthetic diagnostic data, not production traffic. Manual acceptance informed refinements.",
+    "Visible editable overrides remain required.",
+    "384 tokens including labels/instructions; 2-16 options.",
+    "Storage ~206 MB; peak isolated process RSS ~1.03 GB.",
+    "No native phone timing or production integration verification."
+  ],
+  "crossHostVerification": {
+    "node-manual.json": {
+      "onnxruntime": {
+        "common": "1.23.2",
+        "node": "1.23.2"
+      },
+      "platform": "linux",
+      "architecture": "x64",
+      "peakRssKiB": 883076,
+      "cases": 231,
+      "correct": 229,
+      "tokenizerMismatches": 0,
+      "changedPredictions": [],
+      "medianMs": 132.48048699999708,
+      "p95Ms": 175.31188600000314
+    },
+    "node-test-sample.json": {
+      "onnxruntime": {
+        "common": "1.23.2",
+        "node": "1.23.2"
+      },
+      "platform": "linux",
+      "architecture": "x64",
+      "peakRssKiB": 883296,
+      "cases": 216,
+      "correct": 205,
+      "tokenizerMismatches": 0,
+      "changedPredictions": [],
+      "medianMs": 143.0710100000033,
+      "p95Ms": 184.8944819999997
+    },
+    "sampling": "Manual 231 questions; test 216 questions: 40 random per task, all mistakes, smallest 20 logit margins, deduplicated. This sample overrepresents failures and is not an accuracy estimate."
+  }
+}

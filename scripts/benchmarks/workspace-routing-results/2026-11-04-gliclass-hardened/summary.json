@@ -1,0 +1,27 @@
+{
+  "selectedRun": "run-09",
+  "trainingQuestions": 12021,
+  "nativeValidation": {
+    "correct": 3327,
+    "total": 3330
+  },
+  "quantizedSyntheticRegression": {
+    "correct": 1460,
+    "total": 1461
+  },
+  "freshCompleteSuggestions": {
+    "correct": 49,
+    "total": 50,
+    "baselineCorrect": 42
+  },
+  "bundleBytes": 206295753,
+  "nativeAndOnnxAgreementQuestions": 2570,
+  "nodeAndMacAgreementQuestions": 541,
+  "modelOnly": true,
+  "integratedIntoProduction": false,
+  "knownLimitations": [
+    "Fresh complete-suggestion accuracy is 98%, not evidence of 99.9% real-world reliability.",
+    "Advice questions can change model/project incorrectly; some browser requests still route to Thread.",
+    "Phone inference unmeasured; runtime RAM is roughly 1 GB."
+  ]
+}

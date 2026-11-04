@@ -203,9 +203,10 @@ export class TitleGeneration {
     )
   }
   routeWorkspaceEffect(value: unknown) {
-    return runtimeOperation(() =>
-      this.workspaceRouter.route(decode(workspaceRouteRequestSchema, value).text),
-    )
+    return runtimeOperation(() => {
+      const { text, ...context } = decode(workspaceRouteRequestSchema, value)
+      return this.workspaceRouter.route(text, context)
+    })
   }
   selectProjectsEffect(value: unknown) {
     return runtimeProgram(

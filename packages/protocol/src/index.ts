@@ -356,3 +356,5 @@ export * from './runtime/previews/browser-element.js'
 export * from './terminal-stream.js'
 
 export * from './runtime/connection/terminal-status.js'
+
+export * from './tasks/workspace-suggestions.js'

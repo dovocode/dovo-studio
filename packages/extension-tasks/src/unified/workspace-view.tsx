@@ -268,7 +268,12 @@ function WorkspaceContent() {
   const [browserRequest, setBrowserRequest] = useState('')
   const pendingBrowserAction = useRef(false)
   const requestedBrowserTab = useRef<string | undefined>(undefined)
-  const [browserLink, setBrowserLink] = useState<{ id: string; url: string } | null>(null)
+  const [browserLink, setBrowserLink] = useState<{
+    id: string
+    url: string
+    runtimeId?: string
+    profileId?: string
+  } | null>(null)
   const threadNavigation = useRef(new Map<string, StudioNavigation>())
   const active = state.tabs.find((tab) => workspaceTabKey(tab) === state.active)
   const current = useRef(state)
@@ -368,9 +373,9 @@ function WorkspaceContent() {
     openBrowser('new')
   }, [openBrowser])
   const openBrowserLink = useCallback(
-    async (url: string) => {
+    async (url: string, target?: { runtimeId: string; profileId: string }) => {
       pendingBrowserAction.current = true
-      setBrowserLink({ id: randomUUID(), url })
+      setBrowserLink({ id: randomUUID(), url, ...target })
       openBrowser('new')
     },
     [openBrowser],

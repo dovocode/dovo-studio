@@ -1,0 +1,263 @@
+{
+  "description": "Regression cases for the user-confirmed capability-versus-use distinction. Authored after clarification and before run-08 results. None of these exact inputs are training examples; not a blind production-accuracy estimate.",
+  "catalogs": {
+    "runtime": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "mac-studio",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "macbook",
+        "label": "runtime: Dominic's MacBook"
+      },
+      {
+        "id": "linux",
+        "label": "runtime: Linux Server"
+      }
+    ],
+    "model": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "opus-5.5",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "sol-6.1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "fable-5.1",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "project": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "dovo",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "shampoo",
+        "label": "project: Shampoo"
+      },
+      {
+        "id": "client",
+        "label": "project: Client Website"
+      }
+    ],
+    "profile": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "work",
+        "label": "profile: Work"
+      },
+      {
+        "id": "personal",
+        "label": "profile: Personal"
+      },
+      {
+        "id": "testing",
+        "label": "profile: Testing"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "text": "Could Opus handle this bug fix?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Can Sol 6.1 solve a memory leak?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Would Fable 5.1 handle a large refactor?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Is Opus 5.5 suited for reviewing database migrations?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Do you think Sol could debug this issue?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Should I use Opus for code reviews?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Which is better for this task, Opus 5.5 or Fable 5.1?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Can you explain whether Fable 5.1 is capable of this?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Could you use Opus to fix this bug?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Can you use Sol 6.1 to review the implementation?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Would you ask Fable 5.1 to investigate this crash?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Please have Opus 5.5 inspect the diff",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "I want Sol to implement the feature",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Ask Fable to repair the failing tests",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Use Opus to debug the issue",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Put Sol 6.1 on this bug fix",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Let Opus 5.5 review this change",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Would you use Fable 5.1 to look at the bug?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "The proposal mentions using Opus 5.5, but do not change the selected model",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Explain whether Opus could help with a migration",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    }
+  ]
+}

@@ -1,0 +1,172 @@
+[
+  {
+    "model": "gliclass-v4-fp32",
+    "repository": "knowledgator/gliclass-v4-edge",
+    "revision": "885af1af8a07edf4ed34df83ca0d995ed8201283",
+    "files": [
+      {
+        "file": "config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "model.safetensors",
+        "status": "upstream-lfs-sha256-matched"
+      }
+    ]
+  },
+  {
+    "model": "gliclass-v4-onnx-fp32",
+    "repository": "knowledgator/gliclass-v4-edge",
+    "revision": "885af1af8a07edf4ed34df83ca0d995ed8201283",
+    "files": [
+      {
+        "file": "config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "onnx/model.onnx",
+        "status": "upstream-lfs-sha256-matched"
+      }
+    ]
+  },
+  {
+    "model": "gliclass-v4-onnx-fp32-10examples",
+    "repository": "knowledgator/gliclass-v4-edge",
+    "revision": "885af1af8a07edf4ed34df83ca0d995ed8201283",
+    "files": [
+      {
+        "file": "config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "onnx/model.onnx",
+        "status": "upstream-lfs-sha256-matched"
+      }
+    ]
+  },
+  {
+    "model": "gliclass-v4-q8",
+    "repository": "knowledgator/gliclass-v4-edge",
+    "revision": "885af1af8a07edf4ed34df83ca0d995ed8201283",
+    "files": [
+      {
+        "file": "config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "onnx/model_q8.onnx",
+        "status": "upstream-lfs-sha256-matched"
+      }
+    ]
+  },
+  {
+    "model": "deberta-zeroshot-v2",
+    "repository": "MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
+    "revision": "8e7e5af5983a0ddb1a5b45a38b129ab69e2258e8",
+    "files": [
+      {
+        "file": "model.safetensors",
+        "status": "upstream-lfs-sha256-matched"
+      },
+      {
+        "file": "config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "upstream-git-blob-matched-local-sha256-recorded"
+      }
+    ]
+  },
+  {
+    "model": "setfit-minilm-10examples",
+    "repository": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "files": [
+      {
+        "file": "1_Pooling/config.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "2_Normalize/config.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "config.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "config_sentence_transformers.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "config_setfit.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "model.safetensors",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "model_head.pkl",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "modules.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "routing-training.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "sentence_bert_config.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "tokenizer.json",
+        "status": "local-training-output-sha256-recorded"
+      },
+      {
+        "file": "tokenizer_config.json",
+        "status": "local-training-output-sha256-recorded"
+      }
+    ]
+  }
+]

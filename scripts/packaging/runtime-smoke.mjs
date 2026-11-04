@@ -22,7 +22,7 @@ try {
   const router = new WorkspaceRouter();
   try {
     const suggestion = await router.route('https://example.com');
-    if (!suggestion.reason.startsWith('Julia-1 suggests ')) throw new Error('Packaged workspace router did not run Julia-1: ' + suggestion.reason);
+    if (!suggestion.reason.startsWith('GLiClass suggests ')) throw new Error('Packaged workspace router did not run GLiClass: ' + suggestion.reason);
   } finally {
     await router.dispose();
   }

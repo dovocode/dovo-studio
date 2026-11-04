@@ -41,15 +41,15 @@ it.each(['browser', 'terminal', 'thread'] as const)(
     const s = setup()
     const route = vi
       .spyOn(WorkspaceRouter.prototype, 'route')
-      .mockResolvedValue({ mode, reason: 'Julia-1 suggestion' })
+      .mockResolvedValue({ mode, reason: 'GLiClass suggestion' })
     const provider = vi.spyOn(s.registry, 'get')
     try {
       expect(s.titles.read().model).toBe('')
       expect(await runClientEffect(s.titles.routeWorkspaceEffect({ text: 'pnpm test' }))).toEqual({
         mode,
-        reason: 'Julia-1 suggestion',
+        reason: 'GLiClass suggestion',
       })
-      expect(route).toHaveBeenCalledWith('pnpm test')
+      expect(route).toHaveBeenCalledWith('pnpm test', {})
       expect(provider).not.toHaveBeenCalled()
       expect(s.store.get().tasks).toEqual([])
     } finally {

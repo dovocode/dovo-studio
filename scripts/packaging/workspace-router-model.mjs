@@ -1,50 +1,72 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, rename, rm, stat, copyFile, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const routerModel = {
-  name: 'Julia-1',
-  repository: 'SupersonicLabs/Julia-1-ONNX',
-  revision: '82a2fadf8fccfccdc5fd4e1009ba8f1a265eb7a8',
+  name: 'Dovo GLiClass run-09',
+  repository: 'knowledgator/gliclass-base-v3.0',
+  revision: '77a70e6cd52e602ed18184ef37d18bdd3741e3d5',
+  baseUrl:
+    'https://github.com/dovocode/dovo-studio/releases/download/workspace-router-gliclass-20261104-r09',
   files: [
     {
-      name: 'model.onnx.data',
-      size: 576782336,
-      sha256: 'fd915be810d7ebfb80fb05a48dd33c9484d17ae1b6bcb9e1f544cbaaa913ded1',
+      name: 'LICENSE-APACHE-2.0.txt',
+      size: 11358,
+      sha256: 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30',
+    },
+    {
+      name: 'LICENSE-DEBERTA-MIT.txt',
+      size: 1141,
+      sha256: 'c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383',
+    },
+    {
+      name: 'LICENSE-TOKENIZERS.txt',
+      size: 11357,
+      sha256: 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4',
+    },
+    {
+      name: 'NOTICE.txt',
+      size: 772,
+      sha256: '98698ccdb5c31573e5a0d6a2384ff3bf618f17bef02545c37de67c48e9154014',
+    },
+    {
+      name: 'README.md',
+      size: 2795,
+      sha256: 'bdf6a5d07eb59b7fbcbd3ee45401bfe500808cffa642715c798deab223dd82b0',
+    },
+    {
+      name: 'config.json',
+      size: 3752,
+      sha256: 'a3f2055042b9baeaf32a6f105959614d00049e470efe30a1cffa3b2ef785efc7',
     },
     {
       name: 'model.onnx',
-      size: 2988923,
-      sha256: '97141d0cfb1da6204e9f8f24d581af72eaeb82cda21149d83eaa6df7160fbcd9',
+      size: 197828922,
+      sha256: '281661098f4ef538d75f7233c9dcc2c9bbba719586cf98e3c4b18a371584922c',
+    },
+    {
+      name: 'routing.json',
+      size: 3444,
+      sha256: '8d41875c087120ee813834b53f87cba25f9421dbfde83acf23263fd2769773ef',
     },
     {
       name: 'tokenizer.json',
-      size: 34363188,
-      sha256: '609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f',
+      size: 8332640,
+      sha256: 'f600de7df2f264c0a832209d2984d512f956e77b8ec80a90914b794ebb27713c',
+    },
+    {
+      name: 'tokenizer.mjs',
+      size: 98937,
+      sha256: '1c4a848f86156201c033d6cd08c4cf81ae1088552acec3367f31ef086edf5af0',
     },
     {
       name: 'tokenizer_config.json',
-      size: 652,
-      sha256: '6b069e57db0ce0794c22547725275f22618809c4ef4249307337e651a0dfef8c',
-    },
-    {
-      name: 'wasm/julia_webgpu_encode.js',
-      size: 9482,
-      sha256: '1b33508498fb860862c7a6cffb11dbfab6a9cea2969e1c85f1c3bdb61793c8d6',
-    },
-    {
-      name: 'wasm/julia_webgpu_encode_bg.wasm',
-      size: 2839690,
-      sha256: '6bd07351de6809f6d41e9f28a46a35bbc50866872a6dd63498a7a8f611998421',
-    },
-    {
-      name: 'parity-cases.json',
-      size: 53278,
-      sha256: '534670f25823f3f9abf9e812500918fabc606682dfd4e2456d827889d9bdca20',
+      size: 635,
+      sha256: '2fcf7b3f79e70fc1671316cc32fbc72f91b5fe8bf0f95806f6f831e0cd74795e',
     },
   ],
 }
@@ -68,10 +90,9 @@ export async function prepareWorkspaceRouterModel(directory, model = routerModel
     const temporary = destination + '.' + randomUUID() + '.tmp'
     try {
       console.log(`Preparing bundled workspace router: ${file.name}`)
-      const response = await fetch(
-        `https://huggingface.co/${model.repository}/resolve/${model.revision}/${file.name}`,
-        { signal: AbortSignal.timeout(600_000) },
-      )
+      const response = await fetch(`${model.baseUrl}/${file.name}`, {
+        signal: AbortSignal.timeout(600_000),
+      })
       if (!response.ok || !response.body)
         throw new Error(`Could not fetch workspace model ${file.name}: HTTP ${response.status}`)
       await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { flags: 'wx' }))
@@ -82,15 +103,16 @@ export async function prepareWorkspaceRouterModel(directory, model = routerModel
       await rm(temporary, { force: true })
     }
   }
-  await mkdir(directory, { recursive: true })
-  await copyFile(
-    new URL('./workspace-router-LICENSE.txt', import.meta.url),
-    join(directory, 'LICENSE'),
-  )
-  await writeFile(
-    join(directory, 'NOTICE.md'),
-    `Bundled routing model: ${model.name}\nONNX weights: https://huggingface.co/${model.repository}/tree/${model.revision}\nUpstream: https://huggingface.co/SupersonicLabs/Julia-1\nLicense: Apache-2.0 (see LICENSE).\nInference: full FP32 decision graph with ONNX Runtime CPU and the authors’ strict Rust/WASM tokenizer.\n`,
-  )
+  // Remove only known Julia assets after the complete replacement has been verified.
+  for (const obsolete of [
+    'model.onnx.data',
+    'wasm/julia_webgpu_encode.js',
+    'wasm/julia_webgpu_encode_bg.wasm',
+    'parity-cases.json',
+    'LICENSE',
+    'NOTICE.md',
+  ])
+    await rm(join(directory, obsolete), { force: true })
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
   await prepareWorkspaceRouterModel(

@@ -93,7 +93,7 @@ it('explains the input limit without truncating a paste or loading the model', a
 it('unloads idle workers and starts a fresh one for the next suggestion', async () => {
   vi.useFakeTimers()
   const open = vi.fn<() => Worker>(() =>
-    worker(`parentPort.postMessage({id:message.id,mode:'terminal',reason:'Julia-1 suggestion'})`),
+    worker(`parentPort.postMessage({id:message.id,mode:'terminal',reason:'GLiClass suggestion'})`),
   )
   const router = new WorkspaceRouter(open)
   try {
@@ -101,6 +101,32 @@ it('unloads idle workers and starts a fresh one for the next suggestion', async 
     await vi.advanceTimersByTimeAsync(60_001)
     expect((await router.route('git diff')).mode).toBe('terminal')
     expect(open).toHaveBeenCalledTimes(2)
+  } finally {
+    await router.dispose()
+  }
+})
+it('validates suggested picker IDs against the catalog for their original job', async () => {
+  const router = new WorkspaceRouter(() =>
+    worker(
+      `parentPort.postMessage({id:message.id,mode:'thread',reason:'GLiClass suggestion',selections:{model:message.text === 'valid'?'opus':'invented'}})`,
+    ),
+  )
+  try {
+    const context = {
+      catalogs: {
+        model: [
+          { id: 'keep', label: 'Keep current model' },
+          { id: 'opus', label: 'Opus' },
+        ],
+      },
+    }
+    const [valid, invalid] = await Promise.all([
+      router.route('valid', context),
+      router.route('invalid', context),
+    ])
+    expect(valid.selections?.model).toBe('opus')
+    expect(invalid.selections).toBeUndefined()
+    expect(invalid.reason).toContain('unavailable selection')
   } finally {
     await router.dispose()
   }

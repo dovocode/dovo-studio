@@ -1,0 +1,5 @@
+{
+  "blindV2Sha256": "15ab2a3e09f1aff331a1274151cbcfed6d13f49cdd188db9a1086c2f30f027f3",
+  "blindV3Sha256": "dea922693e5badd4ba1e526ae0de58faf9ed9bea883fab4470515b84f018010e",
+  "note": "Blind-v2 first evaluated on run-08, then informed the run-09 context refinement; retain run-08 scores as the initial blind result. Blind-v3 frozen before run-09 results."
+}

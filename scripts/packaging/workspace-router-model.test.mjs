@@ -9,8 +9,7 @@ import { prepareWorkspaceRouterModel } from './workspace-router-model.mjs'
 const bytes = Buffer.from('pinned test model bytes')
 const model = {
   name: 'test-model',
-  repository: 'example/model',
-  revision: 'pinned-revision',
+  baseUrl: 'https://example.com/pinned-revision',
   files: [
     {
       name: 'model.onnx',
@@ -29,24 +28,19 @@ async function fixture(run) {
     await rm(directory, { recursive: true, force: true })
   }
 }
-await test('downloads pinned assets once, verifies the cache, and bundles attribution', async () => {
+await test('downloads pinned assets once and verifies the cache', async () => {
   await fixture(async (directory) => {
     let requests = 0
     globalThis.fetch = async (url) => {
       requests++
-      assert.equal(url, 'https://huggingface.co/example/model/resolve/pinned-revision/model.onnx')
+      assert.equal(url, 'https://example.com/pinned-revision/model.onnx')
       return new Response(bytes)
     }
     await prepareWorkspaceRouterModel(directory, model)
     await prepareWorkspaceRouterModel(directory, model)
     assert.equal(requests, 1)
     assert.deepEqual(await readFile(join(directory, 'model.onnx')), bytes)
-    assert.match(await readFile(join(directory, 'LICENSE'), 'utf8'), /Apache License/)
-    assert.match(await readFile(join(directory, 'NOTICE.md'), 'utf8'), /pinned-revision/)
-    assert.equal(
-      (await readFile(join(directory, 'NOTICE.md'), 'utf8')).split('\n')[0],
-      'Bundled routing model: test-model',
-    )
+    assert.deepEqual(await readdir(directory), ['model.onnx'])
   })
 })
 await test('replaces corrupt cached assets only after verifying their replacement', async () => {
@@ -73,4 +67,29 @@ await test('fails packaging on HTTP or checksum errors and removes partial downl
       assert.deepEqual(await readdir(directory), [])
     })
   }
+})
+await test('verifies bundled attribution before removing obsolete Julia assets', async () => {
+  await fixture(async (directory) => {
+    const license = Buffer.from('pinned upstream license')
+    const descriptor = {
+      ...model,
+      files: [
+        ...model.files,
+        {
+          name: 'LICENSE-APACHE-2.0.txt',
+          size: license.length,
+          sha256: createHash('sha256').update(license).digest('hex'),
+        },
+      ],
+    }
+    await writeFile(join(directory, 'model.onnx.data'), bytes)
+    globalThis.fetch = async (url) =>
+      new Response(url.endsWith('model.onnx') ? bytes : 'corrupt license')
+    await assert.rejects(prepareWorkspaceRouterModel(directory, descriptor), /checksum mismatch/)
+    assert.deepEqual(await readFile(join(directory, 'model.onnx.data')), bytes)
+    globalThis.fetch = async () => new Response(license)
+    await prepareWorkspaceRouterModel(directory, descriptor)
+    assert.deepEqual(await readFile(join(directory, 'LICENSE-APACHE-2.0.txt')), license)
+    assert.deepEqual((await readdir(directory)).sort(), ['LICENSE-APACHE-2.0.txt', 'model.onnx'])
+  })
 })

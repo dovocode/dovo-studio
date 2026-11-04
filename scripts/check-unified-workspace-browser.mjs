@@ -65,6 +65,8 @@ const read=useCallback(async(profile,path,input)=>{
  if(path==='/api/snapshot')return owner.snapshot;
  if(path==='/api/tasks/message'){if(window.messageError)throw Error(window.messageError);return {ok:true}}
  if(path==='/api/tasks/workspace/route'){if(window.routeError)throw Error(window.routeError);if(window.delayRoute)await new Promise(resolve=>window.finishRoute=resolve);return {mode:window.routeMode,reason:'Fixture decision'}}
+ if(path==='/api/previews/browser/profiles/read')return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};
+ if(path==='/api/agents/models/cached')return null;
  if(path==='/api/terminals/shells'){if(window.shellError)throw Error(window.shellError);if(window.delayShellOwner===profile.id)await new Promise(resolve=>window.finishShells=resolve);return {shells:[{id:'default',label:'Default ('+profile.id+')',path:'/bin/bash',args:['-l']},{id:profile.id==='local'?'bash':'fish',label:profile.id==='local'?'Bash':'Fish',path:profile.id==='local'?'/bin/bash':'/usr/bin/fish',args:['-l']}]}}
  if(path==='/api/scm/branches')return {branches:[{ref:'refs/heads/main',name:'main',remote:false,checkedOut:true},{ref:'refs/heads/feature',name:'feature',remote:false,checkedOut:false}],current:'main',revision:'fixture'};
  if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/project/existing',branch:'feature',dirty:true}]};

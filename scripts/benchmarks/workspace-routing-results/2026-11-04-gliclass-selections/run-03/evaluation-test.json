@@ -1,0 +1,1938 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "test": {
+      "fp32": {
+        "correct": 1437,
+        "total": 1461,
+        "accuracy": 0.9835728952772074,
+        "confusion": {
+          "browser": {
+            "browser": 301,
+            "terminal": 2,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 267,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 13,
+            "thread": 253
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 821,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 171,
+            "total": 175
+          },
+          "model": {
+            "correct": 144,
+            "total": 145
+          },
+          "project": {
+            "correct": 156,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "mistakes": [
+          {
+            "input": "Help: top -l 1 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.594249999703607,
+            "logits": [-19.039003372192383, 10.165961265563965, -6.671975135803223],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 530,
+              341, 1406, 376, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 19.982125002570683,
+            "logits": [
+              -4.648263931274414, -20.55057716369629, -14.980079650878906, -20.015274047851562,
+              -20.898422241210938, -20.69778823852539, -3.250588893890381
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:70:3",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "project:test:70:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "project:test:70:2",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:70:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:70:0",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              14792, 9073, 128001, 663, 294, 23369, 10454, 128001, 663, 294, 771, 10450, 5122,
+              128001, 663, 294, 14271, 20839, 128001, 663, 294, 114609, 12328, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "For this request, switch to computer Moon Laptop",
+            "expected": "keep",
+            "actual": "runtime:test:88:5",
+            "ms": 21.674375002476154,
+            "logits": [
+              -6.5332512855529785, -21.221887588500977, -21.290246963500977, -21.100238800048828,
+              -21.130802154541016, -20.635507583618164, 2.531055212020874
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:88:1",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:88:2",
+                "label": "runtime: Mac Studio"
+              },
+              {
+                "id": "runtime:test:88:0",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "runtime:test:88:3",
+                "label": "runtime: Dune Server"
+              },
+              {
+                "id": "runtime:test:88:4",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "runtime:test:88:5",
+                "label": "runtime: Satellite Laptop"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 1214, 346, 363, 499, 1214, 3973, 128001, 22227, 294,
+              14271, 57127, 128001, 22227, 294, 3076, 5122, 128001, 22227, 294, 49405, 8124, 12624,
+              128001, 22227, 294, 47040, 5561, 128001, 22227, 294, 14792, 2732, 128001, 22227, 294,
+              16990, 18926, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260, 10611, 364,
+              299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269, 12734, 261,
+              548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278, 269, 298,
+              6350, 278, 260, 21863, 294, 434, 291, 1409, 261, 2925, 264, 1214, 5256, 18926, 2
+            ]
+          },
+          {
+            "input": "Help: docker stats --no-stream isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.076415999938035,
+            "logits": [-19.290807723999023, 7.8080034255981445, 6.422919273376465],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 56177,
+              9423, 341, 271, 1967, 271, 14471, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: zoxide query studio isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.163375000673113,
+            "logits": [-19.155488967895508, 5.716285228729248, 4.80167293548584],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 6493,
+              37174, 7236, 2998, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: ansible-playbook deploy.yml --check isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.543959002679912,
+            "logits": [-19.197662353515625, 10.276037216186523, -6.080190181732178],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 299,
+              57837, 271, 7829, 5749, 10983, 260, 608, 8365, 341, 271, 11295, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: fd --extension ts isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 19.95066700328607,
+            "logits": [-19.06960105895996, 9.99363899230957, -7.105531215667725],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 2994,
+              407, 341, 271, 48968, 1941, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: ip addr show isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.552750000206288,
+            "logits": [-19.31519889831543, 9.193707466125488, -2.501734733581543],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 20219,
+              800, 834, 553, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "load dovocode.com",
+            "expected": "browser",
+            "actual": "terminal",
+            "ms": 21.899667000980116,
+            "logits": [-2.2862415313720703, 8.784069061279297, -13.230195999145508],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2929, 333, 10450,
+              11478, 260, 549, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Tundra Cloud, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 18.925582997326273,
+            "logits": [
+              -5.805615425109863, -20.425870895385742, -6.7347092628479, -20.61057472229004
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:0:0",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:0:1",
+                "label": "project: Dovo Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14792,
+              9073, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              771, 10450, 5122, 128002, 4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374,
+              260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425,
+              5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335,
+              363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331, 314, 56926, 5262, 261,
+              298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "Run the work from the paired Moon Laptop computer",
+            "expected": "keep",
+            "actual": "runtime:test:33:2",
+            "ms": 21.099583002069267,
+            "logits": [
+              -21.214935302734375, -21.041091918945312, -21.009702682495117, -20.898536682128906,
+              -20.846529006958008, -6.661950588226318, 5.924999713897705
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "runtime:test:33:1",
+                "label": "runtime: Mac Studio"
+              },
+              {
+                "id": "runtime:test:33:3",
+                "label": "runtime: Dune Server"
+              },
+              {
+                "id": "runtime:test:33:0",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:33:5",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "runtime:test:33:4",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:33:2",
+                "label": "runtime: Satellite Laptop"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 22227, 294, 3076, 5122, 128001, 22227, 294, 47040, 5561, 128001, 22227,
+              294, 14271, 57127, 128001, 22227, 294, 49405, 8124, 12624, 128001, 22227, 294, 14792,
+              2732, 128001, 2876, 262, 1049, 2068, 1214, 346, 363, 499, 1214, 3973, 128001, 22227,
+              294, 16990, 18926, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260, 10611,
+              364, 299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269, 12734,
+              261, 548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278, 269,
+              298, 6350, 278, 260, 21863, 294, 5537, 262, 374, 292, 262, 8831, 5256, 18926, 1214, 2
+            ]
+          },
+          {
+            "input": "Run the work from the paired Moon Laptop computer",
+            "expected": "keep",
+            "actual": "runtime:test:66:2",
+            "ms": 21.006082999520004,
+            "logits": [
+              -21.25043296813965, -21.131174087524414, -21.18882942199707, 4.287944793701172,
+              -21.03826904296875, -6.644373893737793, -21.065279006958008
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "runtime:test:66:5",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:66:4",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "runtime:test:66:0",
+                "label": "runtime: Mac Studio"
+              },
+              {
+                "id": "runtime:test:66:2",
+                "label": "runtime: Satellite Laptop"
+              },
+              {
+                "id": "runtime:test:66:1",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:66:3",
+                "label": "runtime: Dune Server"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 22227, 294, 14271, 57127, 128001, 22227, 294, 14792, 2732, 128001, 22227,
+              294, 3076, 5122, 128001, 22227, 294, 16990, 18926, 128001, 22227, 294, 49405, 8124,
+              12624, 128001, 2876, 262, 1049, 2068, 1214, 346, 363, 499, 1214, 3973, 128001, 22227,
+              294, 47040, 5561, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260, 10611, 364,
+              299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269, 12734, 261,
+              548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278, 269, 298,
+              6350, 278, 260, 21863, 294, 5537, 262, 374, 292, 262, 8831, 5256, 18926, 1214, 2
+            ]
+          },
+          {
+            "input": "Help: vercel env ls isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.420500001317123,
+            "logits": [-19.08315086364746, 9.46796989440918, -3.0581421852111816],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 10459,
+              19369, 72684, 2531, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: pnpm dlx create-vite@latest demo isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.466000002168585,
+            "logits": [-19.187944412231445, 9.464492797851562, -0.7314276695251465],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 845,
+              673, 2086, 61609, 982, 676, 271, 57520, 1683, 69992, 6731, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: claude -p 'inspect this repository' isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 25.744624999788357,
+            "logits": [-18.90520668029785, 10.461699485778809, -7.590780258178711],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 36579,
+              25806, 341, 1492, 382, 547, 37831, 291, 12499, 280, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: magick logo.png -resize 120x120 thumb.png isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.54029100004118,
+            "logits": [-19.07111930847168, 10.044734954833984, -5.118701457977295],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 77707,
+              3784, 260, 25057, 341, 368, 7283, 4811, 982, 9648, 9406, 260, 25057, 928, 280, 297,
+              560, 2
+            ]
+          },
+          {
+            "input": "Help: opencode --continue isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 22.476792000816204,
+            "logits": [-19.166622161865234, 10.10126781463623, -7.551270961761475],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 615,
+              11478, 341, 271, 48625, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:65:1",
+            "ms": 18.808499997248873,
+            "logits": [
+              -20.25701904296875, -20.161191940307617, -19.550508499145508, -7.163938045501709,
+              -6.798633098602295
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:65:2",
+                "label": "model: Granite 4.2"
+              },
+              {
+                "id": "model:test:65:0",
+                "label": "model: Opus 5.5"
+              },
+              {
+                "id": "model:test:65:3",
+                "label": "model: Fable 5.1"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:65:1",
+                "label": "model: Sol 6.1"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 18333, 453, 260, 445, 128001, 1040, 294, 48919, 456, 260, 524,
+              128001, 1040, 294, 55154, 456, 260, 435, 128001, 2876, 262, 1049, 2068, 5536, 1040,
+              346, 363, 499, 1040, 3973, 128001, 1040, 294, 13433, 525, 260, 435, 128002, 4989, 262,
+              499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411, 3232, 289, 1659, 269,
+              298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261, 548, 262, 763, 1040,
+              260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525, 260, 435, 261, 298, 6350, 278,
+              2
+            ]
+          },
+          {
+            "input": "Help: journalctl -n 20 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 25.7726250019914,
+            "logits": [-18.92013931274414, 10.163336753845215, -7.836214065551758],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 4881,
+              64116, 341, 673, 602, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "load localhost:4629",
+            "expected": "browser",
+            "actual": "terminal",
+            "ms": 30.37729199786554,
+            "logits": [4.394784927368164, 6.841185569763184, -13.727937698364258],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2929, 80404, 294,
+              5718, 3873, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 25.21912500014878,
+            "logits": [
+              -15.040679931640625, -5.706774711608887, -20.256717681884766, -20.871906280517578,
+              -20.58378791809082, -20.68763542175293, -5.747342109680176, -20.538738250732422
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:120:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:120:3",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:120:2",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:120:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:120:5",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:120:1",
+                "label": "project: Aurora Notes"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 23369, 10454, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356,
+              12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663, 294, 14271, 20839, 128001,
+              663, 294, 49405, 14893, 128001, 663, 294, 114609, 12328, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294, 14792, 9073, 128002, 4989, 262,
+              499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268,
+              601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003,
+              585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863,
+              294, 273, 280, 358, 2331, 314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "For this request, switch to computer Moon Laptop",
+            "expected": "keep",
+            "actual": "runtime:test:22:3",
+            "ms": 21.080582999275066,
+            "logits": [
+              -21.338945388793945, -6.9329352378845215, -21.123811721801758, -20.989782333374023,
+              4.186679363250732, -21.22443962097168, -21.347200393676758
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "runtime:test:22:1",
+                "label": "runtime: Dune Server"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:22:5",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "runtime:test:22:4",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "runtime:test:22:3",
+                "label": "runtime: Satellite Laptop"
+              },
+              {
+                "id": "runtime:test:22:0",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:22:2",
+                "label": "runtime: Mac Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 22227, 294, 47040, 5561, 128001, 2876, 262, 1049, 2068, 1214, 346, 363,
+              499, 1214, 3973, 128001, 22227, 294, 14792, 2732, 128001, 22227, 294, 49405, 8124,
+              12624, 128001, 22227, 294, 16990, 18926, 128001, 22227, 294, 14271, 57127, 128001,
+              22227, 294, 3076, 5122, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260,
+              10611, 364, 299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269,
+              12734, 261, 548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278,
+              269, 298, 6350, 278, 260, 21863, 294, 434, 291, 1409, 261, 2925, 264, 1214, 5256,
+              18926, 2
+            ]
+          },
+          {
+            "input": "Help: nc -vz 10.11.12.13 443 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 25.294332997873425,
+            "logits": [-18.768165588378906, 10.468132019042969, -9.77305793762207],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 35567,
+              341, 2179, 1895, 466, 260, 1554, 260, 1432, 260, 2209, 47990, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Dovo Studio, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 22.146000002976507,
+            "logits": [
+              -20.779294967651367, -14.890170097351074, -20.63368034362793, -20.65992546081543,
+              -20.398365020751953, -4.937674522399902, -5.243837833404541
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:80:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:80:4",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:80:2",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "project:test:80:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:80:3",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 14271, 20839, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 114609, 12328, 128001, 663, 294, 49405, 14893, 128001, 663, 294, 23369, 10454,
+              128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 771, 10450, 5122, 261, 298, 6350, 278, 2
+            ]
+          }
+        ],
+        "medianMs": 21.184584002185147,
+        "p95Ms": 26.66079199843807
+      },
+      "q8": {
+        "correct": 1439,
+        "total": 1461,
+        "accuracy": 0.9849418206707734,
+        "confusion": {
+          "browser": {
+            "browser": 302,
+            "terminal": 1,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 267,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 12,
+            "thread": 254
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 823,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 171,
+            "total": 175
+          },
+          "model": {
+            "correct": 144,
+            "total": 145
+          },
+          "project": {
+            "correct": 156,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "mistakes": [
+          {
+            "input": "Help: top -l 1 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 42.28062500260421,
+            "logits": [-19.054195404052734, 10.068493843078613, -6.479031085968018],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 530,
+              341, 1406, 376, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 36.86312500212807,
+            "logits": [
+              -5.216877460479736, -20.58263397216797, -15.048944473266602, -20.017841339111328,
+              -20.905029296875, -20.709680557250977, -1.510172724723816
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:70:3",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "project:test:70:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "project:test:70:2",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:70:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:70:0",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              14792, 9073, 128001, 663, 294, 23369, 10454, 128001, 663, 294, 771, 10450, 5122,
+              128001, 663, 294, 14271, 20839, 128001, 663, 294, 114609, 12328, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "For this request, switch to computer Moon Laptop",
+            "expected": "keep",
+            "actual": "runtime:test:88:5",
+            "ms": 35.70183299962082,
+            "logits": [
+              -6.578939914703369, -21.205760955810547, -21.287405014038086, -21.078147888183594,
+              -21.101314544677734, -20.633281707763672, 2.8489251136779785
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:88:1",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:88:2",
+                "label": "runtime: Mac Studio"
+              },
+              {
+                "id": "runtime:test:88:0",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "runtime:test:88:3",
+                "label": "runtime: Dune Server"
+              },
+              {
+                "id": "runtime:test:88:4",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "runtime:test:88:5",
+                "label": "runtime: Satellite Laptop"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 1214, 346, 363, 499, 1214, 3973, 128001, 22227, 294,
+              14271, 57127, 128001, 22227, 294, 3076, 5122, 128001, 22227, 294, 49405, 8124, 12624,
+              128001, 22227, 294, 47040, 5561, 128001, 22227, 294, 14792, 2732, 128001, 22227, 294,
+              16990, 18926, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260, 10611, 364,
+              299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269, 12734, 261,
+              548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278, 269, 298,
+              6350, 278, 260, 21863, 294, 434, 291, 1409, 261, 2925, 264, 1214, 5256, 18926, 2
+            ]
+          },
+          {
+            "input": "Help: docker stats --no-stream isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 37.08833400014555,
+            "logits": [-19.293394088745117, 7.395127296447754, 6.845266342163086],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 56177,
+              9423, 341, 271, 1967, 271, 14471, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: ansible-playbook deploy.yml --check isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.98795800039079,
+            "logits": [-19.213394165039062, 10.324014663696289, -6.1188859939575195],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 299,
+              57837, 271, 7829, 5749, 10983, 260, 608, 8365, 341, 271, 11295, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: fd --extension ts isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.55045800143853,
+            "logits": [-19.09326171875, 9.950151443481445, -6.966792583465576],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 2994,
+              407, 341, 271, 48968, 1941, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: ip addr show isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 42.345916997874156,
+            "logits": [-19.331533432006836, 8.923036575317383, -1.1932275295257568],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 20219,
+              800, 834, 553, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "load dovocode.com",
+            "expected": "browser",
+            "actual": "terminal",
+            "ms": 39.60812500008615,
+            "logits": [-0.06609725952148438, 8.131593704223633, -13.278029441833496],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2929, 333, 10450,
+              11478, 260, 549, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Tundra Cloud, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 40.86658300002455,
+            "logits": [
+              -4.735664367675781, -20.46584129333496, -7.150632858276367, -20.540355682373047
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:0:0",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:0:1",
+                "label": "project: Dovo Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14792,
+              9073, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              771, 10450, 5122, 128002, 4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374,
+              260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425,
+              5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335,
+              363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331, 314, 56926, 5262, 261,
+              298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "Run the work from the paired Moon Laptop computer",
+            "expected": "keep",
+            "actual": "runtime:test:33:2",
+            "ms": 35.690208002051804,
+            "logits": [
+              -21.236574172973633, -21.034404754638672, -20.99337387084961, -20.8839111328125,
+              -20.864116668701172, -6.65546989440918, 6.182044506072998
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "runtime:test:33:1",
+                "label": "runtime: Mac Studio"
+              },
+              {
+                "id": "runtime:test:33:3",
+                "label": "runtime: Dune Server"
+              },
+              {
+                "id": "runtime:test:33:0",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:33:5",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "runtime:test:33:4",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:33:2",
+                "label": "runtime: Satellite Laptop"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 22227, 294, 3076, 5122, 128001, 22227, 294, 47040, 5561, 128001, 22227,
+              294, 14271, 57127, 128001, 22227, 294, 49405, 8124, 12624, 128001, 22227, 294, 14792,
+              2732, 128001, 2876, 262, 1049, 2068, 1214, 346, 363, 499, 1214, 3973, 128001, 22227,
+              294, 16990, 18926, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260, 10611,
+              364, 299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269, 12734,
+              261, 548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278, 269,
+              298, 6350, 278, 260, 21863, 294, 5537, 262, 374, 292, 262, 8831, 5256, 18926, 1214, 2
+            ]
+          },
+          {
+            "input": "Run the work from the paired Moon Laptop computer",
+            "expected": "keep",
+            "actual": "runtime:test:66:2",
+            "ms": 38.89662499932456,
+            "logits": [
+              -21.2510986328125, -21.135915756225586, -21.222681045532227, 4.598004341125488,
+              -21.032758712768555, -6.614511966705322, -21.059741973876953
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "runtime:test:66:5",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:66:4",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "runtime:test:66:0",
+                "label": "runtime: Mac Studio"
+              },
+              {
+                "id": "runtime:test:66:2",
+                "label": "runtime: Satellite Laptop"
+              },
+              {
+                "id": "runtime:test:66:1",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:66:3",
+                "label": "runtime: Dune Server"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 22227, 294, 14271, 57127, 128001, 22227, 294, 14792, 2732, 128001, 22227,
+              294, 3076, 5122, 128001, 22227, 294, 16990, 18926, 128001, 22227, 294, 49405, 8124,
+              12624, 128001, 2876, 262, 1049, 2068, 1214, 346, 363, 499, 1214, 3973, 128001, 22227,
+              294, 47040, 5561, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260, 10611, 364,
+              299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269, 12734, 261,
+              548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278, 269, 298,
+              6350, 278, 260, 21863, 294, 5537, 262, 374, 292, 262, 8831, 5256, 18926, 1214, 2
+            ]
+          },
+          {
+            "input": "Help: vercel env ls isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 36.396874998899875,
+            "logits": [-19.120441436767578, 9.215922355651855, -1.225433111190796],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 10459,
+              19369, 72684, 2531, 268, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: pnpm dlx create-vite@latest demo isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 38.04854099871591,
+            "logits": [-19.226612091064453, 9.271422386169434, 0.22028079628944397],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 845,
+              673, 2086, 61609, 982, 676, 271, 57520, 1683, 69992, 6731, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: claude -p 'inspect this repository' isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.755124999326654,
+            "logits": [-18.923063278198242, 10.451440811157227, -7.589500427246094],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 36579,
+              25806, 341, 1492, 382, 547, 37831, 291, 12499, 280, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "Help: magick logo.png -resize 120x120 thumb.png isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 37.825457999133505,
+            "logits": [-19.082263946533203, 10.029120445251465, -5.064092636108398],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 77707,
+              3784, 260, 25057, 341, 368, 7283, 4811, 982, 9648, 9406, 260, 25057, 928, 280, 297,
+              560, 2
+            ]
+          },
+          {
+            "input": "Help: opencode --continue isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.12179200092214,
+            "logits": [-19.151893615722656, 10.077801704406738, -7.700216770172119],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 615,
+              11478, 341, 271, 48625, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:65:1",
+            "ms": 35.04291599892895,
+            "logits": [
+              -20.24209213256836, -20.141769409179688, -19.581823348999023, -7.473718166351318,
+              -7.160929203033447
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:65:2",
+                "label": "model: Granite 4.2"
+              },
+              {
+                "id": "model:test:65:0",
+                "label": "model: Opus 5.5"
+              },
+              {
+                "id": "model:test:65:3",
+                "label": "model: Fable 5.1"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:65:1",
+                "label": "model: Sol 6.1"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 18333, 453, 260, 445, 128001, 1040, 294, 48919, 456, 260, 524,
+              128001, 1040, 294, 55154, 456, 260, 435, 128001, 2876, 262, 1049, 2068, 5536, 1040,
+              346, 363, 499, 1040, 3973, 128001, 1040, 294, 13433, 525, 260, 435, 128002, 4989, 262,
+              499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411, 3232, 289, 1659, 269,
+              298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261, 548, 262, 763, 1040,
+              260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525, 260, 435, 261, 298, 6350, 278,
+              2
+            ]
+          },
+          {
+            "input": "Help: journalctl -n 20 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 41.903875000571134,
+            "logits": [-18.944564819335938, 10.047463417053223, -7.469566822052002],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 4881,
+              64116, 341, 673, 602, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 37.653791998309316,
+            "logits": [
+              -15.093546867370605, -4.127169132232666, -20.246597290039062, -20.871658325195312,
+              -20.578554153442383, -20.689157485961914, -6.243871688842773, -20.54780387878418
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:120:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:120:3",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:120:2",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:120:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:120:5",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:120:1",
+                "label": "project: Aurora Notes"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 23369, 10454, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356,
+              12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663, 294, 14271, 20839, 128001,
+              663, 294, 49405, 14893, 128001, 663, 294, 114609, 12328, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294, 14792, 9073, 128002, 4989, 262,
+              499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268,
+              601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003,
+              585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863,
+              294, 273, 280, 358, 2331, 314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "For this request, switch to computer Moon Laptop",
+            "expected": "keep",
+            "actual": "runtime:test:22:3",
+            "ms": 39.10104099850287,
+            "logits": [
+              -21.34122085571289, -6.965216159820557, -21.120525360107422, -20.99776840209961,
+              4.214859485626221, -21.201356887817383, -21.3331356048584
+            ],
+            "task": "runtime",
+            "options": [
+              {
+                "id": "runtime:test:22:1",
+                "label": "runtime: Dune Server"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected computer; no available computer requested"
+              },
+              {
+                "id": "runtime:test:22:5",
+                "label": "runtime: Aurora PC"
+              },
+              {
+                "id": "runtime:test:22:4",
+                "label": "runtime: Helix Build Host"
+              },
+              {
+                "id": "runtime:test:22:3",
+                "label": "runtime: Satellite Laptop"
+              },
+              {
+                "id": "runtime:test:22:0",
+                "label": "runtime: Atlas Workstation"
+              },
+              {
+                "id": "runtime:test:22:2",
+                "label": "runtime: Mac Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 22227, 294, 47040, 5561, 128001, 2876, 262, 1049, 2068, 1214, 346, 363,
+              499, 1214, 3973, 128001, 22227, 294, 14792, 2732, 128001, 22227, 294, 49405, 8124,
+              12624, 128001, 22227, 294, 16990, 18926, 128001, 22227, 294, 14271, 57127, 128001,
+              22227, 294, 3076, 5122, 128002, 4989, 262, 8831, 1214, 3973, 270, 291, 374, 260,
+              10611, 364, 299, 499, 1214, 260, 369, 363, 5938, 1214, 269, 3973, 261, 289, 278, 269,
+              12734, 261, 548, 262, 763, 1214, 260, 31597, 510, 266, 1214, 267, 266, 900, 314, 278,
+              269, 298, 6350, 278, 260, 21863, 294, 434, 291, 1409, 261, 2925, 264, 1214, 5256,
+              18926, 2
+            ]
+          },
+          {
+            "input": "Help: nc -vz 10.11.12.13 443 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 39.830958001402905,
+            "logits": [-18.760395050048828, 10.434449195861816, -9.517529487609863],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 35567,
+              341, 2179, 1895, 466, 260, 1554, 260, 1432, 260, 2209, 47990, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Dovo Studio, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 44.43779199937126,
+            "logits": [
+              -20.8131103515625, -14.96669864654541, -20.638221740722656, -20.673484802246094,
+              -20.441417694091797, -3.3187384605407715, -5.772078990936279
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:80:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:80:4",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:80:2",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "project:test:80:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:80:3",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 14271, 20839, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 114609, 12328, 128001, 663, 294, 49405, 14893, 128001, 663, 294, 23369, 10454,
+              128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 771, 10450, 5122, 261, 298, 6350, 278, 2
+            ]
+          }
+        ],
+        "medianMs": 39.178125000034925,
+        "p95Ms": 46.8112079979619
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 0.00013589859008789062,
+      "quantizedChangedPredictions": [
+        "Help: zoxide query studio isn't working",
+        "load localhost:4629"
+      ]
+    }
+  },
+  "challengeSha256": "2114a7cf11eaf6ff2427ea4bc190bd7d0719a06a7a11b19a3c315539c1ed3682",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-03/"
+}

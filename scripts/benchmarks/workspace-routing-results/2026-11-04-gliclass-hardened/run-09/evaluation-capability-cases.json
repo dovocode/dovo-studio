@@ -1,0 +1,191 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 79,
+        "total": 80,
+        "accuracy": 0.9875,
+        "confusion": {
+          "browser": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 20
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 20,
+            "total": 20
+          },
+          "runtime": {
+            "correct": 20,
+            "total": 20
+          },
+          "model": {
+            "correct": 19,
+            "total": 20
+          },
+          "project": {
+            "correct": 20,
+            "total": 20
+          }
+        },
+        "completePlans": {
+          "correct": 19,
+          "total": 20
+        },
+        "mistakes": [
+          {
+            "input": "Should I use Opus for code reviews?",
+            "expected": "keep",
+            "actual": "opus-5.5",
+            "ms": 15.344416002335493,
+            "logits": [
+              -0.11220201849937439, 2.5913524627685547, -19.502927780151367, -19.634309768676758
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "opus-5.5",
+                "label": "model: Opus 5.5"
+              },
+              {
+                "id": "sol-6.1",
+                "label": "model: Sol 6.1"
+              },
+              {
+                "id": "fable-5.1",
+                "label": "model: Fable 5.1"
+              }
+            ],
+            "caseId": 5,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040,
+              294, 48919, 456, 260, 524, 128001, 1040, 294, 13433, 525, 260, 435, 128001, 1040, 294,
+              55154, 456, 260, 435, 128002, 4989, 262, 499, 5536, 1040, 3973, 264, 333, 262, 374,
+              260, 336, 1040, 411, 3232, 289, 1659, 269, 298, 266, 1040, 1857, 260, 369, 363, 499,
+              1040, 269, 3973, 261, 548, 262, 763, 1040, 260, 21863, 294, 3432, 273, 380, 48919,
+              270, 1197, 1937, 302, 2
+            ]
+          }
+        ],
+        "medianMs": 18.97935400120332,
+        "p95Ms": 21.931625000433996
+      },
+      "q8": {
+        "correct": 79,
+        "total": 80,
+        "accuracy": 0.9875,
+        "confusion": {
+          "browser": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 20
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 20,
+            "total": 20
+          },
+          "runtime": {
+            "correct": 20,
+            "total": 20
+          },
+          "model": {
+            "correct": 19,
+            "total": 20
+          },
+          "project": {
+            "correct": 20,
+            "total": 20
+          }
+        },
+        "completePlans": {
+          "correct": 19,
+          "total": 20
+        },
+        "mistakes": [
+          {
+            "input": "Should I use Opus for code reviews?",
+            "expected": "keep",
+            "actual": "opus-5.5",
+            "ms": 36.374584000441246,
+            "logits": [
+              -0.06688570976257324, 0.9214380979537964, -19.46382713317871, -19.618131637573242
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "opus-5.5",
+                "label": "model: Opus 5.5"
+              },
+              {
+                "id": "sol-6.1",
+                "label": "model: Sol 6.1"
+              },
+              {
+                "id": "fable-5.1",
+                "label": "model: Fable 5.1"
+              }
+            ],
+            "caseId": 5,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040,
+              294, 48919, 456, 260, 524, 128001, 1040, 294, 13433, 525, 260, 435, 128001, 1040, 294,
+              55154, 456, 260, 435, 128002, 4989, 262, 499, 5536, 1040, 3973, 264, 333, 262, 374,
+              260, 336, 1040, 411, 3232, 289, 1659, 269, 298, 266, 1040, 1857, 260, 369, 363, 499,
+              1040, 269, 3973, 261, 548, 262, 763, 1040, 260, 21863, 294, 3432, 273, 380, 48919,
+              270, 1197, 1937, 302, 2
+            ]
+          }
+        ],
+        "medianMs": 37.30725000059465,
+        "p95Ms": 42.168499996478204
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 4.00543212890625e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "d9ccb56ef09fefc75bf02f1620efa9b54cd34364db9ceef869f61bbedc344e37",
+  "rawReportOnMac": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-09/evaluation-capability-cases.json"
+}
