@@ -424,7 +424,7 @@ try {
     ['App preferences', ['General', 'Conversation', 'Browser', 'Thread list & projects']],
     ['Thread defaults & behavior', ['Thread defaults', 'Running threads', 'Thread lifecycle']],
     ['Agents & tools', ['Agents', 'CLI commands & shell', 'Studio Tools', 'Memory']],
-    ['Threads & projects', ['Worktrees', 'Artifacts']],
+    ['Repositories & workspaces', ['Source control', 'Worktrees', 'Artifacts']],
     ['Computers', ['Devices & runtime', 'Device previews']],
     ['History', ['Activity & message history', 'Archived threads']],
   ]) {
@@ -547,7 +547,11 @@ try {
     'Status',
   )
   await assertIntroCue(
-    page.locator('.studio-settings-intro').getByText('This device', { exact: true }),
+    page
+      .locator('.studio-settings-intro')
+      .getByText('This device · saved automatically, except Snoozing (Save to apply)', {
+        exact: true,
+      }),
   )
   await page
     .getByText(/Use Save calendar shortcuts and Save snooze durations to apply edits/)
@@ -918,6 +922,11 @@ try {
     1,
   )
   await openLocal('Browser')
+  await assertIntroCue(
+    page.getByText('This device · preferences save automatically; profiles use Save', {
+      exact: true,
+    }),
+  )
   await page
     .getByText(
       'Preview defaults save automatically on this device. Save profile edits with each profile’s Save button. Remote profiles and logins stay on the selected computer.',
@@ -1134,10 +1143,18 @@ try {
       await assertIntroCue(page.getByText('This device · saved automatically', { exact: true }))
     if (title === 'Thread list & projects')
       await assertIntroCue(
-        page.locator('.studio-settings-intro').getByText('This device', { exact: true }),
+        page
+          .locator('.studio-settings-intro')
+          .getByText('This device · saved automatically, except Snoozing (Save to apply)', {
+            exact: true,
+          }),
       )
     if (title === 'Browser')
-      await assertIntroCue(page.getByText('Device preferences save automatically', { exact: true }))
+      await assertIntroCue(
+        page.getByText('This device · preferences save automatically; profiles use Save', {
+          exact: true,
+        }),
+      )
     await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
     if (['General', 'Thread list & projects'].includes(title))
       await screenshotThemes(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')

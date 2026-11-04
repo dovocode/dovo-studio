@@ -6,6 +6,7 @@ import {
   settingsScopeSummary,
   type Repository,
   type SettingsScope,
+  type RuntimeSnapshot,
 } from '@dovo/protocol'
 import { useSettingsTarget, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
@@ -25,11 +26,16 @@ export function SettingsScopePage({
   localChildren?: ReactNode
   title: string
   wide?: boolean
-  saveInfo?: string
+  saveInfo?: string | ((snapshot?: RuntimeSnapshot | null) => string | undefined)
   description: string
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
   const { target, setTarget, sources, source, scope, repository } = useSettingsTarget()
+  const saveHint = source?.connected
+    ? typeof saveInfo === 'function'
+      ? saveInfo(source.snapshot)
+      : saveInfo
+    : undefined
   const projects = settingsProjectChoices(sources, target.environmentId)
   const summary = settingsScopeSummary(scope, { project: repository?.name, computer: source?.name })
   const projectName = target.projectId
@@ -64,7 +70,12 @@ export function SettingsScopePage({
             <p className="studio-settings-target-context text-xs font-medium">
               Editing {projectName} on {computerName}
             </p>
-            {saveInfo && <p className="text-xs text-muted-foreground">{saveInfo}</p>}
+            {saveHint && <p className="text-xs text-muted-foreground">{saveHint}</p>}
+            {source && !source.connected && (
+              <span role="status" className="text-xs text-muted-foreground">
+                {source.name} is offline. Reconnect to edit or save.
+              </span>
+            )}
           </div>
           <div className="studio-settings-target-inner flex flex-wrap items-end gap-x-4 gap-y-3 text-xs">
             <div className="studio-settings-target-field min-w-0 max-w-full">
@@ -97,11 +108,6 @@ export function SettingsScopePage({
                 </Popover.Root>
               </div>
             </div>
-            {source && !source.connected && (
-              <span role="status" className="text-xs text-muted-foreground">
-                Offline · edits kept here
-              </span>
-            )}
             <label className="studio-settings-target-field min-w-0 max-w-full">
               <span className="studio-settings-target-label">Project</span>
               <ChoicePicker
@@ -161,11 +167,6 @@ export function SettingsScopePage({
           key={`${source.scope}:${scope}:${repository?.id ?? ''}`}
           profile={source.profile}
         >
-          {!source.connected && (
-            <p role="status" className="text-xs text-muted-foreground">
-              {source.name} is offline. Reconnect to make changes.
-            </p>
-          )}
           {repository && <ProjectOrganizationSettings repository={repository} compact />}
           {children({ scope, repository })}
         </WorkspaceScope>

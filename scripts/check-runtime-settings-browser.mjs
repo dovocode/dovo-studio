@@ -25,7 +25,7 @@ const mocks = {
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';import {RuntimeDiagnosticsPanel} from '${root}/packages/extension-runtime/src/runtime-diagnostics.tsx';window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={diagnostics:RuntimeDiagnosticsPanel,creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={runtimeRegistry:{profiles:[]},connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<StudioConfirmationProvider><Component key={name}/></StudioConfirmationProvider>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
+      contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';import {RuntimeDiagnosticsPanel} from '${root}/packages/extension-runtime/src/runtime-diagnostics.tsx';window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={diagnostics:RuntimeDiagnosticsPanel,creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={runtimeRegistry:{profiles:[]},connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>{if(path==='/api/runtime/preferences/save'&&window.preferenceSaveFailure)throw new Error(window.preferenceSaveFailure);return decode(schema,await window.callRuntime(path,input))},requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<StudioConfirmationProvider><Component key={name}/></StudioConfirmationProvider>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -163,6 +163,34 @@ try {
     () => !document.querySelector('[aria-label="Linked projects tool"]').disabled,
   )
   assert.equal(await linkedTool.isChecked(), true)
+  await page
+    .getByText(
+      'Changes save automatically on this computer. Text fields save on Enter or when you leave the field.',
+      { exact: true },
+    )
+    .waitFor()
+  await page.evaluate(() => {
+    window.preferenceSaveFailure = 'Could not save computer preferences'
+  })
+  await linkedTool.click()
+  const saveError = page
+    .getByRole('alert')
+    .filter({ hasText: 'Could not save computer preferences' })
+  await saveError.waitFor()
+  assert.equal(runtime.services.preferences.get().enableLinkedProjectsTool, true)
+  assert.equal(
+    await saveError.evaluate((element) =>
+      Boolean(
+        element.compareDocumentPosition(document.querySelector('[data-setting-label]')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ),
+    true,
+    'Save feedback stays before the form controls',
+  )
+  await page.evaluate(() => {
+    window.preferenceSaveFailure = ''
+  })
   await linkedTool.click()
   await page.waitForFunction(
     () =>
@@ -296,6 +324,7 @@ try {
     return toggle.getAttribute('aria-checked') === 'true' && !toggle.disabled
   })
   assert.equal(runtime.services.preferences.get().enableCodeReviews, true)
+  await page.getByText('Changes save automatically on this computer.', { exact: true }).waitFor()
   const watcher = page.getByRole('switch', {
     name: 'Pipeline watcher (experimental)',
     exact: true,
@@ -319,6 +348,13 @@ try {
     name: 'Create pull requests as drafts',
     exact: true,
   })
+  await page
+    .getByText('These defaults save automatically on this device.', { exact: true })
+    .waitFor()
+  assert.equal(
+    await page.getByText('Changes save automatically on this computer.', { exact: true }).count(),
+    0,
+  )
   await draftDefault.click()
   assert.equal(await page.evaluate(() => window.localPreferences.pullDraft), true)
   await page.getByRole('button', { name: 'Merge method', exact: true }).click()

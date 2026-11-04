@@ -38,7 +38,9 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
     <SettingsScopePage
       title="Thread lifecycle"
       description="Recovery, settling and archiving for new and existing threads."
-      saveInfo="Use Save changes to apply edits."
+      saveInfo={(snapshot) =>
+        snapshot?.taskBehaviorSupported === true ? 'Use Save changes to apply edits.' : undefined
+      }
     >
       {({ scope, repository }) => (
         <>

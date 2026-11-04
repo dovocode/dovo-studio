@@ -263,11 +263,13 @@ export function ScopedAgents({
           </div>
           {!agents.length && (
             <p role="status" className="p-4 text-xs text-muted-foreground">
-              {settings
-                ? 'No agent profiles yet.'
-                : error
-                  ? 'Profiles unavailable.'
-                  : 'Loading profiles…'}
+              {!connected
+                ? 'Profiles unavailable offline.'
+                : settings
+                  ? 'No agent profiles yet.'
+                  : error
+                    ? 'Profiles unavailable.'
+                    : 'Loading profiles…'}
             </p>
           )}
           {agents.length > 0 && !filtered.length && (

@@ -336,176 +336,188 @@ function CheckoutActions({
           </p>
         ) : files.length ? (
           <div className="space-y-3">
-            <section aria-label="Staged" className="overflow-hidden rounded-lg border">
-              <h4 className="border-b bg-muted/30 px-3 py-2 text-xs font-medium">
-                Staged · {stagedCount}
-                {!stagingKnown && ' known'}
-              </h4>
-              {stagedFiles.length ? (
-                <ul className="max-h-40 overflow-auto py-1">
-                  {stagedFiles.map((file) => (
-                    <li
-                      key={file.path}
-                      className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30"
-                    >
-                      <span aria-hidden="true" />
-                      <FileIdentity
-                        path={file.path}
-                        status={`${changeLabels[file.gitStatus?.index ?? 'unknown']}${partialStagingLabel(file)}`}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="w-full px-0"
-                        aria-label={`Review staged ${file.path}`}
-                        disabled={busy || loading || !connected || !!loadError}
-                        onClick={(event) => {
-                          reviewOrigin.current = event.currentTarget.getAttribute('aria-label')
-                          setReview({ path: file.path, comparison: 'staged' })
-                        }}
+            <div
+              role="region"
+              aria-label="Changed files"
+              tabIndex={0}
+              className="max-h-[min(26dvh,16rem)] space-y-3 overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <section aria-label="Staged" className="overflow-hidden rounded-lg border">
+                <h4 className="border-b bg-muted/30 px-3 py-2 text-xs font-medium">
+                  Staged · {stagedCount}
+                  {!stagingKnown && ' known'}
+                </h4>
+                {stagedFiles.length ? (
+                  <ul className="py-1">
+                    {stagedFiles.map((file) => (
+                      <li
+                        key={file.path}
+                        className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30"
                       >
-                        Review
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="w-full px-0"
-                        aria-label={`Unstage ${file.path}`}
-                        disabled={busy || loading || !connected || !!loadError}
-                        onClick={() =>
-                          act(async () => {
-                            await request(
-                              '/api/scm/unstage',
-                              { ...input, paths: [file.path] },
-                              responses.ok,
-                            )
-                            setStatus(`Unstaged ${file.path}. Working file contents kept.`)
-                            await refresh()
-                          })
-                        }
-                      >
-                        Unstage
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="px-3 py-2 text-xs text-muted-foreground">
-                  {stagingKnown ? 'No staged files.' : 'Staged membership is not fully available.'}
-                </p>
-              )}
-            </section>
-            {[
-              { name: 'Unstaged', files: unstagedFiles, unavailable: false },
-              { name: 'Staging status unavailable', files: unknownFiles, unavailable: true },
-            ].map(
-              (group) =>
-                (group.files.length > 0 || !group.unavailable) && (
-                  <section
-                    key={group.name}
-                    aria-label={group.name}
-                    className="overflow-hidden rounded-lg border"
-                  >
-                    <div className="border-b bg-muted/30 px-3 py-2">
-                      <label className="flex items-center gap-2 text-xs font-medium">
-                        <Checkbox
-                          aria-label={
-                            group.unavailable
-                              ? 'Select all files with unavailable staging status'
-                              : 'Select all unstaged files'
-                          }
-                          checked={
-                            group.files.length > 0 &&
-                            group.files.every((file) => selected.includes(file.path))
-                              ? true
-                              : group.files.some((file) => selected.includes(file.path))
-                                ? 'indeterminate'
-                                : false
-                          }
-                          disabled={busy || !group.files.length}
-                          onCheckedChange={(checked) =>
-                            setSelected((previous) =>
-                              checked === true
-                                ? [
-                                    ...new Set([
-                                      ...previous,
-                                      ...group.files.map((file) => file.path),
-                                    ]),
-                                  ]
-                                : previous.filter(
-                                    (path) => !group.files.some((file) => file.path === path),
-                                  ),
-                            )
-                          }
+                        <span aria-hidden="true" />
+                        <FileIdentity
+                          path={file.path}
+                          status={`${changeLabels[file.gitStatus?.index ?? 'unknown']}${partialStagingLabel(file)}`}
                         />
-                        {group.name} · {group.files.length}
-                      </label>
-                    </div>
-                    {group.unavailable && (
-                      <p className="border-b px-3 py-2 text-xs text-muted-foreground">
-                        These files may already be staged. Update this runtime to see their
-                        membership.
-                      </p>
-                    )}
-                    {group.files.length ? (
-                      <ul className="max-h-40 overflow-auto py-1">
-                        {group.files.map((file) => (
-                          <li key={file.path}>
-                            <div className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30">
-                              <label className="col-span-2 grid min-w-0 cursor-pointer grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2">
-                                <Checkbox
-                                  aria-label={`Select ${file.path}`}
-                                  className="mt-0.5 shrink-0"
-                                  checked={selected.includes(file.path)}
-                                  disabled={busy}
-                                  onCheckedChange={(checked) =>
-                                    setSelected((previous) =>
-                                      checked === true
-                                        ? [...previous, file.path]
-                                        : previous.filter((path) => path !== file.path),
-                                    )
-                                  }
-                                />
-                                <FileIdentity
-                                  path={file.path}
-                                  status={
-                                    group.unavailable || file.gitStatus?.workingTree === 'unmerged'
-                                      ? fileStagingDescription(file)
-                                      : file.gitStatus?.workingTree === 'untracked'
-                                        ? 'Untracked'
-                                        : `${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}${partialStagingLabel(file)}`
-                                  }
-                                />
-                              </label>
-                              {!group.unavailable && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="w-full px-0"
-                                  aria-label={`Review unstaged ${file.path}`}
-                                  disabled={busy || loading || !connected || !!loadError}
-                                  onClick={(event) => {
-                                    reviewOrigin.current =
-                                      event.currentTarget.getAttribute('aria-label')
-                                    setReview({ path: file.path, comparison: 'unstaged' })
-                                  }}
-                                >
-                                  Review
-                                </Button>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="px-3 py-2 text-xs text-muted-foreground">No unstaged files.</p>
-                    )}
-                  </section>
-                ),
-            )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="w-full px-0"
+                          aria-label={`Review staged ${file.path}`}
+                          disabled={busy || loading || !connected || !!loadError}
+                          onClick={(event) => {
+                            reviewOrigin.current = event.currentTarget.getAttribute('aria-label')
+                            setReview({ path: file.path, comparison: 'staged' })
+                          }}
+                        >
+                          Review
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="w-full px-0"
+                          aria-label={`Unstage ${file.path}`}
+                          disabled={busy || loading || !connected || !!loadError}
+                          onClick={() =>
+                            act(async () => {
+                              await request(
+                                '/api/scm/unstage',
+                                { ...input, paths: [file.path] },
+                                responses.ok,
+                              )
+                              setStatus(`Unstaged ${file.path}. Working file contents kept.`)
+                              await refresh()
+                            })
+                          }
+                        >
+                          Unstage
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    {stagingKnown
+                      ? 'No staged files.'
+                      : 'Staged membership is not fully available.'}
+                  </p>
+                )}
+              </section>
+              {[
+                { name: 'Unstaged', files: unstagedFiles, unavailable: false },
+                { name: 'Staging status unavailable', files: unknownFiles, unavailable: true },
+              ].map(
+                (group) =>
+                  (group.files.length > 0 || !group.unavailable) && (
+                    <section
+                      key={group.name}
+                      aria-label={group.name}
+                      className="overflow-hidden rounded-lg border"
+                    >
+                      <div className="border-b bg-muted/30 px-3 py-2">
+                        <label className="flex items-center gap-2 text-xs font-medium">
+                          <Checkbox
+                            aria-label={
+                              group.unavailable
+                                ? 'Select all files with unavailable staging status'
+                                : 'Select all unstaged files'
+                            }
+                            checked={
+                              group.files.length > 0 &&
+                              group.files.every((file) => selected.includes(file.path))
+                                ? true
+                                : group.files.some((file) => selected.includes(file.path))
+                                  ? 'indeterminate'
+                                  : false
+                            }
+                            disabled={busy || !group.files.length}
+                            onCheckedChange={(checked) =>
+                              setSelected((previous) =>
+                                checked === true
+                                  ? [
+                                      ...new Set([
+                                        ...previous,
+                                        ...group.files.map((file) => file.path),
+                                      ]),
+                                    ]
+                                  : previous.filter(
+                                      (path) => !group.files.some((file) => file.path === path),
+                                    ),
+                              )
+                            }
+                          />
+                          {group.name} · {group.files.length}
+                        </label>
+                      </div>
+                      {group.unavailable && (
+                        <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+                          These files may already be staged. Update this runtime to see their
+                          membership.
+                        </p>
+                      )}
+                      {group.files.length ? (
+                        <ul className="py-1">
+                          {group.files.map((file) => (
+                            <li key={file.path}>
+                              <div className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30">
+                                <label className="col-span-2 grid min-w-0 cursor-pointer grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2">
+                                  <Checkbox
+                                    aria-label={`Select ${file.path}`}
+                                    className="mt-0.5 shrink-0"
+                                    checked={selected.includes(file.path)}
+                                    disabled={busy}
+                                    onCheckedChange={(checked) =>
+                                      setSelected((previous) =>
+                                        checked === true
+                                          ? [...previous, file.path]
+                                          : previous.filter((path) => path !== file.path),
+                                      )
+                                    }
+                                  />
+                                  <FileIdentity
+                                    path={file.path}
+                                    status={
+                                      group.unavailable ||
+                                      file.gitStatus?.workingTree === 'unmerged'
+                                        ? fileStagingDescription(file)
+                                        : file.gitStatus?.workingTree === 'untracked'
+                                          ? 'Untracked'
+                                          : `${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}${partialStagingLabel(file)}`
+                                    }
+                                  />
+                                </label>
+                                {!group.unavailable && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="w-full px-0"
+                                    aria-label={`Review unstaged ${file.path}`}
+                                    disabled={busy || loading || !connected || !!loadError}
+                                    onClick={(event) => {
+                                      reviewOrigin.current =
+                                        event.currentTarget.getAttribute('aria-label')
+                                      setReview({ path: file.path, comparison: 'unstaged' })
+                                    }}
+                                  >
+                                    Review
+                                  </Button>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="px-3 py-2 text-xs text-muted-foreground">
+                          No unstaged files.
+                        </p>
+                      )}
+                    </section>
+                  ),
+              )}
+            </div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {selected.length} {selected.length === 1 ? 'file' : 'files'} selected

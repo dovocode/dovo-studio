@@ -66,7 +66,7 @@ const built = await build({
           if(path==='/api/scm/push'){if(window.failPush)throw new Error('Push unavailable');window.gitState.ahead=0;window.gitState.tracking=true;}
           return {ok:true};
         },[connection])};
-        return <main style={{display:'flex',flexDirection:'column',height:'85dvh',maxWidth:reviewing?1152:672,margin:'auto'}}><h1>Git &amp; project actions</h1><div style={{flex:1,minHeight:0,overflow:'auto'}}><RepositoryActions repo={{id:'repo',name:'Project',path:'/repo',branch:'main'}} taskId={taskId} onReviewChange={setReviewing}/></div></main>;
+        return <main style={{display:'flex',flexDirection:'column',height:'min(768px,85dvh)',maxWidth:reviewing?1152:672,margin:'auto',padding:24,gap:16}}><h1 className="text-base font-semibold">Git &amp; project actions</h1><p className="text-[0.8125rem] text-muted-foreground">Review, stage and commit changes in this thread’s working folder.</p><div data-repository-actions-viewport style={{flex:1,minHeight:0,overflow:'auto'}}><RepositoryActions repo={{id:'repo',name:'Project',path:'/repo',branch:'main'}} taskId={taskId} onReviewChange={setReviewing}/></div></main>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -827,6 +827,55 @@ try {
       assert.ok(
         await commitTarget.evaluate((element) => element.scrollWidth <= element.clientWidth),
       )
+    }
+  }
+  assert.equal(await page.evaluate(() => window.writes.length), writesBeforeGeometry)
+  // Both modest and dense change lists leave the entire commit form in view when the dialog
+  // opens. Scrolling the shared file list never moves its message, target or submit actions.
+  for (const count of [2, 40]) {
+    await state(
+      {},
+      Array.from({ length: count }, (_, index) => ({
+        path: `src/changed-${index}.ts`,
+        gitStatus: { index: 'modified', workingTree: 'modified' },
+      })),
+    )
+    for (const dark of [false, true]) {
+      await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark)
+      for (const viewportSize of [
+        { width: 1440, height: 960 },
+        { width: 1100, height: 960 },
+        { width: 1280, height: 900 },
+      ]) {
+        await page.setViewportSize(viewportSize)
+        await page.locator('[data-repository-actions-viewport]').evaluate((element) => {
+          element.scrollTop = 0
+        })
+        const changedFiles = page.getByRole('region', { name: 'Changed files', exact: true })
+        await changedFiles.evaluate((element) => {
+          element.scrollTop = 0
+        })
+        const viewport = await page.locator('[data-repository-actions-viewport]').boundingBox()
+        const form = message.locator('xpath=ancestor::form')
+        const formBox = await form.boundingBox()
+        assert.ok(formBox.y >= viewport.y, 'The complete commit form starts inside the viewport')
+        assert.ok(
+          formBox.y + formBox.height <= viewport.y + viewport.height,
+          'Commit target, message and both commit actions fit without scrolling the dialog',
+        )
+        assert.ok(
+          await changedFiles.evaluate((element) => element.scrollHeight > element.clientHeight),
+          'The combined change list provides its own scrolling area',
+        )
+        await changedFiles.evaluate((element) => {
+          element.scrollTop = element.scrollHeight
+        })
+        assert.deepEqual(await form.boundingBox(), formBox)
+        await page
+          .getByRole('checkbox', { name: `Select src/changed-${count - 1}.ts`, exact: true })
+          .check()
+        assert.equal(await stage.isEnabled(), true)
+      }
     }
   }
   assert.equal(await page.evaluate(() => window.writes.length), writesBeforeGeometry)

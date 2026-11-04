@@ -44,7 +44,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{defaults:{},workspace:{repositories:[repo,{id:'local-folder',name:'Local folder',path:'/mac/folder',kind:'folder'}]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};const savedSources=window.sources;function App(){const [revision,setRevision]=useState(0);window.configureSources=(count,offline=false)=>{window.sources=savedSources.slice(0,count).map((entry,index)=>({...entry,connected:!(offline&&index===count-1)}));window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings" saveInfo={page==="defaults"?"Use Save changes to apply edits.":undefined}'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
+        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{scopedAgentsSupported:false,defaults:{},workspace:{repositories:[repo,{id:'local-folder',name:'Local folder',path:'/mac/folder',kind:'folder'}]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{scopedAgentsSupported:true,defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};const savedSources=window.sources;function App(){const [revision,setRevision]=useState(0);window.configureSources=(count,offline=false)=>{window.sources=savedSources.slice(0,count).map((entry,index)=>({...entry,connected:!(offline&&index===count-1)}));window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings" saveInfo={page==="defaults"?(snapshot=>snapshot?.scopedAgentsSupported?"Use Save changes to apply edits.":undefined):"Tool changes use Save."}'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -102,6 +102,11 @@ try {
       await page.getByText('Shared defaults', { exact: true }).waitFor()
       await page.getByText('Editing all projects on all computers', { exact: true }).waitFor()
       assert.equal(await page.getByText('Applies to', { exact: true }).count(), 0)
+      assert.equal(
+        await page.getByText('Use Save changes to apply edits.', { exact: true }).count(),
+        0,
+        'Legacy sources do not advertise unsupported explicit saves',
+      )
     }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Shared across paired computers', { exact: true }).waitFor()
@@ -137,6 +142,12 @@ try {
       assert.equal(await value(environments), 'linux')
       await page.getByText('Editing Shared project on Linux', { exact: true }).waitFor()
       await page.getByText('Project overrides', { exact: true }).waitFor()
+      await page.getByText('Use Save changes to apply edits.', { exact: true }).waitFor()
+      assert.equal(
+        await page.evaluate(() => window.runtime.snapshot.scopedAgentsSupported),
+        false,
+        'The cue uses the selected Linux snapshot while the active runtime remains legacy Mac',
+      )
     }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Saved on Linux', { exact: true }).waitFor()
@@ -205,6 +216,7 @@ try {
     assert.equal(await value(projects), 'git:github.com/team/repo')
     assert.equal(await value(environments), 'linux')
     await assertTarget('environment-project:linux-repo')
+    if (!mobile) await page.getByText('Tool changes use Save.', { exact: true }).waitFor()
     await select(environments, 'empty')
     await page
       .getByText('This project is not available on the selected computer. Choose another target.', {
@@ -213,6 +225,8 @@ try {
       .waitFor()
     if (!mobile) await page.getByText('Editing Shared project on Empty', { exact: true }).waitFor()
     assert.equal(await page.getByTestId('target').count(), 0)
+    if (!mobile)
+      assert.equal(await page.getByText('Tool changes use Save.', { exact: true }).count(), 0)
     await select(environments, '')
     await assertTarget('project:mac-repo')
     await select(projects, '')
@@ -329,13 +343,39 @@ try {
       await environments.click()
       await page.getByRole('option', { name: 'Linux · Offline', exact: true }).click()
       await page
-        .getByText('Linux is offline. Reconnect to make changes.', { exact: true })
+        .getByText('Linux is offline. Reconnect to edit or save.', { exact: true })
         .waitFor()
+      await page.getByRole('status').filter({ hasText: 'Reconnect to edit or save.' }).waitFor()
+      assert.equal(
+        await page
+          .getByRole('status')
+          .filter({ hasText: /offline/i })
+          .count(),
+        1,
+        'One persistent offline cue',
+      )
+      assert.equal(await page.getByText('Tool changes use Save.', { exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'Defaults page', exact: true }).click()
+      assert.equal(
+        await page.getByText('Use Save changes to apply edits.', { exact: true }).count(),
+        0,
+        'Offline supported sources also hide callback save cues',
+      )
+      await page.getByRole('button', { name: 'Tools page', exact: true }).click()
       await select(environments, '')
       await page.evaluate(() => window.configureSources(1, true))
       await environments.click()
       await page.getByRole('option', { name: 'Mac · Offline', exact: true }).click()
-      await page.getByText('Mac is offline. Reconnect to make changes.', { exact: true }).waitFor()
+      await page.getByText('Mac is offline. Reconnect to edit or save.', { exact: true }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Reconnect to edit or save.' }).waitFor()
+      assert.equal(
+        await page
+          .getByRole('status')
+          .filter({ hasText: /offline/i })
+          .count(),
+        1,
+      )
+      assert.equal(await page.getByText('Tool changes use Save.', { exact: true }).count(), 0)
       await select(environments, '')
     }
     await page.evaluate(() => window.configureSources(0))
@@ -344,6 +384,7 @@ try {
       .getByText('Connect a computer to configure defaults and project tools.', { exact: true })
       .waitFor()
     if (!mobile) {
+      assert.equal(await page.getByText('Tool changes use Save.', { exact: true }).count(), 0)
       for (const hasTouch of [false, true]) {
         const layoutPage = await browser.newPage({ hasTouch })
         layoutPage.on('pageerror', (error) => errors.push(error.message))

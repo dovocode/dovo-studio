@@ -143,7 +143,12 @@ try {
     if (kind === 'desktop') assert.equal(await page.evaluate(() => window.serviceDraftDirty), false)
     assert.equal(await connect.inputValue(), 'https://connect.example.com')
     const savedCount = await page.evaluate(() => window.saves.length)
-    await page.getByRole('button', { name: 'Use defaults', exact: true }).click()
+    await page
+      .getByRole('button', {
+        name: kind === 'desktop' ? 'Reset to defaults' : 'Use defaults',
+        exact: true,
+      })
+      .click()
     assert.equal(
       await page.evaluate(() => window.saves.length),
       savedCount,

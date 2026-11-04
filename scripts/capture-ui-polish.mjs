@@ -67,7 +67,7 @@ window.uiSetPreferences=updateAppPreferences;
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
 updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true,followUp:query.has('steer')?'steer':'queue'});
-function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("git-dense")?"git-review-dense":query.has("dense")?"lists-dense":query.has("changes")?"git-changes":query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
+function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("git-dense")?"git-review-dense":query.has("dense")?"lists-dense":query.has("changes")?"git-changes":query.has("offline")?"offline":query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     plugins: [
@@ -161,6 +161,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
                 undefined,
                 'legacy',
               ]),
+              ...['agents', 'task-defaults'].map((route) => [
+                route + '-offline',
+                route,
+                undefined,
+                undefined,
+                'offline',
+              ]),
               ...['overview', 'changes', 'checks'].map((tab) => [
                 'pull-' + tab,
                 'pulls',
@@ -190,7 +197,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .includes(name),
     )) {
       await page.goto(
-        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'lists-dense' ? '&dense' : state === 'legacy' ? '&legacy' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy-steer' ? '&busy&steer' : state === 'busy' ? '&busy' : ''}`,
+        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'lists-dense' ? '&dense' : state === 'legacy' ? '&legacy' : state === 'offline' ? '&offline' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy-steer' ? '&busy&steer' : state === 'busy' ? '&busy' : ''}`,
       )
       await page.locator('.studio').waitFor()
       await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))

@@ -706,11 +706,73 @@
       "score": 7.5,
       "verdict": "ship; focused refinements requested",
       "coverage": "50 full-size frames,25 per theme;336-frame inventory."
+    },
+    {
+      "round": "independent50",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "4c8074bb-19a6-44d5-be61-3d127c757b94",
+      "score": 8,
+      "verdict": "ship",
+      "coverage": "52 exact frames reported,26 per theme;336-frame inventory. Coverage dimensions corrected:318 ordinary1440x960 frames and18 compact1100x960 frames.",
+      "summary": "Coherent system; recommends clearer Settings save/target vocabulary, source-labelled PR status, overflow cues and runtime context. Several claims require correction against actual screenshots/source; see findingTriage."
+    },
+    {
+      "round": "independent51",
+      "model": "Opus 5.5",
+      "id": "544eaa18-4cf5-454c-ab4d-8d614a5de5a3",
+      "score": 7.5,
+      "verdict": "ship",
+      "coverage": "55 full-size frames,27 dark/28 light",
+      "summary": "Ship; previous fixes confirmed. Remaining: dense Git action visibility, save timing/read-only instructions, navigation icons/names, minor PR source/layout consistency."
+    },
+    {
+      "round": "independent51",
+      "model": "Opus 5.5",
+      "id": "9aabda9c-7c93-4117-b8f0-f69e56944ff5",
+      "score": 8,
+      "verdict": "ship",
+      "coverage": "55 full-size frames,26 dark/29 light",
+      "summary": "Ship; previous fixes confirmed. Remaining: Settings icon/name wayfinding and legacy save cues; minor sibling-screen consistency."
+    },
+    {
+      "round": "independent51",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent51_sol_a",
+      "score": 8.4,
+      "verdict": "ship",
+      "coverage": "84 exact full-size frames,42 per theme",
+      "summary": "Ship visual direction; dense Git commit buttons below fold and scrolled Agent profile identity are nonblocking refinements."
+    },
+    {
+      "round": "independent51",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent51_sol_b",
+      "score": 8.6,
+      "verdict": "ship",
+      "coverage": "52 exact full-size frames,26 per theme",
+      "summary": "Ship; clarify automatic saving on runtime pages and keep dense Git commit actions discoverable."
+    },
+    {
+      "round": "independent51",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent51_sol_c",
+      "score": 8.8,
+      "verdict": "ship",
+      "coverage": "74 exact full-size frames,37 per theme",
+      "summary": "Ship; optional Stage/Unstage from review and consistent project-picker terminology. Prior findings confirmed resolved."
+    },
+    {
+      "round": "independent51",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "67933dc8-a1e7-4a12-890c-fbc3324754bc",
+      "score": 8.3,
+      "verdict": "ship",
+      "coverage": "52 exact frames reported,26 per theme;correct318 ordinary and18 compact dimensions.",
+      "summary": "No blockers; praises Settings and confirms previous fixes. Suggestions include disabled commit reason and persistent Agent identity. Merge-consent/check-count quotes do not match exact cited frames/source; branch-icon removal conflicts with KEEP requirements."
     }
   ],
   "remaining": [
-    "Complete Agent footer/copy, PR metadata/readiness hierarchy and Git staging scanability fixes",
-    "Verify and refresh final screenshot evidence; obtain fresh independent council approval",
+    "Complete independent gallery52 council review and verify material findings against matching evidence",
     "Finish PR #50 after council quality gate"
   ],
   "approvalTarget": {
@@ -720,12 +782,12 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 49,
-    "captures": 336,
-    "corePass": 49,
-    "dialogPass": 49,
-    "settingsPass": 49,
-    "note": "168 surface pairs; added explicit Steer default. Full refresh after icon-only composer, context/legibility, stable Issue filters, consent and Markdown fixes. No manifest errors/alerts; #080808 chat/Browser pixels confirmed; lossless exports verified."
+    "round": 52,
+    "captures": 340,
+    "corePass": 52,
+    "dialogPass": 52,
+    "settingsPass": 52,
+    "note": "170 paired surfaces, including9 compact1100x960 pairs and offline Agents/defaults.128 main entries and158 dialog entries,no capture errors/alerts. Source and exact screenshots frozen for fresh3Sol/2Opus/Muse reviews without earlier or target ratings."
   },
   "unavailableReviews": [
     {
@@ -787,46 +849,46 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent50",
+      "round": "independent52",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent52_sol_a",
+      "status": "running",
+      "gallery": 52
+    },
+    {
+      "round": "independent52",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent52_sol_b",
+      "status": "running",
+      "gallery": 52
+    },
+    {
+      "round": "independent52",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent52_sol_c",
+      "status": "running",
+      "gallery": 52
+    },
+    {
+      "round": "independent52",
+      "model": "Opus 5.5",
+      "id": "ee5b2dc2-f075-42c7-b81e-7bfe9583d4fe",
+      "status": "running",
+      "gallery": 52
+    },
+    {
+      "round": "independent52",
+      "model": "Opus 5.5",
+      "id": "81b36911-9d3c-48ef-8d7f-b58d0b693813",
+      "status": "running",
+      "gallery": 52
+    },
+    {
+      "round": "independent52",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "4c8074bb-19a6-44d5-be61-3d127c757b94",
+      "id": "c7b9ded0-6755-4d5c-a668-49718fc50125",
       "status": "running",
-      "gallery": 50
-    },
-    {
-      "round": "independent51",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent51_sol_a",
-      "status": "running",
-      "gallery": 51
-    },
-    {
-      "round": "independent51",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent51_sol_b",
-      "status": "running",
-      "gallery": 51
-    },
-    {
-      "round": "independent51",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent51_sol_c",
-      "status": "running",
-      "gallery": 51
-    },
-    {
-      "round": "independent51",
-      "model": "Opus 5.5",
-      "id": "544eaa18-4cf5-454c-ab4d-8d614a5de5a3",
-      "status": "running",
-      "gallery": 51
-    },
-    {
-      "round": "independent51",
-      "model": "Opus 5.5",
-      "id": "9aabda9c-7c93-4117-b8f0-f69e56944ff5",
-      "status": "running",
-      "gallery": 51
+      "gallery": 52
     }
   ],
   "queuedReviews": [
@@ -836,13 +898,6 @@
       "status": "unavailable",
       "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued.",
       "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
-    },
-    {
-      "round": "independent51",
-      "model": "Muse muse-wonder-full-1.0",
-      "status": "waiting for live independent50 Muse review",
-      "gallery": 51,
-      "reason": "Avoid duplicate simultaneous Muse review while its prior live handle is confirmed running. Start a fresh key on completion, without past or target scores."
     }
   ],
   "supersededReviews": [
@@ -851,21 +906,21 @@
       "model": "Muse muse-wonder-full-1.0",
       "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "2b79c874-91e4-4335-95cb-f81950e52b42",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
     }
   ],
   "postGalleryRefinements": [
@@ -898,6 +953,11 @@
       "round": "pass51",
       "summary": "Full-width six-line Agent Instructions and substantial Cloud/Access help, with accessible descriptions; concise selects remain aligned. Truthful Stored at intro and initial explicit-save scope cues. Shared Settings section scale and Save to apply labels; primary Connect computer. Read-only Git Previous/Next stays within staged/unstaged group, preserves partial staging/draft/selection/Back focus and ignores stale previews; Commit has a separate heading/divider. PR check-report count stays neutral with separate failure indicator; merge consent is one continuous checkbox label with named Repository CI/Linked pipeline failures, leaving acknowledgement identity/guards/payload intact. Issues Connections has Plug icon. Drawing-only controls hide in Pan as in Crop. Light image-editor anomaly rejected using exact cross-theme source-pixel equality.",
       "verification": "Production web/desktop/client-runtime/design builds, affected types and scoped lint/format/diff checks passed. Agent layout/save guards at wide/compact/mobile, Settings target/scope/save/navigation and service URL suites passed; image pan/source-coordinate/pixel/export suite passed. Git multi-file/stale-preview/draft/index guards, PR workspace and work navigation passed. All34 Appearance palette/modes and shared-control/forced-color checks passed; small/default/large heading size and full-width Instructions verified in web/desktop."
+    },
+    {
+      "round": "pass52",
+      "summary": "Dense Git uses one bounded, keyboard-focusable changed-files region so commit target/message/actions remain discoverable at supported desktop sizes; selection and preview/staging semantics retained. Settings save hints use selected source capability/connection; one persistent offline context stays above aligned pickers, and offline Agent empty lists no longer claim loading. Mixed device pages name explicit-save exceptions; immediate computer forms explain autosave/text-field timing and show errors near first controls. Service URL reset remains draft-only with explicit save wording. Distinct navigation icons and Repositories & workspaces heading preserve all pages/groups. Added both-theme offline Agent/defaults evidence.",
+      "verification": "Production web/desktop builds and all affected package types passed. Managed Chromium installed. Repository actions/project-panel/mobile Git, Settings target desktop/mobile, scoped Agents wide/compact/mobile, General Settings, runtime preferences and service URL browser suites passed, including failure/retry, explicit submit/draft/origin isolation, selected-source/legacy/offline/save and draft-navigation guards. Scoped lint/format and diff checks passed."
     }
   ],
   "designConsultations": [
@@ -935,6 +995,13 @@
       "id": "5578358e-ca6a-49a8-8917-d4674a625fc5",
       "status": "completed",
       "summary": "Requested decisive system-level instructions without scores. Quiet Instrument direction: common selection, typography/row/surface grammar; pinned Settings target and responsive Agent composition; coherent action hierarchy. Next implementation pass will preserve explicit save boundaries, requested sections and merge-readiness safeguards rather than adopt all recommendations literally."
+    },
+    {
+      "round": "settings51",
+      "model": "Opus 5.5",
+      "id": "9aabda9c-7c93-4117-b8f0-f69e56944ff5",
+      "status": "completed",
+      "summary": "Requested focused implementation brief without another rating. Recommends capability-aware save cues, one truthful offline message, mixed-save timing, explicit clean service-URL wording/reset naming, distinct navigation icons/group labels. Withdrew missing Runtime Save-button allegation after inspecting intentional clean-state SaveBar. Root retains editable Thread defaults legacy path rather than treating all legacy capabilities as whole-page read-only."
     }
   ],
   "findingTriage": [
@@ -942,6 +1009,26 @@
       "round": "independent50",
       "finding": "Light image-editor blank-image claim",
       "result": "Not reproduced in the exact cited screenshots. Root viewed light editor/annotated/crop and corresponding dark frames; each800x500 source-image rectangle is pixel-identical across themes, containing746/839/980 distinct colors respectively. The source image, arrow and crop are visibly present. No rendering patch applied."
+    },
+    {
+      "round": "independent51",
+      "finding": "Muse50 crop dimming and dense-list separators",
+      "result": "Not reproduced. Root viewed exact crop51: outside area is visibly dimmed; image-editor-runtime.ts draws #0009 outside the selection. PR list uses divide-y divide-border/50. Do not duplicate these treatments."
+    },
+    {
+      "round": "independent51",
+      "finding": "Muse50 save/scope/scroll claims",
+      "result": "Partly valid. Thread list page header lacks mixed-save summary, and computer immediate-save pages lack initial timing cues. Scoped pages already have Settings inheritance details and actual Editing all projects on all computers context, rather than quoted device target. Git already has fade/continuation, but dense commit actions still fall below fold; improve composition."
+    },
+    {
+      "round": "independent51",
+      "finding": "Opus51 crop outside not dimmed preference",
+      "result": "Not reproduced in exact crop51 frame or source; existing #0009 outside-selection scrim confirmed. No crop patch."
+    },
+    {
+      "round": "independent51",
+      "finding": "Muse51 merge consent success/failure conflation",
+      "result": "Not reproduced. Exact pr-merge-dark says I confirm merging reviewed commit… I also acknowledge the current failures: Linked pipelines:1 failed;Repository CI:failed. It contains no Succeeded clause. Source derives failureLabels only from currentFailures. Cited 6-report count also does not match exact fixture. No consent patch applied."
     }
   ]
 }

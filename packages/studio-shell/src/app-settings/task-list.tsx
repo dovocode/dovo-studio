@@ -79,8 +79,8 @@ export default function TaskListSettings() {
   return (
     <SettingsPage
       title="Thread list & projects"
-      description="Organize the thread list and project picker, and choose when to ask for confirmation. These preferences apply on this device."
-      storageInfo={<span>This device</span>}
+      description="Organize the thread list and project picker, and choose when to ask for confirmation."
+      storageInfo={<span>This device · saved automatically, except Snoozing (Save to apply)</span>}
     >
       <SettingsGroup title="Projects" description="Arrange projects in the project picker.">
         <SettingRow

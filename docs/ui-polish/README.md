@@ -30,14 +30,17 @@ control styles make the workspace and its secondary surfaces feel consistent.
   Agent draft actions stay reachable in an opaque footer that identifies the profile and target.
   Instructions spans the form with six readable lines; substantial help uses full-width rows.
   Appearance retains all palettes and font previews, with a bounded terminal size stepper. Search,
-  legacy notices, explicit-save groups and unsaved-navigation guards remain.
+  legacy notices, explicit-save groups and unsaved-navigation guards remain. Save cues follow the
+  selected computer’s capabilities; offline targets show one reconnect instruction. Mixed-save pages
+  name their explicit-save exceptions, and computer forms explain automatic-save timing.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
-  Commit controls show the inspected branch/checkout; readable filenames retain full-path tooltips.
-  Per-file comparisons are read-only, offer Previous/Next within their comparison group, and
-  preserve Back/draft/selection context. Push reflects branch tracking. PR lists reserve a
-  responsive readiness column and keep the target branch visible. Issues keep stable Open/Closed
-  filters. Merge readiness separates repository status, check reports and linked pipelines; failure
-  consent is visible, accessible and invalidated by status changes.
+  Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
+  desktop sizes. Commit controls show the inspected branch/checkout; readable filenames retain
+  full-path tooltips. Per-file comparisons are read-only, offer Previous/Next within their
+  comparison group, and preserve Back/draft/selection context. Push reflects branch tracking. PR
+  lists reserve a responsive readiness column and keep the target branch visible. Issues keep stable
+  Open/Closed filters. Merge readiness separates repository status, check reports and linked
+  pipelines; failure consent is visible, accessible and invalidated by status changes.
 - **Dialogs and images:** shared themed confirmations preserve Cancel/return focus, drafts and
   queued decisions, and reject stale runtime/caller/target decisions. MCP details scroll without
   losing consent. Project-deletion blockers provide a safe route to active work. Image
@@ -46,7 +49,7 @@ control styles make the workspace and its secondary surfaces feel consistent.
 
 ## Evidence and limits
 
-The gallery contains **336 actual app captures across 168 surfaces**, each in dark and light,
+The gallery contains **340 actual app captures across 170 surfaces**, each in dark and light,
 including 1100px compact layouts, dense lists, edited Agent forms, long Git comparisons, open
 controls and follow-up/image dialogs. Checked-in WebPs are lossless conversions, verified
 pixel-for-pixel against the PNGs. Six earlier comparisons remain below.
@@ -103,7 +106,7 @@ Use `--only=conversation,pulls,appearance,browser,thread-info` for a focused pas
 
 ## Full gallery
 
-168 surfaces in both themes. Compact, controls and expanded status-source states are listed
+170 surfaces in both themes. Compact, controls and expanded status-source states are listed
 explicitly.
 
 | Surface                                  | Dark                                                                         | Light                                                                         |
@@ -116,6 +119,7 @@ explicitly.
 | add-mcp                                  | [Screenshot](screenshots/add-mcp-dark.webp)                                  | [Screenshot](screenshots/add-mcp-light.webp)                                  |
 | add-skill                                | [Screenshot](screenshots/add-skill-dark.webp)                                | [Screenshot](screenshots/add-skill-light.webp)                                |
 | agents                                   | [Screenshot](screenshots/agents-dark.webp)                                   | [Screenshot](screenshots/agents-light.webp)                                   |
+| agents-offline                           | [Screenshot](screenshots/agents-offline-dark.webp)                           | [Screenshot](screenshots/agents-offline-light.webp)                           |
 | agents-dirty-compact                     | [Screenshot](screenshots/agents-dirty-compact-dark.webp)                     | [Screenshot](screenshots/agents-dirty-compact-light.webp)                     |
 | agents-dirty                             | [Screenshot](screenshots/agents-dirty-dark.webp)                             | [Screenshot](screenshots/agents-dirty-light.webp)                             |
 | agents-legacy                            | [Screenshot](screenshots/agents-legacy-dark.webp)                            | [Screenshot](screenshots/agents-legacy-light.webp)                            |
@@ -253,6 +257,7 @@ explicitly.
 | task-behavior                            | [Screenshot](screenshots/task-behavior-dark.webp)                            | [Screenshot](screenshots/task-behavior-light.webp)                            |
 | task-behavior-legacy                     | [Screenshot](screenshots/task-behavior-legacy-dark.webp)                     | [Screenshot](screenshots/task-behavior-legacy-light.webp)                     |
 | task-defaults                            | [Screenshot](screenshots/task-defaults-dark.webp)                            | [Screenshot](screenshots/task-defaults-light.webp)                            |
+| task-defaults-offline                    | [Screenshot](screenshots/task-defaults-offline-dark.webp)                    | [Screenshot](screenshots/task-defaults-offline-light.webp)                    |
 | task-list-settings                       | [Screenshot](screenshots/task-list-settings-dark.webp)                       | [Screenshot](screenshots/task-list-settings-light.webp)                       |
 | task-templates                           | [Screenshot](screenshots/task-templates-dark.webp)                           | [Screenshot](screenshots/task-templates-light.webp)                           |
 | terminal-close                           | [Screenshot](screenshots/terminal-close-dark.webp)                           | [Screenshot](screenshots/terminal-close-light.webp)                           |

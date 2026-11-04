@@ -129,6 +129,13 @@ export function RunningTaskPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus
+        error={error}
+        loaded={value !== null}
+        busy={busy}
+        connected={connected}
+        textFields
+      />
       <SettingsGroup advanced title="Model modes (experimental)">
         <SettingRow
           label="Tune & Maestro modes (experimental)"
@@ -280,7 +287,6 @@ export function RunningTaskPreferences() {
           </Select>
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -294,6 +300,7 @@ export function PullRequestPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup title="Code reviews (experimental)">
         <SettingRow
           label="Independent code reviews (experimental)"
@@ -414,7 +421,6 @@ export function PullRequestPreferences() {
           />
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -423,6 +429,7 @@ export function ArtifactPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup title="Artifacts">
         <SettingRow
           label="Enable artifacts"
@@ -480,7 +487,6 @@ export function ArtifactPreferences() {
           </SettingRow>
         ))}
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -490,6 +496,7 @@ export function ActivityRetention() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup title="Retention">
         <SettingRow
           label="Keep activity history"
@@ -519,7 +526,6 @@ export function ActivityRetention() {
           </Select>
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -529,6 +535,13 @@ export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) 
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences(onSaved)
   return (
     <>
+      <PreferencesStatus
+        error={error}
+        loaded={value !== null}
+        busy={busy}
+        connected={connected}
+        textFields
+      />
       <SettingsGroup title="New worktrees">
         <WorktreeRoot
           value={value?.worktreesRoot}
@@ -565,7 +578,6 @@ export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) 
           />
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -613,25 +625,30 @@ function PreferencesStatus({
   loaded,
   busy,
   connected,
+  textFields = false,
 }: {
   error: string
   loaded: boolean
   busy: boolean
   connected: boolean
+  textFields?: boolean
 }) {
-  if (!error)
-    return !connected || !loaded || busy ? (
-      <p role="status" className="text-xs text-muted-foreground">
-        {!connected
-          ? 'Reconnect this computer to change settings.'
-          : !loaded
-            ? 'Loading settings…'
-            : 'Saving…'}
+  if (error)
+    return (
+      <p role="alert" className="text-xs text-destructive">
+        {error}
       </p>
-    ) : null
+    )
+  const pending = !connected || !loaded || busy
   return (
-    <p role="alert" className="py-2 text-xs text-destructive">
-      {error}
+    <p role={pending ? 'status' : undefined} className="text-xs text-muted-foreground">
+      {!connected
+        ? 'Reconnect this computer to change settings.'
+        : !loaded
+          ? 'Loading settings…'
+          : busy
+            ? 'Saving…'
+            : `Changes save automatically on this computer.${textFields ? ' Text fields save on Enter or when you leave the field.' : ''}`}
     </p>
   )
 }
@@ -749,6 +766,7 @@ export function StudioToolsPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup
         title="Studio Tools (experimental)"
         description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this computer only (localhost)."
@@ -764,7 +782,6 @@ export function StudioToolsPreferences() {
           </SettingRow>
         ))}
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -791,6 +808,7 @@ function SupportedRemoteDesktopPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup
         title="Remote desktop (experimental)"
         description="Allow paired devices to view this computer’s primary display. Control is enabled separately for each session. Turning this off ends sharing. Requires Cua Driver running in the host desktop session; agent computer use can remain disabled."
@@ -804,7 +822,6 @@ function SupportedRemoteDesktopPreferences() {
           />
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }

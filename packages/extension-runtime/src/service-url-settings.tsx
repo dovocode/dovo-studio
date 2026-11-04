@@ -102,7 +102,7 @@ export function ServiceUrlSettings() {
                 setNotice('')
               }}
             >
-              Use defaults
+              Reset to defaults
             </Button>
           </div>
           {error && (
@@ -118,7 +118,7 @@ export function ServiceUrlSettings() {
         saveLabel="Save service URLs"
         saveType="submit"
         saved={!!notice}
-        description="Service URLs are saved on this device."
+        description="Saved on this device when you choose Save service URLs."
         changeCount={
           Number(fields.connectOrigin !== saved.connectOrigin) +
           Number(fields.artifactsOrigin !== saved.artifactsOrigin)

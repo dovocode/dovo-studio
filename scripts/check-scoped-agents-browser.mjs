@@ -281,7 +281,15 @@ try {
       }
     }
     await project.selectOption('git:github.com/team/repo')
+    await page
+      .getByText(mobile ? 'Project project defaults' : 'Editing Project on all computers', {
+        exact: true,
+      })
+      .waitFor()
     await environment.selectOption('linux')
+    await page
+      .getByText(mobile ? 'Project on linux' : 'Editing Project on linux', { exact: true })
+      .waitFor()
     if (mobile) await page.getByRole('button', { name: 'Override', exact: true }).click()
     else await page.getByLabel('Name', { exact: true }).waitFor()
     if (!mobile) {
@@ -602,6 +610,17 @@ try {
       })
       await project.selectOption('git:github.com/team/repo')
       await page.getByRole('status').filter({ hasText: 'Update Dovo on linux' }).waitFor()
+      const saveHint = page.getByText('Use Save changes to apply profile edits.', { exact: true })
+      assert.equal(
+        await saveHint.count(),
+        0,
+        'Legacy selected computers do not promise profile saves',
+      )
+      await environment.selectOption('mac')
+      await saveHint.waitFor()
+      await environment.selectOption('linux')
+      await page.getByRole('status').filter({ hasText: 'Update Dovo on linux' }).waitFor()
+      assert.equal(await saveHint.count(), 0, 'Save cues follow the selected source capability')
       assert.equal(await page.getByRole('button', { name: 'Add profile', exact: true }).count(), 0)
       await page.getByRole('button', { name: 'Open Devices & runtime', exact: true }).click()
       assert.deepEqual(await page.evaluate(() => window.navigation), { viewId: 'runtime' })
@@ -617,6 +636,36 @@ try {
       assert.equal(await project.isEnabled(), true)
       await environment.selectOption('linux')
       await page.getByRole('status').filter({ hasText: 'Update Dovo on linux' }).waitFor()
+      assert.equal(await saveHint.count(), 0)
+      await page.evaluate(() => {
+        const linux = window.sources.find((source) => source.profile.id === 'linux')
+        linux.snapshot.scopedAgentsSupported = true
+        linux.connected = false
+      })
+      await environment.selectOption('mac')
+      await environment.selectOption('linux')
+      const offline = page.getByText('linux is offline. Reconnect to edit or save.', {
+        exact: true,
+      })
+      await offline.waitFor()
+      await page
+        .getByText('Profiles unavailable offline.', { exact: true })
+        .waitFor({ state: 'attached' })
+      await page.getByRole('heading', { name: 'Computer offline', exact: true }).waitFor()
+      assert.equal(await page.getByText('Loading profiles…', { exact: true }).count(), 0)
+      assert.equal(await offline.count(), 1)
+      assert.equal(await saveHint.count(), 0, 'Offline supported sources do not advertise saving')
+      assert.equal(
+        await page.getByRole('button', { name: 'Add profile', exact: true }).isDisabled(),
+        true,
+      )
+      assert.equal(
+        await project.isEnabled(),
+        true,
+        'Offline sources keep target navigation available',
+      )
+      assert.equal(await environment.isEnabled(), true)
+      assert.equal(await page.evaluate(() => window.writes.length), writesBeforeUpgrade)
     }
     assert.deepEqual(errors, [])
     await page.close()

@@ -38,3 +38,13 @@ boundaries remain authoritative. Changes should simplify presentation without in
 
 The [generated composition reference](../../output/imagegen/README.md) informed layout only. Actual
 screenshots and verification limits are documented in [the gallery](README.md).
+
+## Settings follow-through
+
+The follow-up Opus brief makes save timing visible where editing starts: automatic computer forms
+state their timing beside the first controls; mixed device pages identify explicit-save groups.
+Scoped save hints use the selected computer’s capabilities and disappear when unsupported or
+offline. One persistent offline message explains that reconnecting is required to edit or save.
+Legacy controls and update routes remain. Navigation keeps every page and group while using distinct
+glyphs and an unambiguous Repositories & workspaces heading. Service URL resets still change only
+the draft; Save service URLs remains explicit.
