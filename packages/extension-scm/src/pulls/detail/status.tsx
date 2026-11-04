@@ -127,9 +127,9 @@ export function PullStatus({
           ))}
         </div>
       </section>
-      <aside className="min-w-0 space-y-4 rounded-xl border p-4 text-xs [overflow-wrap:anywhere]">
+      <aside className="min-w-0 space-y-5 border-t pt-4 text-xs [overflow-wrap:anywhere] @4xl/pr-detail:border-l @4xl/pr-detail:border-t-0 @4xl/pr-detail:pl-5 @4xl/pr-detail:pt-0">
         <div>
-          <h3 className="mb-2 font-medium">Latest reviews</h3>
+          <h3 className="mb-2 font-medium">Review decisions</h3>
           {!reviewsReady ? (
             <p className="text-muted-foreground">Reviews have not loaded yet.</p>
           ) : reviews.length ? (

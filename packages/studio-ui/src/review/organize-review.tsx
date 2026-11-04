@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { Disclosure } from '../disclosure'
 import {
   acpInstallationHarness,
   acpHarnessChoiceId,
@@ -39,14 +39,13 @@ export function OrganizeReview({
     disabled || !review.ready || !connected || review.organizing || !review.progress?.files.length
   return (
     <div className="max-h-[45%] shrink-0 overflow-y-auto px-0 py-2 text-xs">
-      <details className="group/organize">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-          <ChevronDown
-            aria-hidden="true"
-            className="size-3.5 -rotate-90 group-open/organize:rotate-0"
-          />
-          Organize review {review.featureGroups ? '· Feature groups active' : '· Harness & model'}
-        </summary>
+      <Disclosure
+        title={
+          <>
+            Organize review {review.featureGroups ? '· Feature groups active' : '· Harness & model'}
+          </>
+        }
+      >
         <div className="mt-2 space-y-3">
           <p className="text-muted-foreground">
             Group changes by feature and explain linked impact. The selected model reads the diff;
@@ -179,7 +178,7 @@ export function OrganizeReview({
             )}
           </div>
         </div>
-      </details>
+      </Disclosure>
       {review.progress?.guide && (
         <ReviewGuideCard
           guide={review.progress.guide}

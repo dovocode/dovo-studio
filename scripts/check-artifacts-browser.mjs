@@ -934,7 +934,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     // Reopening the edit copy, then discarding, retains the previously applied draft.
     await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
     await editHeading('Discard this change')
-    await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await editor.getByRole('button', { name: 'Close editor', exact: true }).click()
     await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
     assert.equal(await editing.locator('#keep h1').textContent(), 'Edited export heading')
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click()

@@ -61,7 +61,7 @@ export function StartupDraft({
   const initialTask = useMemo(
     () => ({
       ...createTask({
-        title: 'New task',
+        title: 'New thread',
         objective: '',
         agentId: '',
         ...resolveTaskDefaults(store.snapshot?.defaults, repository),

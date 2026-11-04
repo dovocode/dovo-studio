@@ -111,11 +111,11 @@ export function HarnessDialog({
     >
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Task harness</DialogTitle>
+          <DialogTitle>Thread harness</DialogTitle>
           <DialogDescription>
             {onSave
               ? 'Settings for this message only.'
-              : 'Model, reasoning and access for this task. Saved agents stay unchanged.'}
+              : 'Model, reasoning and access for this thread. Saved agents stay unchanged.'}
           </DialogDescription>
         </DialogHeader>
         <fieldset

@@ -85,7 +85,7 @@ try {
     for (const mode of ['new-branch', 'pr-branch']) {
       await page.evaluate((mobile) => window.render(mobile), mobile)
       await page
-        .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+        .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
         .click()
       assert.equal(await page.getByRole('dialog').count(), 0)
       await page
@@ -113,7 +113,7 @@ try {
       window.fail = true
     }, mobile)
     await page
-      .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
       .click()
     await page
       .getByRole(mobile ? 'button' : 'menuitem', { name: 'Use PR branch', exact: true })
@@ -128,7 +128,7 @@ try {
       window.fail = false
     })
     await page
-      .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
       .click()
     await page
       .getByRole(mobile ? 'button' : 'menuitem', { name: 'New branch from PR', exact: true })
@@ -136,7 +136,7 @@ try {
     await page.waitForFunction(() => window.events.some((event) => event[0] === 'navigate'))
     await page.evaluate((mobile) => window.render(mobile, false), mobile)
     await page
-      .getByRole('button', { name: mobile ? 'PR actions' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'PR actions' : 'New thread', exact: true })
       .click()
     const direct = page.getByRole(mobile ? 'button' : 'menuitem', {
       name: 'Use PR branch',
@@ -148,7 +148,7 @@ try {
     )
     await page.evaluate((mobile) => window.render(mobile, true, true), mobile)
     await page
-      .getByRole('button', { name: mobile ? 'Update stack' : 'New task', exact: true })
+      .getByRole('button', { name: mobile ? 'Update stack' : 'New thread', exact: true })
       .click()
     if (!mobile) await page.getByRole('menuitem', { name: 'Update PR stack', exact: true }).click()
     await page.waitForFunction(() => window.events.some((event) => event[0] === 'navigate'))

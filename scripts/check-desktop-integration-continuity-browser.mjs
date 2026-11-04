@@ -337,7 +337,7 @@ try {
   )
   await page.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   await page.getByText('Detail a upstream #7', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'New task', exact: true }).click()
+  await page.getByRole('button', { name: 'New thread', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New branch from PR', exact: true }).click()
   await page.waitForFunction(() => window.requests.length === 1)
   assert.equal(await page.evaluate(() => window.requests[0].input.expectedDestination), 'dest-a')

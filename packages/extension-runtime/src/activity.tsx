@@ -1,3 +1,4 @@
+import { SearchField } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
 import { useEffect, useState } from 'react'
@@ -8,7 +9,7 @@ import {
   formatDateTime,
   useAppPreferences,
 } from '@dovo/studio-core'
-import { Button, Input } from '@dovo/studio-ui'
+import { Button } from '@dovo/studio-ui'
 export function ActivityLog() {
   const { showToolDetails } = useAppPreferences()
   const { requestEffect: request, connected } = useWorkspace(),
@@ -71,12 +72,12 @@ export function ActivityLog() {
           Recent requests, messages and commands. Expand an entry to see its details.
         </p>
       </div>
-      <Input
+      <SearchField
         aria-label="Search activity"
         placeholder="Search messages, tasks and commands…"
         value={query}
-        onChange={(e) => {
-          setQuery(e.target.value)
+        onValueChange={(value) => {
+          setQuery(value)
           setOffset(0)
         }}
       />

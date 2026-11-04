@@ -1,3 +1,4 @@
+import { Disclosure } from './disclosure'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import {
@@ -796,7 +797,7 @@ export function ComposerModelPicker({
                                 customIcon={item.agent.icon ?? 'bot'}
                               />
                             )}
-                            <span className="truncate">{item.name}</span>
+                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
                             {selected && <Check className="size-3 shrink-0" />}
                           </span>
                           {item.agent && (
@@ -867,8 +868,7 @@ export function ComposerModelPicker({
                   )}
                 </div>
                 {!availability.loading && !availability.error && signInProviders.length > 0 && (
-                  <details className="px-2 pt-1 text-[0.6875rem] text-muted-foreground">
-                    <summary className="cursor-pointer">Provider setup</summary>
+                  <Disclosure title="Provider setup" className="px-2 pt-1">
                     <p>
                       Install and sign in on this computer with{' '}
                       {signInProviders.map((p, index) => (
@@ -880,7 +880,7 @@ export function ComposerModelPicker({
                       , then refresh providers. For WSL, install and sign in inside the selected
                       Linux distribution.
                     </p>
-                  </details>
+                  </Disclosure>
                 )}
                 {lockedProvider && (
                   <p className="sr-only">
@@ -907,15 +907,16 @@ export function ComposerModelPicker({
                   {mode === 'models' && (
                     <Button
                       type="button"
-                      size="icon"
+                      size="sm"
                       variant="ghost"
-                      className="size-7"
+                      className="h-7 gap-2 text-xs"
                       title="Manage model visibility"
                       aria-label="Manage model visibility"
                       aria-pressed={manageModels}
                       onClick={() => setManageModels(!manageModels)}
                     >
                       <Eye className="size-3.5" />
+                      Model visibility
                     </Button>
                   )}
                 </div>

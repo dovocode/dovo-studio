@@ -106,7 +106,7 @@ export function ProjectSelectionDialog({
       }}
     >
       <DialogContent className="max-w-md">
-        <DialogTitle>{noProject ? 'New task without a project' : 'New task'}</DialogTitle>
+        <DialogTitle>{noProject ? 'New thread without a project' : 'New thread'}</DialogTitle>
         <DialogDescription>
           {noProject
             ? 'Choose the machine where this task should run.'

@@ -120,7 +120,7 @@ export function TaskProjectActions({
               <Hash className="size-3.5" /> Edit saved prompts…
             </DropdownMenu.Item>
             <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
-              <LayoutTemplate className="size-3.5" /> Manage task templates…
+              <LayoutTemplate className="size-3.5" /> Manage thread templates…
             </DropdownMenu.Item>
             <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
               <ShieldCheck className="size-3.5" /> Manage approval rules…
@@ -300,7 +300,7 @@ function ProjectActionsDialog({
       <DialogContent className="max-w-xl">
         <DialogTitle>Project actions</DialogTitle>
         <DialogDescription>
-          One-click commands for {name}. They run in the task’s terminal, in its checkout.
+          One-click commands for {name}. They run in the thread’s terminal, in its checkout.
         </DialogDescription>
         <div
           className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
@@ -354,6 +354,11 @@ function ProjectActionsDialog({
             </div>
           ))}
         </div>
+        {error && (
+          <p id={errorId} role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -365,11 +370,6 @@ function ProjectActionsDialog({
         >
           <Plus className="size-3.5" /> Add action
         </Button>
-        {error && (
-          <p id={errorId} role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={close}>
             Cancel

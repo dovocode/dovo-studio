@@ -85,7 +85,7 @@ try {
   assert.equal(await page.evaluate(() => window.selection), JSON.stringify(['b', 'b-folder']))
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.showMachines(true))
-  await page.getByRole('dialog', { name: 'New task', exact: true }).waitFor()
+  await page.getByRole('dialog', { name: 'New thread', exact: true }).waitFor()
   assert.equal(await page.getByLabel('New thread machine').count(), 0)
   await page.getByRole('button', { name: /Remote folder/ }).click()
   assert.equal(await page.evaluate(() => window.selection), JSON.stringify(['b', 'b-folder']))

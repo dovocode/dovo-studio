@@ -333,7 +333,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                     await request(`${settingsPath}/read`, {}, titleGenerationSettingsSchema),
                   )
                 }
-                description="Changes apply to new tasks. Save to apply."
+                description="Changes apply to new threads. Save to apply."
                 disabled={
                   !connected ||
                   (!(selection && settings.inheritTitleModel) &&

@@ -631,7 +631,7 @@ export default function TasksView({
     const repository = workspace.repositories.find((repo) => repo.id === pendingCreate.repositoryId)
     const template = repository?.templates?.find((item) => item.id === pendingCreate.templateId)
     const created = createTask({
-      title: template?.name ?? 'New task',
+      title: template?.name ?? 'New thread',
       objective: '',
       agentId: '',
       ...resolveTaskDefaults(store.snapshot?.defaults, repository),
@@ -1054,7 +1054,7 @@ export default function TasksView({
               data-window-edge
               data-window-right-edge={!splitTask || undefined}
             >
-              New task
+              New thread
             </header>
           </HeaderContent>
         ) : (

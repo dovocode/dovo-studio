@@ -1,3 +1,4 @@
+import { SearchField } from '@dovo/studio-ui'
 import { useCallback, useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useSettingsDraft, useWorkspace } from '@dovo/studio-core'
@@ -242,13 +243,13 @@ function MemorySettings() {
             Refresh
           </Button>
         </div>
-        <Input
+        <SearchField
           aria-label="Search memory"
           placeholder="Search notes"
           value={query}
           disabled={disabled}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value)
+          onValueChange={(value) => {
+            setQuery(value)
             setOffset(0)
           }}
           maxLength={200}

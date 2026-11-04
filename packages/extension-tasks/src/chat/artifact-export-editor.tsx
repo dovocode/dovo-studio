@@ -24,7 +24,7 @@ export function ArtifactExportEditor({
         if (!open) onEdit.current({ action: 'cancel' })
       }}
     >
-      <DialogContent className="flex h-[92dvh] w-[min(1120px,96vw)] max-w-none flex-col gap-0 overflow-hidden rounded-xl p-0">
+      <DialogContent className="flex h-[92dvh] w-[min(1120px,96vw)] max-w-none flex-col gap-0 overflow-hidden rounded-xl p-0 [&_[data-dialog-close]]:hidden">
         <DialogTitle className="sr-only">Edit export copy</DialogTitle>
         <DialogDescription className="sr-only">
           Edit text, delete elements or exclude sections without changing the saved artifact.

@@ -16,10 +16,10 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:true,detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
-  '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
+  '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[],loading:false,error:''});`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,
@@ -510,6 +510,21 @@ try {
       content &&
       target.getBoundingClientRect().top < content.getBoundingClientRect().bottom
     )
+  })
+  // A ready overview/status response without check data must not imply a passed/empty check result.
+  await page.evaluate(() => {
+    window.checksPending = true
+    window.savedChecksState = window.detail.pull.checksState
+    delete window.detail.pull.checksState
+    window.showDestination('overview', 'checks-pending')
+  })
+  await page
+    .getByRole('button', { name: 'View pull request checks', exact: true })
+    .getByText('Loading checks…', { exact: true })
+    .waitFor()
+  await page.evaluate(() => {
+    window.checksPending = false
+    window.detail.pull.checksState = window.savedChecksState
   })
   await page.evaluate(() => window.showDestination('checks', ''))
   await page.waitForFunction(

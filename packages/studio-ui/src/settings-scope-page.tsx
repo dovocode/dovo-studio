@@ -43,7 +43,7 @@ export function SettingsScopePage({
           aria-label="Settings target"
         >
           <div className={`${width} flex flex-wrap items-center gap-2 text-xs`}>
-            <span className="max-w-full break-words text-xs font-medium">{summary.title}</span>
+            <span className="max-w-full break-words text-xs font-medium">Applies to</span>
             <Popover.Root>
               <Popover.Trigger asChild>
                 <Button
@@ -112,6 +112,11 @@ export function SettingsScopePage({
                   ))}
                 </ChoicePicker>
               </>
+            )}
+            {sources.length === 1 && (
+              <span className="text-muted-foreground">
+                on {target.environmentId ? sources[0].name : 'all computers'}
+              </span>
             )}
             {sources.length === 1 && (
               <Button

@@ -263,6 +263,7 @@ export function imageEditorRuntime(source: string) {
     render()
   }
   element('cancel').onclick = () => send({ type: 'cancel' })
+  element('close').onclick = () => send({ type: 'cancel' })
   element('original').onclick = () => send({ type: 'original' })
   element('attach').onclick = () => {
     if (!loaded) return

@@ -18,7 +18,7 @@ const mocks = {
     ['button', 'input', 'textarea', 'dialog', 'select', 'checkbox']
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
-    `\nexport {cn} from '${ui}/lib/utils.ts';export {IconButton} from '${ui}/components/icon-button.tsx';export * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
+    `\nexport {SearchField} from '${ui}/search-field.tsx';export {cn} from '${ui}/lib/utils.ts';export {IconButton} from '${ui}/components/icon-button.tsx';export * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
   './host-page': `export const HostPage=({children})=>children;`,
 }
 const built = await bundleBrowser(
@@ -142,8 +142,8 @@ try {
   await page.getByRole('button', { name: 'Edit note-00', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Edit note-/ }).count(), 50)
   await page.evaluate(() => window.show('running'))
-  await page.locator('summary[data-setting-label="Model modes (experimental)"]').click()
-  await page.locator('summary[data-setting-label="Project mode (experimental)"]').click()
+  await page.locator('[data-setting-label="Model modes (experimental)"] > summary').click()
+  await page.locator('[data-setting-label="Project mode (experimental)"] > summary').click()
   const linkedTool = page.getByRole('switch', { name: 'Linked projects tool', exact: true })
   await linkedTool.waitFor()
   await page.waitForFunction(

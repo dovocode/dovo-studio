@@ -843,7 +843,7 @@ export function TaskContextMenu({
         <DialogContent className="max-w-md">
           <DialogTitle>Save as template</DialogTitle>
           <DialogDescription>
-            New tasks in {repository?.name ?? 'this project'} can start from this task’s first
+            New threads in {repository?.name ?? 'this project'} can start from this thread’s first
             request, agent, checkout choice and setup command. The conversation is not included.
           </DialogDescription>
           <form
@@ -993,7 +993,7 @@ export function TaskContextMenu({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" disabled={pending} onClick={() => setDialog(null)}>
+            <Button autoFocus variant="outline" disabled={pending} onClick={() => setDialog(null)}>
               Cancel
             </Button>
             <Button

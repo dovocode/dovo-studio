@@ -378,9 +378,7 @@ try {
   await settingsSidebar.getByRole('status').filter({ hasText: 'Choose a project first.' }).waitFor()
   await search.fill('submodules')
   await search.press('Enter')
-  const advancedSetup = page.locator(
-    'details:has(> summary[data-setting-label="Advanced workspace setup"])',
-  )
+  const advancedSetup = page.locator('details[data-setting-label="Advanced workspace setup"]')
   await page.locator('[data-search-highlight][data-setting-label="Submodules"]').waitFor()
   assert.equal(await advancedSetup.getAttribute('open'), '')
   const writesBeforeDiscard = await page.evaluate(() => window.writes.length)
@@ -520,7 +518,7 @@ try {
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
   await page.getByText(/Saving creates an override/).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
-  await page.getByRole('button', { name: 'Open task defaults', exact: true }).click()
+  await page.getByRole('button', { name: 'Open thread defaults', exact: true }).click()
   await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
   await page.getByRole('combobox', { name: 'Auto-resume limited threads', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
@@ -542,9 +540,9 @@ try {
   await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
   await page
     .getByLabel('Settings target', { exact: true })
-    .getByText('Dovo on MacBook Pro', { exact: true })
+    .getByText('on MacBook Pro', { exact: true })
     .waitFor()
-  await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
+  await page.getByText('on MacBook Pro', { exact: true }).waitFor()
   if (process.env.DOVO_SETTINGS_SCREENSHOTS)
     await page
       .getByRole('heading', { name: 'Thread lifecycle', exact: true, level: 2 })
@@ -586,7 +584,7 @@ try {
       .getAttribute('aria-current'),
     'page',
   )
-  await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
+  await page.getByText('on MacBook Pro', { exact: true }).waitFor()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
   const minimalComposer = page.getByRole('switch', { name: 'Minimal composer', exact: true })

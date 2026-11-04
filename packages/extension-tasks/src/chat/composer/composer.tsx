@@ -844,7 +844,7 @@ export function Composer({
           text ||
           `Work with the attached files: ${attachments.files.map((file) => file.name).join(', ')}`
         const title =
-          attempt.current.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
+          attempt.current.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New thread')
         attempt.current.title = title
         if (!snapshot?.messageSetupSupported) {
           setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, title })))

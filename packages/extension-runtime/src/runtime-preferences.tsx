@@ -627,9 +627,7 @@ function PreferencesStatus({
             ? 'Loading settings…'
             : 'Saving…'}
       </p>
-    ) : (
-      <p className="text-xs text-muted-foreground">Saved automatically on this computer.</p>
-    )
+    ) : null
   return (
     <p role="alert" className="py-2 text-xs text-destructive">
       {error}

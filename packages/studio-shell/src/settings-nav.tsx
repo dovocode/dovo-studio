@@ -168,7 +168,7 @@ export function SettingsNav({
             element.textContent?.trim()) === jump.label,
       )
       if (!element) return false
-      let parent = element.parentElement
+      let parent: HTMLElement | null = element
       while (parent && parent !== root) {
         if (parent instanceof HTMLDetailsElement) parent.open = true
         parent = parent.parentElement

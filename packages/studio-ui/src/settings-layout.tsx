@@ -1,10 +1,11 @@
+import { ChevronDown } from 'lucide-react'
 import type { SettingsChange } from '@dovo/protocol'
 import { Card } from '@dovo/web-ui/card'
 import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
 import { useId, useRef, useState, useEffect, type ReactNode } from 'react'
 import { Button } from './components/ui/button'
-import { ChevronDown } from 'lucide-react'
+import { Disclosure } from './disclosure'
 
 /** Settings page frame and row, in the label-left / control-right style of Codex and T3 Code. */
 export function SettingsPage({
@@ -75,16 +76,11 @@ export function SettingsGroup({
   )
   if (advanced)
     return (
-      <details className="studio-settings-group group overflow-hidden border-b border-border/60">
-        <summary
-          data-setting-label={title}
-          className="flex cursor-pointer list-none items-center gap-2 px-4 py-4 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
-        >
-          <ChevronDown
-            aria-hidden="true"
-            className="size-3 shrink-0 -rotate-90 text-muted-foreground group-open:rotate-0"
-          />
-          <span className="min-w-0 flex-1">
+      <Disclosure
+        className="studio-settings-group"
+        data-setting-label={title}
+        title={
+          <span>
             {title}
             {description && (
               <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
@@ -92,9 +88,10 @@ export function SettingsGroup({
               </span>
             )}
           </span>
-        </summary>
+        }
+      >
         {content}
-      </details>
+      </Disclosure>
     )
   return (
     <section

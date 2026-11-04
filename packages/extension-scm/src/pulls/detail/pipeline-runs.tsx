@@ -222,9 +222,9 @@ export function PullPipelineRuns({
     <section aria-label="Pull request pipeline runs" className="mb-5 min-w-0 rounded-xl border">
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
         <div className="mr-auto">
-          <h3 className="text-sm font-medium">Pipeline runs</h3>
+          <h3 className="text-sm font-medium">Linked pipeline runs</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            For commit <code>{sha.slice(0, 8)}</code>
+            For commit <code>{sha.slice(0, 8)}</code> · Tracked separately from check reports.
           </p>
         </div>
         <Button

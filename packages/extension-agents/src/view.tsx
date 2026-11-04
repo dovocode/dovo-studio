@@ -16,15 +16,15 @@ export default function AgentsView() {
           <ScopedAgents scope={scope} repository={repository} />
           <div className="grid gap-3 lg:grid-cols-2">
             <LinkCard
-              title="Default agent for new tasks"
-              description="Pick which profile new tasks start with, and their default access, in Task defaults."
+              title="Default agent for new threads"
+              description="Pick which profile new threads start with, and their default access, in Thread defaults."
               action={
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => host.navigate({ viewId: 'task-defaults' })}
                 >
-                  Open task defaults
+                  Open thread defaults
                 </Button>
               }
             />

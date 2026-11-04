@@ -2953,3 +2953,12 @@ a.studio-project-row:hover {
     border-radius: 0;
   }
 }
+
+/* The window header is one continuous surface, including the Browser address controls. */
+.studio-browser-header,
+.studio-browser-header .studio-browser-toolbar {
+  background: var(--background);
+}
+.studio-thread-info-links {
+  border-bottom: 0;
+}

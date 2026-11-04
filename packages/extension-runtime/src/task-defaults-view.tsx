@@ -10,7 +10,7 @@ export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
   return (
     <SettingsScopePage
       title="Thread defaults"
-      description="Choose the agent, access and workspace for new tasks."
+      description="Choose the agent, access and workspace for new threads."
     >
       {({ scope, repository }) => (
         <TaskDefaultSettings inline repository={repository} scope={scope} />

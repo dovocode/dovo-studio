@@ -71,7 +71,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
       },
     ],
     ['saved-prompts', 'tasks', projectAction('Edit saved prompts…')],
-    ['task-templates', 'tasks', projectAction('Manage task templates…')],
+    ['task-templates', 'tasks', projectAction('Manage thread templates…')],
     ['approval-rules', 'tasks', projectAction('Manage approval rules…')],
     ['project-instructions', 'tasks', projectAction('Edit project instructions…')],
     [
@@ -344,7 +344,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
           await page.mouse.up()
           await frame.getByText('Keyboard shortcuts', { exact: true }).click()
           await page.screenshot({ path: resolve(output, `image-editor-shortcuts-${mode}.png`) })
-          await frame.getByRole('button', { name: '100%', exact: true }).click()
+          await frame.getByRole('button', { name: 'Actual size', exact: true }).click()
           for (let i = 0; i < 4; i++)
             await frame.getByRole('button', { name: 'Zoom in', exact: true }).click()
           await frame.getByRole('button', { name: 'Pan', exact: true }).click()

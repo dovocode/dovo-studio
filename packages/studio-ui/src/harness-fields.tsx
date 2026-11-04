@@ -1,3 +1,4 @@
+import { Disclosure } from './disclosure'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { changeHarnessProvider } from './harness-permissions'
@@ -196,10 +197,7 @@ export function HarnessFields({
         disabled={!connected}
         onChange={(policy) => onChange({ ...value, ...policy })}
       />
-      <details className="text-xs">
-        <summary className="cursor-pointer text-muted-foreground">
-          Connection and instructions
-        </summary>
+      <Disclosure title="Connection and instructions">
         <div className="mt-3 grid gap-3">
           {value.provider !== 'cursor' &&
             (value.provider !== 'acp' || !value.acpInstallationId) && (
@@ -248,7 +246,7 @@ export function HarnessFields({
             />
           </FormField>
         </div>
-      </details>
+      </Disclosure>
     </div>
   )
 }
