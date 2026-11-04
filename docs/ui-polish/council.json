@@ -196,6 +196,12 @@
       "model": "Opus 5.5",
       "score": 8.5,
       "id": "082f4120-728a-48f2-8187-9e47b8d0cac8"
+    },
+    {
+      "round": "reset31",
+      "model": "Muse muse-wonder-full-1.0",
+      "score": 8.5,
+      "id": "a3da728d-a11e-4855-8e19-0694f27bf56f"
     }
   ],
   "remaining": [
@@ -238,13 +244,7 @@
       "reason": "Muse saved API key rejected; requires muse login; no review issued"
     }
   ],
-  "pendingReviews": [
-    {
-      "round": "reset31",
-      "model": "Muse muse-wonder-full-1.0",
-      "id": "a3da728d-a11e-4855-8e19-0694f27bf56f"
-    }
-  ],
+  "pendingReviews": [],
   "queuedReviews": [
     {
       "round": "reset30",

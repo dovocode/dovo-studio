@@ -80,7 +80,7 @@ const built = await build({
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
         const [rail,setRail]=useState(false);window.setRail=setRail;
         const [activeView,setActiveView]=useState('tasks');window.setActiveView=setActiveView;
-        const views=[['tasks','Tasks','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
+        const views=[['tasks','Threads','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;const [scopeEnabled,setScopeEnabled]=useState(false);window.setScopeEnabled=setScopeEnabled;
@@ -1145,7 +1145,7 @@ try {
     await page.getByRole('button', { name: 'dovo-studio', exact: true }).click()
     await page.getByRole('group', { name: 'Project and checkout', exact: true }).waitFor()
     const rail = page.getByRole('navigation', { name: 'Main navigation', exact: true })
-    const tasks = rail.getByRole('button', { name: 'Tasks', exact: true })
+    const tasks = rail.getByRole('button', { name: 'Threads', exact: true })
     assert.equal(await tasks.getAttribute('aria-current'), 'page')
     await rail.getByRole('button', { name: 'Browser', exact: true }).click()
     assert.equal(

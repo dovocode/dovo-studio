@@ -185,7 +185,7 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'shortcuts',
-      settingsFields: ['Everywhere', 'Composer', 'Tasks', 'Folder picker'],
+      settingsFields: ['Everywhere', 'Composer', 'Threads', 'Folder picker'],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Keyboard shortcuts',
