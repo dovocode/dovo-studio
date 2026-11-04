@@ -1078,17 +1078,6 @@ export default function TasksView({
             compact={compact}
             sidebarVisible={sidebar}
             hasDiff={hasDiff}
-            toolsExpanded={toolsExpanded}
-            onTools={() => {
-              if (toolsExpanded) {
-                lastToolSurface.current = surface
-                selectSurface('chat', true)
-              } else {
-                selectSurface(lastToolSurface.current)
-              }
-            }}
-            bottomTerminalOpen={bottomTerminalOpen}
-            onBottomTerminal={toggleBottomTerminal}
           />
         )}
         <div
@@ -1615,7 +1604,17 @@ export default function TasksView({
               surface={surface}
               onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
               hasDiff={hasDiff}
-              hasLinkedPulls={taskPullLinks(task).length > 0}
+              toolsExpanded={toolsExpanded}
+              onTools={() => {
+                if (toolsExpanded) {
+                  lastToolSurface.current = surface
+                  selectSurface('chat', true)
+                } else {
+                  selectSurface(lastToolSurface.current)
+                }
+              }}
+              bottomTerminalOpen={bottomTerminalOpen}
+              onBottomTerminal={toggleBottomTerminal}
               artifactsEnabled={!!snapshot?.artifactsEnabled}
             />
           )}

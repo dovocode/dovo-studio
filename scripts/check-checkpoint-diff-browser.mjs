@@ -26,12 +26,12 @@ import {SavedFilePreview} from './src/files/saved-file-preview';
 const image={id:'image',name:'A very long screenshot attachment filename.png',mime:'image/png',size:2048};
 const text={id:'text',name:'notes.txt',mime:'text/plain',size:32};
 window.imageData='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=';
-window.calls=[];window.failSyntax=false;
+window.calls=[];window.edited=[];window.failSyntax=false;
 window.store={connected:true,request:async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return {attachment:input.id==='image'?image:text,data:input.id==='image'?window.imageData:btoa('Attachment preview text')};if(path==='/api/tasks/file/restore')return {ok:true};if(path==='/api/tasks/file/preview'){if(window.failFull&&input.full)throw Error('Diff read failed');const prefix='same line\\n'.repeat(20000);return {before:{kind:'text',size:prefix.length+12,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+12,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};throw Error('Unexpected request '+path)}};
 const before='export function greeting(name: string) {\\n  return "Hello " + name;\\n}\\n';
 const after='export function greeting(name: string) {\\n  return \\x60Hello, \\x24{name}!\\x60;\\n}\\n';
 const turn={id:'turn',status:'completed',checkpoint:{before:'a'.repeat(40),after:'b'.repeat(40),files:[{path:'src/greeting.ts',before,after,viewed:false},{path:'src/added.ts',before:'',after:'export const added = true;\\n',viewed:false},{path:'src/removed.ts',before:'export const old = true;\\n',after:'',viewed:false},{path:'src/mode.ts',before:'same\\n',after:'same\\n',viewed:false}],omitted:[]}};
-function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message thread" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
+function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} edit={async id=>window.edited.push(id)} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message thread" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -119,15 +119,16 @@ try {
       }
     }
   })
-  const assets = root + '/apps/desktop/dist/assets'
+  const assets = process.env.DOVO_BROWSER_ASSETS ?? root + '/apps/desktop/dist/assets'
   for (const name of (await readdir(assets)).filter((name) => name.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + name, 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const draft = page.getByLabel('Draft attachments', { exact: true })
   const draftImage = draft.locator('img')
   await draftImage.evaluate((image) => image.decode())
-  assert.equal(await draftImage.evaluate((image) => image.getBoundingClientRect().width), 24)
-  assert.ok((await draft.boundingBox()).height <= 84)
+  assert.equal(await draftImage.evaluate((image) => image.getBoundingClientRect().width), 20)
+  assert.ok((await draft.boundingBox()).height <= 36)
+  await draft.getByText('2 files', { exact: true }).waitFor()
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     const row = await draftImage.evaluate((image) => {
@@ -138,7 +139,7 @@ try {
         available: image.closest('button').parentElement.parentElement.clientWidth,
       }
     })
-    assert.equal(row.width, row.available, 'Attachment rows use the full available width')
+    assert.ok(row.width <= 208, 'Compact attachment chips keep filenames and controls within reach')
     assert.ok(row.height <= 36)
     assert.equal(
       await draft.getByRole('button', { name: 'Remove notes.txt', exact: true }).innerText(),
@@ -146,6 +147,8 @@ try {
     )
   }
   const name = 'A very long screenshot attachment filename.png'
+  await draft.getByRole('button', { name: `Edit ${name}`, exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.edited), ['image'])
   await draft.getByRole('button', { name: `Preview ${name}`, exact: true }).click()
   const attachment = page.getByRole('dialog', { name })
   await attachment.getByRole('img', { name }).waitFor()
@@ -159,10 +162,33 @@ try {
     await draft.getByRole('button', { name: 'Preview notes.txt', exact: true }).count(),
     0,
   )
+  assert.equal(
+    await draft.getByText('1 file', { exact: true }).getAttribute('class'),
+    'sr-only',
+    'A fully visible single attachment keeps its count available to screen readers',
+  )
+  await draft.evaluate((row) => {
+    row.style.width = '120px'
+  })
+  await page.waitForFunction(
+    () =>
+      !document
+        .querySelector('[aria-label="Draft attachments"] > span')
+        .classList.contains('sr-only'),
+  )
+  await draft.getByText('1 file', { exact: true }).waitFor()
+  await draft.evaluate((row) => {
+    row.style.removeProperty('width')
+  })
+  await page.waitForFunction(() =>
+    document.querySelector('[aria-label="Draft attachments"] > span').classList.contains('sr-only'),
+  )
   const sent = page.getByRole('region', { name: 'Sent message' })
   await sent.locator('img').waitFor()
   assert.equal(
-    await sent.locator('img').evaluate((image) => image.getBoundingClientRect().width),
+    await sent
+      .locator('img')
+      .evaluate((image) => image.parentElement.getBoundingClientRect().width),
     28,
   )
   await page.screenshot({ path: '/tmp/dovo-compact-attachments.png' })

@@ -96,7 +96,7 @@ export function TaskBranchMenu({
           title={branch ? `${branch} · Copy or open` : label}
           className={
             panel
-              ? 'studio-project-row w-full'
+              ? 'studio-project-row w-full font-mono'
               : 'inline-flex max-w-56 items-center gap-1 truncate rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:inline-flex'
           }
         >
@@ -105,7 +105,7 @@ export function TaskBranchMenu({
           ) : (
             <GitBranch size={panel ? 18 : 10} className="shrink-0" />
           )}
-          <span className={panel ? 'min-w-0 flex-1 truncate text-left' : 'truncate'}>
+          <span className={panel ? 'min-w-0 flex-1 truncate text-left font-mono' : 'truncate'}>
             {notice && notice !== 'Copied' ? notice : label}
           </span>
           {panel && <ChevronDown className="studio-project-branch-chevron" size={16} />}

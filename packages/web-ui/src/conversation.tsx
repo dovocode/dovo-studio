@@ -54,7 +54,7 @@ export function ConversationScrollButton({ reduceMotion }: { reduceMotion?: bool
     !isAtBottom && (
       <Button
         aria-label="Scroll to latest message"
-        className="absolute bottom-3 left-1/2 rounded-full"
+        className="absolute bottom-3 right-3 rounded-full"
         size="icon"
         variant="outline"
         onClick={() => {

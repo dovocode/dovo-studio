@@ -67,7 +67,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,label})=><div data-sidebar={label} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task,onTools})=><header data-thread-header={task.id}>{task.title}<button onClick={onTools}>Toggle tools</button></header>;`,
+  './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
+  './detail/task-tools': `export const TaskTools=({onTools})=><button onClick={onTools}>Toggle tools</button>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
@@ -76,7 +77,6 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
 for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
   ['@dovo/extension-scm/projects', ['ProjectsMenu']],
-  ['./detail/task-tools', ['TaskTools']],
   ['./detail/task-agents', ['TaskAgents']],
   ['./detail/native-agent-thread', ['NativeAgentThread']],
   ['./detail/linked-projects', ['LinkedProjects']],

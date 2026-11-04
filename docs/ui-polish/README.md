@@ -43,7 +43,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The checked-in round 33 gallery includes 264 captures: 49 production desktop routes/compositions in
+The refreshed gallery includes 272 captures: production desktop routes/compositions in
 both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
 Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
 zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
@@ -57,27 +57,20 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-Council review is **in progress**. Dominic changed the approval target to at least 9/10 from both
-Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 8.8 and
-8.6; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
+Council review is **in progress**. Fresh Opus and Muse conversations assess the current UI without
+past ratings, target scores or historical findings in their briefs. Earlier numeric reviews are
+historical evidence, not approval of this redesign. See [council.json](council.json) for the record.
 
-Round 30 incorporates the complete round 29 refresh of all workspace/control screens and dialogs,
-including shared settings disclosures, white enabled fields in light theme, explicit scope controls,
-a continuous Browser header, matching editor close controls, labelled model visibility and separate
-check-report/pipeline scope. It includes rounded sidebars, flat borderless main chat/Browser
-surfaces, shared disclosures, matching Thread info labels, one home for PR linking, quieter field
-borders, consistent scope chips, visible context search, focused field validation and aligned dialog
-headers. It also keeps Close visible in long dialogs without adding title spacing, and clears
-compact search controls. Both round 31 Opus reviewers scored 8.5/10, as did Muse with
-`muse-wonder-full-1.0`. The round 32 refinement pass addresses list composition, remaining
-thread/computer wording, lazy-check status, update-navigation actions and model-preference
-hierarchy. Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only
-mode, and a direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a
-score. Round 33 unifies neutral filter selections, compacts Pipeline filters, gives disconnected
-Jira a shared empty state, improves runtime action hierarchy, and surfaces PR readiness at merge
-confirmation using existing status data. Its full 264-image gallery is frozen and under review by
-two Opus reviewers. The 9/10 target has not yet been earned. See [council.json](council.json) for
-the review record. Scores are subjective; interaction and accessibility checks are separate.
+The latest direction reduces competing chrome rather than hiding features: one tool rail owns pane
+controls, thread state is explicit, and the composer and queue are shorter. Thread info prioritizes
+project, checkout and next actions while preserving every section and its ordering/visibility
+customization. The model picker uses one compact column with a pinned access footer. Thread-list
+sections and grouping remain available. Populated workspace, long-draft and mid-scroll captures
+supplement sparse catalog pages so density and overflow can be assessed realistically.
+
+Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only mode,
+and a direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a review.
+Static design reviews do not replace interaction and accessibility checks.
 
 ## Verification
 
@@ -119,6 +112,10 @@ previews isolate runtime/account writes and use no live user data.
 
 | Surface                          | Dark                                                                 | Light                                                                 |
 | -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| busy-conversation | [Screenshot](screenshots/busy-conversation-dark.webp) | [Screenshot](screenshots/busy-conversation-light.webp) |
+| busy-unified-workspace | [Screenshot](screenshots/busy-unified-workspace-dark.webp) | [Screenshot](screenshots/busy-unified-workspace-light.webp) |
+| busy-long-draft | [Screenshot](screenshots/busy-long-draft-dark.webp) | [Screenshot](screenshots/busy-long-draft-light.webp) |
+| busy-mid-scroll | [Screenshot](screenshots/busy-mid-scroll-dark.webp) | [Screenshot](screenshots/busy-mid-scroll-light.webp) |
 | welcome                          | [Screenshot](screenshots/welcome-dark.webp)                          | [Screenshot](screenshots/welcome-light.webp)                          |
 | conversation                     | [Screenshot](screenshots/conversation-dark.webp)                     | [Screenshot](screenshots/conversation-light.webp)                     |
 | pulls                            | [Screenshot](screenshots/pulls-dark.webp)                            | [Screenshot](screenshots/pulls-light.webp)                            |

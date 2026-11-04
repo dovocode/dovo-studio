@@ -346,7 +346,9 @@ export function ComposerModelPicker({
     if (saved && settings) {
       requestAnimationFrame(() =>
         settingsRef.current
-          ?.querySelector<HTMLButtonElement>('button[tabindex="0"]:not(:disabled)')
+          ?.querySelector<HTMLButtonElement>(
+            'button[tabindex="0"]:not(:disabled), button[data-choice-picker]:not(:disabled)',
+          )
           ?.focus(),
       )
     }
@@ -455,199 +457,200 @@ export function ComposerModelPicker({
             event.preventDefault()
             searchRef.current?.focus()
           }}
-          className={cn(
-            'studio-menu-surface z-50 flex max-h-[min(25rem,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl',
-            settings ? 'w-[min(40rem,calc(100vw-1.5rem))]' : 'w-[min(26rem,calc(100vw-1.5rem))]',
-          )}
+          className="studio-menu-surface z-50 flex max-h-[min(38rem,var(--radix-popover-content-available-height))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl"
           data-model-picker=""
           aria-label="Choose agent and model"
         >
-          <div className="flex min-h-0 flex-1 max-[520px]:flex-col">
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              <div
-                className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-contain border-r bg-muted/30 p-1.5"
-                aria-label="Harnesses"
-              >
-                {onSelectMode &&
-                  (
-                    [
-                      'inherit',
-                      ...(automaticModesEnabled ? (['auto', 'smart'] as const) : []),
-                    ] as const
-                  ).map((mode) => {
-                    const Icon = modelModeIcons[mode]
-                    return (
-                      <Button
-                        key={mode}
-                        aria-label={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                        title={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                        disabled={disabled || choosing}
-                        type="button"
-                        variant="ghost"
-                        className={cn(
-                          'size-9 justify-center p-2 text-xs',
-                          modelSelection === mode &&
-                            'bg-accent text-primary ring-1 ring-inset ring-primary/50',
-                        )}
-                        aria-pressed={modelSelection === mode}
-                        onClick={async () => {
-                          await onSelectMode(mode)
-                        }}
-                      >
-                        <Icon className="size-4 shrink-0" aria-hidden="true" />
-                        <span className="sr-only">
-                          {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                        </span>
-                      </Button>
-                    )
-                  })}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  title="Favorites"
-                  aria-label="Favorite models"
-                  aria-pressed={mode === 'favorites'}
-                  onClick={() => {
-                    setMode('favorites')
-                    setQuery('')
-                    setActive(0)
-                  }}
-                  className={cn(
-                    'size-9 justify-center p-2 text-xs',
-                    mode === 'favorites' && 'bg-accent',
-                  )}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+            <div className="flex shrink-0 flex-col">
+              <div className="grid gap-2 border-b px-3 py-2.5">
+                <div
+                  role="group"
+                  aria-label="Harnesses"
+                  className="flex flex-wrap items-center gap-1"
                 >
-                  <Star className="size-3.5 shrink-0" aria-hidden="true" />
-                  <span className="sr-only">Favorites</span>
-                </Button>
-                {!modelsOnly && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    aria-label="Custom configurations"
-                    title="Custom configurations"
-                    aria-pressed={mode === 'agents'}
-                    className={cn(
-                      'size-9 justify-center p-2 text-xs',
-                      mode === 'agents' && 'bg-accent',
-                    )}
-                    onClick={() => {
-                      setMode('agents')
-                      setQuery('')
-                      setActive(0)
-                    }}
-                  >
-                    <Bot className="size-3.5 shrink-0" aria-hidden="true" />
-                    <span className="sr-only">Custom</span>
-                  </Button>
-                )}
-                <div className="my-1 w-full border-t" />
-                {availableProviders.map((p) => (
-                  <Button
-                    key={p}
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`${providers[p].short} models`}
-                    aria-pressed={
-                      mode === 'models' && p === activeProvider && !activeInstallationId
-                    }
-                    title={`${providers[p].short} · available on this computer`}
-                    className={cn(
-                      'size-9 justify-center p-2',
-                      mode === 'models' &&
-                        p === activeProvider &&
-                        !activeInstallationId &&
-                        (modelSelection
-                          ? 'bg-accent'
-                          : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
-                    )}
-                    onClick={() => {
-                      setProvider(p)
-                      setInstallationId(undefined)
-                      setMode('models')
-                      setActive(0)
-                      setQuery('')
-                    }}
-                  >
-                    <HarnessIcon provider={p} className="size-4" />
-                    <span className="sr-only">{providers[p].short}</span>
-                  </Button>
-                ))}
-                {!availability.loading &&
-                  !availability.error &&
-                  signInProviders.map((p) => (
+                  <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
+                    Harness
+                  </span>
+                  {availableProviders.map((p) => (
                     <Button
                       key={p}
                       type="button"
                       variant="ghost"
-                      disabled
-                      aria-label={`${providers[p].short} requires sign-in`}
-                      title={`Install and authenticate ${providers[p].short} on this computer, then refresh providers`}
-                      className="size-9 justify-center p-2"
+                      aria-label={`${providers[p].short} models`}
+                      aria-pressed={
+                        mode === 'models' && p === activeProvider && !activeInstallationId
+                      }
+                      title={`${providers[p].short} · available on this computer`}
+                      className={cn(
+                        'h-7 gap-1.5 px-2 text-xs',
+                        mode === 'models' &&
+                          p === activeProvider &&
+                          !activeInstallationId &&
+                          (modelSelection
+                            ? 'bg-accent'
+                            : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
+                      )}
+                      onClick={() => {
+                        setProvider(p)
+                        setInstallationId(undefined)
+                        setMode('models')
+                        setActive(0)
+                        setQuery('')
+                      }}
                     >
-                      <HarnessIcon provider={p} className="size-4 shrink-0" />
-                      <span className="sr-only">
-                        {providers[p].short}
-                        <span className="block text-[0.625rem]">Sign in</span>
-                      </span>
+                      <HarnessIcon provider={p} className="size-4" />
+                      <span className="truncate">{providers[p].short}</span>
                     </Button>
                   ))}
-                {availableInstallations.length > 0 && <div className="my-1 w-full border-t" />}
-                {availableInstallations.map((installation) => (
-                  <Button
-                    key={installation.id}
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`${installation.name} models`}
-                    aria-pressed={
-                      mode === 'models' &&
-                      activeProvider === 'acp' &&
-                      activeInstallationId === installation.id
-                    }
-                    title={installation.name}
-                    className={cn(
-                      'size-9',
-                      mode === 'models' &&
+                  {!availability.loading &&
+                    !availability.error &&
+                    signInProviders.map((p) => (
+                      <Button
+                        key={p}
+                        type="button"
+                        variant="ghost"
+                        disabled
+                        aria-label={`${providers[p].short} requires sign-in`}
+                        title={`Install and authenticate ${providers[p].short} on this computer, then refresh providers`}
+                        className="h-7 gap-1.5 px-2 text-xs"
+                      >
+                        <HarnessIcon provider={p} className="size-4 shrink-0" />
+                        <span className="truncate">
+                          {providers[p].short}
+                          <span className="block text-[0.625rem]">Sign in</span>
+                        </span>
+                      </Button>
+                    ))}
+
+                  {availableInstallations.map((installation) => (
+                    <Button
+                      key={installation.id}
+                      type="button"
+                      variant="ghost"
+                      aria-label={`${installation.name} models`}
+                      aria-pressed={
+                        mode === 'models' &&
                         activeProvider === 'acp' &&
-                        activeInstallationId === installation.id &&
-                        (modelSelection
-                          ? 'bg-accent'
-                          : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
-                    )}
-                    onClick={() => {
-                      setProvider('acp')
-                      setInstallationId(installation.id)
-                      setMode('models')
-                      setActive(0)
-                      setQuery('')
-                    }}
-                  >
-                    <span className="text-[10px] font-semibold uppercase">
-                      {installation.name.slice(0, 2)}
-                    </span>
-                  </Button>
-                ))}
-                {!modelsOnly && (
+                        activeInstallationId === installation.id
+                      }
+                      title={installation.name}
+                      className={cn(
+                        'h-7 min-w-0 gap-1.5 px-2 text-xs',
+                        mode === 'models' &&
+                          activeProvider === 'acp' &&
+                          activeInstallationId === installation.id &&
+                          (modelSelection
+                            ? 'bg-accent'
+                            : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
+                      )}
+                      onClick={() => {
+                        setProvider('acp')
+                        setInstallationId(installation.id)
+                        setMode('models')
+                        setActive(0)
+                        setQuery('')
+                      }}
+                    >
+                      <span className="max-w-36 truncate">{installation.name}</span>
+                    </Button>
+                  ))}
+                </div>
+                <div
+                  role="group"
+                  aria-label="Model selection"
+                  className="flex flex-wrap items-center gap-1"
+                >
+                  <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
+                    Selection
+                  </span>
+                  {onSelectMode &&
+                    (
+                      [
+                        'inherit',
+                        ...(automaticModesEnabled ? (['auto', 'smart'] as const) : []),
+                      ] as const
+                    ).map((mode) => {
+                      const Icon = modelModeIcons[mode]
+                      return (
+                        <Button
+                          key={mode}
+                          aria-label={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                          title={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                          disabled={disabled || choosing}
+                          type="button"
+                          variant="ghost"
+                          className={cn(
+                            'h-7 gap-1.5 px-2 text-xs',
+                            modelSelection === mode &&
+                              'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                          )}
+                          aria-pressed={modelSelection === mode}
+                          onClick={async () => {
+                            await onSelectMode(mode)
+                          }}
+                        >
+                          <Icon className="size-4 shrink-0" aria-hidden="true" />
+                          <span className="truncate">
+                            {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                          </span>
+                        </Button>
+                      )
+                    })}
                   <Button
                     type="button"
-                    size="icon"
                     variant="ghost"
-                    aria-label="Agent configuration"
-                    title="Agent configuration"
-                    disabled={disabled || choosing}
-                    className="mt-auto size-9"
+                    title="Favorites"
+                    aria-label="Favorite models"
+                    aria-pressed={mode === 'favorites'}
                     onClick={() => {
-                      setOpen(false)
-                      onConfigure()
+                      setMode('favorites')
+                      setQuery('')
+                      setActive(0)
                     }}
+                    className={cn('h-7 gap-1.5 px-2 text-xs', mode === 'favorites' && 'bg-accent')}
                   >
-                    <Settings2 className="size-4" />
+                    <Star className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">Favorites</span>
                   </Button>
-                )}
+                  {!modelsOnly && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="Custom configurations"
+                      title="Custom configurations"
+                      aria-pressed={mode === 'agents'}
+                      className={cn('h-7 gap-1.5 px-2 text-xs', mode === 'agents' && 'bg-accent')}
+                      onClick={() => {
+                        setMode('agents')
+                        setQuery('')
+                        setActive(0)
+                      }}
+                    >
+                      <Bot className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">Custom</span>
+                    </Button>
+                  )}
+                  {!modelsOnly && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="Agent configuration"
+                      title="Agent configuration"
+                      disabled={disabled || choosing}
+                      className="ml-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                      onClick={() => {
+                        setOpen(false)
+                        onConfigure()
+                      }}
+                    >
+                      <Settings2 className="size-3.5" />
+                      Agent settings
+                    </Button>
+                  )}
+                </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col p-3">
+              <div className="flex min-w-0 shrink-0 flex-col px-3 py-2">
                 <div className="flex shrink-0 items-center gap-2 border-b pb-2">
                   <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
@@ -680,7 +683,7 @@ export function ComposerModelPicker({
                           settings
                         ) {
                           const target = settingsRef.current?.querySelector<HTMLButtonElement>(
-                            'button[tabindex="0"]:not(:disabled)',
+                            'button[tabindex="0"]:not(:disabled), button[data-choice-picker]:not(:disabled)',
                           )
                           if (target) {
                             event.preventDefault()
@@ -761,7 +764,7 @@ export function ComposerModelPicker({
                   id={listId}
                   role="listbox"
                   aria-label={mode === 'agents' ? 'Configurations' : 'Models'}
-                  className="min-h-0 overflow-y-auto overscroll-contain py-2"
+                  className="max-h-40 shrink-0 overflow-y-auto overscroll-contain py-1.5"
                 >
                   {filtered.map((item, index) => {
                     const key = itemKey(item)
@@ -926,7 +929,7 @@ export function ComposerModelPicker({
               <div
                 ref={settingsRef}
                 data-model-picker-effort=""
-                className="flex min-h-0 w-44 shrink-0 flex-col border-l bg-muted/30 max-[520px]:max-h-[45%] max-[520px]:w-full max-[520px]:border-l-0 max-[520px]:border-t"
+                className="flex shrink-0 flex-col border-t"
                 onKeyDown={(event) => {
                   if (event.key === 'ArrowLeft') {
                     event.preventDefault()
@@ -940,7 +943,16 @@ export function ComposerModelPicker({
             )}
           </div>
           {footer && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-t bg-muted/30 px-3 py-2">
+            <div
+              className="flex shrink-0 flex-wrap items-center gap-2 border-t px-3 py-2"
+              role="group"
+              aria-label="Speed and access"
+            >
+              {!modelsOnly && (
+                <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
+                  Access
+                </span>
+              )}
               {footer}
             </div>
           )}

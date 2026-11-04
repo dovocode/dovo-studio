@@ -1,7 +1,7 @@
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
-import { useContext, useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { ConversationVisibilityContext } from '../conversation-visibility'
 import { File, FileImage, X, Pencil } from 'lucide-react'
 import {
@@ -41,6 +41,23 @@ export function MessageAttachments({
   const visibleRef = useRef(visible)
   visibleRef.current = visible
   const generation = useRef(0)
+  const compactRow = useRef<HTMLDivElement>(null)
+  const strip = useRef<HTMLDivElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  useEffect(() => {
+    const row = compactRow.current
+    const list = strip.current
+    if (!compact || files.length !== 1 || !row || !list) {
+      setOverflowing(false)
+      return
+    }
+    const measure = () => setOverflowing(list.scrollWidth > row.clientWidth)
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    observer.observe(list)
+    measure()
+    return () => observer.disconnect()
+  }, [compact, files])
   const [preview, setPreview] = useApplicationState<{
       attachment: Attachment
       data: string
@@ -104,47 +121,71 @@ export function MessageAttachments({
   if (!files.length) return null
   return (
     <div
-      className="flex min-w-0 flex-col gap-1 py-0.5"
+      ref={compactRow}
+      data-compact-attachments={compact || undefined}
+      className={`flex min-w-0 py-0.5 ${compact ? 'flex-row items-center gap-2' : 'flex-col gap-1'}`}
       aria-label={remove ? 'Draft attachments' : 'Message attachments'}
     >
-      <div className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto overscroll-contain">
+      {compact && (
+        <span
+          className={
+            files.length > 1 || overflowing
+              ? 'shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground'
+              : 'sr-only'
+          }
+        >
+          {files.length} {files.length === 1 ? 'file' : 'files'}
+        </span>
+      )}
+      <div
+        ref={strip}
+        className={
+          compact
+            ? 'flex min-w-0 flex-1 flex-row flex-nowrap! gap-1 overflow-x-auto overscroll-contain'
+            : 'flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto overscroll-contain'
+        }
+      >
         {files.map((file) => (
           <div
             key={file.id}
-            className="flex w-full min-w-0 shrink-0 items-center rounded-lg border border-border/60 bg-muted/30 px-1"
+            className={`flex min-w-0 shrink-0 items-center border ${compact ? 'max-w-52 rounded-md border-border/50 bg-muted/20 px-0.5' : 'w-full rounded-lg border-border/60 bg-muted/30 px-1'}`}
           >
             <button
               type="button"
-              className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1 [@media(pointer:coarse)]:min-h-11 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
+              className={`flex min-w-0 flex-1 items-center rounded-md px-1 [@media(pointer:coarse)]:min-h-11 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 ${compact ? 'min-h-7 gap-1.5' : 'min-h-8 gap-2'}`}
               disabled={!connected || busy || disabled}
               onClick={() => void open(file.id)}
               aria-label={`Preview ${file.name}`}
-              title={file.name}
+              title={`${file.name} · ${fileSizeLabel(file.size)}`}
             >
               {isImageAttachment(file) ? (
                 previews?.get(file.id) ? (
                   <img
                     src={previews.get(file.id)}
                     alt={file.name}
-                    className={`${compact ? 'size-6' : 'size-7'} shrink-0 rounded-md border border-border object-cover`}
+                    className={`${compact ? 'size-5 rounded' : 'size-7 rounded-md'} shrink-0 border border-border object-cover`}
                   />
                 ) : (
                   <AttachmentThumbnail taskId={taskId} file={file} compact={compact} />
                 )
               ) : (
                 <span
-                  className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground`}
+                  className={`flex ${compact ? 'size-5 rounded' : 'size-7 rounded-md'} shrink-0 items-center justify-center bg-muted text-muted-foreground`}
                 >
                   <File className="size-4" />
                 </span>
               )}
               <span className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">
+                <span
+                  className={`min-w-0 flex-1 truncate ${compact ? 'text-xs' : 'text-[0.8125rem] font-medium'}`}
+                >
                   {file.name}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {fileSizeLabel(file.size)}
-                </span>
+                {!compact && (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {fileSizeLabel(file.size)}
+                  </span>
+                )}
               </span>
             </button>
             {edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
@@ -338,7 +379,7 @@ function AttachmentThumbnail({
   return (
     <span
       ref={ref}
-      className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted text-muted-foreground`}
+      className={`flex ${compact ? 'size-5 rounded' : 'size-7 rounded-md'} shrink-0 items-center justify-center overflow-hidden border border-border bg-muted text-muted-foreground`}
     >
       {src ? (
         <img src={src} alt={file.name} className="size-full object-cover" />

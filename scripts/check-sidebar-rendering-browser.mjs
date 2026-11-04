@@ -662,8 +662,8 @@ try {
     await compactTitle
       .locator('xpath=ancestor::button[1]')
       .getByLabel('Settled', { exact: true })
-      .evaluate((el) => el.classList.contains('text-status-success')),
-    true,
+      .getAttribute('data-tone'),
+    'success',
   )
   const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
   assert.ok(
@@ -694,9 +694,10 @@ try {
     (await draftGlyph.boundingBox()).x <
       (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
   )
-  assert.notEqual(
+  assert.equal(
     await projectless.evaluate((el) => getComputedStyle(el).backgroundColor),
     'rgba(0, 0, 0, 0)',
+    'Draft rows leave the full-row highlight for selection',
   )
   assert.equal(await projectless.locator('[data-thread-execution] > *').count(), 2)
   const titleLine = await projectless.locator('[data-thread-title]').boundingBox()
@@ -862,6 +863,83 @@ try {
   )
   await terminalRow.waitFor()
   assert.equal(await terminalRow.getByLabel('1 active terminal', { exact: true }).count(), 0)
+
+  // Real rows keep states explicit while sharing the presentation's visual semantics.
+  await page.evaluate(() => {
+    window.setRemoteTasks([])
+    window.setListPreferences({
+      taskGrouping: 'none',
+      workingSection: false,
+      collapsedThreadSections: [],
+    })
+    window.publish(
+      ['review', 'done', 'failed', 'cancelled', 'draft', 'running'].map((status) => ({
+        ...window.initialTasks[0],
+        id: 'state-' + status,
+        title: 'State ' + status,
+        status,
+        lastViewedTurnId: 'state-turn',
+        turns:
+          status === 'draft'
+            ? []
+            : [
+                {
+                  id: 'state-turn',
+                  provider: 'codex',
+                  status: status === 'running' ? 'running' : 'completed',
+                  startedAt: new Date(Date.now() - 600000).toISOString(),
+                  ...(status === 'running'
+                    ? {}
+                    : { finishedAt: new Date(Date.now() - 300000).toISOString() }),
+                },
+              ],
+      })),
+    )
+  })
+  for (const [status, state, tone] of [
+    ['review', 'Review', 'attention'],
+    ['done', 'Finished', 'success'],
+    ['failed', 'Failed', 'danger'],
+    ['cancelled', 'Stopped', 'neutral'],
+    ['draft', 'Draft', 'neutral'],
+    ['running', 'Working', 'active'],
+  ]) {
+    const row = page
+      .locator('.studio-thread-card')
+      .filter({ has: page.getByText('State ' + status, { exact: true }) })
+    const indicator = row.locator('.studio-thread-status')
+    await indicator.waitFor()
+    assert.equal(await indicator.getAttribute('data-thread-state'), state)
+    assert.equal(await indicator.getAttribute('data-tone'), tone)
+    assert.match(await indicator.innerText(), new RegExp('^' + state))
+    assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
+    assert.equal(
+      await row
+        .getByText('main', { exact: true })
+        .getAttribute('class')
+        .then((value) => value.includes('font-mono')),
+      true,
+    )
+    if (status !== 'draft') {
+      assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 1)
+      assert.equal(
+        await row.locator('[data-thread-execution] img, [data-thread-execution] svg').count(),
+        1,
+      )
+    }
+  }
+  const draftStateRow = page
+    .locator('.studio-thread-card')
+    .filter({ has: page.getByText('State draft', { exact: true }) })
+  assert.ok(!(await draftStateRow.getAttribute('class')).includes('bg-status-warning'))
+  assert.equal(await draftStateRow.getByLabel('Draft', { exact: true }).count(), 1)
+  const reviewStateRow = page
+    .locator('.studio-thread-card')
+    .filter({ has: page.getByText('State review', { exact: true }) })
+  await reviewStateRow.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await reviewStateRow.getAttribute('aria-current'), 'true')
+  assert.equal(await page.evaluate(() => window.selected.task.id), 'state-review')
 
   if (process.env.DOVO_UI_SCREENSHOT) {
     await page.evaluate(() => {

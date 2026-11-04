@@ -57,71 +57,89 @@ export function ComposerEffortColumn({
   const tabStop = choices.some((effort) => effort.id === current) ? current : choices[0]?.id
   return (
     <>
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5 text-[0.6875rem] font-medium text-muted-foreground">
         <span>{automatic ? 'Difficulty' : 'Effort'}</span>
         <span className="ml-auto min-w-0 truncate" title={automatic ? 'Automatic' : modelName}>
           {automatic ? 'Automatic' : modelName}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
-        <div
-          role="radiogroup"
-          aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
-          className="grid gap-0.5"
-          onKeyDown={(event) => {
-            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-            const rows = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
-            )
-            const index = rows.findIndex((row) => row === document.activeElement)
-            const next =
-              event.key === 'Home'
-                ? 0
-                : event.key === 'End'
-                  ? rows.length - 1
-                  : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
-            event.preventDefault()
-            event.stopPropagation()
-            rows[next]?.focus()
-          }}
-        >
-          {choices.map((effort) => (
-            <button
-              key={effort.id}
-              type="button"
-              role="radio"
-              aria-checked={effort.id === current}
-              disabled={disabled || (automatic && !onSelectDifficulty)}
-              tabIndex={effort.id === tabStop ? 0 : -1}
-              title={
-                'description' in effort && typeof effort.description === 'string'
-                  ? effort.description
-                  : undefined
-              }
-              className={cn(
-                'flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40',
-                effort.id === current && 'bg-accent text-foreground',
-              )}
-              onClick={() =>
-                void (automatic
-                  ? onSelectDifficulty?.(effort.id)
-                  : onChange({ ...value, reasoning: effort.id }))
-              }
-            >
-              <span className="min-w-0 flex-1 truncate">{effort.name}</span>
-              {effort.id === current ? (
-                <Check className="size-3.5 shrink-0" />
-              ) : !automatic && effort.id === selected?.defaultReasoning ? (
-                <span className="text-xs text-muted-foreground">Default</span>
-              ) : null}
-            </button>
-          ))}
-        </div>
+      <div className="px-3 pb-2.5 pt-2">
+        {choices.length > 6 ? (
+          <ChoicePicker
+            aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
+            value={current}
+            disabled={disabled || (automatic && !onSelectDifficulty)}
+            onValueChange={(reasoning) =>
+              void (automatic ? onSelectDifficulty?.(reasoning) : onChange({ ...value, reasoning }))
+            }
+          >
+            {choices.map((effort) => (
+              <option key={effort.id} value={effort.id}>
+                {effort.name}
+              </option>
+            ))}
+          </ChoicePicker>
+        ) : (
+          <div
+            role="radiogroup"
+            aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
+            className="flex flex-wrap gap-1"
+            onKeyDown={(event) => {
+              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+              const rows = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+              )
+              const index = rows.findIndex((row) => row === document.activeElement)
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? rows.length - 1
+                    : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
+              event.preventDefault()
+              event.stopPropagation()
+              rows[next]?.focus()
+            }}
+          >
+            {choices.map((effort) => (
+              <button
+                key={effort.id}
+                type="button"
+                role="radio"
+                aria-checked={effort.id === current}
+                disabled={disabled || (automatic && !onSelectDifficulty)}
+                tabIndex={effort.id === tabStop ? 0 : -1}
+                title={
+                  'description' in effort && typeof effort.description === 'string'
+                    ? effort.description
+                    : undefined
+                }
+                className={cn(
+                  'flex min-h-7 items-center gap-1 rounded-md border border-transparent px-2 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+                  effort.id === current && 'bg-accent text-foreground',
+                )}
+                onClick={() =>
+                  void (automatic
+                    ? onSelectDifficulty?.(effort.id)
+                    : onChange({ ...value, reasoning: effort.id }))
+                }
+              >
+                <span className="min-w-0 flex-1 truncate">{effort.name}</span>
+                {effort.id === current ? (
+                  <Check className="size-3.5 shrink-0" />
+                ) : !automatic && effort.id === selected?.defaultReasoning ? (
+                  <span className="text-xs text-muted-foreground">Default</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        )}
         {modes && !automatic && value.provider === 'codex' && (
-          <label className="mt-2 grid gap-1 border-t px-2 pt-2 text-xs text-muted-foreground">
+          <label className="mt-2 flex items-center gap-3 border-t pt-2 text-xs text-muted-foreground">
             Daybreak
             <ChoicePicker
               aria-label="Daybreak mode"
+              className="ml-auto h-8 w-44"
               value={value.cyberAccessProgram ?? ''}
               disabled={disabled}
               onValueChange={(program) =>

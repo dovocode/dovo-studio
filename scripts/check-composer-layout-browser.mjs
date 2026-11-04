@@ -7,9 +7,10 @@ import { chromium } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
 if (screenshots) mkdirSync(screenshots, { recursive: true })
-const css = readdirSync(root + 'apps/desktop/dist/assets')
+const assets = process.env.DOVO_BROWSER_ASSETS ?? root + 'apps/desktop/dist/assets'
+const css = readdirSync(assets)
   .filter((file) => file.endsWith('.css'))
-  .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
+  .map((file) => readFileSync(assets + '/' + file, 'utf8'))
   .join('\n')
 const mocks = {
   '@dovo/studio-core': `
@@ -202,7 +203,10 @@ try {
       surface.height <= 48,
       'Empty, unfocused composer is a single row: ' + JSON.stringify(surface),
     )
-    assert.ok(editor.width > 70, 'The idle input leaves room for its placeholder')
+    assert.ok(
+      editor.width > 70,
+      'The idle input leaves room for its placeholder: ' + JSON.stringify({ surface, editor }),
+    )
     assert.ok(editor.x >= add.x + add.width, 'The placeholder follows the plus control')
     assert.ok(Math.abs(editor.y + editor.height / 2 - (add.y + add.height / 2)) < 2)
     assert.ok(Math.abs(editor.y + editor.height / 2 - (actions.y + actions.height / 2)) < 2)
@@ -482,10 +486,10 @@ try {
       )
       if (device.name === 'desktop' && project === 'No project') {
         await input.focus()
-        await input.pressSequentially('Make both composers uniform using this styling.', {
+        await input.pressSequentially('Make both composers uniform.', {
           delay: 1,
         })
-      } else await input.fill('Make both composers uniform using this styling.')
+      } else await input.fill('Make both composers uniform.')
       await page.locator('[data-saved="true"]').waitFor()
       await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
       const after = await geometry()
@@ -502,7 +506,7 @@ try {
       assert(after.heroY > 48)
       assert(after.composerY > after.heroY)
       assert(after.composerY + after.composerHeight < device.height - 40)
-      assert.equal(await input.inputValue(), 'Make both composers uniform using this styling.')
+      assert.equal(await input.inputValue(), 'Make both composers uniform.')
       assert(await input.evaluate((element) => document.activeElement === element))
       assert.equal(
         await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
@@ -545,7 +549,8 @@ try {
         }
       })
       assert.equal(stopStyle.type, 'button', 'Stop must not submit the message form')
-      assert.equal(stopStyle.width, '32px')
+      assert.ok(parseFloat(stopStyle.width) >= 60, 'Stop keeps a readable visible label')
+      assert.equal((await stop.textContent()).trim(), 'Stop')
       assert.equal(stopStyle.height, '32px')
       assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
       assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
@@ -608,8 +613,12 @@ try {
 
         const contrast = await stop.evaluate((button) => {
           const style = getComputedStyle(button)
+          const surface = getComputedStyle(button.closest('form')).backgroundColor
           const context = document.createElement('canvas').getContext('2d')
           const luminance = (color) => {
+            context.clearRect(0, 0, 1, 1)
+            context.fillStyle = surface
+            context.fillRect(0, 0, 1, 1)
             context.fillStyle = color
             context.fillRect(0, 0, 1, 1)
             const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((value) => {
@@ -618,7 +627,7 @@ try {
             })
             return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
           }
-          const icon = luminance(style.color),
+          const icon = luminance(getComputedStyle(button.querySelector('.lucide-square')).color),
             background = luminance(style.backgroundColor)
           return (Math.max(icon, background) + 0.05) / (Math.min(icon, background) + 0.05)
         })

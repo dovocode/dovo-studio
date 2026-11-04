@@ -31,6 +31,7 @@ import {
   CloudOff,
   CircleX,
   CircleStop,
+  ClipboardCheck,
   FilePenLine,
   MessageCircleQuestion,
   MessageCircleDashed,
@@ -54,6 +55,8 @@ import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   Done: CircleCheck,
+  Finished: CircleCheck,
+  Review: ClipboardCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -219,15 +222,10 @@ function TaskRowView({
     : compactStatus
   const StatusIcon = offline
     ? CloudOff
-    : ['Review', 'Finished', 'Draft'].includes(presentation.state)
+    : presentation.state === 'Draft'
       ? undefined
       : (statusIcons[presentation.state] ?? CircleDashed)
-  const statusTone = cn(
-    !offline && presentation.state === 'Working' && 'text-primary',
-    !offline && ['Done', 'Settled'].includes(presentation.state) && 'text-status-success',
-    !offline && presentation.state === 'Failed' && 'text-destructive',
-    !offline && presentation.state === 'Needs input' && 'text-status-warning',
-  )
+  const statusTone = offline ? 'neutral' : presentation.tone
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -248,7 +246,7 @@ function TaskRowView({
   const pullIndicators = !!linkedPulls.length && (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-0.5',
+        'inline-flex shrink-0 items-center gap-0.5 font-mono tabular-nums',
         pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
       )}
       aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
@@ -312,9 +310,7 @@ function TaskRowView({
                   ? 'mb-0'
                   : highlighted
                     ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                    : draft
-                      ? 'bg-status-warning/5 hover:bg-status-warning/10 group-hover/task:bg-status-warning/10'
-                      : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+                    : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
               )}
               onClick={onSelect}
               disabled={disabled}
@@ -339,7 +335,7 @@ function TaskRowView({
                     {draft && (
                       <FilePenLine
                         aria-label="Draft"
-                        className="size-3.5 shrink-0 text-status-warning"
+                        className="size-3.5 shrink-0 text-muted-foreground"
                       />
                     )}
                     <span
@@ -350,11 +346,18 @@ function TaskRowView({
                     </span>
                     {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
                     <span
-                      className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}
+                      className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                      data-tone={statusTone}
+                      data-thread-state={offline ? 'Offline' : presentation.state}
                       aria-label={groupedStatus ? status : undefined}
                       title={groupedStatus ? status : undefined}
                     >
-                      {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
+                      {StatusIcon && (
+                        <StatusIcon
+                          className="studio-thread-status-icon size-3.5"
+                          aria-hidden="true"
+                        />
+                      )}
                       {visibleStatus}
                     </span>
                   </span>
@@ -377,17 +380,21 @@ function TaskRowView({
                 </span>
                 {compact && StatusIcon && (
                   <span
-                    className={cn('shrink-0', statusTone)}
+                    className="studio-thread-status shrink-0"
+                    data-tone={statusTone}
+                    data-thread-state={offline ? 'Offline' : presentation.state}
                     aria-label={compactStatus}
                     title={status}
                   >
-                    <StatusIcon className="size-3.5" aria-hidden="true" />
+                    <StatusIcon className="studio-thread-status-icon size-3.5" aria-hidden="true" />
                   </span>
                 )}
                 {!compact && !general && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                    <span className={cn('min-w-0 flex-1 truncate', branch && 'font-mono')}>
+                      {branch || 'Local checkout'}
+                    </span>
                     {pullIndicators}
                     <span className="flex items-center gap-1">
                       {executionIcons}

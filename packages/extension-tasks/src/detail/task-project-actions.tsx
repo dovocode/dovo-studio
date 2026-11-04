@@ -50,6 +50,7 @@ export function TaskProjectActions({
   const repository = workspace.repositories.find((item) => item.id === task.repositoryId)
   if (!repository) return null
   const actions = repository.actions ?? []
+  const firstAction = actions[0]
   // A worktree task gets its checkout with the first message; before that there is nowhere to run.
   const ready =
     connected &&
@@ -66,71 +67,99 @@ export function TaskProjectActions({
   }
   return (
     <>
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
+      <div className={panel ? 'flex min-w-0 items-center gap-1' : undefined}>
+        {panel && firstAction && (
           <Button
-            variant={panel ? 'ghost' : 'outline'}
+            variant="ghost"
             size="sm"
-            className={panel ? 'studio-project-row w-full' : 'h-7 gap-1 px-2 text-[0.6875rem]'}
-            title={error || 'Project actions'}
-            aria-label="Project actions"
+            className="studio-project-row min-w-0 flex-1"
+            disabled={!ready}
+            title={error || firstAction.command}
+            onClick={() => run(firstAction)}
           >
-            <Play className="size-3.5" />
-            <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
-              Project actions
-            </span>
-            <ChevronDown className="size-3.5 text-muted-foreground" />
+            <Play className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">{firstAction.name}</span>
           </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            sideOffset={4}
-            align="end"
-            className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
-          >
-            {actions.map((action) => (
-              <DropdownMenu.Item
-                key={action.id}
-                className={item}
-                disabled={!ready}
-                onSelect={() => run(action)}
-              >
-                <Play className="size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{action.name}</span>
-                <code className="max-w-32 truncate text-[0.625rem] text-muted-foreground">
-                  {action.command.split('\n')[0]}
-                </code>
+        )}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              variant={panel ? 'ghost' : 'outline'}
+              size="sm"
+              className={
+                panel
+                  ? actions.length
+                    ? 'size-8 shrink-0 p-0'
+                    : 'studio-project-row w-full'
+                  : 'h-7 gap-1 px-2 text-[0.6875rem]'
+              }
+              title={error || 'Project actions'}
+              aria-label="Project actions"
+            >
+              {(!panel || !actions.length) && <Play className="size-3.5" />}
+              {(!panel || !actions.length) && (
+                <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
+                  Project actions
+                </span>
+              )}
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              sideOffset={4}
+              align="end"
+              className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
+            >
+              {actions.map((action) => (
+                <DropdownMenu.Item
+                  key={action.id}
+                  className={item}
+                  disabled={!ready}
+                  onSelect={() => run(action)}
+                >
+                  <Play className="size-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{action.name}</span>
+                  <code className="max-w-32 truncate text-[0.625rem] text-muted-foreground">
+                    {action.command.split('\n')[0]}
+                  </code>
+                </DropdownMenu.Item>
+              ))}
+              {!actions.length && (
+                <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
+                  No actions for {repository.name} yet.
+                </p>
+              )}
+              {!ready && !!actions.length && (
+                <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
+                  {connected ? 'Available after the first message.' : 'Connect to run actions.'}
+                </p>
+              )}
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <DropdownMenu.Item className={item} onSelect={() => setEditing(true)}>
+                <Settings2 className="size-3.5" /> Edit project actions…
               </DropdownMenu.Item>
-            ))}
-            {!actions.length && (
-              <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-                No actions for {repository.name} yet.
-              </p>
-            )}
-            {!ready && !!actions.length && (
-              <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-                {connected ? 'Available after the first message.' : 'Connect to run actions.'}
-              </p>
-            )}
-            <DropdownMenu.Separator className="my-1 h-px bg-border" />
-            <DropdownMenu.Item className={item} onSelect={() => setEditing(true)}>
-              <Settings2 className="size-3.5" /> Edit project actions…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setPrompts(true)}>
-              <Hash className="size-3.5" /> Edit saved prompts…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
-              <LayoutTemplate className="size-3.5" /> Manage thread templates…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
-              <ShieldCheck className="size-3.5" /> Manage approval rules…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
-              <FileText className="size-3.5" /> Edit project instructions…
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+              <DropdownMenu.Item className={item} onSelect={() => setPrompts(true)}>
+                <Hash className="size-3.5" /> Edit saved prompts…
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
+                <LayoutTemplate className="size-3.5" /> Manage thread templates…
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
+                <ShieldCheck className="size-3.5" /> Manage approval rules…
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
+                <FileText className="size-3.5" /> Edit project instructions…
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+      {panel && error && (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {error}
+        </p>
+      )}
       {templates && (
         <TaskTemplatesDialog repositoryId={repository.id} onClose={() => setTemplates(false)} />
       )}

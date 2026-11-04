@@ -66,7 +66,7 @@ import {updateAppPreferences} from '@dovo/studio-core';
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
 updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
-function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("idle")?"idle":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
+function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     plugins: [
@@ -136,6 +136,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     : [
         ['welcome', 'tasks'],
         ['conversation', 'tasks', 'preview-task'],
+        ['busy-conversation', 'tasks', 'preview-task', undefined, 'busy'],
+        ['busy-unified-workspace', 'tasks', 'preview-task', 'unified', 'busy'],
+        ['busy-long-draft', 'tasks', 'preview-task', undefined, 'busy-long-draft'],
+        ['busy-mid-scroll', 'tasks', 'preview-task', 'mid-scroll', 'busy'],
         ['pulls', 'pulls'],
         ['settings', 'general'],
         ...(all
@@ -162,7 +166,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           : []),
       ]
   for (const mode of ['dark', 'light'])
-    for (const [name, route, thread, action] of screens.filter(
+    for (const [name, route, thread, action, state] of screens.filter(
       ([name]) =>
         !process.argv.some((arg) => arg.startsWith('--only=')) ||
         process.argv
@@ -172,7 +176,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .includes(name),
     )) {
       await page.goto(
-        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}`,
+        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy' ? '&busy' : ''}`,
       )
       await page.locator('.studio').waitFor()
       await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
@@ -181,7 +185,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .getByRole('textbox', { name: 'Message thread', exact: true })
           .waitFor({ state: 'visible' })
       }
-      if (action && !action.startsWith('pull-')) {
+      if (action && !action.startsWith('pull-') && action !== 'mid-scroll') {
         if (['terminal', 'unified'].includes(action))
           await page.getByRole('button', { name: 'Show bottom terminal', exact: true }).click()
         if (action === 'info') {
@@ -234,6 +238,101 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       )
       const alerts = await page.getByRole('alert').allTextContents()
       if (!all) assert.deepEqual(alerts, [], `${name}: no preview errors`)
+      if (state?.startsWith('busy')) {
+        const text = await page.locator('body').innerText()
+        for (const expected of [
+          'Client portal',
+          'Operations API',
+          'Review checklist',
+          'PR #42',
+          '2 queued messages',
+        ])
+          assert.ok(text.includes(expected), `${name}: busy workspace includes ${expected}`)
+        assert.ok(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${name}: no page overflow`,
+        )
+      }
+      if (name === 'busy-long-draft') {
+        const editor = page.getByRole('textbox', { name: 'Message thread', exact: true })
+        assert.equal(
+          (await editor.innerText()).split('\n').filter((line) => line.trim()).length,
+          3,
+          'Draft contains three real text lines',
+        )
+        const [input, attachment, footer, surface] = await Promise.all([
+          editor.boundingBox(),
+          page.getByLabel('Draft attachments', { exact: true }).boundingBox(),
+          page.locator('[data-composer-footer]').boundingBox(),
+          page.locator('.studio-composer').boundingBox(),
+        ])
+        const lineHeight = await editor.evaluate((element) =>
+          parseFloat(getComputedStyle(element).lineHeight),
+        )
+        assert.ok(input.height >= lineHeight * 3 - 1, 'Editor displays all three draft lines')
+        assert.ok(attachment.height > 0, 'Draft attachment is visible')
+        assert.ok(
+          attachment.y + attachment.height <= input.y + 1 ||
+            input.y + input.height <= attachment.y + 1,
+          'Draft editor and attachment chip do not overlap',
+        )
+        assert.ok(
+          input.y + input.height <= footer.y + 1,
+          'Draft editor remains above composer controls',
+        )
+        for (const box of [input, attachment, footer])
+          assert.ok(
+            box.y >= surface.y - 1 && box.y + box.height <= surface.y + surface.height + 1,
+            'Draft content stays within the composer',
+          )
+      }
+      if (name === 'busy-mid-scroll') {
+        const viewport = page.locator('.studio-conversation-content').locator('..')
+        const area = await viewport.boundingBox()
+        const range = await viewport.evaluate(
+          (element) => element.scrollHeight - element.clientHeight,
+        )
+        assert.ok(
+          area.height > 200 && range > 200,
+          'Conversation has a useful scroll viewport and overflow',
+        )
+        await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2)
+        await page.mouse.wheel(0, -Math.round(range / 2))
+        await page.waitForFunction(() => {
+          const viewport = document.querySelector('.studio-conversation-content')?.parentElement
+          return (
+            viewport &&
+            viewport.scrollTop > 10 &&
+            viewport.scrollTop < viewport.scrollHeight - viewport.clientHeight - 10
+          )
+        })
+        const geometry = await viewport.evaluate((element) => {
+          const content = element.firstElementChild.getBoundingClientRect()
+          const view = element.getBoundingClientRect()
+          return {
+            overflow: getComputedStyle(element).overflowY,
+            topClipped: content.top < view.top,
+            bottomClipped: content.bottom > view.bottom,
+          }
+        })
+        assert.ok(
+          ['auto', 'scroll'].includes(geometry.overflow),
+          'Conversation clips within its normal scroll viewport',
+        )
+        assert.ok(
+          geometry.topClipped && geometry.bottomClipped,
+          'Mid-scroll content extends beyond both viewport boundaries',
+        )
+        const composer = await page.locator('.task-composer').boundingBox()
+        assert.ok(
+          area.y + area.height <= composer.y + 1,
+          'Scroll viewport remains above the composer; clipped content is expected',
+        )
+        await page
+          .getByRole('button', { name: 'Scroll to latest message', exact: true })
+          .waitFor({ state: 'visible' })
+        await page.mouse.move(0, 0)
+      }
       const controls = await page
         .locator('button, input, textarea, select, [role="switch"], [role="tab"]')
         .evaluateAll((elements) =>
@@ -268,7 +367,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           ),
           '#080808',
         )
-      if (route === 'tasks') {
+      if (route === 'tasks' && name !== 'busy-long-draft') {
         const placeholder = await page
           .getByRole('textbox', { name: 'Message thread', exact: true })
           .evaluate((el) => getComputedStyle(el, '::before').content)

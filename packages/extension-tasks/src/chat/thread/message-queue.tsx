@@ -296,7 +296,7 @@ export function MessageQueue({
           variant={pausedHead || task.queuePaused ? 'secondary' : 'ghost'}
           className={
             embedded
-              ? 'absolute right-11 top-2 size-7 shrink-0 rounded-md'
+              ? 'absolute right-10 top-0.5 size-7 shrink-0 rounded-md text-muted-foreground'
               : 'size-7 shrink-0 rounded-md'
           }
           disabled={
@@ -351,7 +351,7 @@ export function MessageQueue({
           </QueueSectionTrigger>
         )}
         <QueueList
-          className="mt-0 max-h-[180px]"
+          className="mt-0 max-h-40"
           onDragLeave={(event) => {
             if (
               !event.currentTarget.contains(
@@ -377,7 +377,7 @@ export function MessageQueue({
                 ref={message.id === highlightedId ? highlightedRow : undefined}
                 aria-label={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}`}
                 className={[
-                  'group/queue-row relative min-h-9 min-w-0 gap-2 rounded-none px-3 py-1.5 focus-within:bg-muted @max-xl:flex-wrap [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40',
+                  'group/queue-row relative min-h-8 min-w-0 gap-1.5 rounded-none px-3 py-0.5 focus-within:bg-muted [@media(hover:none)]:flex-wrap [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/30',
                   message.id === highlightedId
                     ? 'bg-primary/15 ring-1 ring-inset ring-primary'
                     : '',
@@ -436,7 +436,7 @@ export function MessageQueue({
                   <IconButton
                     type="button"
                     label={`Drag queued message ${index + 1} to reorder`}
-                    className={`-mr-1 size-5 cursor-grab text-muted-foreground/60 active:cursor-grabbing ${rowActionClass}`}
+                    className="-mr-1 size-5 cursor-grab text-muted-foreground opacity-40 transition-opacity active:cursor-grabbing group-hover/queue-row:opacity-100 group-focus-within/queue-row:opacity-100 [@media(hover:none)]:opacity-100"
                     disabled={!canMove(message.id)}
                     draggable={canMove(message.id)}
                     onDragStart={(event) => {
@@ -522,7 +522,7 @@ export function MessageQueue({
                     </IconButton>
                   </div>
                 )}
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1 @max-xl:min-w-20">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 [@media(hover:none)]:min-w-20">
                   {source && source.kind !== 'user' && (
                     <div className="flex min-w-0 [&>*]:font-medium [&>*]:text-foreground">
                       <MessageSource source={source} />
@@ -581,7 +581,7 @@ export function MessageQueue({
                 )}
                 <div
                   data-queue-actions
-                  className={`pointer-events-none relative z-10 flex shrink-0 flex-wrap justify-end items-center gap-1 rounded-md bg-muted p-1 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto @max-xl:order-last @max-xl:basis-full [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
+                  className={`pointer-events-none relative z-10 flex shrink-0 flex-wrap justify-end items-center gap-0.5 rounded-md bg-muted p-0.5 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto [@media(hover:none)]:order-last [@media(hover:none)]:basis-full [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
                 >
                   {watchMessage(message) && (
                     <IconButton

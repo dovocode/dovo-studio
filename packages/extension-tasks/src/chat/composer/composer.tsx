@@ -1106,6 +1106,19 @@ export function Composer({
       />
     </>
   )
+  const submitDisabled =
+    (!!editing && !task.queue?.some((message) => message.id === editing.message.id)) ||
+    !!policyIssue ||
+    !!planIssue ||
+    (!composerDraft.hasText && !(editing ? editing.files.length : attachments.files.length)) ||
+    sending ||
+    !!awaitingQueuedSubmission ||
+    hasFailedSubmissionAttachments ||
+    stopping ||
+    attachments.busy ||
+    !!task.archivedAt ||
+    (!!connection && !connected) ||
+    (firstMessage && (!connected || !task.repositoryId || !agent))
   const settingsContainer = projectSettings?.container ?? infoContainer
   const workspaceSettings = workspaceControls?.(accessSlot) ?? (
     <ComposerWorkspace
@@ -1301,21 +1314,23 @@ export function Composer({
             )}
             {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
               <div
-                className="composer-send-group flex shrink-0 items-center"
+                className="composer-send-group flex shrink-0 items-center data-[ready]:bg-primary!"
                 data-options={showSendOptions || undefined}
+                data-ready={!submitDisabled || undefined}
                 role="group"
                 aria-label="Send message"
               >
                 <ComposerSubmit
                   busy={sending}
-                  data-labeled={editing || task.status === 'running' || stageFirst ? '' : undefined}
-                  className={
-                    editing
-                      ? 'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]'
-                      : task.status === 'running' || stageFirst
-                        ? 'h-8 w-auto gap-1.5 rounded-full bg-muted px-3 text-[0.6875rem] text-foreground hover:bg-accent'
-                        : undefined
-                  }
+                  data-labeled=""
+                  className={cn(
+                    'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]',
+                    !editing &&
+                      task.status !== 'running' &&
+                      !stageFirst &&
+                      'max-[360px]:w-8 max-[360px]:px-0',
+                    submitDisabled && 'bg-muted text-muted-foreground hover:bg-muted',
+                  )}
                   title={
                     editing
                       ? 'Save changes (Enter)'
@@ -1344,22 +1359,7 @@ export function Composer({
                                 ? 'Send to agent'
                                 : 'Save message to thread'
                   }
-                  disabled={
-                    (!!editing &&
-                      !task.queue?.some((message) => message.id === editing.message.id)) ||
-                    !!policyIssue ||
-                    !!planIssue ||
-                    (!composerDraft.hasText &&
-                      !(editing ? editing.files.length : attachments.files.length)) ||
-                    sending ||
-                    !!awaitingQueuedSubmission ||
-                    hasFailedSubmissionAttachments ||
-                    stopping ||
-                    attachments.busy ||
-                    !!task.archivedAt ||
-                    (!!connection && !connected) ||
-                    (firstMessage && (!connected || !task.repositoryId || !agent))
-                  }
+                  disabled={submitDisabled}
                 >
                   {sending ? (
                     <LoaderCircle className="size-4 animate-spin" />
@@ -1370,11 +1370,19 @@ export function Composer({
                   ) : (
                     <ArrowUp className={cn('size-4', backgroundPreview && 'rotate-45')} />
                   )}
-                  {editing
-                    ? 'Save changes'
-                    : stageFirst
-                      ? 'Add to queue'
-                      : task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
+                  {editing ? (
+                    'Save changes'
+                  ) : stageFirst ? (
+                    'Queue'
+                  ) : task.status === 'running' ? (
+                    steerFirst ? (
+                      'Steer'
+                    ) : (
+                      'Queue'
+                    )
+                  ) : (
+                    <span className="max-[360px]:sr-only">Send</span>
+                  )}
                 </ComposerSubmit>
                 {showSendOptions && (
                   <DropdownMenu.Root>
@@ -1384,7 +1392,10 @@ export function Composer({
                         variant="ghost"
                         aria-label="More message actions"
                         title="Other ways to send this message"
-                        className="composer-send-options h-8 w-5 rounded-none p-0 text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                        className={cn(
+                          'composer-send-options h-8 w-5 rounded-none p-0 text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground',
+                          !submitDisabled && 'text-primary-foreground!',
+                        )}
                         disabled={
                           !connected ||
                           sending ||
@@ -1512,16 +1523,18 @@ export function Composer({
             {task.status === 'running' && (
               <ComposerSubmit
                 type="button"
-                variant="destructive"
+                variant="outline"
                 data-composer-stop=""
-                className="studio-destructive-accent"
+                data-labeled=""
+                className="studio-destructive-accent h-8 w-auto gap-1.5 rounded-full border border-border bg-transparent px-2.5 text-xs text-foreground shadow-none hover:bg-muted"
                 aria-label="Stop"
                 aria-busy={stopping}
                 title="Stop the agent and pause queued messages"
                 disabled={!connected || stopping || task.archived}
                 onClick={() => void stop()}
               >
-                <Square className="size-3.5 fill-current" />
+                <Square className="size-3.5 fill-current text-destructive" />
+                Stop
               </ComposerSubmit>
             )}
           </>

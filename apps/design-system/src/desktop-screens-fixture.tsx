@@ -22,6 +22,7 @@ import {
 } from './desktop-screens-data'
 import sampleImage from './assets/ui-polish-image.png'
 import { ComposerFixtureProvider } from './composer-fixture'
+import { busyDesktopDraft, busyDesktopWorkspace } from './desktop-busy-workspace'
 
 const readCache: RuntimeReadCache = {
   closed: false,
@@ -37,7 +38,15 @@ const readCache: RuntimeReadCache = {
   close: async () => undefined,
 }
 
-export type DesktopScreenState = 'populated' | 'idle' | 'empty' | 'loading' | 'error' | 'offline'
+export type DesktopScreenState =
+  | 'populated'
+  | 'busy'
+  | 'busy-long-draft'
+  | 'idle'
+  | 'empty'
+  | 'loading'
+  | 'error'
+  | 'offline'
 
 function ScreenWorkspace({
   children,
@@ -50,11 +59,18 @@ function ScreenWorkspace({
 }) {
   const root = useWorkspace()
   const value = useMemo<WorkspaceContextValue>(() => {
+    const source =
+      state === 'busy' || state === 'busy-long-draft'
+        ? busyDesktopWorkspace(
+            root.workspace,
+            state === 'busy-long-draft' ? busyDesktopDraft : undefined,
+          )
+        : root.workspace
     const workspace =
       state === 'empty'
         ? { ...root.workspace, tasks: [], repositories: [], agents: [], automations: [] }
         : {
-            ...root.workspace,
+            ...source,
             tasks:
               state === 'idle'
                 ? root.workspace.tasks.map((task) => ({
@@ -64,10 +80,10 @@ function ScreenWorkspace({
                     pullRequest: undefined,
                     workItem: undefined,
                   }))
-                : root.workspace.tasks,
+                : source.tasks,
             // Live runtimes always include a scratch project for the welcome composer.
             repositories: [
-              ...root.workspace.repositories,
+              ...source.repositories,
               {
                 id: 'preview-scratch',
                 kind: 'scratch' as const,

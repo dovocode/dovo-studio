@@ -39,6 +39,7 @@ import {
   DialogDescription,
   DropdownMenu,
   RepositoryOpenItems,
+  IconButton,
 } from '@dovo/studio-ui'
 import {
   FolderOpen,
@@ -49,6 +50,11 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   FileDiff,
+  Terminal,
+  MoreHorizontal,
+  CheckCircle2,
+  ArrowUp,
+  Plus,
 } from 'lucide-react'
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { gitPrimaryAction } from './git-primary-action'
@@ -206,6 +212,17 @@ export function TaskProjectPanel({
     }
   }
   const primary = gitPrimaryAction(gitState, linkedPulls.length > 0)
+  const hasPrimaryAction = primary === 'Open PR' || !!gitState?.dirty || pushAvailable
+  const gitSummary = gitError
+    ? `Git status unavailable: ${gitError}`
+    : !connected
+      ? 'Connect to refresh Git status'
+      : !gitReady
+        ? 'Checkout starts with the first message'
+        : !gitState
+          ? 'Checking Git status…'
+          : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`
+  const linkedProjects = task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? []
   const openPull = (url: string) => {
     if (!onPullLink?.(url) && !host.openPullLink?.(url)) {
       if (host.openExternalLink) void host.openExternalLink(url)
@@ -257,30 +274,56 @@ export function TaskProjectPanel({
   const gitActions = (
     <div className="grid gap-2">
       {repo && !repo.kind && (
-        <div className="studio-project-split-row">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="studio-project-row min-w-0 flex-1"
-            disabled={
-              primary === 'Open PR' ? commitBusy : !mutable || (!gitState?.dirty && !pushAvailable)
-            }
-            onClick={primaryAction}
-            title={
-              gitError ||
-              (commitBusy
+        <div className="flex min-w-0 items-center gap-2" data-thread-git-actions>
+          {hasPrimaryAction ? (
+            <Button
+              size="sm"
+              className="studio-thread-primary-action h-9 min-w-0 flex-1 gap-2 text-xs"
+              disabled={
+                primary === 'Open PR'
+                  ? commitBusy
+                  : !mutable || (!gitState?.dirty && !pushAvailable)
+              }
+              onClick={primaryAction}
+              title={
+                gitError ||
+                (commitBusy
+                  ? 'Updating Git status…'
+                  : !gitState
+                    ? 'Checking Git status…'
+                    : primary === 'Open PR'
+                      ? primary
+                      : !gitState.dirty && !pushAvailable
+                        ? 'No changes to commit or push'
+                        : primary)
+              }
+            >
+              {primary === 'Open PR' ? (
+                <GitPullRequest size={15} />
+              ) : primary === 'Push branch' ? (
+                <ArrowUp size={15} />
+              ) : (
+                <GitCommitHorizontal size={15} />
+              )}
+              {commitBusy ? 'Working…' : primary}
+            </Button>
+          ) : (
+            <p className="min-w-0 flex-1 text-xs text-muted-foreground" role="status">
+              {commitBusy
                 ? 'Updating Git status…'
-                : !gitState
-                  ? 'Checking Git status…'
-                  : primary === 'Open PR'
-                    ? primary
-                    : !gitState.dirty && !pushAvailable
-                      ? 'No changes to commit or push'
-                      : primary)
-            }
-          >
-            <GitCommitHorizontal size={18} /> {commitBusy ? 'Working…' : primary}
-          </Button>
+                : gitError
+                  ? 'Git status unavailable'
+                  : !connected
+                    ? 'Connect to use Git actions'
+                    : !gitReady
+                      ? 'Waiting for the first message'
+                      : !gitState
+                        ? 'Checking Git status…'
+                        : gitState.behind
+                          ? 'Pull upstream changes before pushing'
+                          : 'No changes to commit'}
+            </p>
+          )}
           <DropdownMenu.Root
             onOpenChange={(open) => {
               if (open && gitReady)
@@ -290,14 +333,9 @@ export function TaskProjectPanel({
             }}
           >
             <DropdownMenu.Trigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="studio-project-chevron"
-                aria-label="Git actions"
-              >
-                <ChevronDown className="size-3" />
-              </Button>
+              <IconButton label="Git actions" className="size-8 shrink-0">
+                <MoreHorizontal className="size-4" />
+              </IconButton>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
@@ -346,11 +384,7 @@ export function TaskProjectPanel({
         </div>
       )}
       {commitStatus && (
-        <span
-          role="status"
-          className="max-w-40 truncate text-[0.625rem] text-muted-foreground"
-          title={commitStatus}
-        >
+        <span role="status" className="text-xs text-muted-foreground">
           {commitStatus}
         </span>
       )}
@@ -368,7 +402,7 @@ export function TaskProjectPanel({
         <div className="studio-project-section">
           {show('project') && (
             <div
-              className="mb-4 flex min-w-0 items-center gap-3"
+              className="flex min-w-0 items-center gap-2.5"
               title={[
                 executionHost ?? 'Selected computer',
                 snapshot?.releaseVersion,
@@ -378,12 +412,12 @@ export function TaskProjectPanel({
                 .join(' · ')}
             >
               {repo?.kind === 'scratch' ? (
-                <MessageCircleDashed className="size-9 shrink-0 text-muted-foreground" />
+                <MessageCircleDashed className="size-8 shrink-0 text-muted-foreground" />
               ) : (
-                <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
+                <ProjectIcon repository={repo} className="size-8 shrink-0 rounded-lg" />
               )}
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-base font-semibold text-foreground">
+                <h2 className="truncate text-sm font-semibold text-foreground">
                   {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
                 </h2>
                 <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -398,29 +432,29 @@ export function TaskProjectPanel({
             </div>
           )}
           {show('project') && repo && !repo.kind && (
-            <div className="studio-project-checkout">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
+            <div className="studio-thread-checkout-summary mt-3 min-w-0">
+              <h3 className="mb-1 text-[11px] font-medium text-muted-foreground">
                 {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
-              </p>
-              <p
-                className="studio-project-path mt-2 truncate font-mono text-xs text-muted-foreground"
-                title={task.existingWorktreePath || repo.path}
-              >
-                {task.existingWorktreePath || repo.path}
-              </p>
+              </h3>
               <TaskBranchMenu
                 panel
                 task={task}
                 label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
               />
-              <p className="mt-2 text-[11px] text-muted-foreground" role="status">
-                {gitError
-                  ? `Git status unavailable: ${gitError}`
-                  : !connected
-                    ? 'Connect to refresh Git status'
-                    : !gitState
-                      ? 'Checking Git status…'
-                      : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
+              <p
+                className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                role="status"
+              >
+                {gitState && !gitError && connected && !gitState.dirty && (
+                  <CheckCircle2 className="size-3 shrink-0 text-status-success" />
+                )}
+                {gitSummary}
+              </p>
+              <p
+                className="studio-project-path mt-1.5 truncate text-[11px] text-muted-foreground"
+                title={task.existingWorktreePath || repo.path}
+              >
+                {task.existingWorktreePath || repo.path}
               </p>
             </div>
           )}
@@ -431,60 +465,73 @@ export function TaskProjectPanel({
       <>
         <div className="studio-project-section">
           {show('openIn') && repo && (
-            <div className="studio-project-split-row">
-              {preferredRepositoryOpenTarget && (
+            <div className="flex min-w-0 items-center gap-2" data-thread-checkout-tools>
+              <div className="studio-project-split-row min-w-0 flex-1">
+                {preferredRepositoryOpenTarget && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="studio-project-row min-w-0 flex-1"
+                    disabled={!connected || openBusy}
+                    onClick={() => openTarget(preferredRepositoryOpenTarget)}
+                  >
+                    <FolderOpen size={18} />
+                    Open in{' '}
+                    {repositoryOpenTargets().find(
+                      ([id]) => id === preferredRepositoryOpenTarget,
+                    )?.[1] ?? preferredRepositoryOpenTarget}
+                  </Button>
+                )}
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className={
+                        preferredRepositoryOpenTarget
+                          ? 'studio-project-chevron'
+                          : 'studio-project-row w-full'
+                      }
+                      aria-label={
+                        preferredRepositoryOpenTarget ? 'Choose editor or file manager' : undefined
+                      }
+                      disabled={!connected || openBusy}
+                      title={openError || 'Open this thread checkout on its computer'}
+                    >
+                      {!preferredRepositoryOpenTarget && (
+                        <>
+                          <FolderOpen className="size-3.5" /> Open in…
+                        </>
+                      )}{' '}
+                      <ChevronDown className="ml-auto size-3" />
+                    </Button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      align="end"
+                      sideOffset={6}
+                      className="studio-menu-surface z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
+                    >
+                      <RepositoryOpenItems
+                        itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
+                        disabled={openBusy}
+                        onSelect={openTarget}
+                      />
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              </div>
+              {onTerminal && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="studio-project-row min-w-0 flex-1"
-                  disabled={!connected || openBusy}
-                  onClick={() => openTarget(preferredRepositoryOpenTarget)}
+                  className="h-9 shrink-0 gap-1.5 px-2 text-xs"
+                  disabled={!connected}
+                  onClick={() => onSurface('terminal')}
                 >
-                  <FolderOpen size={18} />
-                  Open in{' '}
-                  {repositoryOpenTargets().find(
-                    ([id]) => id === preferredRepositoryOpenTarget,
-                  )?.[1] ?? preferredRepositoryOpenTarget}
+                  <Terminal className="size-3.5" /> Terminal
                 </Button>
               )}
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className={
-                      preferredRepositoryOpenTarget
-                        ? 'studio-project-chevron'
-                        : 'studio-project-row w-full'
-                    }
-                    aria-label={
-                      preferredRepositoryOpenTarget ? 'Choose editor or file manager' : undefined
-                    }
-                    disabled={!connected || openBusy}
-                    title={openError || 'Open this thread checkout on its computer'}
-                  >
-                    {!preferredRepositoryOpenTarget && (
-                      <>
-                        <FolderOpen className="size-3.5" /> Open in…
-                      </>
-                    )}{' '}
-                    <ChevronDown className="ml-auto size-3" />
-                  </Button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content
-                    align="end"
-                    sideOffset={6}
-                    className="studio-menu-surface z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
-                  >
-                    <RepositoryOpenItems
-                      itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
-                      disabled={openBusy}
-                      onSelect={openTarget}
-                    />
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu.Root>
             </div>
           )}
           {openError && (
@@ -518,12 +565,22 @@ export function TaskProjectPanel({
             className="studio-project-section border-t border-border/60"
           >
             {!!displayedPulls.length && (
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground">Pull requests</h3>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-medium text-muted-foreground">Pull requests</h3>
+                <IconButton
+                  label="Link pull request"
+                  className="size-6"
+                  onClick={() => setLinking(true)}
+                  disabled={!connected}
+                >
+                  <Plus className="size-3.5" />
+                </IconButton>
+              </div>
             )}
             {!!displayedPulls.length && (
               <div
                 aria-label="Linked pull requests"
-                className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+                className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
               >
                 {displayedPulls.map((pull) =>
                   taskPullStatusFor(task, pull.url) ? (
@@ -569,16 +626,58 @@ export function TaskProjectPanel({
       <>
         {show('projects') && (
           <div className="studio-project-section border-t border-border/60">
-            <Button
-              variant="ghost"
-              className="studio-project-row w-full justify-start"
-              onClick={() => onSurface('projects')}
-            >
-              <FolderSymlink size={18} />
-              {(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length
-                ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
-                : 'Link projects'}
-            </Button>
+            {!!linkedProjects.length && (
+              <>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">Linked projects</h3>
+                  <IconButton
+                    label="Manage linked projects"
+                    className="size-6"
+                    onClick={() => onSurface('projects')}
+                  >
+                    <Plus className="size-3.5" />
+                  </IconButton>
+                </div>
+                {linkedProjects.map((link) => {
+                  const project = workspace.repositories.find(
+                    (item) => item.id === link.repositoryId,
+                  )
+                  return (
+                    <Button
+                      key={link.id}
+                      variant="ghost"
+                      size="sm"
+                      className="studio-project-row w-full"
+                      onClick={() => onSurface('projects')}
+                      title={link.existingWorktreePath || project?.path}
+                    >
+                      <FolderSymlink size={16} />
+                      <span className="min-w-0 flex-1 truncate text-left">
+                        {project?.name ?? link.repositoryId}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {link.access === 'read-only' ? 'Read only' : 'Edit'}
+                      </span>
+                    </Button>
+                  )
+                })}
+                {task.pendingLinkedCheckouts && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Changes apply on the next turn.
+                  </p>
+                )}
+              </>
+            )}
+            {!linkedProjects.length && (
+              <Button
+                variant="ghost"
+                className="studio-project-row w-full justify-start"
+                onClick={() => onSurface('projects')}
+              >
+                <FolderSymlink size={18} />
+                Link projects
+              </Button>
+            )}
           </div>
         )}
       </>
@@ -598,10 +697,12 @@ export function TaskProjectPanel({
     ),
     git: (
       <>
-        <div className="studio-project-section border-t border-border/60">
-          <h3 className="mb-2 text-xs font-medium text-muted-foreground">Version control</h3>
-          {gitActions}
-        </div>
+        {repo && !repo.kind && (
+          <div className="studio-project-section border-t border-border/60">
+            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Version control</h3>
+            {gitActions}
+          </div>
+        )}
       </>
     ),
     changes: (
@@ -655,11 +756,17 @@ export function TaskProjectPanel({
     'servers',
     'projects',
   ])
+  const actionSections = new Set<ThreadInfoSectionId>(['openIn', 'scripts'])
   const groups: ThreadInfoSectionId[][] = []
   for (const { id } of orderedThreadInfoSections(threadInfoOrder)) {
     if (id !== 'settings' && !show(id)) continue
     const previous = groups.at(-1)
-    if (previous && compactSections.has(id) && compactSections.has(previous[0])) previous.push(id)
+    if (
+      previous &&
+      ((compactSections.has(id) && compactSections.has(previous[0])) ||
+        (actionSections.has(id) && actionSections.has(previous[0])))
+    )
+      previous.push(id)
     else groups.push([id])
   }
   return (
@@ -677,8 +784,15 @@ export function TaskProjectPanel({
           </Button>
         )}
         {groups.map((ids) =>
-          compactSections.has(ids[0]) ? (
-            <div key={ids[0]} className="studio-thread-info-links">
+          compactSections.has(ids[0]) || actionSections.has(ids[0]) ? (
+            <div
+              key={ids[0]}
+              className={
+                actionSections.has(ids[0])
+                  ? 'studio-thread-info-actions'
+                  : 'studio-thread-info-links'
+              }
+            >
               {ids.map((id) => (
                 <div key={id} data-thread-info-section={id}>
                   {sections[id]}

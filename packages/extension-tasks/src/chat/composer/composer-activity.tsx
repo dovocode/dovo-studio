@@ -63,7 +63,7 @@ export function ComposerActivity({
         {`${task.queue?.length ?? 0} queued ${(task.queue?.length ?? 0) === 1 ? 'message' : 'messages'}${pausedCount ? `, ${pausedCount} paused` : ''}`}
       </span>
       <div
-        className={`flex min-w-0 items-center gap-1 px-2 py-1.5 ${collapsed ? '' : 'border-b border-border/50'}`}
+        className={`flex min-h-8 min-w-0 items-center gap-1 px-2 py-0.5 ${collapsed ? '' : 'border-b border-border/40'}`}
       >
         <div
           role={both ? 'tablist' : undefined}
@@ -75,8 +75,8 @@ export function ComposerActivity({
               ? [
                   {
                     value: 'queue',
-                    title: 'Queue',
-                    count: String(task.queue?.length ?? 0),
+                    title: `${task.queue?.length ?? 0} queued`,
+                    count: '',
                     notice: pausedCount ? `${pausedCount} queued messages paused` : '',
                     label: `Queue · ${task.queue?.length ?? 0}${pausedCount ? (pausedCount === task.queue?.length ? ' · Paused' : ` · ${pausedCount} paused`) : ''}`,
                   },
@@ -97,16 +97,17 @@ export function ComposerActivity({
             const content = (
               <>
                 <span className="shrink-0">{title}</span>
-                <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-foreground">
-                  {count}
-                </span>
-                {notice && (
+                {count && (
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
+                )}
+                {(both || notice) && (
                   <span aria-hidden className="flex size-3 shrink-0 items-center justify-center">
-                    {value === 'queue' ? (
-                      <Pause className="size-3 text-status-warning" />
-                    ) : (
-                      <CircleAlert className="size-3 text-status-warning" />
-                    )}
+                    {notice &&
+                      (value === 'queue' ? (
+                        <Pause className="size-3 text-status-warning" />
+                      ) : (
+                        <CircleAlert className="size-3 text-status-warning" />
+                      ))}
                   </span>
                 )}
               </>
@@ -122,7 +123,7 @@ export function ComposerActivity({
                 aria-controls={`${id}-${value}-panel`}
                 aria-selected={active === value}
                 tabIndex={active === value ? 0 : -1}
-                className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring aria-selected:bg-muted aria-selected:text-foreground"
+                className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring aria-selected:bg-muted aria-selected:text-foreground"
                 onClick={() => {
                   setSelected(value)
                   setCollapsed(false)
@@ -150,7 +151,7 @@ export function ComposerActivity({
                 key={value}
                 aria-label={label}
                 title={label}
-                className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1 font-medium"
+                className="inline-flex min-w-0 items-center gap-1.5 pl-1 text-xs font-medium"
               >
                 {content}
               </span>
@@ -158,7 +159,7 @@ export function ComposerActivity({
           })}
           {hasQueue && !both && (
             <span className="truncate text-xs text-muted-foreground">
-              · {task.queuePaused || task.queue?.[0]?.paused ? 'Paused' : 'After this turn'}
+              · {task.queuePaused || task.queue?.[0]?.paused ? 'paused' : 'after this turn'}
             </span>
           )}
         </div>
@@ -168,7 +169,7 @@ export function ComposerActivity({
           title={collapsed ? 'Expand queue and checklist' : 'Collapse queue and checklist'}
           aria-expanded={!collapsed}
           aria-controls={`${id}-${active}-panel`}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setCollapsed((value) => !value)}
         >
           {collapsed ? (

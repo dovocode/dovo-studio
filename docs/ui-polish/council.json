@@ -216,7 +216,10 @@
       "id": "fbaaa045-cdb9-48ad-8cb9-0f01bb3ec8a3"
     }
   ],
-  "remaining": ["Obtain at least9 from both Opus reviewers; round33 in review", "Finish PR #50"],
+  "remaining": [
+    "Complete independent assessment of frozen gallery35",
+    "Address verified material findings and finish PR #50"
+  ],
   "approvalTarget": {
     "model": "Opus 5.5",
     "reviewers": 2,
@@ -224,10 +227,10 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 33,
-    "captures": 264,
-    "corePass": 33,
-    "dialogPass": 33
+    "round": 35,
+    "captures": 272,
+    "corePass": 35,
+    "dialogPass": 35
   },
   "unavailableReviews": [
     {
@@ -254,19 +257,22 @@
   ],
   "pendingReviews": [
     {
-      "round": "reset32",
+      "round": "independent35",
+      "model": "Opus 5.5",
+      "id": "eb9d39ff-04e1-4f99-9f17-284669b33576",
+      "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
+    },
+    {
+      "round": "independent35",
+      "model": "Opus 5.5",
+      "id": "d3e494a7-de4c-4512-bd62-cf3b51a32934",
+      "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
+    },
+    {
+      "round": "independent35",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47"
-    },
-    {
-      "round": "reset33",
-      "model": "Opus 5.5",
-      "id": "2b79c874-91e4-4335-95cb-f81950e52b42"
-    },
-    {
-      "round": "reset33",
-      "model": "Opus 5.5",
-      "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a"
+      "id": "a46eda6b-23ac-4c4d-a0bd-c5651e7d942b",
+      "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
     }
   ],
   "queuedReviews": [
@@ -275,6 +281,29 @@
       "model": "Gemini 4 Argon High",
       "status": "unavailable",
       "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued."
+    }
+  ],
+  "supersededReviews": [
+    {
+      "round": "reset32",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47",
+      "status": "cancelled",
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+    },
+    {
+      "round": "reset33",
+      "model": "Opus 5.5",
+      "id": "2b79c874-91e4-4335-95cb-f81950e52b42",
+      "status": "cancelled",
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+    },
+    {
+      "round": "reset33",
+      "model": "Opus 5.5",
+      "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a",
+      "status": "cancelled",
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     }
   ]
 }

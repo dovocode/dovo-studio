@@ -32,7 +32,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Every registered desktop extension route, rendered from the production page module with the real activity rail, title bar and settings navigation. This is an isolated composition of shell primitives, not the live Workbench/network provider. Page-owned sidebars remain real. Populated means the small synthetic workspace, not full fixtures for every remote integration. Unsupported reads display production unavailable/error states; mutations are blocked. Device-local appearance preferences affect this isolated catalog origin only. Specialized detail flows remain covered by component stories, not every page interaction.',
+          'Every registered desktop extension route, rendered from the production page module with the real activity rail, title bar and settings navigation. This is an isolated composition of shell primitives, not the live Workbench/network provider. Page-owned sidebars remain real. Populated means the small synthetic workspace, not full fixtures for every remote integration. Busy adds ten synthetic threads across three projects and a longer conversation for density and overflow review. Unsupported reads display production unavailable/error states; mutations are blocked. Device-local appearance preferences affect this isolated catalog origin only. Specialized detail flows remain covered by component stories, not every page interaction.',
       },
     },
   },
@@ -41,7 +41,16 @@ const meta = {
     route: { control: 'select', options: desktopScreenViews.map((view) => view.id) },
     state: {
       control: 'select',
-      options: ['populated', 'idle', 'empty', 'loading', 'error', 'offline'],
+      options: [
+        'populated',
+        'busy',
+        'busy-long-draft',
+        'idle',
+        'empty',
+        'loading',
+        'error',
+        'offline',
+      ],
     },
   },
   render: (args) => <DesktopScreen key={`${args.route}:${args.state}`} {...args} />,
@@ -143,6 +152,13 @@ export function DesktopScreen({
   )
 }
 export const Tasks: Story = {}
+export const BusyWorkspace: Story = { args: { state: 'busy' } }
+export const BusyConversation: Story = {
+  render: () => <DesktopScreen route="tasks" entityId="preview-task" state="busy" />,
+}
+export const BusyLongDraft: Story = {
+  render: () => <DesktopScreen route="tasks" entityId="preview-task" state="busy-long-draft" />,
+}
 export const TasksEmpty: Story = { args: { state: 'empty' } }
 export const WorkspaceLoading: Story = { args: { state: 'loading' } }
 export const WorkspaceError: Story = { args: { route: 'activity', state: 'error' } }
