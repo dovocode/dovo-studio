@@ -16,7 +16,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId="" temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId={window.selectedId??""} temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
     loader: 'tsx',
     resolveDir: root + 'packages/extension-tasks/',
   },
@@ -196,6 +196,23 @@ try {
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.collapsedSections().includes('working'))
   await chevron(workingSummary, false)
+  // Collapsing the open thread keeps a location cue without changing the user's section choice.
+  await page.evaluate(() => {
+    window.selectedId = JSON.stringify(['runtime', 'working'])
+    window.render()
+  })
+  await workingSummary.getByText('Current', { exact: true }).waitFor()
+  assert.equal(await workingSummary.locator('..').getAttribute('open'), null)
+  await workingSummary.click()
+  await workingSummary.getByText('Current', { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByText('Working thread', { exact: true }).waitFor()
+  await workingSummary.click()
+  await workingSummary.getByText('Current', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.selectedId = ''
+    window.render()
+  })
+  await workingSummary.getByText('Current', { exact: true }).waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
   const resetOrder = dialog.getByRole('button', { name: 'Reset section order', exact: true })

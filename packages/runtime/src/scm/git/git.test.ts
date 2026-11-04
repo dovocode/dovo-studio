@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { readFile, writeFile, symlink } from 'node:fs/promises'
+import { readFile, writeFile, symlink, chmod, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
@@ -77,6 +77,93 @@ it('reads real diffs and applies edits without overwriting changed disk contents
     await git.stage(f.directory, ['hello.txt'])
     expect(await git.commit(f.directory, 'Verified edit')).toMatch(/^[0-9a-f]{40}$/)
     expect(await git.changes(f.directory)).toEqual([])
+  } finally {
+    await f.cleanup()
+  }
+})
+it('retains index and working tree membership for text, empty, binary and mode-only changes', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    for (const name of ['index-delete.txt', 'working-delete.txt', 'mode.txt', 'net-zero.txt'])
+      await writeFile(join(f.directory, name), 'original\n')
+    await writeFile(join(f.directory, 'binary.dat'), Buffer.from([0, 1, 2]))
+    await git.stage(f.directory, [
+      'index-delete.txt',
+      'working-delete.txt',
+      'mode.txt',
+      'net-zero.txt',
+      'binary.dat',
+    ])
+    await git.commit(f.directory, 'Status fixtures')
+    await git.command(f.directory, ['config', 'core.filemode', 'true'])
+
+    await writeFile(join(f.directory, 'hello.txt'), 'staged\n')
+    await writeFile(join(f.directory, 'net-zero.txt'), 'staged\n')
+    await writeFile(join(f.directory, 'added.txt'), 'added\n')
+    await writeFile(join(f.directory, 'added-deleted.txt'), 'added\n')
+    await writeFile(join(f.directory, 'binary.dat'), Buffer.from([0, 2, 3]))
+    await rm(join(f.directory, 'index-delete.txt'))
+    await git.stage(f.directory, [
+      'hello.txt',
+      'net-zero.txt',
+      'added.txt',
+      'added-deleted.txt',
+      'binary.dat',
+      'index-delete.txt',
+    ])
+    await writeFile(join(f.directory, 'hello.txt'), 'unstaged\n')
+    await writeFile(join(f.directory, 'net-zero.txt'), 'original\n')
+    await rm(join(f.directory, 'working-delete.txt'))
+    await rm(join(f.directory, 'added-deleted.txt'))
+    await chmod(join(f.directory, 'mode.txt'), 0o755)
+    await writeFile(join(f.directory, 'untracked space\nname.txt'), '')
+
+    const files = await git.changes(f.directory)
+    const byPath = new Map(files.map((file) => [file.path, file]))
+    expect(Object.fromEntries(files.map((file) => [file.path, file.gitStatus]))).toEqual({
+      'hello.txt': { index: 'modified', workingTree: 'modified' },
+      'net-zero.txt': { index: 'modified', workingTree: 'modified' },
+      'added.txt': { index: 'added', workingTree: 'unchanged' },
+      'added-deleted.txt': { index: 'added', workingTree: 'deleted' },
+      'index-delete.txt': { index: 'deleted', workingTree: 'unchanged' },
+      'working-delete.txt': { index: 'unchanged', workingTree: 'deleted' },
+      'binary.dat': { index: 'modified', workingTree: 'unchanged' },
+      'mode.txt': { index: 'unchanged', workingTree: 'modified' },
+      'untracked space\nname.txt': { index: 'unchanged', workingTree: 'untracked' },
+    })
+    expect(byPath.get('hello.txt')).toMatchObject({ before: 'original\n', after: 'unstaged\n' })
+    expect(byPath.get('net-zero.txt')).toMatchObject({ before: 'original\n', after: 'original\n' })
+    expect(byPath.get('mode.txt')).toMatchObject({ before: 'original\n', after: 'original\n' })
+    expect(byPath.get('binary.dat')?.preview?.kind).toBe('binary')
+    // Staging remaining changes changes membership even when the working contents stay the same.
+    await git.stage(f.directory, ['hello.txt'])
+    expect(
+      (await git.changes(f.directory)).find((file) => file.path === 'hello.txt')?.gitStatus,
+    ).toEqual({ index: 'modified', workingTree: 'unchanged' })
+  } finally {
+    await f.cleanup()
+  }
+})
+it('reports an add/add merge conflict without claiming a staged addition', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    const originalBranch = (await git.command(f.directory, ['branch', '--show-current'])).trim()
+    await git.command(f.directory, ['checkout', '-b', 'status-conflict'])
+    await writeFile(join(f.directory, 'conflict.txt'), 'other branch\n')
+    await git.stage(f.directory, ['conflict.txt'])
+    await git.commit(f.directory, 'Other addition')
+    await git.command(f.directory, ['checkout', originalBranch])
+    await writeFile(join(f.directory, 'conflict.txt'), 'original branch\n')
+    await git.stage(f.directory, ['conflict.txt'])
+    await git.commit(f.directory, 'Original addition')
+    await expect(git.command(f.directory, ['merge', 'status-conflict'])).rejects.toMatchObject({
+      code: 1,
+    })
+    expect(
+      (await git.changes(f.directory)).find((file) => file.path === 'conflict.txt')?.gitStatus,
+    ).toEqual({ index: 'unmerged', workingTree: 'unmerged' })
   } finally {
     await f.cleanup()
   }

@@ -12,6 +12,52 @@ import {
   type ChangedFile,
 } from '@dovo/studio-core'
 import { Button, Checkbox, Input, DropdownMenu, RepositoryOpenItems } from '@dovo/studio-ui'
+
+const changeLabels = {
+  unchanged: 'Unchanged',
+  added: 'Added',
+  modified: 'Modified',
+  deleted: 'Deleted',
+  'type-changed': 'Type changed',
+  renamed: 'Renamed',
+  copied: 'Copied',
+  unmerged: 'Conflict',
+  untracked: 'Untracked',
+  unknown: 'Unknown',
+} satisfies Record<NonNullable<ChangedFile['gitStatus']>['index'], string>
+
+function isStaged(file: ChangedFile) {
+  const index = file.gitStatus?.index
+  return (
+    file.gitStatus?.workingTree !== 'unmerged' &&
+    index !== undefined &&
+    !['unchanged', 'unknown', 'unmerged', 'untracked'].includes(index)
+  )
+}
+
+function fileStagingDescription(file: ChangedFile) {
+  const status = file.gitStatus
+  if (!status) return 'Staging status unavailable'
+  if (status.index === 'unmerged' || status.workingTree === 'unmerged')
+    return 'Conflict: resolve before committing'
+  return [
+    status.index === 'unknown'
+      ? 'Index status unavailable'
+      : isStaged(file)
+        ? `Staged: ${changeLabels[status.index]}`
+        : '',
+    status.workingTree === 'unknown'
+      ? 'Working tree status unavailable'
+      : status.workingTree === 'untracked'
+        ? 'Untracked'
+        : status.workingTree !== 'unchanged'
+          ? `Unstaged: ${changeLabels[status.workingTree]}`
+          : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 export function RepositoryActions(props: { repo: Repository; taskId?: string }) {
   const { connection } = useWorkspace()
   return (
@@ -46,6 +92,26 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
   const pending = useRef(false)
   const mounted = useRef(true)
   const revision = useRef(0)
+  const stagingKnown = files.every((file) => file.gitStatus && file.gitStatus.index !== 'unknown')
+  const unstagedKnown = files.every(
+    (file) => file.gitStatus && file.gitStatus.workingTree !== 'unknown',
+  )
+  const stagedCount = files.filter(isStaged).length
+  const unstagedCount = files.filter(
+    (file) =>
+      file.gitStatus && !['unchanged', 'unknown', 'unmerged'].includes(file.gitStatus.workingTree),
+  ).length
+  const hasConflicts = files.some(
+    (file) => file.gitStatus?.index === 'unmerged' || file.gitStatus?.workingTree === 'unmerged',
+  )
+  const canCommit =
+    connected &&
+    !busy &&
+    !loading &&
+    !loadError &&
+    !!message.trim() &&
+    !hasConflicts &&
+    (!stagingKnown || stagedCount > 0)
   const refresh = async () => {
     if (!mounted.current) return
     const current = ++revision.current
@@ -121,6 +187,10 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
           </p>
         ) : files.length ? (
           <div className="overflow-hidden rounded-lg border">
+            <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+              Select files to stage. For partially staged files, this stages their remaining
+              changes.
+            </p>
             <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2">
               <label className="flex items-center gap-2 text-xs">
                 <Checkbox
@@ -157,7 +227,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                 Stage selected
               </Button>
             </div>
-            <ul className="max-h-40 overflow-auto py-1">
+            <ul className="max-h-52 overflow-auto py-1">
               {files.map((file) => (
                 <li key={file.path}>
                   <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
@@ -174,8 +244,13 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                         )
                       }
                     />
-                    <span className="min-w-0 break-all font-mono text-[0.6875rem]">
-                      {file.path}
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-all font-mono text-[0.6875rem]">
+                        {file.path}
+                      </span>
+                      <span className="mt-0.5 block text-muted-foreground">
+                        {fileStagingDescription(file)}
+                      </span>
                     </span>
                   </label>
                 </li>
@@ -196,6 +271,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault()
+            if (!canCommit) return
             act(async () => {
               const result = await request(
                 '/api/scm/commit',
@@ -211,6 +287,14 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
             })
           }}
         >
+          {!loading && !loadError && connected && (
+            <p className="text-xs text-muted-foreground" aria-label="Staging summary">
+              {stagingKnown
+                ? `${stagedCount} staged ${stagedCount === 1 ? 'file' : 'files'} · ${unstagedKnown ? `${unstagedCount} with unstaged changes` : 'working tree status unavailable'}`
+                : 'Staged contents unavailable. Update this runtime to see commit membership.'}
+              {hasConflicts && ' Resolve conflicts before committing.'}
+            </p>
+          )}
           <Input
             aria-label="Commit message"
             placeholder="Commit message for staged changes"
@@ -220,16 +304,17 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
             required
           />
           <p className="text-xs text-muted-foreground">
-            Commits include all staged files, including files staged outside this dialog.
+            Commits include all staged files, including files staged outside this dialog. Checkbox
+            selection only controls Stage selected.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" disabled={!connected || busy || !message.trim()}>
+            <Button size="sm" variant="outline" disabled={!canCommit}>
               Commit staged
             </Button>
             <Button
               type="button"
               size="sm"
-              disabled={!connected || busy || !message.trim()}
+              disabled={!canCommit}
               onClick={() =>
                 act(async () => {
                   const result = await request(

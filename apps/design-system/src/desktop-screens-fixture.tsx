@@ -195,12 +195,14 @@ function ScreenWorkspace({
                     before: 'export const label = "Tasks"\n',
                     after: 'export const label = "Threads"\n',
                     viewed: false,
+                    gitStatus: { index: 'modified', workingTree: 'modified' },
                   },
                   {
                     path: 'README.md',
                     before: '# Workspace\n',
                     after: '# Dovo workspace\n',
                     viewed: false,
+                    gitStatus: { index: 'unchanged', workingTree: 'modified' },
                   },
                 ]
               : [],

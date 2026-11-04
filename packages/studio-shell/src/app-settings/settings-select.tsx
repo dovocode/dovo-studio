@@ -26,7 +26,7 @@ export function SettingsSelect<T extends string>({
       <SelectTrigger aria-label={label} className="w-full sm:w-48">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="max-h-[min(18rem,var(--radix-select-content-available-height))]">
         {options.map(([id, name]) => (
           <SelectItem key={id} value={id}>
             {name}

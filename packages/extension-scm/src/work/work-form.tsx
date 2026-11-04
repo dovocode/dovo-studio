@@ -2,7 +2,7 @@ import { useVerifiedRead } from '../connections/verified-read'
 import { integrationMutationError } from '../connections/mutation-error'
 import { useWorkDraftText, clearWorkDraft } from './work-drafts'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode } from '@dovo/protocol'
+import { decode, runtimeComputerName } from '@dovo/protocol'
 import { issueEditInput, issueLabel } from '@dovo/studio-core'
 import { useEffect, useMemo, useRef } from 'react'
 import { Schema } from 'effect'
@@ -56,7 +56,15 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
-  const { request, connected: online, activeRuntimeId, connection, workspace } = useWorkspace()
+  const {
+    request,
+    connected: online,
+    activeRuntimeId,
+    connection,
+    workspace,
+    runtimes,
+    snapshot,
+  } = useWorkspace()
   const connected = online && available
   const draftKey = JSON.stringify([
     activeRuntimeId,
@@ -86,6 +94,22 @@ export function WorkForm({
   const [expectedDestination] = useApplicationState(
     initialIssue?.destination ?? options.destination,
   )
+  const [targetDescription] = useApplicationState(() => {
+    const repository = workspace.repositories.find((item) => item.id === repositoryId)
+    const source = workspace.jiraSources?.find((item) => item.id === jiraSourceId)
+    const project = jiraSourceId
+      ? source
+        ? `${source.name || 'Jira'} · ${source.project}`
+        : jiraSourceId
+      : repository?.name || repositoryId || 'Unknown project'
+    const remote = jiraSourceId
+      ? source?.site
+      : repository?.forge?.repository || repository?.gitIdentity
+    const computer = runtimeComputerName(
+      runtimes.find((item) => item.profile.id === activeRuntimeId) ?? { snapshot },
+    )
+    return `${project}${remote ? ` (${remote})` : ''} using ${computer}`
+  })
   const [issue] = useApplicationState(initialIssue)
   const [title, setTitle] = useWorkDraftText(
     draftKey,
@@ -319,14 +343,14 @@ export function WorkForm({
                     ? 'Edit issue'
                     : 'New issue'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="break-words">
             {issue
               ? `${issueLabel(issue.id)} · ${issue.title}`
               : kind === 'run'
-                ? 'Run a pipeline on the selected project’s server.'
+                ? `Run a pipeline for ${targetDescription}.`
                 : options.provider === 'jira'
-                  ? 'Create an issue in this Jira source. Linking it to a Dovo project is optional.'
-                  : 'Create an issue in the selected project.'}
+                  ? `Create an issue in ${targetDescription}. Linking it to a Dovo project is optional.`
+                  : `Create an issue in ${targetDescription}.`}
           </DialogDescription>
         </DialogHeader>
         {!connected && (

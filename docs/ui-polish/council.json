@@ -360,10 +360,42 @@
       "score": 7.5,
       "shipVerdict": "conditional ship",
       "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
+    },
+    {
+      "round": "independent40",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent40_sol_a",
+      "score": 8.5,
+      "shipVerdict": "ship",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent40",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent40_sol_c",
+      "score": 8.2,
+      "shipVerdict": "ship",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent40",
+      "model": "Opus 5.5",
+      "id": "dcb4eb5b-52fa-40e3-9f00-8606a2ff1113",
+      "score": 7.5,
+      "shipVerdict": "ship with refinements",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent40",
+      "model": "Opus 5.5",
+      "id": "621dc65f-5714-4826-afea-8e6773341cf1",
+      "score": 7.5,
+      "shipVerdict": "ship after disabled-state fix",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     }
   ],
   "remaining": [
-    "Complete independent gallery40 council assessment and verified follow-up",
+    "Complete independent gallery41 council assessment and verified follow-up",
     "Finish PR #50 after quality gate"
   ],
   "approvalTarget": {
@@ -373,10 +405,10 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 37,
-    "captures": 274,
-    "corePass": 37,
-    "dialogPass": 37
+    "round": 41,
+    "captures": 288,
+    "corePass": 41,
+    "dialogPass": 41
   },
   "unavailableReviews": [
     {
@@ -399,43 +431,58 @@
       "id": "73256406-460c-4589-a1a2-760f3f9a8350",
       "status": "failed",
       "reason": "Muse saved API key rejected; requires muse login; no review issued"
-    }
-  ],
-  "pendingReviews": [
-    {
-      "round": "independent40",
-      "model": "Opus 5.5",
-      "id": "dcb4eb5b-52fa-40e3-9f00-8606a2ff1113",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
-    },
-    {
-      "round": "independent40",
-      "model": "Opus 5.5",
-      "id": "621dc65f-5714-4826-afea-8e6773341cf1",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
-    },
-    {
-      "round": "independent40",
-      "model": "Muse muse-wonder-full-1.0",
-      "id": "bec488f5-b13c-4c9f-bf39-0fb6bcb7e6f7",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
-    },
-    {
-      "round": "independent40",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent40_sol_a",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     },
     {
       "round": "independent40",
       "model": "GPT-6.1 Sol high",
       "id": "/root/independent40_sol_b",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+      "status": "failed",
+      "reason": "Provider stream disconnected before response.completed on both attempts; no final assessment issued."
     },
     {
       "round": "independent40",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "bec488f5-b13c-4c9f-bf39-0fb6bcb7e6f7",
+      "status": "failed",
+      "reason": "Provider429 subscription quota exhausted; reported reset2026-11-04T18:51:35Z. No assessment issued."
+    },
+    {
+      "round": "independent41",
+      "model": "Gemini 4 Argon High",
+      "id": "34198ee0-5207-4cbc-8d7f-6a71841d72a5",
+      "status": "failed",
+      "reason": "Configured Google/AGY agent accepted ask mode but rejected model: Model 'gemini-4-argon-high' is not available for the current authentication method. No assessment issued."
+    }
+  ],
+  "pendingReviews": [
+    {
+      "round": "independent41",
+      "model": "Opus 5.5",
+      "id": "eed4739e-cef5-4086-9305-23410f613e9d",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent41",
+      "model": "Opus 5.5",
+      "id": "923e8d95-bf03-4f65-b80e-9e942d3cf061",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent41",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent40_sol_c",
+      "id": "/root/independent41_sol_a",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent41",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent41_sol_b",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent41",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent41_sol_c",
       "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     }
   ],
@@ -453,21 +500,21 @@
       "model": "Muse muse-wonder-full-1.0",
       "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "2b79c874-91e4-4335-95cb-f81950e52b42",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     }
   ],
   "postGalleryRefinements": []

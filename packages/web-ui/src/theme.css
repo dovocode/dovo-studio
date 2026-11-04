@@ -239,9 +239,9 @@
   border: 1px solid var(--control-edge);
   background-color: var(--card);
   background-image: none;
-  color: var(--muted-foreground);
+  color: var(--foreground);
   box-shadow: none;
-  opacity: 1;
+  opacity: 0.5;
 }
 :root[data-theme-gradients='false']
   :is(.dovo-dialog-content, .dovo-dialog-content [data-slot='button'][data-variant='default']) {
@@ -263,6 +263,7 @@
     border-color: GrayText;
     background: Canvas;
     color: GrayText;
+    opacity: 1;
   }
 }
 

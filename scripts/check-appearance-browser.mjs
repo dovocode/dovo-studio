@@ -43,7 +43,7 @@ window.WebSocket=Socket;
 function Diff(){const prefs=useDiffOptions();const [ready,setReady]=useState(false);
 useEffect(()=>{preloadStudioHighlighter('typescript').then(()=>setReady(true))},[]);
 return ready?<FileDiff fileDiff={diff} options={{...prefs.options,disableFileHeader:true}}/>:null}
-function App(){useAppearance();return <TooltipProvider><div className="flex h-screen flex-col bg-background text-foreground">
+function App(){useAppearance();return <TooltipProvider><div className="studio flex h-screen flex-col bg-background text-foreground">
 <TitleBar online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>
 <main className="flex min-h-0 flex-1"><Appearance/>
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
@@ -250,23 +250,27 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
+      // Rails use an edge marker; filled selections share tokens while each
+      // component keeps its own border and corner treatment.
       await page.waitForFunction(() => {
-        const root = document.querySelector('[data-testid=effects]')
-        const thread = getComputedStyle(root.querySelector('.studio-thread-card'))
-        return [
-          ...root.querySelectorAll(
-            '.studio-selected-surface, .studio-navigation-item, .studio-browser-tab[data-active], .studio-thread-child',
+        const probe = document.createElement('span')
+        probe.style.backgroundColor = 'var(--studio-selected-fill)'
+        probe.style.backgroundImage = 'var(--studio-selected-gradient)'
+        probe.style.boxShadow = 'var(--studio-glow)'
+        document.body.append(probe)
+        const expected = getComputedStyle(probe)
+        const settled = [
+          ...document.querySelectorAll(
+            '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child',
           ),
         ].every((el) => {
           const selected = getComputedStyle(el)
-          return [
-            'backgroundColor',
-            'backgroundImage',
-            'boxShadow',
-            'borderColor',
-            'borderRadius',
-          ].every((key) => selected[key] === thread[key])
+          return ['backgroundColor', 'backgroundImage', 'boxShadow'].every(
+            (key) => selected[key] === expected[key],
+          )
         })
+        probe.remove()
+        return settled
       })
       const effects = await page.evaluate((primary) => {
         const probe = document.createElement('span')
@@ -284,19 +288,30 @@ try {
           primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
           tab: style('.studio-browser-tab').backgroundImage,
           tabShadow: style('.studio-browser-tab').boxShadow,
-          selections: [
-            ...document.querySelectorAll(
-              '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child',
-            ),
+          rails: [
+            ...document.querySelectorAll('[data-testid=effects] .studio-navigation-item'),
           ].map((el) => {
             const selected = getComputedStyle(el)
-            const thread = style('.studio-thread-card')
-            return Object.fromEntries(
-              ['backgroundColor', 'backgroundImage', 'boxShadow', 'borderColor', 'borderRadius']
-                .filter((key) => selected[key] !== thread[key])
-                .map((key) => [key, { selected: selected[key], thread: thread[key] }]),
-            )
+            const marker = getComputedStyle(el, '::before')
+            return {
+              background: selected.backgroundColor,
+              image: selected.backgroundImage,
+              shadow: selected.boxShadow,
+              marker: marker.backgroundColor,
+              markerWidth: marker.width,
+              markerHeight: marker.height,
+              markerContent: marker.content,
+            }
           }),
+          accent: (() => {
+            probe.style.color = primary
+            document.body.append(probe)
+            const accent = getComputedStyle(probe).color
+            probe.remove()
+            return accent
+          })(),
+          threadEdge: style('.studio-thread-card').borderLeftColor,
+          threadEdgeWidth: style('.studio-thread-card').borderLeftWidth,
           sectionsMatch: [
             'backgroundImage',
             'borderColor',
@@ -330,14 +345,25 @@ try {
         id + ' ' + scheme + ' glow uses the theme accent',
       )
       assert.ok(
-        effects.selections.length >= 4 &&
-          effects.selections.every((diff) => Object.keys(diff).length === 0),
+        effects.rails.length === 2 &&
+          effects.rails.every(
+            (rail) =>
+              rail.background === 'rgba(0, 0, 0, 0)' &&
+              rail.image === 'none' &&
+              rail.shadow === 'none' &&
+              rail.marker === effects.accent &&
+              rail.markerWidth === '2px' &&
+              rail.markerHeight === '16px' &&
+              rail.markerContent === '""',
+          ),
         id +
           ' ' +
           scheme +
-          ' selected navigation, artifacts and settings match threads: ' +
-          JSON.stringify(effects.selections),
+          ' active rails use visible accent edge markers: ' +
+          JSON.stringify(effects.rails),
       )
+      assert.equal(effects.threadEdge, effects.accent, 'Selected thread keeps its accent edge')
+      assert.equal(effects.threadEdgeWidth, '2px')
       assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
       assert.equal(effects.dialog, 'none', 'Dialogs keep a calm, flat surface with effects enabled')
       const actual = await page.evaluate(() => {
@@ -516,7 +542,9 @@ try {
       surfaces.every((surface) => surface.background === 'none'),
       'Flat mode removes decorative gradients',
     )
-    assert.notEqual(surfaces[1].fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
+    const selectedTab = surfaces.find((surface) => surface.element === 'studio-browser-tab')
+    assert.ok(selectedTab, 'Fixture includes a selected browser tab')
+    assert.notEqual(selectedTab.fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
     assert.ok(
       surfaces.every((surface) => surface.shadow === 'none'),
       'Zero glow removes all decorative surface shadows: ' + JSON.stringify(surfaces),
@@ -585,17 +613,72 @@ try {
   assert.equal(await page.getByRole('radio', { name: 'Claude', exact: true }).isChecked(), true)
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
   await page.getByRole('combobox', { name: 'App font', exact: true }).fill('Georgia')
+  assert.doesNotMatch(
+    await page.getByRole('region', { name: 'Terminal font preview', exact: true }).innerText(),
+    /[\uE000-\uF8FF]/,
+    'System font preview uses ordinary characters without unsupported private-use glyphs',
+  )
   await page
     .getByRole('combobox', { name: 'Code font', exact: true })
     .fill('JetBrains Mono Nerd Font')
   await page
     .getByRole('combobox', { name: 'Terminal font', exact: true })
     .fill('JetBrains Mono Nerd Font')
-  await page.getByRole('button', { name: 'Terminal font size', exact: true }).click()
+  assert.match(
+    await page.getByRole('region', { name: 'Terminal font preview', exact: true }).innerText(),
+    /[\uE000-\uF8FF]/,
+    'Bundled Nerd Font preview includes its developer icons',
+  )
+  const terminalSize = page.getByRole('combobox', { name: 'Terminal font size', exact: true })
+  for (const viewport of [
+    { width: 1280, height: 1000 },
+    { width: 390, height: 480 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await terminalSize.click()
+    const sizeMenu = page.getByRole('listbox')
+    await sizeMenu.waitFor()
+    await sizeMenu.evaluate((menu) =>
+      Promise.all(menu.getAnimations().map((animation) => animation.finished)),
+    )
+    const sizeMenuGeometry = await sizeMenu.evaluate((menu) => {
+      const bounds = menu.getBoundingClientRect()
+      return {
+        height: bounds.height,
+        availableHeight: parseFloat(
+          getComputedStyle(menu).getPropertyValue('--radix-select-content-available-height'),
+        ),
+        insideViewport:
+          bounds.left >= -1 &&
+          bounds.top >= -1 &&
+          bounds.right <= innerWidth + 1 &&
+          bounds.bottom <= innerHeight + 1,
+        options: menu.querySelectorAll('[role=option]').length,
+      }
+    })
+    assert.equal(sizeMenuGeometry.options, 25, 'Every terminal font size remains available')
+    assert.ok(
+      sizeMenuGeometry.height > 0 &&
+        sizeMenuGeometry.height <= 290 &&
+        sizeMenuGeometry.height <= sizeMenuGeometry.availableHeight + 2,
+      'Terminal font size menu fits its 288px and available-height caps at ' +
+        JSON.stringify(viewport) +
+        ': ' +
+        JSON.stringify(sizeMenuGeometry),
+    )
+    assert.ok(sizeMenuGeometry.insideViewport, 'Terminal font size menu fits the viewport')
+    await page.keyboard.press('Escape')
+  }
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  await terminalSize.click()
   await page.getByRole('option', { name: '18 px', exact: true }).click()
+  await terminalSize.click()
+  await page.keyboard.press('End')
+  await page.waitForFunction(() => document.activeElement?.textContent.trim() === '32 px')
+  await page.keyboard.press('Enter')
   await page.waitForFunction(
     () =>
-      window.terminals[0].options.fontSize === 18 &&
+      window.terminals[0].options.fontSize === 32 &&
       window.terminals[0].options.fontFamily.includes('JetBrains Mono Nerd Font'),
   )
   const fontState = await page.evaluate(async () => {
@@ -653,7 +736,7 @@ try {
     await page.getByRole('combobox', { name: 'Terminal font', exact: true }).inputValue(),
     'JetBrains Mono Nerd Font',
   )
-  await page.waitForFunction(() => window.terminals[0].options.fontSize === 18)
+  await page.waitForFunction(() => window.terminals[0].options.fontSize === 32)
   // A generic family works as CSS, and clearing a field restores the device default.
   await page.getByRole('combobox', { name: 'App font', exact: true }).fill('serif')
   assert.ok(

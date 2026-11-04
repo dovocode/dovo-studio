@@ -477,12 +477,12 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           })
           if (name === 'conversation') {
             await page.getByRole('button', { name: 'About Daybreak', exact: true }).click()
-            await page.getByRole('dialog', { name: 'About Daybreak', exact: true }).waitFor()
+            await page.getByRole('region', { name: 'About Daybreak', exact: true }).waitFor()
             await page.screenshot({
               path: resolve(output, `conversation-daybreak-help-${mode}.png`),
               animations: 'disabled',
             })
-            await page.keyboard.press('Escape')
+            await page.getByRole('button', { name: 'About Daybreak', exact: true }).click()
           }
           await page.keyboard.press('Escape')
         }

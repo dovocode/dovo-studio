@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const core = `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useStudioHost=()=>({});export const useWorkspace=()=>window.store;export const readAppPreferences=()=>({mergeMethod:'auto',pullDraft:false});`
-const ui = `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{children}</label>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Checkbox=({checked,onCheckedChange,...props})=><input type="checkbox" checked={checked} onChange={e=>onCheckedChange(e.target.checked)} {...props}/>;export const Dialog=({children})=><section role="dialog">{children}</section>;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`
+const ui = `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{children}</label>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Checkbox=({checked,onCheckedChange,...props})=><input type="checkbox" checked={checked} onChange={e=>onCheckedChange(e.target.checked)} {...props}/>;export const Dialog=({children})=><section role="dialog">{children}</section>;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;export const Disclosure=({title,children})=><details><summary>{title}</summary>{children}</details>;export const MessageResponse=({children})=><div>{children}</div>;`
 const built = await bundleBrowser(
   {
     stdin: {
@@ -19,7 +19,7 @@ window.requests=[];window.completed=[];window.currentDestination='old-destinatio
 window.pull={number:7,title:'PR',body:'Original description',base:'main',headSha:'same-sha',url:'https://github.com/team/project/pull/7',destination:'old-destination',provider:'github'};
 window.options={destination:'old-destination',provider:'github',issues:true,issueTypes:['Issue'],issueStates:['open','closed'],labels:true,assignees:true,pipelines:true,pipelineActions:['run']};
 window.issue={id:'7',title:'Original issue',body:'Original issue body',state:'open',revision:'same-revision',assignees:[],labels:[],destination:'old-destination',url:'https://github.com/team/project/issues/7'};
-window.store={activeRuntimeId:'a',connection:{address:'http://a',token:'paired'},connected:true,workspace:{repositories:[{id:'repo',name:'Project',branch:'feature',path:'/repo'}],tasks:[]},request:async(path,input,schema)=>{
+window.store={activeRuntimeId:'a',connection:{address:'http://a',token:'paired'},connected:true,runtimes:[{profile:{id:'a',name:'Build computer',nameIsCustom:true,connection:{address:'http://a',token:'paired'}}}],workspace:{repositories:[{id:'repo',name:'Project',branch:'feature',path:'/repo',gitIdentity:'github.com/team/project'}],jiraSources:[{id:'jira',name:'Team issues',site:'https://team.atlassian.net',project:'TEAM'}],tasks:[]},request:async(path,input,schema)=>{
  window.requests.push({path,input});
  if(path==='/api/scm/source/identity')return decode(schema,{readerIdentity:'same-account',destination:window.currentDestination});
  if(path==='/api/scm/pulls/options/read')return decode(schema,{provider:'github',draft:true,destination:'old-destination'});
@@ -29,9 +29,9 @@ window.store={activeRuntimeId:'a',connection:{address:'http://a',token:'paired'}
 }};
 const app=createRoot(document.getElementById('app'));window.render=(mode=window.mode)=>{window.mode=mode;app.render(<ApplicationStateProvider><div key={mode}>
  {mode==='comment'?<PullCommentComposer repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['comment']}}} onDone={()=>window.completed.push('comment')}/>:
- mode==='edit-pr'?<PullActions repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['edit'],reviewDecisions:[],mergeMethods:[]}}} onDone={()=>window.completed.push('edit')}/>:
+ mode==='edit-pr'?<PullActions repositoryId="repo" detail={{pull:window.pull,destination:window.pull.destination,capabilities:{actions:['edit'],reviewDecisions:[],mergeMethods:[]}}} mergeStatus={{headSha:window.pull.headSha,signals:[],warnings:[],checks:{busy:false,ready:true,error:'',readConnected:true,refresh:()=>{}}}} onDone={()=>window.completed.push('edit')}/>:
  mode==='create-pr'?<CreatePull initialRepositoryId="repo" onClose={()=>window.completed.push('close')} onCreated={()=>window.completed.push('create')}/>:
- <WorkForm kind={mode==='pipeline'?'run':'edit'} repositoryId="repo" issue={mode==='pipeline'?undefined:window.issue} initialRef="main" options={window.options} onClose={()=>window.completed.push('close')} onDone={()=>window.completed.push('work')}/>}
+ <WorkForm kind={mode==='pipeline'?'run':mode.startsWith('create-')?'create':'edit'} repositoryId={mode==='create-jira'?undefined:'repo'} jiraSourceId={mode==='create-jira'?'jira':undefined} issue={mode==='edit-issue'?window.issue:undefined} initialRef="main" options={mode==='create-jira'?{...window.options,provider:'jira'}:window.options} onClose={()=>window.completed.push('close')} onDone={()=>window.completed.push('work')}/>}
  </div></ApplicationStateProvider>)};
 `,
     },
@@ -60,7 +60,15 @@ const app=createRoot(document.getElementById('app'));window.render=(mode=window.
 )
 const browser = await chromium.launch()
 try {
-  for (const mode of ['comment', 'edit-pr', 'edit-issue', 'pipeline', 'create-pr']) {
+  for (const mode of [
+    'comment',
+    'edit-pr',
+    'edit-issue',
+    'pipeline',
+    'create-pr',
+    'create-issue',
+    'create-jira',
+  ]) {
     const page = await browser.newPage()
     page.setDefaultTimeout(8000)
     const errors = []
@@ -68,6 +76,15 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.evaluate((mode) => window.render(mode), mode)
+    const targetDescription =
+      mode === 'pipeline'
+        ? 'Run a pipeline for Project (github.com/team/project) using Build computer.'
+        : mode === 'create-issue'
+          ? 'Create an issue in Project (github.com/team/project) using Build computer.'
+          : mode === 'create-jira'
+            ? 'Create an issue in Team issues · TEAM (https://team.atlassian.net) using Build computer. Linking it to a Dovo project is optional.'
+            : undefined
+    if (targetDescription) await page.getByText(targetDescription, { exact: true }).waitFor()
     if (mode === 'edit-pr') {
       await page.getByRole('button', { name: 'PR actions', exact: true }).click()
       await page.getByRole('menuitem', { name: 'Edit pull request', exact: true }).click()
@@ -86,19 +103,27 @@ try {
       await page.getByRole('textbox', { name: 'New PR title' }).fill('New guarded PR')
       await page.getByRole('textbox', { name: 'New PR base branch' }).fill('main')
     }
+    if (mode === 'create-issue' || mode === 'create-jira')
+      await page.getByLabel('Title', { exact: true }).fill('New guarded issue')
     await page.evaluate(() => {
       window.currentDestination = 'new-destination'
       window.pull = { ...window.pull, destination: 'new-destination' }
       window.issue = { ...window.issue, destination: 'new-destination' }
       window.options = { ...window.options, destination: 'new-destination' }
+      window.store.workspace.repositories[0].name = 'Renamed project'
+      window.store.workspace.jiraSources[0].name = 'Renamed source'
+      window.store.runtimes[0].profile.name = 'Renamed computer'
       window.render()
     })
+    if (targetDescription) await page.getByText(targetDescription, { exact: true }).waitFor()
     const names = {
       comment: 'Comment',
-      'edit-pr': 'Edit pull request',
+      'edit-pr': 'Save changes',
       'edit-issue': 'Save changes',
       pipeline: 'Run pipeline',
       'create-pr': 'Create PR',
+      'create-issue': 'Create issue',
+      'create-jira': 'Create issue',
     }
     await page.getByRole('button', { name: names[mode], exact: true }).click()
     await page.getByRole('alert').filter({ hasText: 'Your draft is preserved' }).waitFor()
@@ -108,6 +133,7 @@ try {
           '/api/scm/pulls/action',
           '/api/scm/pulls/create',
           '/api/scm/work/issues/action',
+          '/api/scm/work/issues/create',
           '/api/scm/work/pipelines/action',
         ].includes(r.path),
       ),
@@ -137,7 +163,7 @@ try {
     await page.close()
   }
   console.log(
-    'Real desktop forms: comments, PR edits/creation, issue edits and pipeline runs retain their displayed destination, preserve drafts on 409, and verify read identities.',
+    'Real desktop forms: issue creation and pipeline runs show captured project/source/computer targets; comments, PR edits/creation, issue creation/edits and pipeline runs retain their displayed destination, preserve drafts on 409, and verify read identities.',
   )
 } finally {
   await browser.close()

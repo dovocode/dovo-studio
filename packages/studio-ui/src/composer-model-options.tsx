@@ -14,7 +14,7 @@ import { cn } from './lib/utils'
 import { Schema } from 'effect'
 import { ChoicePicker } from './choice-picker'
 import { Input } from './components/ui/input'
-import * as Popover from '@radix-ui/react-popover'
+import { useId, useState } from 'react'
 
 export function ComposerEffortColumn({
   value,
@@ -221,62 +221,68 @@ export function ComposerPickerDaybreak({
   onChange: (value: TaskHarness) => Promise<boolean>
   disabled: boolean
 }) {
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpId = useId()
   if (value.provider !== 'codex') return null
   return (
-    <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
-      <span className="flex items-center gap-1">
-        <span>Daybreak</span>
-        <Popover.Root>
-          <Popover.Trigger asChild>
-            <button
-              type="button"
-              aria-label="About Daybreak"
-              className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <CircleHelp className="size-3" aria-hidden="true" />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              aria-label="About Daybreak"
-              side="top"
-              sideOffset={8}
-              className="studio-menu-surface z-50 max-w-64 rounded-lg border bg-popover p-3 text-xs text-popover-foreground outline-none"
-            >
-              Optional Codex access program. Automatic uses the provider default.
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
-      </span>
-      <ChoicePicker
-        aria-label="Daybreak mode"
-        aria-description="Optional Codex Daybreak access program. Automatic uses the provider default."
-        className="h-7 w-52 max-w-[65%]"
-        value={value.cyberAccessProgram ?? ''}
-        disabled={disabled}
-        onValueChange={(program) =>
-          void onChange({
-            ...value,
-            cyberAccessProgram: program
-              ? decode(Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema), program)
-              : undefined,
-          })
-        }
-      >
-        {daybreakChoices(catalog, value.cyberAccessProgram).map((choice) => (
-          <option
-            key={choice.id}
-            value={choice.id}
-            disabled={
-              choice.id !== '' &&
-              choice.id !== 'standard' &&
-              !catalog?.codex?.daybreakPrograms.some((program) => program === choice.id)
-            }
+    <div className="space-y-2 text-xs text-muted-foreground">
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <span className="flex items-center gap-1">
+          <span>Daybreak</span>
+          <button
+            type="button"
+            aria-label="About Daybreak"
+            aria-expanded={helpOpen}
+            aria-controls={helpId}
+            onClick={() => setHelpOpen((open) => !open)}
+            className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
-            {choice.name}
-          </option>
-        ))}
-      </ChoicePicker>
+            <CircleHelp className="size-3" aria-hidden="true" />
+          </button>
+        </span>
+        <ChoicePicker
+          aria-label="Daybreak mode"
+          aria-description="Optional Codex Daybreak access program. Automatic uses the provider default."
+          className="h-7 w-52 max-w-[65%]"
+          value={value.cyberAccessProgram ?? ''}
+          disabled={disabled}
+          onValueChange={(program) =>
+            void onChange({
+              ...value,
+              cyberAccessProgram: program
+                ? decode(
+                    Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema),
+                    program,
+                  )
+                : undefined,
+            })
+          }
+        >
+          {daybreakChoices(catalog, value.cyberAccessProgram).map((choice) => (
+            <option
+              key={choice.id}
+              value={choice.id}
+              disabled={
+                choice.id !== '' &&
+                choice.id !== 'standard' &&
+                !catalog?.codex?.daybreakPrograms.some((program) => program === choice.id)
+              }
+            >
+              {choice.name}
+            </option>
+          ))}
+        </ChoicePicker>
+      </div>
+      <p
+        id={helpId}
+        role="region"
+        aria-label="About Daybreak"
+        hidden={!helpOpen}
+        className="leading-relaxed"
+      >
+        Optional Codex access program. Automatic uses the provider default; Off disables it.
+        Available programs depend on your account.
+      </p>
     </div>
   )
 }

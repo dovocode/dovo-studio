@@ -69,6 +69,7 @@ try {
       ({ palette, mode, effects, highContrast }) => {
         const root = document.documentElement
         root.dataset.theme = mode
+        root.dataset.motion = 'system'
         root.dataset.themeGradients = String(effects)
         root.dataset.themeGlow = effects ? '1' : '0'
         root.style.setProperty('--studio-glow-strength', effects ? '1' : '0')
@@ -79,6 +80,13 @@ try {
           root.style.setProperty('--' + name, value)
       },
       { palette, mode, effects, highContrast },
+    )
+    // Match production motion preferences, then measure the rendered endpoint
+    // rather than an interpolated color while a palette transition finishes.
+    await page.waitForFunction(() =>
+      document
+        .getAnimations()
+        .every((animation) => animation.playState !== 'running' && !animation.pending),
     )
     const style = (selector, property) =>
       page
@@ -113,7 +121,11 @@ try {
           shadow: css.boxShadow,
         }
       })
-      assert.equal(unavailable.opacity, '1', `${name}: retain control legibility`)
+      assert.equal(
+        unavailable.opacity,
+        '0.5',
+        `${name}: visibly unavailable, like secondary actions`,
+      )
       assert.equal(unavailable.image, 'none')
       assert.equal(unavailable.shadow, 'none')
       assert.equal(unavailable.border, '1px')

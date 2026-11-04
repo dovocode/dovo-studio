@@ -221,13 +221,23 @@ try {
     const daybreakHelp = footer.getByRole('button', { name: 'About Daybreak', exact: true })
     await daybreakHelp.focus()
     await page.keyboard.press('Enter')
-    const daybreakExplanation = page.getByRole('dialog', { name: 'About Daybreak', exact: true })
+    const daybreakExplanation = page.getByRole('region', { name: 'About Daybreak', exact: true })
     await daybreakExplanation
-      .getByText('Optional Codex access program. Automatic uses the provider default.', {
-        exact: true,
-      })
+      .getByText(
+        'Optional Codex access program. Automatic uses the provider default; Off disables it. Available programs depend on your account.',
+        {
+          exact: true,
+        },
+      )
       .waitFor()
-    await page.keyboard.press('Escape')
+    const helpBounds = await daybreakExplanation.boundingBox()
+    const scrollBounds = await popup.locator(':scope > div').first().boundingBox()
+    assert.ok(
+      helpBounds.y >= scrollBounds.y + scrollBounds.height - 1,
+      'Expanded Daybreak help stays below the scrollable model and effort area',
+    )
+    assert.equal(await daybreakHelp.getAttribute('aria-expanded'), 'true')
+    await page.keyboard.press('Enter')
     await daybreakExplanation.waitFor({ state: 'hidden' })
     await page.waitForFunction(
       () => document.activeElement?.getAttribute('aria-label') === 'About Daybreak',

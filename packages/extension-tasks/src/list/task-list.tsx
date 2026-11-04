@@ -1010,6 +1010,9 @@ export function TaskList({
                     group.id,
                   ) && <span className="studio-thread-section-dot" aria-hidden="true" />}
                   <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                  {!group.open && group.tasks.some((entry) => entry.key === selectedMainKey) && (
+                    <span className="text-[10px] font-normal text-primary">Current</span>
+                  )}
                   <span>{group.total ?? group.tasks.length}</span>
                 </summary>
                 {rows && <div className="pt-1">{rows}</div>}

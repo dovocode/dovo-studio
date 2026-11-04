@@ -287,6 +287,7 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   })
   const files = decode(responses.files, await call('/api/scm/changes', scope)).files
   expect(files[0].after).toBe('review edit\n')
+  expect(files[0].gitStatus).toEqual({ index: 'unchanged', workingTree: 'modified' })
   s.store.updateTask(isolated.id, (task) => ({
     ...task,
     files: task.files.map((file) => ({ ...file, viewed: true })),
@@ -299,6 +300,10 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
     ...scope,
     paths: ['hello.txt'],
   })
+  const stagedFiles = decode(responses.files, await call('/api/scm/changes', scope)).files
+  expect(stagedFiles[0].gitStatus).toEqual({ index: 'modified', workingTree: 'unchanged' })
+  expect(s.store.task(isolated.id).files).not.toBe(beforeRefresh)
+  expect(s.store.task(isolated.id).files[0].viewed).toBe(true)
   await call('/api/scm/commit', {
     ...scope,
     message: 'Task worktree change',

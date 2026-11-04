@@ -46,7 +46,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 284 captures: production desktop routes/compositions in both themes,
+The refreshed gallery includes 288 captures: production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -60,16 +60,24 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-Frozen gallery40 includes the automation spacing correction, consistent collection rows and stable
+Frozen gallery41 includes the automation spacing correction, consistent collection rows and stable
 PR check summaries across tabs. Merge receives primary emphasis only when readiness is positive.
 Undo recovery emphasizes Refresh, access values remain readable, and conversation navigation has a
 grouped gutter and a latest-message action beside the reading column. Artifact empty states offer a
 useful next action. Long-history navigation also settles deferred message layouts and respects
 interrupted jumps.
 
-Council review is **in progress**. Fresh Opus and Muse conversations assess the current UI without
-past ratings, target scores or historical findings in their briefs. Earlier numeric reviews are
-historical evidence, not approval of this redesign. See [council.json](council.json) for the record.
+The Git dialog now shows staged and unstaged change types, partial staging and conflicts. Its
+checkboxes select files to stage; commits still include every staged file. Older runtimes without
+metadata report that limitation explicitly. Commit-ready and edited-agent captures distinguish
+available actions from disabled or clean states. Issue creation and pipeline dialogs name the
+captured project/source and computer. Daybreak help expands inline, collapsed sections identify the
+current thread, and terminal font previews only show Nerd Font glyphs for that selected font. Font
+size lists stay within 18rem and the available viewport height.
+
+Council review is **in progress**. Fresh reviewers assess the current UI without past ratings,
+target scores or historical findings in their briefs. Earlier numeric reviews are historical
+evidence, not approval of this redesign. See [council.json](council.json) for the record.
 
 The latest direction reduces competing chrome rather than hiding features: one tool rail owns pane
 controls, thread state is explicit, and the composer and queue are shorter. Thread info prioritizes
@@ -82,8 +90,12 @@ share quick views and a secondary Filters action; Automations uses the same flat
 Unavailable pipeline actions explain the missing capability and link to Sources.
 
 Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only mode, and a
-direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a review.
-Static design reviews do not replace interaction and accessibility checks.
+direct sandboxed review failed with provider `503 auth_not_found`. A fresh gallery41 attempt through
+the configured Google/AGY agent accepted ask mode, then rejected the model as unavailable for its
+current authentication method. It has not issued an assessment. The latest Muse assessment failed on
+a provider subscription quota limit; the provider reports a reset at 18:51:35 UTC on November 4. No
+score is claimed for that attempt. Static design reviews do not replace interaction and
+accessibility checks.
 
 ## Verification
 

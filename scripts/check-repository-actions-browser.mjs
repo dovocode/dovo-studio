@@ -74,7 +74,12 @@ try {
     page.evaluate(
       ({ index, paths }) =>
         window.reads[index].resolve({
-          files: paths.map((path) => ({ path, before: 'before', after: 'after', viewed: false })),
+          files: paths.map((file) => ({
+            before: 'before',
+            after: 'after',
+            viewed: false,
+            ...(typeof file === 'string' ? { path: file } : file),
+          })),
         }),
       { index, paths },
     )
@@ -88,11 +93,21 @@ try {
   // Opening loads changes without a click; a partial selection stages exactly those paths.
   await reads(1)
   await page.getByRole('status').filter({ hasText: 'Loading changes' }).waitFor()
-  await finish(0, ['src/one.ts', 'image.png'])
+  await finish(0, [
+    { path: 'src/one.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
+    { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
+  ])
   await all.waitFor()
+  await page.getByText('Staged: Modified · Unstaged: Modified', { exact: true }).waitFor()
+  await page.getByText('Untracked', { exact: true }).waitFor()
+  await page
+    .getByLabel('Staging summary')
+    .filter({ hasText: '1 staged file · 2 with unstaged changes' })
+    .waitFor()
   assert.equal(await stage.isDisabled(), true)
   await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).check()
   assert.equal(await all.getAttribute('aria-checked'), 'mixed')
+  assert.deepEqual(await page.evaluate(() => window.writes), [])
   await stage.click()
   await reads(2)
   assert.deepEqual(await page.evaluate(() => window.writes[0]), {
@@ -100,8 +115,16 @@ try {
     input: { repositoryId: 'repo', taskId: 'first', paths: ['src/one.ts'] },
     connection: { id: 'runtime' },
   })
-  await finish(1, ['src/one.ts', 'image.png'])
+  await finish(1, [
+    { path: 'src/one.ts', gitStatus: { index: 'modified', workingTree: 'unchanged' } },
+    { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
+  ])
   await all.waitFor()
+  await page.getByText('Staged: Modified', { exact: true }).waitFor()
+  await page
+    .getByLabel('Staging summary')
+    .filter({ hasText: '1 staged file · 1 with unstaged changes' })
+    .waitFor()
   assert.equal(await all.isChecked(), false)
   await all.check()
   assert.equal(
@@ -126,8 +149,12 @@ try {
   assert.equal(await page.getByText('No uncommitted changes.', { exact: true }).count(), 0)
   await refresh.click()
   await reads(5)
-  await finish(4, [])
-  await page.getByText('No uncommitted changes.', { exact: true }).waitFor()
+  await finish(4, ['legacy.ts'])
+  await page.getByText('Staging status unavailable', { exact: true }).waitFor()
+  await page
+    .getByLabel('Staging summary')
+    .filter({ hasText: 'Staged contents unavailable' })
+    .waitFor()
 
   // Committing preserves push-failure recovery and refreshes the resulting file list.
   await message.fill('Commit selected work')
@@ -222,6 +249,70 @@ try {
   await finish(10, [])
   await page.getByText('No uncommitted changes.', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'new-branch', exact: true }).waitFor()
+
+  // Known clean/unstaged-only checkouts cannot commit, even after entering a message.
+  await message.fill('All staged membership')
+  assert.equal(await commitPush.isDisabled(), true)
+  const commit = page.getByRole('button', { name: 'Commit staged', exact: true })
+  assert.equal(await commit.isDisabled(), true)
+  await refresh.click()
+  await reads(12)
+  await finish(11, [
+    { path: 'unstaged.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
+  ])
+  await page.getByText('Unstaged: Modified', { exact: true }).waitFor()
+  assert.equal(await commit.isDisabled(), true)
+  await all.check()
+  assert.equal(await commitPush.isDisabled(), true)
+
+  // Commit membership is all staged files, independently of checkbox selection.
+  await refresh.click()
+  await reads(13)
+  await finish(12, [
+    { path: 'partial.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
+    { path: 'added.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
+    { path: 'deleted.ts', gitStatus: { index: 'deleted', workingTree: 'unchanged' } },
+    { path: 'new.ts', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
+    { path: 'mode.sh', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
+  ])
+  await page
+    .getByLabel('Staging summary')
+    .filter({ hasText: '3 staged files · 3 with unstaged changes' })
+    .waitFor()
+  await page.getByText('Staged: Added', { exact: true }).waitFor()
+  await page.getByText('Staged: Deleted', { exact: true }).waitFor()
+  await page.getByRole('checkbox', { name: 'Select mode.sh', exact: true }).check()
+  const stagesBeforeCommit = await page.evaluate(
+    () => window.writes.filter((write) => write.path === '/api/scm/stage').length,
+  )
+  assert.equal(await commit.isDisabled(), false)
+  await commit.click()
+  await reads(14)
+  assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
+    repositoryId: 'repo',
+    taskId: 'third',
+    message: 'All staged membership',
+  })
+  assert.equal(
+    await page.evaluate(
+      () => window.writes.filter((write) => write.path === '/api/scm/stage').length,
+    ),
+    stagesBeforeCommit,
+  )
+  await finish(13, [])
+  await page.getByText('No uncommitted changes.', { exact: true }).waitFor()
+
+  // Conflicts are explicit and cannot be mistaken for committable staged additions/deletions.
+  await refresh.click()
+  await reads(15)
+  await finish(14, [
+    { path: 'conflict.ts', gitStatus: { index: 'unmerged', workingTree: 'unmerged' } },
+  ])
+  await page.getByText('Conflict: resolve before committing', { exact: true }).waitFor()
+  await message.fill('Resolve first')
+  await page.getByLabel('Staging summary').filter({ hasText: '0 staged files' }).waitFor()
+  assert.equal(await commit.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
   assert.deepEqual(errors, [])
   console.log('Repository actions browser checks passed')
 } finally {

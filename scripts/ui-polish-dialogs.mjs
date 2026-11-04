@@ -139,6 +139,20 @@ export async function captureFollowUpDialogs(page, origin, output) {
         assert.equal(await button('Stage selected').isDisabled(), false)
       },
     ],
+    [
+      'git-actions-commit-ready',
+      'tasks&thread=preview-task&changes=1',
+      async () => {
+        await info()
+        await button('Git actions').click()
+        await menu('Advanced Git actions…').click()
+        await page
+          .getByRole('textbox', { name: 'Commit message', exact: true })
+          .fill('Clarify workspace navigation')
+        assert.equal(await button('Commit & push').isEnabled(), true)
+        assert.equal(await button('Commit staged').isEnabled(), true)
+      },
+    ],
     ['thread-rename', 'tasks', threadAction('Rename…')],
     ['thread-delete', 'tasks', threadAction('Delete thread…')],
     [
@@ -281,6 +295,15 @@ export async function captureFollowUpDialogs(page, origin, output) {
           await page.getByText('Loading commits…', { exact: true }).waitFor({ state: 'hidden' })
       },
     ])
+  scenarios.push([
+    'edit-agent-dirty',
+    'dialog:edit-agent',
+    async () => {
+      const dialog = page.getByRole('dialog', { name: 'Edit agent profile', exact: true })
+      await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Navigation reviewer')
+      await dialog.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+    },
+  ])
   const results = []
   for (const mode of ['dark', 'light'])
     for (const [name, route, open] of scenarios) {

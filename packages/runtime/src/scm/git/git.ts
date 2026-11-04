@@ -2,6 +2,7 @@ import { githubRead } from '../../retrieval/request.js'
 import { retrievalContext, retrievalLocal, type RetrievalHook } from '../../retrieval/context.js'
 import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
 import { worktreeRecords } from './worktree-records.js'
+import { workingGitStatus } from './working-status.js'
 import {
   stopOwnedChild,
   OwnedProcessShutdownError,
@@ -1266,16 +1267,18 @@ export class GitService {
   async changes(path: string): Promise<ChangedFile[]> {
     const { path: root } = await this.inspect(path)
     const tracked = (await this.command(root, ['ls-files', '-z'])).split('\0').filter(Boolean)
-    const changed = (
-      await this.command(
-        root,
-        ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
-        { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+    const changed = new Map(
+      (
+        await this.command(
+          root,
+          ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
+          { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+        )
       )
+        .split('\0')
+        .filter(Boolean)
+        .map((line) => [line.slice(3), workingGitStatus(line.slice(0, 2))] as const),
     )
-      .split('\0')
-      .filter(Boolean)
-      .map((line) => line.slice(3))
     let hasHead = true
     try {
       await this.command(root, ['rev-parse', '--verify', 'HEAD'])
@@ -1287,13 +1290,13 @@ export class GitService {
         hasHead = false
       else throw error
     }
-    const names = [...new Set(changed)]
+    const names = [...changed.keys()]
     const old = hasHead
       ? await this.treeFiles(root, 'HEAD', names)
       : new Map<string, NonNullable<FilePreviewMetadata['before']>>()
     const files: ChangedFile[] = []
     let remaining = 1024 * 1024
-    for (const name of names) {
+    for (const [name, gitStatus] of changed) {
       const before = old.get(name)
       let unreadable = false
       const after = await this.workingFile(root, name).catch(() => {
@@ -1332,6 +1335,7 @@ export class GitService {
               after: text,
               diskContents: text,
               viewed: false,
+              gitStatus,
             })
             remaining -= entries.reduce((sum, side) => sum + side.size, 0)
             continue
@@ -1341,7 +1345,14 @@ export class GitService {
           // Keep an unreadable or concurrently removed path visible; opening it reports the error.
         }
       }
-      files.push({ path: name, before: '', after: '', viewed: false, preview: { kind, ...sides } })
+      files.push({
+        path: name,
+        before: '',
+        after: '',
+        viewed: false,
+        gitStatus,
+        preview: { kind, ...sides },
+      })
     }
     return files
   }

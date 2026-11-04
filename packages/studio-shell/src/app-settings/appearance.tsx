@@ -8,7 +8,7 @@ import {
   useAppPreferences,
   type StudioThemeColors,
 } from '@dovo/studio-core'
-import { Check, CircleCheck, CircleX, TriangleAlert } from 'lucide-react'
+import { Check, CircleCheck, CircleX, MessageCircleQuestion } from 'lucide-react'
 import { Input } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
@@ -64,7 +64,7 @@ export default function AppearanceSettings() {
             Failed
           </span>
           <span className="flex items-center gap-1 text-status-warning">
-            <TriangleAlert className="size-4" aria-hidden="true" />
+            <MessageCircleQuestion className="size-4" aria-hidden="true" />
             Needs input
           </span>
         </div>
@@ -284,7 +284,11 @@ export default function AppearanceSettings() {
             fontSize: terminalFontSize,
           }}
         >
-          <span aria-hidden="true">{'❯ ~ git status  \ue0a0 main  \uf07b src  \uf121 code'}</span>
+          <span aria-hidden="true">
+            {terminalFontFamily === nerdFontFamily
+              ? '❯ ~ git status  \ue0a0 main  \uf07b src  \uf121 code'
+              : '$ git status · main · src · code'}
+          </span>
         </div>
       </SettingsGroup>
       <SettingsGroup title="Conversation">
