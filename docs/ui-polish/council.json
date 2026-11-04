@@ -255,12 +255,36 @@
       "score": 8,
       "shipVerdict": "ready to ship; identified list consistency, labels and workflow polish",
       "brief": "No past ratings, target score or historical findings supplied."
+    },
+    {
+      "round": "independent36",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "8ea75852-88ee-426d-9f64-5c2106e57156",
+      "score": 7.5,
+      "shipVerdict": "ship; remaining material consistency and clarity findings",
+      "brief": "No past ratings, target score or historical findings supplied."
+    },
+    {
+      "round": "independent37",
+      "model": "Opus 5.5",
+      "id": "66bddc62-3fb5-4e8b-8858-348dcf357103",
+      "score": 8.2,
+      "shipVerdict": "ship; remaining material consistency and clarity findings",
+      "brief": "No past ratings, target score or historical findings supplied."
+    },
+    {
+      "round": "independent37",
+      "model": "Opus 5.5",
+      "id": "7a04b4d0-929b-4a4b-acd8-45e23c874cac",
+      "score": 8,
+      "shipVerdict": "ship; remaining material consistency and clarity findings",
+      "brief": "No past ratings, target score or historical findings supplied."
     }
   ],
   "remaining": [
-    "Finish independent gallery37 review by both Opus reviewers",
-    "Start fresh Muse gallery37 review after existing Muse conversation finishes",
-    "Address verified material findings and finish PR #50"
+    "Unify collection row/status presentation and stable PR status summaries",
+    "Address verified controls/legibility findings",
+    "Complete independent assessment and finish PR #50"
   ],
   "approvalTarget": {
     "model": "Opus 5.5",
@@ -299,22 +323,10 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent36",
+      "round": "independent37",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "8ea75852-88ee-426d-9f64-5c2106e57156",
-      "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
-    },
-    {
-      "round": "independent37",
-      "model": "Opus 5.5",
-      "id": "66bddc62-3fb5-4e8b-8858-348dcf357103",
-      "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
-    },
-    {
-      "round": "independent37",
-      "model": "Opus 5.5",
-      "id": "7a04b4d0-929b-4a4b-acd8-45e23c874cac",
-      "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
+      "id": "929d390f-0444-470b-b2a6-9b81ba2e27a0",
+      "brief": "Fresh context, exact full-size verification emphasized; no prior or target scores."
     }
   ],
   "queuedReviews": [
@@ -346,6 +358,13 @@
       "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a",
       "status": "cancelled",
       "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+    }
+  ],
+  "postGalleryRefinements": [
+    {
+      "change": "New automation labels use explicit grid gaps to separate focus ring from label",
+      "verification": "Both-theme targeted production dialog captures, jobs typecheck and scoped lint",
+      "captures": "/tmp/dovo-automation-label38"
     }
   ]
 }

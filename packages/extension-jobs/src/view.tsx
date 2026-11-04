@@ -413,7 +413,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
         <DialogContent>
           <DialogTitle>New automation</DialogTitle>
           <DialogDescription>Choose where it runs, then connect its steps.</DialogDescription>
-          <label className="space-y-2 text-xs text-muted-foreground">
+          <label className="grid gap-2 text-xs text-muted-foreground">
             <span>Name</span>
             <Input
               autoFocus
@@ -423,7 +423,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
               disabled={busy}
             />
           </label>
-          <label className="space-y-2 text-xs text-muted-foreground">
+          <label className="grid gap-2 text-xs text-muted-foreground">
             <span>Run on</span>
             <ChoicePicker
               aria-label="Automation computer"

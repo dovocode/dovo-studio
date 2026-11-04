@@ -60,6 +60,9 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
+The New automation dialog includes a subsequent verified label-spacing correction in both themes.
+The frozen gallery37 reviews predate that two-field adjustment.
+
 Council review is **in progress**. Fresh Opus and Muse conversations assess the current UI without
 past ratings, target scores or historical findings in their briefs. Earlier numeric reviews are
 historical evidence, not approval of this redesign. See [council.json](council.json) for the record.
