@@ -43,7 +43,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The checked-in round 31 gallery includes 264 captures: 49 production desktop routes/compositions in
+The checked-in round 32 gallery includes 264 captures: 49 production desktop routes/compositions in
 both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
 Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
 zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
@@ -69,12 +69,13 @@ surfaces, shared disclosures, matching Thread info labels, one home for PR linki
 borders, consistent scope chips, visible context search, focused field validation and aligned dialog
 headers. It also keeps Close visible in long dialogs without adding title spacing, and clears
 compact search controls. Both round 31 Opus reviewers scored 8.5/10, as did Muse with
-`muse-wonder-full-1.0`. The following refinement pass addresses list composition, remaining
+`muse-wonder-full-1.0`. The round 32 refinement pass addresses list composition, remaining
 thread/computer wording, lazy-check status, update-navigation actions and model-preference
 hierarchy. Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only
 mode, and a direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a
-score. The 9/10 target has not yet been earned. See [council.json](council.json) for the review
-record. Scores are subjective; interaction and accessibility checks are separate.
+score. Both Opus reviewers and Muse are reviewing the frozen round 32 evidence. The 9/10 target has
+not yet been earned. See [council.json](council.json) for the review record. Scores are subjective;
+interaction and accessibility checks are separate.
 
 ## Verification
 

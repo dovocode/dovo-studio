@@ -205,8 +205,7 @@
     }
   ],
   "remaining": [
-    "Resolve remaining round31 list/copy/lazy-check/update-navigation findings",
-    "Refresh frozen gallery and obtain at least 9 from both Opus reviewers",
+    "Obtain at least 9/10 from both Opus reviewers; round32 frozen gallery in review",
     "Finish PR #50"
   ],
   "approvalTarget": {
@@ -216,10 +215,10 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 31,
+    "round": 32,
     "captures": 264,
-    "corePass": 31,
-    "dialogPass": 31
+    "corePass": 32,
+    "dialogPass": 32
   },
   "unavailableReviews": [
     {
@@ -244,7 +243,23 @@
       "reason": "Muse saved API key rejected; requires muse login; no review issued"
     }
   ],
-  "pendingReviews": [],
+  "pendingReviews": [
+    {
+      "round": "reset32",
+      "model": "Opus 5.5",
+      "id": "a8126e96-0cb8-465e-b1fe-728b6178c927"
+    },
+    {
+      "round": "reset32",
+      "model": "Opus 5.5",
+      "id": "fbaaa045-cdb9-48ad-8cb9-0f01bb3ec8a3"
+    },
+    {
+      "round": "reset32",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47"
+    }
+  ],
   "queuedReviews": [
     {
       "round": "reset30",
