@@ -39,7 +39,10 @@ const meta = {
   args: { route: 'tasks', state: 'populated' },
   argTypes: {
     route: { control: 'select', options: desktopScreenViews.map((view) => view.id) },
-    state: { control: 'select', options: ['populated', 'empty', 'loading', 'error', 'offline'] },
+    state: {
+      control: 'select',
+      options: ['populated', 'idle', 'empty', 'loading', 'error', 'offline'],
+    },
   },
   render: (args) => <DesktopScreen key={`${args.route}:${args.state}`} {...args} />,
 } satisfies Meta<{ route: string; state: DesktopScreenState }>
@@ -50,11 +53,13 @@ export function DesktopScreen({
   state,
   entityId,
   children,
+  overlay,
 }: {
   route: string
   state: DesktopScreenState
   entityId?: string
   children?: ReactNode
+  overlay?: ReactNode
 }) {
   const [activeId, setActiveId] = useState(route)
   const [collapsed, setCollapsed] = useState(false)
@@ -74,7 +79,7 @@ export function DesktopScreen({
   return (
     <DesktopScreenFixture state={state} navigate={setActiveId}>
       <SettingsTargetProvider>
-        <div style={{ height: 'min(900px, calc(100vh - 48px))', minHeight: 560 }}>
+        <div style={{ height: '100vh', minHeight: 560 }}>
           <SidebarHeaderLayout
             brand={title(true)}
             collapsed={collapsed}
@@ -129,6 +134,7 @@ export function DesktopScreen({
                   </div>
                 </main>
               </div>
+              <div className="absolute left-20 top-20 z-40">{overlay}</div>
             </div>
           </SidebarHeaderLayout>
         </div>

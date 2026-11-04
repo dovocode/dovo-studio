@@ -185,7 +185,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             ).map((group) => (
               <section key={group.title} className="space-y-3">
                 <h2 className="text-sm font-semibold">{group.title}</h2>
-                <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
+                <div className="grid items-start gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
                   {commandFields
                     .filter((field) => group.ids.includes(field.id))
                     .map((field) => (

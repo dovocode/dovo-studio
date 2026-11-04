@@ -401,10 +401,7 @@ try {
   )
   await page.getByRole('button', { name: 'Discard', exact: true }).click()
   assert.equal(await page.evaluate(() => window.writes.length), writesBeforeDiscard)
-  assert.equal(
-    await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
-    true,
-  )
+  assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
   await search.press('Enter')
   await page.locator('[data-search-highlight][data-setting-label="Time format"]').waitFor()
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
@@ -748,7 +745,7 @@ try {
   )
   await settingsSidebar
     .getByLabel('Settings storage')
-    .getByText('This device + computer', { exact: true })
+    .getByText('Scope: This device + computer', { exact: true })
     .waitFor()
   assert.equal(await settingsSidebar.getByLabel('Inherited settings target').count(), 0)
   await choose('Default viewport', 'Phone')
@@ -790,7 +787,7 @@ try {
   await openLocal('Usage & limits')
   await settingsSidebar
     .getByLabel('Settings storage')
-    .getByText('Across computers', { exact: true })
+    .getByText('Scope: Across computers', { exact: true })
     .waitFor()
   await choose('Period', 'Last 30 days')
   await page.getByRole('radio', { name: 'Limits', exact: true }).click()

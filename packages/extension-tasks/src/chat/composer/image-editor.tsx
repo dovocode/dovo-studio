@@ -66,7 +66,10 @@ export function useImageEditor() {
       reader.readAsDataURL(file)
     })
     const mime = gif ? 'image/gif' : format === 'jpeg' ? 'image/jpeg' : `image/${format}`
-    const html = imageEditorDocument(`data:${mime};base64,${source.split(',')[1]}`)
+    const html = imageEditorDocument(
+      `data:${mime};base64,${source.split(',')[1]}`,
+      window.document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
+    )
     if (!mounted.current) return null
     return new Promise((resolve) => {
       original.current = file

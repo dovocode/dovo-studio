@@ -61,7 +61,7 @@ export function TerminalSession({
   const mode = useResolvedTheme()
   const terminalTheme = useMemo(
     () => ({
-      background: colors.card,
+      background: colors.background,
       foreground: colors.foreground,
       cursor: colors.primary,
       cursorAccent: colors.background,
@@ -279,7 +279,7 @@ export function TerminalSession({
     >
       <ContextMenu.Trigger asChild>
         <div className={active ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'hidden'}>
-          <div ref={container} className="h-full p-2" />
+          <div ref={container} className="h-full p-3" />
           {onAddSelection && hasSelection && (
             <button
               type="button"

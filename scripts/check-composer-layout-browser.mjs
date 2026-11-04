@@ -170,7 +170,7 @@ try {
   const infoButton = page.getByRole('button', { name: 'Thread info', exact: true })
   const openInfo = async () => {
     if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
-    await page.getByRole('region', { name: 'Environment and access', exact: true }).waitFor()
+    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
   }
   const closeInfo = async () => {
     if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')
@@ -538,8 +538,8 @@ try {
       assert.equal(stopStyle.height, '32px')
       assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
       assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
-      assert.notEqual(stopStyle.shadow, 'none', 'Stop shares Send glow')
-      assert.notEqual(stopStyle.gradient, 'none', 'Stop shares Send gradient')
+      assert.equal(stopStyle.shadow, 'none', 'Stop does not demand attention with a glow')
+      assert.equal(stopStyle.gradient, 'none', 'Stop uses a quiet, solid surface')
       assert.equal(stopStyle.icon, true)
       if (device.name === 'desktop' && project === 'dovo-studio') {
         await settleComposer()
@@ -555,57 +555,17 @@ try {
               background: style.backgroundImage,
             }
           }, pseudo)
-        assert.equal((await glow()).animation, 'studio-stop-glow')
-        assert.notEqual((await glow()).display, 'none')
-        assert.equal((await glow('::after')).animation, 'studio-stop-glow')
-        assert.equal((await glow('::after')).filter, 'none', 'Border stays sharp')
-        assert.ok(
-          !(await glow('::after')).background.includes('rgba(0, 0, 0, 0)'),
-          'The entire rotating border stays visible',
-        )
-        assert.notEqual((await glow('::after')).mask, 'none')
-        const firstBorder = (await glow('::after')).transform
-        const firstGlow = (await glow()).transform
-        await page.waitForFunction(
-          (first) =>
-            getComputedStyle(document.querySelector('[data-composer-stop]'), '::before')
-              .transform !== first,
-          firstGlow,
-        )
-        assert.notEqual(
-          (await glow('::after')).transform,
-          firstBorder,
-          'Red border rotates with glow',
-        )
+        for (const pseudo of ['::before', '::after'])
+          assert.equal((await glow(pseudo)).animation, 'none', 'Stop stays calm while work runs')
         for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
           assert.equal(
             await page.locator(selector).evaluate((node) => getComputedStyle(node).transform),
             'none',
             'Button and stop icon remain still',
           )
-        await page.emulateMedia({ reducedMotion: 'reduce' })
-        assert.equal((await glow()).display, 'none', 'OS reduced motion keeps the glow still')
-        assert.equal(
-          (await glow('::after')).display,
-          'none',
-          'OS reduced motion keeps border still',
-        )
-        await page.emulateMedia({ reducedMotion: 'no-preference' })
-        await page.evaluate(() => {
-          document.documentElement.dataset.motion = 'reduce'
-        })
-        assert.equal((await glow()).display, 'none', 'App reduced motion keeps the glow still')
-        assert.equal(
-          (await glow('::after')).display,
-          'none',
-          'App reduced motion keeps border still',
-        )
-        await page.evaluate(() => {
-          delete document.documentElement.dataset.motion
-        })
         if (screenshots)
           await page.screenshot({
-            path: screenshots + '/desktop-stop-glow.png',
+            path: screenshots + '/desktop-stop.png',
             animations: 'disabled',
           })
         await page.evaluate(() => {
@@ -616,7 +576,7 @@ try {
           () =>
             getComputedStyle(document.querySelector('[data-composer-stop]')).boxShadow === 'none',
         )
-        assert.equal((await glow()).display, 'none', 'Disabled glow has no animated layer')
+        assert.equal((await glow()).animation, 'none', 'Disabled glow has no animated layer')
         assert.equal(
           await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
           'none',
@@ -627,7 +587,8 @@ try {
           document.documentElement.dataset.theme = 'light'
           document.documentElement.classList.remove('dark')
         })
-        assert.notEqual((await glow()).display, 'none', 'Light mode retains the busy glow')
+        await settleComposer()
+        assert.equal((await glow()).animation, 'none', 'Light Stop also stays still')
         if (screenshots)
           await page.screenshot({
             path: screenshots + '/desktop-stop-light.png',
@@ -683,14 +644,12 @@ try {
       )
       if (project === 'dovo-studio')
         assert.equal(
-          await page.getByRole('button', { name: 'Checkout branch', exact: true }).isDisabled(),
-          true,
+          await page.getByRole('button', { name: 'Checkout branch', exact: true }).count(),
+          0,
         )
       if (screenshots && device.name === 'desktop' && project === 'dovo-studio')
         await page.screenshot({ path: screenshots + '/desktop-info-menu.png' })
-      const settingsNode = await page
-        .getByRole('region', { name: 'Environment and access', exact: true })
-        .elementHandle()
+      const settingsNode = await page.locator('.task-info-settings').elementHandle()
       await closeInfo()
       assert.equal(await settingsNode.evaluate((node) => node.isConnected), false)
       await openInfo()
@@ -891,11 +850,11 @@ try {
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
-      Math.abs(queueStrip.x - composer.x - 12) < 1 &&
-        Math.abs(queueStrip.width - composer.width + 24) < 1,
+      Math.abs(queueStrip.x - composer.x) < 1 && Math.abs(queueStrip.width - composer.width) < 1,
+      JSON.stringify({ queueStrip, composer }),
     )
     assert.ok(
-      Math.abs(queueStrip.y + queueStrip.height + 8 - composer.y) < 2,
+      Math.abs(queueStrip.y + queueStrip.height - composer.y) < 2,
       JSON.stringify({ queue, composer }),
     )
     assert.equal(
@@ -964,7 +923,7 @@ try {
       const sourceBounds = await sourceControl.boundingBox()
       const previewBounds = await preview.boundingBox()
       assert.ok(
-        bounds.height <= 56 + extraLineHeight,
+        bounds.height <= 64 + extraLineHeight,
         JSON.stringify({ source: source.kind, bounds }),
       )
       assert.ok(sourceBounds.y + sourceBounds.height <= previewBounds.y + 1)

@@ -164,15 +164,8 @@ export function PullChanges({
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
   return (
     <section aria-label="Code changes" className="min-w-0">
-      <div className="flex flex-wrap items-center gap-2 border-y py-2 text-xs">
-        <h3 className="mr-auto font-medium">
-          {files.filter((file) => viewed.has(file.path)).length} of {files.length} viewed
-        </h3>
-        <Button size="sm" variant="outline" onClick={() => setSplit((v) => !v)}>
-          {split ? 'Split diff' : 'Unified diff'}
-        </Button>
-      </div>
       <ChangeSummary
+        title={`${files.length} ${files.length === 1 ? 'file' : 'files'} · ${viewed.size} viewed`}
         files={visibleFiles}
         expanded={summaryExpanded}
         onExpandedChange={setSummaryExpanded}
@@ -199,38 +192,57 @@ export function PullChanges({
           />
         </div>
       </ChangeSummary>
-      <OrganizeReview
-        onOpenFile={(path) => {
-          setGuidePath(path)
-          setKind(undefined)
-          selectFile(path)
-        }}
-        review={review}
-        onOrganized={() => setRelated(true)}
-      />
-      <div
-        aria-label="Pinned file review controls"
-        className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"
-      >
-        <FileReviewControls
-          files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
-          selected={selectedFile?.path ?? ''}
-          onSelect={selectFile}
-          onViewed={(viewed) => {
-            if (selectedFile)
-              review.setViewed(selectedFile.path, fingerprints.get(selectedFile.path) ?? '', viewed)
+      <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+        <OrganizeReview
+          onOpenFile={(path) => {
+            setGuidePath(path)
+            setKind(undefined)
+            selectFile(path)
           }}
-          disabled={
-            !review.ready ||
-            !selectedFile ||
-            !fileState(selectedFile.path, fingerprints.get(selectedFile.path) ?? '')
-          }
-          busy={review.busy}
-          error={review.error}
-          onRetry={review.reload}
+          review={review}
+          onOrganized={() => setRelated(true)}
         />
+        <Button size="sm" variant="ghost" onClick={() => setSplit((v) => !v)}>
+          {split ? 'Split diff' : 'Unified diff'}
+        </Button>
       </div>
-      <div className="min-w-0 space-y-4 py-3">
+      {files.length > 1 && (
+        <div
+          aria-label="Pinned file review controls"
+          className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"
+        >
+          <FileReviewControls
+            files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
+            selected={selectedFile?.path ?? ''}
+            onSelect={selectFile}
+            onViewed={(viewed) => {
+              if (selectedFile)
+                review.setViewed(
+                  selectedFile.path,
+                  fingerprints.get(selectedFile.path) ?? '',
+                  viewed,
+                )
+            }}
+            disabled={
+              !review.ready ||
+              !selectedFile ||
+              !fileState(selectedFile.path, fingerprints.get(selectedFile.path) ?? '')
+            }
+            busy={review.busy}
+            error={review.error}
+            onRetry={review.reload}
+          />
+        </div>
+      )}
+      {files.length <= 1 && review.error && (
+        <p role="alert" className="flex items-center gap-2 text-xs text-destructive">
+          {review.error}
+          <Button size="sm" variant="ghost" onClick={review.reload}>
+            Retry
+          </Button>
+        </p>
+      )}
+      <div className="min-w-0 space-y-4 py-2">
         {!files.length && <p className="p-4 text-xs text-muted-foreground">No matching files.</p>}
         {files.map((file) => {
           const comments = commentsByPath.get(file.path) ?? []
@@ -243,7 +255,7 @@ export function PullChanges({
               }}
               className="scroll-mt-28 overflow-hidden rounded-xl border bg-card/30"
             >
-              <div className="px-3">
+              <div className="px-3 pb-3">
                 <div className="flex flex-wrap items-center gap-2 py-3">
                   <span className="min-w-0 flex-1 break-all font-mono text-xs">
                     {file.previousPath ? `${file.previousPath} → ` : ''}
@@ -364,21 +376,25 @@ export function PullChanges({
                         : undefined
                     }
                   />
-                  <h4 className="my-3 text-xs font-medium">
-                    Feedback on this file ({comments.length})
-                  </h4>
-                  <PullComments
-                    comments={comments}
-                    fileBaseURL={
-                      detail.fileBaseUrl ??
-                      `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
-                    }
-                    actionContext={{
-                      repositoryId,
-                      detail,
-                      onDone: onPosted,
-                    }}
-                  />
+                  {comments.length > 0 && (
+                    <>
+                      <h4 className="my-3 text-xs font-medium">
+                        Feedback on this file ({comments.length})
+                      </h4>
+                      <PullComments
+                        comments={comments}
+                        fileBaseURL={
+                          detail.fileBaseUrl ??
+                          `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
+                        }
+                        actionContext={{
+                          repositoryId,
+                          detail,
+                          onDone: onPosted,
+                        }}
+                      />
+                    </>
+                  )}
                 </DeferredPullFile>
               </div>
             </article>

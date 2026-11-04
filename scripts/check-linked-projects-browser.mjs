@@ -98,7 +98,8 @@ createRoot(document.getElementById('app')).render(<App/>);
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByRole('button', { name: 'Linked projects', exact: true }).click()
     const save = page.getByRole('button', { name: 'Save linked projects', exact: true })
-    assert.equal(await save.isDisabled(), true)
+    if (mobile) assert.equal(await save.isDisabled(), true)
+    else assert.equal(await save.count(), 0, 'Save appears after an edit')
     await page.getByRole('button', { name: 'Add checkout', exact: true }).click()
     const checkout = page.getByLabel(mobile ? 'Checkout' : 'Linked checkout', { exact: true })
     assert.deepEqual(
@@ -149,13 +150,12 @@ createRoot(document.getElementById('app')).render(<App/>);
     assert.equal(first.links[0].repositoryId, 'folder')
     assert.equal(first.links[0].execution, 'main')
     assert.equal(first.links[0].access, 'edit')
-    await page.waitForFunction(
-      () =>
-        document.querySelector('button') &&
-        [...document.querySelectorAll('button')].find(
-          (button) => button.textContent === 'Save linked projects',
-        ).disabled,
-    )
+    await page.waitForFunction((mobile) => {
+      const save = [...document.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Save linked projects',
+      )
+      return mobile ? save?.disabled : !save
+    }, mobile)
     await page.getByRole('button', { name: 'Remove link', exact: true }).click()
     await page.evaluate(() => (window.fail = true))
     await save.click()

@@ -94,6 +94,34 @@ try {
         effects,
       )
     }
+    const toggle = page.getByRole('switch', { name: 'Switch' })
+    await toggle.click()
+    await toggle.evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+    )
+    const offContrast = await toggle.evaluate((element) => {
+      const luminance = (color) => {
+        const channels = color
+          .match(/[\d.]+/g)
+          .slice(0, 3)
+          .map(Number)
+          .map((value) => {
+            const channel = value / 255
+            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+          })
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+      }
+      const border = luminance(getComputedStyle(element).borderColor)
+      const surface = luminance(
+        getComputedStyle(element.closest('[data-slot="card"]')).backgroundColor,
+      )
+      return (Math.max(border, surface) + 0.05) / (Math.min(border, surface) + 0.05)
+    })
+    assert.ok(
+      offContrast >= 3,
+      `${palette} ${mode}: unchecked switch boundary contrast ${offContrast}`,
+    )
+    await toggle.click()
     await page.getByRole('combobox', { name: 'Choice' }).click()
     assert.equal(
       await page

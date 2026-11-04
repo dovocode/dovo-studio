@@ -20,7 +20,7 @@ import {
 } from '@dovo/studio-core'
 import type { BrowserProfile } from '@dovo/protocol'
 import { Button, Input, ChoicePicker } from '@dovo/studio-ui'
-import { SettingsPage, SettingsGroup, SettingRow } from './layout'
+import { SettingsPage, SettingsGroup, SettingRow, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
 const profileEmojis = [
   ['💼', 'Work'],
@@ -151,7 +151,7 @@ function ProfileName({
   return (
     <form
       aria-label={`Browser profile ${profile.name}`}
-      className="flex flex-wrap items-center gap-2"
+      className="studio-browser-profile-fields flex flex-wrap items-center gap-2"
       onSubmit={(event) => {
         event.preventDefault()
         if (validLanguage && validDomains && validSearch)
@@ -185,14 +185,16 @@ function ProfileName({
           ))}
         </ChoicePicker>
       </label>
-      <Input
-        className="min-w-0 flex-1 basis-36"
-        aria-label={`Name for ${profile.name}`}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        maxLength={100}
-        disabled={disabled}
-      />
+      <label className="flex min-w-0 flex-1 basis-36 flex-col gap-1 text-xs text-muted-foreground">
+        Profile name
+        <Input
+          aria-label={`Name for ${profile.name}`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={100}
+          disabled={disabled}
+        />
+      </label>
       <label className="flex min-w-0 flex-1 basis-36 flex-col gap-1 text-xs text-muted-foreground">
         Website language
         <Input
@@ -451,13 +453,10 @@ export default function BrowserSettings() {
           label="Order tabs by activity"
           description="Pinned tabs always keep their manual order. Turn this off to drag other tabs into order."
         >
-          <input
-            type="checkbox"
-            aria-label="Order tabs by activity"
+          <Toggle
+            label="Order tabs by activity"
             checked={preferences.browserSortByActivity}
-            onChange={(event) =>
-              updateAppPreferences({ browserSortByActivity: event.target.checked })
-            }
+            onChange={(checked) => updateAppPreferences({ browserSortByActivity: checked })}
           />
         </SettingRow>
       </SettingsGroup>

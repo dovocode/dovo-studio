@@ -35,7 +35,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'dovo-dialog-content dovo-dialog-fade fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border bg-background p-5 shadow-lg transition-none',
+        'dovo-dialog-content dovo-dialog-fade fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border bg-background p-6 shadow-lg transition-none',
         className,
       )}
       {...props}
@@ -74,7 +74,11 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('pr-8 text-lg font-semibold leading-snug tracking-tight max-sm:pr-12', className)}
+    data-slot="dialog-title"
+    className={cn(
+      'pr-8 text-base font-semibold leading-snug tracking-tight max-sm:pr-12',
+      className,
+    )}
     {...props}
   />
 ))
@@ -86,6 +90,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
+    data-slot="dialog-description"
     className={cn('text-sm text-muted-foreground', className)}
     {...props}
   />

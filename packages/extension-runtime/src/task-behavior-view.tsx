@@ -9,6 +9,7 @@ function ComputerDefaultsLink() {
   return (
     <Button
       variant="link"
+      className="px-0"
       onClick={() =>
         host.navigate({ viewId: 'running-tasks', entityId: activeRuntimeId ?? undefined })
       }

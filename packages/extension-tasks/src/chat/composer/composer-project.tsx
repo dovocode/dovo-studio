@@ -494,7 +494,9 @@ export function ComposerProject({
             }
           >
             <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
-            <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
+            <span className="max-w-48 truncate" title={current?.name ?? 'This server'}>
+              {current?.name ?? 'This server'}
+            </span>
             <ChevronDown className="size-3" />
           </Button>
         </Popover.Trigger>
@@ -586,7 +588,7 @@ export function ComposerProject({
               className={`startup-no-project inline-flex items-center justify-center gap-1.5 min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
             >
               <MessageCircleDashed className="size-4" aria-hidden="true" />
-              No Project
+              Without a project
             </button>
             {projectControl}
           </div>

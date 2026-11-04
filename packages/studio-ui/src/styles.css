@@ -32,6 +32,15 @@
   content-visibility: visible !important;
 }
 
+/* Bundled for consistent, offline typography on Linux, macOS and the web. */
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/inter-variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: 'JetBrains Mono Nerd Font';
   src: url('./assets/fonts/jetbrains-mono-nerd-regular.woff2') format('woff2');
@@ -69,6 +78,7 @@
 }
 /* Settings → Appearance → Chat width: how wide the conversation grows on large screens. */
 :root {
+  --studio-chat-gutter: clamp(1rem, 4vw, 3rem);
   --chat-max: 48rem;
 }
 :root[data-chat-width='wide'] {
@@ -82,8 +92,17 @@
 .task-composer {
   --composer-accent: var(--primary);
 }
+.startup-draft [data-thread-start] {
+  gap: 12px;
+  padding-bottom: 24px;
+}
 .startup-draft .startup-heading {
   max-width: 100%;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.startup-description {
+  margin-bottom: 8px;
 }
 .startup-draft [aria-label='Start a thread'] {
   margin-top: 0;
@@ -118,7 +137,7 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--composer-accent) 15%, transparent);
 }
 .startup-draft .startup-project-selector svg {
-  color: var(--composer-accent);
+  color: inherit;
 }
 .startup-draft .startup-project-selector > button {
   min-height: 2.125rem;
@@ -141,13 +160,24 @@
   min-width: 2rem;
   padding-inline: 0.5rem;
   border-radius: 0 0.625rem 0.625rem 0;
-  color: var(--composer-accent);
+  color: var(--foreground);
+}
+.startup-draft .startup-no-project[aria-pressed='true'],
+.startup-draft .startup-project-selector[data-selected] {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--studio-selected-fill);
 }
 .task-composer {
-  padding: 0 clamp(1rem, 4vw, 3rem) 1.25rem;
+  container: composer / inline-size;
+  padding: 0 var(--studio-chat-gutter) 1.5rem;
+}
+.studio-conversation-content {
+  max-width: calc(var(--chat-max) + 2 * var(--studio-chat-gutter));
+  padding-inline: calc(var(--studio-chat-gutter) + 12px);
 }
 .task-composer .studio-composer {
-  border-radius: 1.75rem;
+  border-radius: 1.125rem;
   border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
   background: var(--card);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 2%, transparent);
@@ -292,67 +322,13 @@
   --composer-accent: var(--destructive);
   position: relative;
 }
-.task-composer [data-composer-stop]::before,
-.task-composer [data-composer-stop]::after {
-  content: '';
-  position: absolute;
-  inset: -5px;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: var(--studio-glow-strength);
-  background: conic-gradient(
-    transparent 0deg 200deg,
-    color-mix(in srgb, var(--destructive) 75%, transparent) 285deg,
-    transparent 360deg
-  );
-  mask-image: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 3px));
-  filter: blur(2px);
-  animation: studio-stop-glow 2.4s linear infinite;
-}
-.task-composer [data-composer-stop]::after {
-  inset: -1px;
-  opacity: 1;
-  background: conic-gradient(
-    color-mix(in srgb, var(--destructive) 40%, var(--background)) 0deg,
-    color-mix(in srgb, var(--destructive) 75%, var(--background)) 200deg,
-    var(--destructive) 285deg,
-    color-mix(in srgb, var(--destructive) 40%, var(--background)) 360deg
-  );
-  mask-image: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
-  filter: none;
-}
-@keyframes studio-stop-glow {
-  to {
-    transform: rotate(360deg);
-  }
-}
-:root[data-theme-glow='0'] .task-composer [data-composer-stop]::before,
-:root[data-motion='reduce'] .task-composer [data-composer-stop]::before,
-:root[data-motion='reduce'] .task-composer [data-composer-stop]::after {
-  display: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .task-composer [data-composer-stop]::before,
-  .task-composer [data-composer-stop]::after {
-    display: none;
-  }
-}
-@media (forced-colors: active) {
-  .task-composer [data-composer-stop]::before,
-  .task-composer [data-composer-stop]::after {
-    display: none;
-  }
-}
 .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) {
   width: 2rem;
   height: 2rem;
   color: var(--primary-foreground);
   background: var(--composer-accent);
 }
-.task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):disabled {
-  background: color-mix(in srgb, var(--composer-accent) 85%, var(--card));
-  opacity: 1;
-}
+
 .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) svg {
   width: 1rem;
   height: 1rem;
@@ -376,29 +352,22 @@
     0 8px 28px #00000020;
 }
 .dark .task-composer .studio-composer:focus-within {
-  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--primary) 5%, transparent),
-    var(--studio-glow);
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+  box-shadow: none;
 }
 .dark .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) {
   border: 1px solid transparent;
 }
+/* Disabled actions use the same neutral treatment in both themes. */
+.task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):disabled,
 .dark .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):disabled {
   color: var(--muted-foreground);
-  border-color: var(--border);
-  background-color: var(--secondary);
-  background-image: linear-gradient(
-    140deg,
-    color-mix(in srgb, var(--primary) 5%, transparent),
-    transparent
-  );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--primary) 4%, transparent);
-  opacity: 0.65;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  box-shadow: none;
+  opacity: 0.6;
 }
-.dark
-  .task-composer
-  :is(button[type='submit'], [data-composer-stop]):not([data-labeled]):hover:not(:disabled) {
+.dark .task-composer button[type='submit']:not([data-labeled]):hover:not(:disabled) {
   box-shadow:
     inset 1.5px 0 var(--primary),
     inset 0 1px 0 color-mix(in srgb, var(--primary) 25%, transparent),
@@ -418,13 +387,13 @@
 .startup-draft [data-composer-workspace] > button,
 .startup-draft [data-composer-workspace] > span > button {
   height: 1.75rem;
+  font-size: 0.8125rem;
   gap: 0.375rem;
   padding-inline: 0.5rem;
   font-weight: 400;
   background: transparent;
 }
-.startup-draft [data-composer-workspace] > button + button,
-.startup-draft [aria-label='Task server'] {
+.startup-draft [data-composer-workspace] > button + button {
   border-left: 1px solid var(--border);
   border-radius: 0;
 }
@@ -444,6 +413,9 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+.task-info-settings:not(:has(button, input, select, textarea)) {
+  display: none;
 }
 .task-info-settings [data-composer-workspace] > button,
 .task-info-settings [data-composer-workspace] > span > button,
@@ -561,7 +533,7 @@ textarea {
 }
 .studio {
   --studio-header-height: 52px;
-  --studio-navigation-width: 68px;
+  --studio-navigation-width: 48px;
   --studio-brand-inset: 16px;
   height: 100dvh;
   display: flex;
@@ -586,7 +558,7 @@ textarea {
   gap: 20px;
   padding-inline: 16px 10px;
   border-bottom: 1px solid var(--border);
-  background: var(--sidebar);
+  background: var(--background);
   user-select: none;
 }
 .studio-header-layout {
@@ -647,7 +619,7 @@ textarea {
 .studio-titlebar[data-sidebar-brand='true'] {
   justify-content: flex-start;
   padding-inline: var(--studio-brand-inset, 16px) 16px;
-  background: var(--sidebar);
+  background: var(--background);
 }
 .studio[data-platform='darwin'] .studio-titlebar[data-sidebar-brand='true'] {
   padding-left: var(--studio-brand-inset);
@@ -829,6 +801,8 @@ textarea {
 }
 .studio-titlebar-task {
   min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
 }
 .studio-titlebar-parent {
   display: inline-flex;
@@ -952,26 +926,25 @@ textarea {
   background: var(--accent);
   color: var(--foreground);
 }
-/* A compact, floating rail for the workspace navigation. */
+/* Workspace columns share edges; elevation is reserved for temporary surfaces. */
 .studio-navigation[aria-label='Main navigation'] {
-  width: calc(var(--studio-navigation-width, 68px) - 16px);
+  width: var(--studio-navigation-width, 48px);
 }
 .studio-navigation[aria-label='Main navigation'],
 .studio-tools-navigation {
   gap: 0;
-  margin: 8px;
-  padding: 10px 7px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-  border-radius: 18px;
-  background: var(--card);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent),
-    0 4px 12px #00000012;
+  margin: 0;
+  padding: 10px 5px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--sidebar);
+  box-shadow: none;
   scrollbar-width: none;
 }
 .dark .studio-navigation[aria-label='Main navigation'],
 .dark .studio-tools-navigation {
-  background: color-mix(in srgb, var(--sidebar) 55%, #050709);
+  background: var(--sidebar);
 }
 .studio-navigation-group,
 .studio-navigation[aria-label='Main navigation'] .studio-navigation-settings {
@@ -998,7 +971,7 @@ textarea {
   height: 36px;
   min-height: 36px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 6px;
 }
 .dark .startup-draft .startup-project-selector[data-selected],
 .dark .startup-draft .startup-no-project[aria-pressed='true'],
@@ -1008,24 +981,19 @@ textarea {
   color: color-mix(in srgb, var(--foreground) 70%, var(--primary));
   border-color: color-mix(in srgb, var(--primary) 30%, transparent);
   background-color: var(--studio-selected-fill);
-  background-image: var(--studio-selected-gradient);
+  background-image: none;
   box-shadow:
     inset 1.5px 0 var(--primary),
     inset 0 1px 0 color-mix(in srgb, var(--primary) 18%, transparent),
     var(--studio-glow);
 }
-.dark
-  .studio-navigation[aria-label='Main navigation']
-  .studio-navigation-item[aria-current='page']::after {
-  content: '';
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--primary);
-  box-shadow: var(--studio-glow);
+/* Stop remains identifiable without an animated halo or an alarm-like fill. */
+.task-composer button[data-composer-stop]:not([data-labeled]):not(:disabled),
+.dark .task-composer button[data-composer-stop]:not([data-labeled]):not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--border);
+  background: var(--accent);
+  box-shadow: none;
 }
 .studio-navigation .studio-update-item {
   position: relative;
@@ -1251,15 +1219,12 @@ textarea {
 .studio-browser-sidebar .studio-browser-tab[data-active],
 .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
 .studio-task-sidebar .studio-thread-child[aria-current='true'] {
-  border-radius: 12px;
-  border-color: color-mix(in srgb, var(--primary) 26%, transparent);
+  border-radius: 6px;
+  border-color: transparent;
   background-color: var(--studio-selected-fill);
-  background-image: var(--studio-selected-gradient);
+  background-image: none;
   color: var(--foreground);
-  box-shadow:
-    inset 0 1px color-mix(in srgb, var(--primary) 12%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent),
-    var(--studio-glow);
+  box-shadow: none;
 }
 .studio-browser-sidebar .studio-browser-tab-title {
   font-size: 12px;
@@ -1566,22 +1531,46 @@ textarea {
   padding: 6px 12px;
   overflow-wrap: anywhere;
 }
+.studio-browser-setting-control,
+.studio-browser-viewport-controls {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.studio-browser-setting-control .studio-browser-setting-icon,
+.studio-browser-viewport-controls .studio-browser-setting-icon {
+  width: 38px;
+  border-radius: 0;
+  background: transparent;
+}
+.studio-browser-setting-control select,
+.studio-browser-viewport-controls select {
+  border: 0;
+  border-radius: 0;
+  padding-left: 0;
+}
+.studio-browser-location-summary {
+  border: 0;
+  border-radius: 0;
+}
+.studio-browser-location-summary .studio-browser-location {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted-foreground);
+}
 .studio-browser-settings-section > .studio-browser-activity-toggle {
   display: flex;
   align-items: center;
   gap: 10px;
+  justify-content: space-between;
   padding-top: 2px;
   color: var(--foreground);
   font-size: 13px;
-  cursor: pointer;
-}
-.studio-browser-activity-toggle input {
-  width: 17px;
-  height: 17px;
-  accent-color: var(--primary);
 }
 .studio-browser-activity-description {
-  padding-left: 27px;
   line-height: 18px;
 }
 .studio-browser-page-settings {
@@ -1601,14 +1590,14 @@ textarea {
   color: var(--muted-foreground);
 }
 .studio-browser-viewport {
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: 0;
+  padding-top: 4px;
 }
 .studio-browser-rotate {
   height: 32px;
   margin-left: 4px;
-  padding: 0 0 0 12px;
+  padding: 0 12px;
+  flex-shrink: 0;
   border-left: 1px solid var(--border);
   border-radius: 0;
   font-weight: 400;
@@ -1646,7 +1635,20 @@ textarea {
   font-size: 12px;
 }
 .studio-browser-more-actions > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
   cursor: pointer;
+}
+.studio-browser-more-actions > summary::-webkit-details-marker {
+  display: none;
+}
+.studio-browser-more-actions > summary > svg {
+  transform: rotate(-90deg);
+}
+.studio-browser-more-actions[open] > summary > svg {
+  transform: none;
 }
 .studio-browser-secondary-actions {
   display: flex;
@@ -1666,10 +1668,10 @@ textarea {
 .dark .studio-browser-site-controls,
 .dark .studio-browser-tab-menu {
   border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
-  background: color-mix(in srgb, var(--sidebar) 55%, #050709);
+  background: var(--sidebar);
 }
 .dark .studio-browser-address {
-  background: color-mix(in srgb, var(--sidebar) 55%, #050709);
+  background: var(--sidebar);
   border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
 }
 .dark .studio-browser-tab[data-active] .studio-browser-tab-profile {
@@ -1683,10 +1685,8 @@ textarea {
   color: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
   background-color: var(--studio-selected-fill);
-  background-image: var(--studio-selected-gradient);
-  box-shadow:
-    inset 0 1px color-mix(in srgb, var(--primary) 12%, transparent),
-    var(--studio-glow);
+  background-image: none;
+  box-shadow: none;
 }
 @media (pointer: coarse) {
   .studio-browser-sidebar .studio-browser-library > button,
@@ -1747,7 +1747,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 20px;
   letter-spacing: -0.025em;
@@ -1760,7 +1760,7 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
 }
 .studio-page-description > svg {
@@ -2052,12 +2052,14 @@ select:focus-visible,
   box-shadow: none;
 }
 
-/* Keep the tools rail within the 56px reserved beside floating viewers. */
+/* The tools rail shares the viewer edge instead of introducing another frame. */
 .studio-tools-navigation {
   width: 48px;
   min-height: 0;
-  margin: 8px 4px;
+  margin: 0;
   padding: 10px 5px;
+  border-right: 0;
+  border-left: 1px solid var(--border);
 }
 .studio-tools-group {
   display: flex;
@@ -2075,15 +2077,15 @@ select:focus-visible,
   padding-bottom: 12px;
 }
 .studio-thread-tools-panel {
-  margin: 8px 0 8px 8px;
+  margin: 0;
 }
 .studio-overview-pane {
-  margin: 8px;
+  margin: 0;
 }
 /* Match the 4px gap between the right viewer and its tools rail. Keep the brand
    anchored while removing the duplicate gutter between the left rail and overview. */
 .studio-header-layout[data-compact='false'] .studio-navigation[aria-label='Main navigation'] {
-  margin-right: 4px;
+  margin-right: 0;
 }
 .studio-header-layout[data-compact='false']
   .studio-body:has(> .studio-navigation[aria-label='Main navigation'])
@@ -2093,13 +2095,14 @@ select:focus-visible,
 .studio-header-layout[data-compact='false']
   .studio:has(.studio-navigation[aria-label='Main navigation'])
   .studio-titlebar[data-sidebar-brand='true'] {
-  padding-left: calc(var(--studio-brand-inset) + 4px);
+  padding-left: var(--studio-brand-inset);
 }
 .studio-thread-tools-panel,
 .studio-overview-pane {
-  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-  border-radius: 16px;
-  box-shadow: 0 4px 12px #00000012;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
 }
 .studio-thread-tools-panel .studio-thread-tools-header {
   min-height: 48px;
@@ -2150,7 +2153,7 @@ select:focus-visible,
 :root:not([data-theme='light']) [aria-label='Settings sections'] > .studio-overview-pane,
 :root:not([data-theme='light']) [aria-label='Pull request sidebar'] > .studio-overview-pane,
 :root:not([data-theme='light']) [aria-label='Thread project'] {
-  background: color-mix(in srgb, var(--sidebar) 65%, #000);
+  background: var(--sidebar);
 }
 
 .studio-task-sidebar .studio-overview-pane {
@@ -2173,12 +2176,8 @@ select:focus-visible,
   border-style: solid;
   border-width: 1px;
   border-radius: 8px;
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--foreground) 4%, transparent),
-    transparent
-  );
-  box-shadow: inset 0 1px color-mix(in srgb, var(--foreground) 2%, transparent);
+  background: transparent;
+  box-shadow: none;
 }
 .studio-thread-search input:focus-visible {
   border-color: color-mix(in srgb, var(--primary) 65%, transparent);
@@ -2193,7 +2192,7 @@ select:focus-visible,
 }
 .studio-task-sidebar .studio-thread-card {
   border-color: transparent;
-  border-radius: 12px;
+  border-radius: 6px;
   background: transparent;
   box-shadow: none;
 }
@@ -2203,25 +2202,18 @@ select:focus-visible,
 .dark .studio-browser-sidebar .studio-browser-tab[data-active],
 .dark .studio-task-sidebar .studio-thread-child[aria-current='true'],
 .dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card {
-  border-color: var(--primary);
+  border-color: transparent;
   background-color: var(--studio-selected-fill);
-  background-image: var(--studio-selected-gradient);
-  box-shadow:
-    inset 0 1px color-mix(in srgb, var(--primary) 18%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent),
-    var(--studio-glow);
+  background-image: none;
+  box-shadow: none;
 }
 .studio-task-sidebar .studio-list-section-header,
 .studio-browser-sidebar .studio-list-section-header {
   gap: 7px;
-  margin-block: 3px;
-  padding-block: 5px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
-  background: linear-gradient(
-    120deg,
-    color-mix(in srgb, var(--foreground) 4%, transparent),
-    transparent
-  );
+  margin-block: 6px 3px;
+  padding-block: 7px;
+  border: 1px solid transparent;
+  background: transparent;
 }
 .studio-thread-section-dot {
   width: 6px;
@@ -2292,16 +2284,77 @@ select:focus-visible,
 
 /* Project controls follow the flat, grouped card used in the thread design. */
 .studio-project-popover {
-  width: min(304px, var(--radix-popover-content-available-width), calc(100vw - 64px));
-  max-height: min(720px, var(--radix-popover-content-available-height));
-  scrollbar-width: none;
+  width: min(376px, var(--radix-popover-content-available-width), calc(100vw - 64px));
+  max-height: min(800px, var(--radix-popover-content-available-height));
+  scrollbar-width: thin;
+  scrollbar-gutter: auto;
 }
-.studio-project-popover::-webkit-scrollbar {
+.studio-thread-info-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 8px 20px;
+}
+.studio-thread-info-content > [data-thread-info-section] {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+.studio-thread-info-content
+  > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts']) {
+  grid-column: auto;
+}
+.studio-thread-info-content
+  > [data-thread-info-section='settings']:not(:has(button, input, select, textarea)),
+.studio-thread-info-content > [data-thread-info-section]:empty {
   display: none;
 }
+.studio-thread-info-content .studio-project-section,
+.studio-thread-info-content .task-info-settings {
+  padding: 14px 0;
+  border: 0;
+}
+.studio-thread-info-content .studio-project-checkout {
+  position: relative;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.studio-thread-info-content .studio-project-row {
+  min-width: 0;
+  width: 100%;
+  font-size: 12px;
+  white-space: normal;
+}
+.studio-thread-info-content .studio-project-checkout > .studio-project-row {
+  min-height: 34px;
+  padding-inline: 10px;
+}
+.studio-thread-info-content [data-thread-info-section='git'] .studio-project-split-row {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+}
+.studio-thread-info-content .studio-project-split-row > .studio-project-row {
+  padding-inline: 8px;
+}
+.studio-thread-info-content .studio-project-chevron {
+  width: 28px;
+  height: 32px;
+}
+.studio-thread-info-content [data-thread-info-section='scripts'] .studio-project-section,
+.studio-thread-info-content [data-thread-info-section='openIn'] .studio-project-section {
+  padding: 8px;
+}
+.studio-project-popover::-webkit-scrollbar {
+  width: 4px;
+}
 .studio-project-panel {
-  gap: 4px;
-  background: var(--popover);
+  gap: 0;
+  background: transparent;
 }
 .studio-project-card {
   flex-shrink: 0;
@@ -2317,7 +2370,36 @@ select:focus-visible,
   background: transparent;
 }
 .studio-project-section {
-  padding: 14px 16px;
+  padding: 12px 16px;
+}
+.studio-project-section:empty {
+  display: none;
+}
+[data-thread-info-section='openIn'] .studio-project-section,
+[data-thread-info-section='scripts'] .studio-project-section {
+  padding-block: 4px;
+}
+[aria-label='Code changes'] .studio-change-summary {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+[aria-label='Code changes'] .studio-change-summary .studio-change-summary-toggle {
+  padding: 8px 0;
+  grid-template-columns: minmax(0, 1fr) 16px;
+}
+[aria-label='Code changes'] .studio-change-summary-icon,
+[aria-label='Code changes']
+  .studio-change-summary[data-expanded='false']
+  .studio-change-summary-compact {
+  display: none;
+}
+[aria-label='Code changes'] .studio-change-summary-compact [role='img'] {
+  height: 3px;
+  opacity: 0.6;
 }
 .studio-project-actions {
   display: flex;
@@ -2353,17 +2435,16 @@ a.studio-project-row:hover {
 .studio-project-checkout > .studio-project-row {
   border: 1px solid var(--border);
   padding-inline: 10px;
-  background: var(--accent);
+  background: var(--background);
   color: var(--foreground);
 }
 .studio-project-checkout > .studio-project-row > svg:first-child {
   display: none;
 }
 .studio-project-changes {
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  padding-top: 14px;
+  margin-top: 0;
+  border: 0;
+  padding-top: 6px;
 }
 .studio-project-split-row {
   display: flex;
@@ -2464,7 +2545,7 @@ a.studio-project-row:hover {
 
 /* Titles carry selection and unread emphasis; metadata stays secondary. */
 .studio-thread-card-context {
-  color: color-mix(in srgb, var(--muted-foreground) 94%, var(--background));
+  color: var(--muted-foreground);
 }
 [data-high-contrast='true'] .studio-thread-card-context {
   color: var(--muted-foreground);
@@ -2576,4 +2657,231 @@ a.studio-project-row:hover {
   .composer-send-group[data-options]:has(button[type='submit']:disabled)
   .composer-send-options {
   color: var(--muted-foreground);
+}
+
+/* Hover actions overlay the preview; touch panels retain their action row. */
+@media (hover: hover) {
+  [data-queue-actions] {
+    position: absolute;
+    right: 44px;
+    top: 50%;
+    max-width: calc(100% - 56px);
+    transform: translateY(-50%);
+  }
+}
+/* Narrow panes leave a dedicated line for the prompt. */
+@media (min-width: 768px) {
+  @container composer (max-width: 36rem) {
+    .task-composer .studio-composer[data-idle] {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+    .task-composer .studio-composer[data-idle] > :is(textarea, [data-composer-input]) {
+      grid-area: 1 / 1 / 2 / -1;
+    }
+    .task-composer .studio-composer[data-idle] [data-composer-leading] {
+      grid-area: 2 / 1;
+    }
+    .task-composer .studio-composer[data-idle] [data-composer-controls] {
+      grid-area: 2 / 2;
+    }
+    .task-composer .studio-composer[data-idle] [data-composer-actions] {
+      grid-area: 2 / 3;
+    }
+  }
+}
+
+/* Attachments retain the same prompt/toolbar layout in wide panes. */
+@media (min-width: 768px) {
+  @container composer (min-width: 0px) {
+    .task-composer .studio-composer[data-idle]:has([aria-label='Draft attachments']) {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+    .task-composer
+      .studio-composer[data-idle]:has([aria-label='Draft attachments'])
+      > :is(textarea, [data-composer-input]) {
+      grid-area: 1 / 1 / 2 / -1;
+    }
+    .task-composer
+      .studio-composer[data-idle]:has([aria-label='Draft attachments'])
+      [data-composer-leading] {
+      grid-area: 3 / 1;
+    }
+    .task-composer
+      .studio-composer[data-idle]:has([aria-label='Draft attachments'])
+      [data-composer-controls] {
+      grid-area: 3 / 2;
+    }
+    .task-composer
+      .studio-composer[data-idle]:has([aria-label='Draft attachments'])
+      [data-composer-actions] {
+      grid-area: 3 / 3;
+    }
+  }
+}
+
+/* Settings controls share a field surface and leave room for the disclosure. */
+.studio-settings-page :is([data-choice-picker], [data-slot='select-trigger'], [data-slot='input']) {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.studio-settings-page :is([data-choice-picker], [data-slot='select-trigger']) {
+  min-width: min(192px, 100%);
+  gap: 8px;
+  padding-inline: 12px;
+}
+.studio-settings-page details > summary {
+  list-style: none;
+}
+.studio-settings-page details > summary::-webkit-details-marker {
+  display: none;
+}
+.studio-settings-page details > summary:not(:has(svg))::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: rotate(-45deg);
+  vertical-align: 1px;
+}
+.studio-settings-page details[open] > summary:not(:has(svg))::before {
+  transform: rotate(45deg);
+}
+
+.studio-thread-info-links {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+.studio-thread-info-links > [data-thread-info-section]:empty {
+  display: none;
+}
+.studio-thread-info-links
+  > [data-thread-info-section]:not(:empty)
+  ~ [data-thread-info-section]:not(:empty) {
+  border-top: 1px solid var(--border);
+}
+.studio-thread-info-links .studio-project-section {
+  padding: 8px 0;
+}
+.studio-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 16px 24px;
+  text-align: center;
+}
+.studio-panel-empty-icon {
+  box-sizing: content-box;
+  width: 24px;
+  height: 24px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--muted-foreground);
+}
+.studio-settings-page [data-setting-label] :is([data-choice-picker], [data-slot='select-trigger']) {
+  min-width: 192px;
+  max-width: 100%;
+}
+.studio-settings-page .studio-browser-profile-fields [data-choice-picker] {
+  min-width: 0;
+  width: 100%;
+}
+.studio-settings-page [data-slot='textarea'] {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: none;
+  resize: none;
+}
+
+/* Thread context occupies its own column rather than covering the conversation. */
+@media (min-width: 1100px) {
+  [data-project-panel-frame][data-info-open][data-info-docked='true'] {
+    padding-right: 340px;
+  }
+  .studio-thread-info-anchor[data-docked] {
+    inset-inline: 0;
+    top: 0;
+  }
+  .studio-project-popover[data-docked] {
+    width: 340px;
+    height: 100%;
+    border: 0;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--background);
+    box-shadow: none;
+  }
+}
+
+.task-composer:has([aria-label='Composer activity']) .studio-composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+[aria-label='Code changes'] .studio-change-summary-toggle > span:nth-child(2) {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* One accent marker identifies the active destination without another filled tile. */
+.studio
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page'],
+.studio .studio-tools-navigation .studio-navigation-item[aria-pressed='true'] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+}
+.studio
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page']::before,
+.studio .studio-tools-navigation .studio-navigation-item[aria-pressed='true']::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--primary);
+  transform: translateY(-50%);
+}
+
+@media (min-width: 768px) {
+  .task-composer
+    .studio-composer[data-idle]
+    > [data-composer-attachments]:has([aria-label='Draft attachments']) {
+    grid-area: 2 / 1 / 3 / -1;
+  }
+}
+.studio-composer [aria-label='Draft attachments'] > div {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.studio-composer [aria-label='Draft attachments'] > div > div {
+  width: auto;
+  max-width: 100%;
+}
+.studio-thread-info-content .studio-project-row {
+  padding-inline: 0;
+  gap: 8px;
+}
+.studio-thread-info-content
+  > :is([data-thread-info-section='scripts'], [data-thread-info-section='openIn'])
+  .studio-project-section {
+  padding-inline: 0;
 }

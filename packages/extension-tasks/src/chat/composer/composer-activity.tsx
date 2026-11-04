@@ -41,7 +41,7 @@ export function ComposerActivity({
   return (
     <section
       aria-label="Composer activity"
-      className="relative mx-auto mb-2 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] overflow-hidden rounded-xl border border-border/70 bg-muted/10 text-xs"
+      className="relative mx-auto mb-0 w-full max-w-[var(--chat-max)] overflow-hidden rounded-t-xl border border-b-0 border-border/70 bg-card text-[0.8125rem]"
     >
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {`${task.queue?.length ?? 0} queued ${(task.queue?.length ?? 0) === 1 ? 'message' : 'messages'}${pausedCount ? `, ${pausedCount} paused` : ''}`}
@@ -52,7 +52,7 @@ export function ComposerActivity({
         <div
           role={both ? 'tablist' : undefined}
           aria-label={both ? 'Queue and checklist' : undefined}
-          className="flex min-w-0 flex-1 items-center gap-1"
+          className="flex min-w-0 flex-1 items-center gap-1 pr-8"
         >
           {[
             ...(hasQueue
@@ -139,6 +139,11 @@ export function ComposerActivity({
               </span>
             )
           })}
+          {hasQueue && !both && (
+            <span className="truncate text-xs text-muted-foreground">
+              · {task.queuePaused || task.queue?.[0]?.paused ? 'Paused' : 'After this turn'}
+            </span>
+          )}
         </div>
         <button
           type="button"

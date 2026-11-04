@@ -253,21 +253,37 @@ try {
     })
   await dialogPage.addScriptTag({ content: dialogBundle.outputFiles[0].text })
   await dialogPage.waitForFunction(() => window.edit)
-  for (const [width, height] of [
-    [1100, 850],
-    [390, 640],
-    [320, 400],
+  for (const [width, height, theme] of [
+    [1100, 850, 'dark'],
+    [1100, 850, 'light'],
+    [390, 640, 'dark'],
+    [320, 400, 'light'],
   ]) {
     await dialogPage.setViewportSize({ width, height })
-    await dialogPage.evaluate(() => {
+    await dialogPage.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme
       const c = document.createElement('canvas')
       c.width = 400
       c.height = 240
       c.toBlob((blob) => void window.edit(new File([blob], 'layout.png', { type: 'image/png' })))
-    })
+    }, theme)
     const actualDialog = dialogPage.getByRole('dialog')
     const actualFrame = dialogPage.frameLocator('iframe')
     await actualFrame.locator('#attach:enabled').waitFor()
+    assert.equal(
+      await actualFrame.locator('html').getAttribute('data-theme'),
+      theme,
+      'Editor follows the app theme',
+    )
+    assert.equal(
+      await actualFrame.locator('#stage').evaluate((el) => getComputedStyle(el).backgroundColor),
+      theme === 'dark' ? 'rgb(8, 8, 8)' : 'rgb(241, 242, 244)',
+      'The image canvas uses the theme surface',
+    )
+    assert.ok(
+      await actualFrame.locator('body').evaluate((el) => el.scrollWidth <= innerWidth),
+      'Editor controls fit narrow windows',
+    )
     const box = await actualDialog.boundingBox(),
       iframe = await dialogPage.locator('iframe').boundingBox()
     assert.ok(

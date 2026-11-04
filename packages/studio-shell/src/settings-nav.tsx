@@ -28,7 +28,6 @@ import {
   Bell,
   Bot,
   ChartNoAxesCombined,
-  ChevronRight,
   Command,
   GitBranch,
   GitPullRequest,
@@ -270,6 +269,12 @@ export function SettingsNav({
   const inherited = activeView?.settingsScope === 'inherited'
   const scopeLabel = pageStorage(activeView)?.label ?? 'History on paired computers'
   const [sidebarVisible] = useLeftSidebar()
+  useEffect(() => {
+    if (sidebarVisible)
+      navigation.current
+        ?.querySelector('[aria-current="page"]')
+        ?.scrollIntoView({ block: 'nearest' })
+  }, [activeId, sidebarVisible])
   return (
     <nav
       ref={navigation}
@@ -289,7 +294,7 @@ export function SettingsNav({
       }}
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-64"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-72"
     >
       <SidebarHeader />
       <div className="studio-overview-pane flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sidebar px-4 py-3 md:px-3 md:py-4">
@@ -370,6 +375,11 @@ export function SettingsNav({
         <div
           role="region"
           aria-label="Settings navigation"
+          style={{
+            scrollbarWidth: 'thin',
+            maskImage: 'linear-gradient(#000 calc(100% - 20px), transparent)',
+            paddingBottom: 20,
+          }}
           tabIndex={0}
           className={`${needle ? 'flex max-h-64 md:max-h-none' : 'hidden'} min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex`}
         >
@@ -378,7 +388,7 @@ export function SettingsNav({
             if (!items.length) return null
             return (
               <div key={section} className="text-sm">
-                <h2 className="flex min-h-8 items-center px-2 text-[0.8125rem] font-semibold text-foreground/90">
+                <h2 className="flex min-h-10 items-center px-2 pt-2 text-[0.6875rem] font-medium text-muted-foreground">
                   {label}
                 </h2>
                 <div className="space-y-0.5">
@@ -403,7 +413,7 @@ export function SettingsNav({
                             aria-current={active ? 'page' : undefined}
                             aria-label={view.title}
                             onClick={() => select(view.id)}
-                            className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-xl py-1 pl-2 text-left"
+                            className="flex min-h-8 min-w-0 flex-1 scroll-my-6 items-center gap-2 rounded-xl py-1 pl-2 text-left"
                           >
                             <Icon
                               size={16}
@@ -414,13 +424,6 @@ export function SettingsNav({
                             <span className="min-w-0 flex-1 break-words leading-snug">
                               {view.title}
                             </span>
-                            {active && (
-                              <ChevronRight
-                                size={13}
-                                aria-hidden="true"
-                                className="shrink-0 text-muted-foreground"
-                              />
-                            )}
                           </button>
                           {Storage && label && (
                             <Popover.Root>
@@ -429,7 +432,7 @@ export function SettingsNav({
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="size-7 shrink-0 p-0 text-muted-foreground"
+                                  className="size-7 shrink-0 p-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                                   aria-label={`Settings scope for ${view.title}`}
                                   title={label}
                                 >
@@ -501,7 +504,7 @@ export function SettingsNav({
           className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
         >
           <p className="font-medium">
-            {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : scopeLabel}
+            {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : `Scope: ${scopeLabel}`}
           </p>
           {inherited && (
             <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">

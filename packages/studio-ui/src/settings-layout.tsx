@@ -25,8 +25,8 @@ export function SettingsPage({
   wide?: boolean
 }) {
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title={title} description={description}>
+    <section className="studio-settings-page flex min-h-0 min-w-0 flex-1 flex-col">
+      <PageHeader title="Settings" heading={false}>
         {local && (
           <span className="rounded-md border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground">
             This device · saved automatically
@@ -41,9 +41,15 @@ export function SettingsPage({
         role="region"
         aria-label={`${title} settings`}
         tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-7 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
       >
-        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}>
+        <div className={`${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-8 pb-24`}>
+          <div className="space-y-2">
+            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+            {description && (
+              <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+            )}
+          </div>
           {children}
         </div>
       </div>
@@ -63,17 +69,21 @@ export function SettingsGroup({
 }) {
   const id = useId()
   const content = (
-    <Card asChild className="divide-y divide-border/50 rounded-xl border-border/60 bg-muted/20 p-0">
+    <Card asChild className="divide-y divide-border/50 rounded-none border-0 bg-transparent p-0">
       <div>{children}</div>
     </Card>
   )
   if (advanced)
     return (
-      <details className="studio-settings-group group space-y-2">
+      <details className="studio-settings-group group overflow-hidden border-b border-border/60">
         <summary
           data-setting-label={title}
-          className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1 py-1.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
+          className="flex cursor-pointer list-none items-center gap-2 px-4 py-4 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
         >
+          <ChevronDown
+            aria-hidden="true"
+            className="size-3 shrink-0 -rotate-90 text-muted-foreground group-open:rotate-0"
+          />
           <span className="min-w-0 flex-1">
             {title}
             {description && (
@@ -82,10 +92,6 @@ export function SettingsGroup({
               </span>
             )}
           </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground group-open:rotate-180"
-          />
         </summary>
         {content}
       </details>
@@ -102,7 +108,7 @@ export function SettingsGroup({
           {title}
         </h2>
         {description && (
-          <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-1 break-words text-[0.8125rem] leading-relaxed text-muted-foreground">
             {description}
           </p>
         )}
@@ -127,7 +133,7 @@ export function SettingRow({
     <div
       data-setting-label={label}
       tabIndex={-1}
-      className="flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
+      className="flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">
@@ -139,7 +145,7 @@ export function SettingRow({
         {description && (
           <p
             id={`${id}-description`}
-            className="mt-1 break-words text-xs leading-relaxed text-muted-foreground"
+            className="mt-1 break-words text-[0.8125rem] leading-relaxed text-muted-foreground"
           >
             {description}
           </p>
@@ -213,6 +219,21 @@ export function SettingsSaveBar({
     }
   }, [saveError, dirty])
   const count = changeCount || changes.length || 1
+  if (!dirty && !saving)
+    return (
+      <div className="space-y-3 text-xs text-muted-foreground">
+        {saved && <p role="status">Changes saved.</p>}
+        {children && (
+          <details>
+            <summary className="cursor-pointer py-2">
+              <ChevronDown className="mr-1 inline size-3" aria-hidden="true" />
+              More settings actions
+            </summary>
+            <div className="flex flex-wrap gap-2 pt-2">{children}</div>
+          </details>
+        )}
+      </div>
+    )
   const status = saving
     ? 'Saving…'
     : dirty
@@ -255,7 +276,7 @@ export function SettingsSaveBar({
               className="cursor-pointer rounded-md px-2 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="More settings actions"
             >
-              More
+              <ChevronDown className="mr-1 inline size-3" aria-hidden="true" /> More
             </summary>
             <div className="studio-menu-surface absolute bottom-full right-0 mb-2 w-64 rounded-lg border bg-popover p-2 text-popover-foreground">
               {children}

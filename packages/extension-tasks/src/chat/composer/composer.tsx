@@ -6,7 +6,7 @@ import {
 import { createPortal } from 'react-dom'
 import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
-import { conversationPageSchema, draftStashScope } from '@dovo/protocol'
+import { canChangeTaskCheckout, conversationPageSchema, draftStashScope } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { QueueEditContext } from './queue-edit'
 import { useThreadInfoContext } from '../../detail/thread-info-context'
@@ -1110,6 +1110,7 @@ export function Composer({
   const workspaceSettings = workspaceControls?.(accessSlot) ?? (
     <ComposerWorkspace
       task={task}
+      showBranch={canChangeTaskCheckout(task)}
       disabled={sending || !!task.archived}
       onMachineMoving={setMachineMoving}
       onSelectRemote={onSelectRemote}
@@ -1593,7 +1594,7 @@ export function Composer({
             Drop files to attach
           </div>
         )}
-        <div className={cn('px-3', pendingQuestion && 'hidden')}>
+        <div data-composer-attachments className={cn('px-3', pendingQuestion && 'hidden')}>
           <MessageAttachments
             compact
             taskId={task.id}

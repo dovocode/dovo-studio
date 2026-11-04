@@ -236,8 +236,10 @@ try {
     await chooseScope('project')
     await page.waitForFunction(() => !!window.releaseProject)
     assert.equal(
-      await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
-      true,
+      mobile
+        ? await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled()
+        : await page.getByRole('button', { name: 'Save changes', exact: true }).count(),
+      mobile ? true : 0,
     )
     await chooseScope('global')
     await page.getByLabel('Setup command', { exact: true }).waitFor()
@@ -353,7 +355,7 @@ try {
     await page
       .getByRole('button', { name: mobile ? 'Reload settings' : 'Reload', exact: true })
       .click()
-    await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+    if (mobile) await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
     await page.waitForFunction(
       () =>
         document

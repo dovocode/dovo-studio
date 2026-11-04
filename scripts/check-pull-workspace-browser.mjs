@@ -201,7 +201,7 @@ try {
   await page.getByText('Please add a test', { exact: true }).waitFor()
   const detail = page.locator('[aria-label="Pull request details"]')
   const content = detail.locator('[aria-label="Pull request content"]')
-  const heading = detail.getByRole('heading', { level: 1, name: /Improve pull request reviews/ })
+  const heading = detail.getByRole('heading', { level: 2, name: /Improve pull request reviews/ })
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
     .locator('[aria-label="Pull request status"]')
@@ -273,7 +273,7 @@ try {
         .querySelector('[aria-label="Code changes"] [aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'true',
   )
-  await page.getByText('1 of 2 viewed', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '2 files · 1 viewed', exact: true }).waitFor()
   assert.equal(await heading.isVisible(), true)
   await page
     .getByRole('navigation', { name: 'Changed files' })
@@ -317,7 +317,7 @@ try {
   assert.equal(merged.input.method, 'squash')
   await page.screenshot({ path: '/tmp/dovo-pull-workspace.png' })
   await page.getByRole('tab', { name: /Changes/ }).click()
-  await page.getByText('1 of 2 viewed', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '2 files · 1 viewed', exact: true }).waitFor()
   await page.screenshot({ path: '/tmp/dovo-pull-changes.png' })
   await page.setViewportSize({ width: 390, height: 844 })
   for (const name of ['Overview', 'Changes (2)', 'Checks (1)']) {

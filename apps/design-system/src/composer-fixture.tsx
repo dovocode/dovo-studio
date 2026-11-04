@@ -47,9 +47,9 @@ const claudeAgent = {
 }
 const attachment = {
   id: 'f8e2ad6f-951c-46c7-a3ac-8dcb4e778ac4',
-  name: 'preview.png',
+  name: 'workspace.png',
   mime: 'image/png',
-  size: 68,
+  size: 12400,
 }
 const initialTask = decode(taskSchema, {
   id: taskId,

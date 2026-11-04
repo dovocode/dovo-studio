@@ -413,7 +413,7 @@ export function TaskProjectPanel({
                 <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
               )}
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-medium text-foreground">
+                <h2 className="truncate text-base font-semibold text-foreground">
                   {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
                 </h2>
                 <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -424,28 +424,26 @@ export function TaskProjectPanel({
                   {executionHost ?? 'Selected computer'}
                   {!connected && ' · Offline'}
                 </p>
-                {repo?.kind !== 'scratch' && (
-                  <p
-                    className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
-                    title={task.existingWorktreePath || repo?.path || 'No local checkout'}
-                  >
-                    {task.existingWorktreePath || repo?.path || 'No local checkout'}
-                  </p>
-                )}
               </div>
             </div>
           )}
           {show('project') && repo && !repo.kind && (
-            <div className="studio-project-checkout mb-3">
-              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            <div className="studio-project-checkout">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
                 {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
+              </p>
+              <p
+                className="studio-project-path mt-2 truncate font-mono text-xs text-muted-foreground"
+                title={task.existingWorktreePath || repo.path}
+              >
+                {task.existingWorktreePath || repo.path}
               </p>
               <TaskBranchMenu
                 panel
                 task={task}
                 label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
               />
-              <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
+              <p className="mt-2 text-[11px] text-muted-foreground" role="status">
                 {gitError
                   ? `Git status unavailable: ${gitError}`
                   : !connected
@@ -533,11 +531,11 @@ export function TaskProjectPanel({
     ),
     scripts: (
       <>
-        <div className="studio-project-section">
-          {show('scripts') && onTerminal && (
+        {show('scripts') && onTerminal && (
+          <div className="studio-project-section">
             <TaskProjectActions panel task={task} onTerminal={onTerminal} />
-          )}
-        </div>
+          </div>
+        )}
       </>
     ),
     usage: <ThreadInfoUsage task={task} />,
@@ -549,9 +547,9 @@ export function TaskProjectPanel({
             aria-label="Pull requests"
             className="studio-project-section border-t border-border/60"
           >
-            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Pull requests
-            </h3>
+            {!!displayedPulls.length && (
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">Pull requests</h3>
+            )}
             {!!displayedPulls.length && (
               <div
                 aria-label="Linked pull requests"
@@ -611,9 +609,6 @@ export function TaskProjectPanel({
                 ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
                 : 'Link projects'}
             </Button>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Use project checkouts or worktrees on this computer.
-            </p>
           </div>
         )}
       </>
@@ -634,9 +629,7 @@ export function TaskProjectPanel({
     git: (
       <>
         <div className="studio-project-section border-t border-border/60">
-          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Version control
-          </h3>
+          <h3 className="mb-2 text-xs font-medium text-muted-foreground">Version control</h3>
           {gitActions}
         </div>
       </>
@@ -656,7 +649,11 @@ export function TaskProjectPanel({
                   ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
               </span>
               <span className="studio-project-diff">
-                <DiffAmounts stats={stats} />
+                {stats.additions || stats.deletions ? (
+                  <DiffAmounts stats={stats} />
+                ) : (
+                  <span className="text-muted-foreground">No changes</span>
+                )}
               </span>
             </Button>
           )}
@@ -681,9 +678,23 @@ export function TaskProjectPanel({
       </>
     ),
   } satisfies Record<ThreadInfoSectionId, ReactNode>
+  const compactSections = new Set<ThreadInfoSectionId>([
+    'pulls',
+    'git',
+    'changes',
+    'servers',
+    'projects',
+  ])
+  const groups: ThreadInfoSectionId[][] = []
+  for (const { id } of orderedThreadInfoSections(threadInfoOrder)) {
+    if (id !== 'settings' && !show(id)) continue
+    const previous = groups.at(-1)
+    if (previous && compactSections.has(id) && compactSections.has(previous[0])) previous.push(id)
+    else groups.push([id])
+  }
   return (
     <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
-      <div className="studio-project-card">
+      <div className="studio-thread-info-content">
         {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
           <Button
             size="sm"
@@ -695,13 +706,20 @@ export function TaskProjectPanel({
             <Download className="size-3.5" /> Server update
           </Button>
         )}
-        {orderedThreadInfoSections(threadInfoOrder).map(
-          ({ id }) =>
-            (id === 'settings' || show(id)) && (
-              <div key={id} data-thread-info-section={id}>
-                {sections[id]}
-              </div>
-            ),
+        {groups.map((ids) =>
+          compactSections.has(ids[0]) ? (
+            <div key={ids[0]} className="studio-thread-info-links">
+              {ids.map((id) => (
+                <div key={id} data-thread-info-section={id}>
+                  {sections[id]}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div key={ids[0]} data-thread-info-section={ids[0]}>
+              {sections[ids[0]]}
+            </div>
+          ),
         )}
       </div>
       {gitOpen && repo && (

@@ -39,8 +39,8 @@ export function ServiceUrlSettings() {
         setups use this URL; existing Connect connections keep their current server until disabled
         and enabled again through LAN / VPN pairing.
       </p>
-      <label className="block space-y-1 text-sm" htmlFor={`${id}-connect`}>
-        <span>Dovo Connect URL</span>
+      <label className="block space-y-1 text-[0.8125rem]" htmlFor={`${id}-connect`}>
+        <span className="font-medium">Dovo Connect URL</span>
         <Input
           id={`${id}-connect`}
           value={fields.connectOrigin}
@@ -54,8 +54,8 @@ export function ServiceUrlSettings() {
           }}
         />
       </label>
-      <label className="block space-y-1 text-sm" htmlFor={`${id}-artifacts`}>
-        <span>Dovo Artifacts URL</span>
+      <label className="block space-y-1 text-[0.8125rem]" htmlFor={`${id}-artifacts`}>
+        <span className="font-medium">Dovo Artifacts URL</span>
         <Input
           id={`${id}-artifacts`}
           value={fields.artifactsOrigin}

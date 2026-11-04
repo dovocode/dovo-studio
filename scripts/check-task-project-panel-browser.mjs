@@ -76,7 +76,7 @@ const built = await build({
     import {TaskRow} from '../extension-tasks/src/list/task-row';
     import {TaskHeader} from '../extension-tasks/src/detail/task-header';
     import {TaskProjectPanel} from '../extension-tasks/src/detail/task-project-panel';
-    import {TaskProjectPopover} from '../extension-tasks/src/detail/task-project-popover';
+    import {TaskProjectPopover,TaskProjectPanelRoot} from '../extension-tasks/src/detail/task-project-popover';
     import {Popover} from '@dovo/studio-ui';
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
@@ -106,15 +106,15 @@ const built = await build({
       window.store={workspace:{tasks:[task,...window.lineage],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
       if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},subagents:i===1?[{id:'native',name:'Native reviewer',provider:'claude',status:'working'}]:[],title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} thread={i===0?{key:name,runtimeId:'runtime',threadId:name,title:'Fix reconnection across Wi-Fi switches',computerName:'Dominic Mac',phase:'completed',online:true,paused:false,children:[{key:'child',runtimeId:'runtime',threadId:'child',title:'Review implementation',computerName:'Dominic Mac',phase:'running',online:true,paused:false,children:[]}]}:undefined} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false}/>)}</div>;
-      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<Popover.Root open={panel} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
+      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<TaskProjectPanelRoot open={panel} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
         <div data-thread-workspace style={{position:'relative',display:'flex',minHeight:0,flex:1,marginRight:window.mobile?0:56}}>
-        <div data-project-panel-frame style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
+        <div data-project-panel-frame data-info-open={panel||undefined} style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
         <TaskProjectPopover><TaskProjectPanel task={task} onSurface={next=>{window.surface=next;setPanel(false)}} onTerminal={()=>{}}/></TaskProjectPopover>
         </div>
         {!window.mobile&&<aside data-tools-sidebar style={{width:toolsWidth,flexShrink:0}}/>}
         {!window.mobile&&<TaskTools task={task} artifactsEnabled surface={surface} onSelect={setSurface} hasDiff={false} hasLinkedPulls={!!task.linkedPullRequests?.length}/>}
         {surface==='linked-pulls'&&<TaskLinkedPullPanel task={task} onPullLink={url=>{window.selectedPull=url;return true}} onClose={()=>setSurface('chat')}/>}
-        </div></div></Popover.Root></div></div></SidebarHeaderLayout>;
+        </div></div></TaskProjectPanelRoot></div></div></SidebarHeaderLayout>;
     }
     window.render=()=>root.render(<TooltipProvider><App/></TooltipProvider>);window.render();
   `,
@@ -220,9 +220,13 @@ try {
             fill: style.backgroundColor,
           }
         })
-        assert.equal(style.radius, '12px')
-        assert.notEqual(style.shadow, 'none')
-        assert.notEqual(style.fill, 'rgba(0, 0, 0, 0)')
+        assert.equal(style.radius, '6px')
+        assert.equal(style.shadow, 'none')
+        assert.equal(style.fill, 'rgba(0, 0, 0, 0)')
+        assert.notEqual(
+          await files.evaluate((button) => getComputedStyle(button, '::before').backgroundColor),
+          'rgba(0, 0, 0, 0)',
+        )
         assert.equal((await tools.boundingBox()).width, 48)
         const previews = await tools.getByRole('group', { name: 'Previews' }).boundingBox()
         const rail = await tools.boundingBox()
@@ -330,7 +334,7 @@ try {
     await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
     const info = page.getByRole('dialog', { name: 'Thread info', exact: true })
     await info.getByRole('button', { name: 'Share thread', exact: true }).waitFor()
-    await info.getByText('Not reported', { exact: true }).waitFor()
+    assert.equal(await info.getByRole('region', { name: 'Context usage', exact: true }).count(), 0)
     await page.evaluate(() =>
       window.setContextUsage({ used: 170000, limit: 200000, updatedAt: new Date().toISOString() }),
     )
@@ -398,26 +402,51 @@ try {
     const popover = await page
       .getByRole('dialog', { name: 'Thread info', exact: true })
       .boundingBox()
-    assert.ok(popover && popover.width <= 304 && popover.width > 0)
+    assert.ok(popover && popover.width <= 376 && popover.width > 0)
     const frame = await page.locator('[data-project-panel-frame]').boundingBox()
-    assert.ok(Math.abs(popover.y - frame.y - 32) < 1)
-    assert.ok(Math.abs(frame.x + frame.width - popover.x - popover.width - 32) < 1)
-    assert.ok(popover.y + popover.height <= frame.y + frame.height - 32 + 1)
+    const inset = !mobile && frame.width >= 700 ? 0 : 32
+    assert.ok(
+      Math.abs(popover.y - frame.y - inset) < 1,
+      JSON.stringify({ popover, frame, inset, mobile }),
+    )
+    assert.ok(Math.abs(frame.x + frame.width - popover.x - popover.width - inset) < 1)
+    assert.ok(popover.y + popover.height <= frame.y + frame.height - inset + 1)
     assert.equal((await page.locator('[data-thread-content]').boundingBox()).width, chatWidth)
     if (!mobile) {
       for (const width of [280, 380, 0]) {
         await page.evaluate((width) => window.setToolsWidth(width), width)
-        await page.waitForFunction((width) => {
-          const chat = document.querySelector('[data-project-panel-frame]').getBoundingClientRect()
-          const panel = document.querySelector('[aria-label="Thread info"]').getBoundingClientRect()
-          const workspace = document
-            .querySelector('[data-thread-workspace]')
-            .getBoundingClientRect()
-          return (
-            Math.abs(chat.right - panel.right - 32) < 1 &&
-            Math.round(workspace.width - chat.width) === width
-          )
-        }, width)
+        await page
+          .waitForFunction((width) => {
+            const chat = document
+              .querySelector('[data-project-panel-frame]')
+              .getBoundingClientRect()
+            const panel = document
+              .querySelector('[aria-label="Thread info"]')
+              .getBoundingClientRect()
+            const workspace = document
+              .querySelector('[data-thread-workspace]')
+              .getBoundingClientRect()
+            return (
+              Math.abs(chat.right - panel.right - (chat.width >= 700 ? 0 : 32)) < 1 &&
+              Math.round(workspace.width - chat.width) === width
+            )
+          }, width)
+          .catch(async (error) => {
+            console.error(
+              await page.evaluate(() => {
+                const frame = document.querySelector('[data-project-panel-frame]')
+                const panel = document.querySelector('[role="dialog"][aria-label="Thread info"]')
+                const workspace = document.querySelector('[data-thread-workspace]')
+                return {
+                  frame: frame.getBoundingClientRect().toJSON(),
+                  panel: panel.getBoundingClientRect().toJSON(),
+                  workspace: workspace.getBoundingClientRect().toJSON(),
+                  docked: frame.dataset.infoDocked,
+                }
+              }),
+            )
+            throw error
+          })
         const chat = await page.locator('[data-project-panel-frame]').boundingBox()
         const workspace = await page.locator('[data-thread-workspace]').boundingBox()
         assert.equal(Math.round(workspace.width - chat.width), width)
@@ -433,7 +462,15 @@ try {
       .waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.keyboard.press('Escape')
-    await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
+    await page
+      .getByRole('region', { name: 'Thread info', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
+    await page.getByRole('button', { name: 'Close thread info', exact: true }).click()
+    await page
+      .getByRole('region', { name: 'Thread info', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.locator('[data-thread-content]').click({ position: { x: 10, y: 100 } })
     await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
     await page.evaluate(() => window.switchThread())
@@ -491,7 +528,7 @@ try {
     await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
     assert.equal(
       await page
-        .locator('.studio-project-card')
+        .locator('.studio-thread-info-content')
         .getByRole('region', { name: 'Related items and watchers' })
         .count(),
       1,
@@ -541,11 +578,11 @@ try {
         path: `/tmp/dovo-project-panel-${mobile ? 'compact' : 'desktop'}.png`,
       })
       await page
-        .locator('.studio-project-card')
+        .locator('.studio-thread-info-content')
         .screenshot({ path: `/tmp/dovo-project-card-${mobile ? 'compact' : 'desktop'}.png` })
       assert.equal(
         await page
-          .locator('.studio-project-card')
+          .locator('.studio-thread-info-content')
           .evaluate((element) => getComputedStyle(element).borderRadius),
         '0px',
       )
@@ -558,8 +595,11 @@ try {
     }
     if (stylesheet) {
       const totals = await page.locator('.studio-project-diff').boundingBox()
-      const card = await page.locator('.studio-project-card').boundingBox()
-      assert.ok(totals && card && card.x + card.width - (totals.x + totals.width) < 30)
+      const card = await page.locator('.studio-project-diff').evaluate((node) => {
+        const bounds = node.closest('.studio-thread-info-links').getBoundingClientRect()
+        return { x: bounds.x, width: bounds.width }
+      })
+      assert.ok(totals && card && card.x + card.width - (totals.x + totals.width) <= 16)
     }
     const linkedRow = page.getByLabel('Linked pull requests', { exact: true })
     await linkedRow.getByRole('link', { name: /Open PR #7/ }).waitFor()

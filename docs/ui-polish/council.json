@@ -1,0 +1,49 @@
+{
+  "status": "in-progress",
+  "userFeedback": "Busy, not uniform, bloated and unidentifiable; previous tweaks rated 7/10.",
+  "finalApproval": false,
+  "reviews": [
+    {
+      "round": "reset3",
+      "model": "GPT-6.1 Sol",
+      "score": 7.5,
+      "id": "d8343620-5a55-4b3a-987c-8118c1e6aae0"
+    },
+    {
+      "round": "reset3",
+      "model": "GPT-6.1 Sol",
+      "score": 7.5,
+      "id": "59f344de-3729-46f5-a7a9-cffa79a63e5c"
+    },
+    {
+      "round": "reset3",
+      "model": "GPT-6.1 Sol",
+      "score": 7.5,
+      "id": "6c92e0a6-f06d-4adb-be76-03cb6fa07c10"
+    },
+    {
+      "round": "reset5",
+      "model": "GPT-6.1 Sol",
+      "score": 8,
+      "id": "0a9f60c2-93be-4306-aae8-2766a65ae9a2"
+    },
+    {
+      "round": "reset5",
+      "model": "Opus 5.5",
+      "score": 7.6,
+      "id": "430d788a-e2a0-48fd-ba20-416b038f66ee"
+    },
+    {
+      "round": "reset5",
+      "model": "Opus 5.5",
+      "score": 7.6,
+      "id": "e4806b4a-7821-4472-8788-4cb298e39cdc"
+    }
+  ],
+  "remaining": [
+    "Navigation identity and clarity",
+    "Conversation hierarchy and split-pane allocation",
+    "Inspector consistency",
+    "Final full capture and five-member review"
+  ]
+}

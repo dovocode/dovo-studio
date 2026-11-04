@@ -234,9 +234,7 @@ function PullDetailContent({
               {repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/')}
             </span>
             <span className="studio-titlebar-divider">/</span>
-            <span className="studio-titlebar-task">
-              {detail ? `#${number} · ${detail.pull.title}` : `PR #${number}`}
-            </span>
+            <span className="studio-titlebar-task">{`PR #${number}`}</span>
           </h1>
           <Button
             size="icon"
@@ -328,7 +326,7 @@ function PullDetailContent({
         )}
         {detail && (
           <>
-            <header className="shrink-0 space-y-3 border-b border-border/60 px-4 py-4">
+            <header className="shrink-0 space-y-2 border-b border-border/60 px-4 py-3">
               <h2
                 className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]"
                 data-testid="PR title"
@@ -390,7 +388,8 @@ function PullDetailContent({
                     aria-label="View pull request files"
                   >
                     <FileDiff className="size-3.5" aria-hidden />
-                    {detail.pull.changedFiles?.toLocaleString() ?? '—'} files
+                    {detail.pull.changedFiles?.toLocaleString() ?? '—'}{' '}
+                    {detail.pull.changedFiles === 1 ? 'file' : 'files'}
                   </button>
                   <span className="text-status-success">
                     +{detail.pull.additions?.toLocaleString() ?? '—'}
@@ -401,110 +400,112 @@ function PullDetailContent({
                 </span>
               </div>
             </header>
-            <div
-              role="tablist"
-              aria-label="PR detail sections"
-              className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 px-4 py-2"
-            >
-              {(
-                [
-                  {
-                    id: 'overview',
-                    label: 'Overview',
-                    count: sections.discussion.ready ? discussion.length : undefined,
-                    icon: MessageSquare,
-                  },
-                  {
-                    id: 'changes',
-                    label: 'Changes',
-                    count: sections.changes.ready
-                      ? detail.files.length
-                      : (detail.pull.changedFiles ?? undefined),
-                    icon: FileDiff,
-                  },
-                  {
-                    id: 'checks',
-                    label: 'Checks',
-                    count: sections.checks.ready ? detail.checks.length : undefined,
-                    icon: ListChecks,
-                  },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  id={`pr-tab-${item.id}`}
-                  aria-label={
-                    item.id === 'overview' || item.count === undefined
-                      ? item.label
-                      : `${item.label} (${item.count})`
-                  }
-                  aria-controls={`pr-panel-${item.id}`}
-                  aria-selected={tab === item.id}
-                  tabIndex={tab === item.id ? 0 : -1}
-                  onKeyDown={(event) => {
-                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-                    event.preventDefault()
-                    const tabs = [
-                      ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                        '[role="tab"]',
-                      ) ?? []),
-                    ]
-                    const index = tabs.indexOf(event.currentTarget)
-                    const next =
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? tabs.length - 1
-                          : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
-                            tabs.length
-                    tabs[next]?.click()
-                    tabs[next]?.focus()
-                  }}
-                  onClick={() => selectTab(item.id)}
-                  className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'border-border/70 bg-muted text-foreground shadow-sm forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                >
-                  <item.icon aria-hidden className="size-3.5" />
-                  {item.label}
-                  <span
-                    aria-hidden
-                    className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
-                  >
-                    {item.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div
-              className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-sidebar/60 px-4 py-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]"
-              aria-label="Pull request status"
-            >
-              <button
-                type="button"
-                aria-label="View pull request checks"
-                onClick={() => selectTab('checks')}
-                className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+            <div className="flex flex-wrap items-center border-b border-border/60">
+              <div
+                role="tablist"
+                aria-label="PR detail sections"
+                className="flex min-w-0 shrink-0 gap-1 overflow-x-auto px-4 py-1"
               >
+                {(
+                  [
+                    {
+                      id: 'overview',
+                      label: 'Overview',
+                      count: sections.discussion.ready ? discussion.length : undefined,
+                      icon: MessageSquare,
+                    },
+                    {
+                      id: 'changes',
+                      label: 'Changes',
+                      count: sections.changes.ready
+                        ? detail.files.length
+                        : (detail.pull.changedFiles ?? undefined),
+                      icon: FileDiff,
+                    },
+                    {
+                      id: 'checks',
+                      label: 'Checks',
+                      count: sections.checks.ready ? detail.checks.length : undefined,
+                      icon: ListChecks,
+                    },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    id={`pr-tab-${item.id}`}
+                    aria-label={
+                      item.id === 'overview' || item.count === undefined
+                        ? item.label
+                        : `${item.label} (${item.count})`
+                    }
+                    aria-controls={`pr-panel-${item.id}`}
+                    aria-selected={tab === item.id}
+                    tabIndex={tab === item.id ? 0 : -1}
+                    onKeyDown={(event) => {
+                      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                      event.preventDefault()
+                      const tabs = [
+                        ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                          '[role="tab"]',
+                        ) ?? []),
+                      ]
+                      const index = tabs.indexOf(event.currentTarget)
+                      const next =
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? tabs.length - 1
+                            : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
+                              tabs.length
+                      tabs[next]?.click()
+                      tabs[next]?.focus()
+                    }}
+                    onClick={() => selectTab(item.id)}
+                    className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'border-border/70 bg-muted text-foreground shadow-sm forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                  >
+                    <item.icon aria-hidden className="size-3.5" />
+                    {item.label}
+                    <span
+                      aria-hidden
+                      className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
+                    >
+                      {item.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div
+                className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2"
+                aria-label="Pull request status"
+              >
+                <button
+                  type="button"
+                  aria-label="View pull request checks"
+                  onClick={() => selectTab('checks')}
+                  className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <Signal
+                    signal={
+                      sections.status.ready || sections.checks.ready
+                        ? pullDetailChecks(detail)
+                        : { label: 'Loading checks…', tone: 'neutral' }
+                    }
+                  />
+                </button>
                 <Signal
                   signal={
-                    sections.status.ready || sections.checks.ready
-                      ? pullDetailChecks(detail)
-                      : { label: 'Loading checks…', tone: 'neutral' }
+                    sections.status.ready || sections.discussion.ready
+                      ? pullDetailReviews(detail)
+                      : { label: 'Loading review status…', tone: 'neutral' }
                   }
                 />
-              </button>
-              <Signal
-                signal={
-                  sections.status.ready || sections.discussion.ready
-                    ? pullDetailReviews(detail)
-                    : { label: 'Loading review status…', tone: 'neutral' }
-                }
-              />
-              <Signal signal={pullMergeability(detail.pull)} />
-              {detail.pull.autoMergeEnabled && (
-                <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
-              )}
+                <Signal signal={pullMergeability(detail.pull)} />
+                {detail.pull.autoMergeEnabled && (
+                  <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -520,7 +521,7 @@ function PullDetailContent({
             className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
-            <PullLinkedThreads pull={detail.pull} />
+            {tab === 'overview' && <PullLinkedThreads pull={detail.pull} />}
             {error && (
               <p
                 role="alert"
@@ -713,7 +714,7 @@ function PullDetailContent({
                     Review{' '}
                     {detail.pull.changedFiles === null
                       ? 'code changes'
-                      : `${detail.pull.changedFiles} files`}
+                      : `${detail.pull.changedFiles} ${detail.pull.changedFiles === 1 ? 'file' : 'files'}`}
                   </Button>
                 </aside>
               </div>

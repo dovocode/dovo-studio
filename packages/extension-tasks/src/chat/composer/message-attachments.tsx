@@ -119,7 +119,7 @@ export function MessageAttachments({
                   <img
                     src={previews.get(file.id)}
                     alt={file.name}
-                    className={`${compact ? 'size-6' : 'size-7'} shrink-0 rounded-md object-cover`}
+                    className={`${compact ? 'size-6' : 'size-7'} shrink-0 rounded-md border border-border object-cover`}
                   />
                 ) : (
                   <AttachmentThumbnail taskId={taskId} file={file} compact={compact} />
@@ -132,8 +132,10 @@ export function MessageAttachments({
                 </span>
               )}
               <span className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{file.name}</span>
-                <span className="shrink-0 text-[0.625rem] text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">
+                  {file.name}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {fileSizeLabel(file.size)}
                 </span>
               </span>
@@ -327,7 +329,7 @@ function AttachmentThumbnail({
   return (
     <span
       ref={ref}
-      className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground`}
+      className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted text-muted-foreground`}
     >
       {src ? (
         <img src={src} alt={file.name} className="size-full object-cover" />

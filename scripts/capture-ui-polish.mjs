@@ -1,0 +1,350 @@
+import assert from 'node:assert/strict'
+import { captureFollowUpDialogs } from './ui-polish-dialogs.mjs'
+import { build } from 'esbuild'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
+import { chromium } from './browser/harness.mjs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { WebSocketServer } from 'ws'
+import { encodeTerminalStreamFrame } from '../packages/protocol/dist/index.js'
+import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
+
+// Production screen compositions; only workspace reads come from the existing catalog fixture.
+const root = fileURLToPath(new URL('../', import.meta.url))
+const all = process.argv.includes('--all')
+const manifest = []
+const output = resolve(process.argv[2] ?? '/tmp/dovo-ui-polish')
+await mkdir(output, { recursive: true })
+const server = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  logLevel: 'error',
+  server: { host: '127.0.0.1', port: 0 },
+})
+await server.listen()
+const origin = `http://127.0.0.1:${server.httpServer.address().port}`
+const sockets = new WebSocketServer({ noServer: true })
+server.httpServer.on('upgrade', (request, socket, head) => {
+  if (new URL(request.url, origin).pathname === '/ws/terminal')
+    sockets.handleUpgrade(request, socket, head, (peer) =>
+      sockets.emit('connection', peer, request),
+    )
+})
+sockets.on('connection', (socket) => {
+  for (const frame of [
+    { type: 'replayStart' },
+    {
+      type: 'data',
+      data: new TextEncoder().encode(
+        '\x1b[36m~/dovo-studio\x1b[0m on main\r\n$ git status --short\r\n M src/navigation.tsx\r\n M README.md\r\n\r\n$ ',
+      ),
+    },
+    { type: 'replayEnd' },
+  ])
+    socket.send(encodeTerminalStreamFrame(frame))
+  socket.on('message', (raw) => {
+    const message = JSON.parse(raw.toString())
+    if (message.type === 'ping')
+      socket.send(encodeTerminalStreamFrame({ type: 'pong', nonce: message.nonce }))
+  })
+})
+let browser
+try {
+  const built = await build({
+    stdin: {
+      resolveDir: root + 'apps/design-system',
+      loader: 'tsx',
+      contents: `
+import {createRoot} from 'react-dom/client';
+import {DesktopScreen,desktopScreenViews} from './src/desktop-screens.stories';
+import {DesktopFollowUp} from './src/desktop-dialogs-fixture';
+import {PullDetail} from '../../packages/extension-scm/src/pulls/detail/detail';
+window.uiRoutes=desktopScreenViews.map(({id,title})=>({id,title}));
+import {updateAppPreferences} from '@dovo/studio-core';
+import {useAppearance} from '../../packages/studio-shell/src/appearance';
+const query=new URLSearchParams(location.search);
+updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
+function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("idle")?"idle":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
+createRoot(document.getElementById('app')).render(<App/>);`,
+    },
+    plugins: [
+      {
+        name: 'terminal-worker-location',
+        setup(builder) {
+          builder.onLoad({ filter: /composer-fixture\.tsx$/ }, async ({ path }) => ({
+            contents: (await readFile(path, 'utf8')).replace('http://preview.local:51464', origin),
+            loader: 'tsx',
+          }))
+          builder.onLoad({ filter: /terminal\/src\/browser\/terminal\.ts$/ }, async ({ path }) => ({
+            contents: (await readFile(path, 'utf8')).replace(
+              "new URL('./terminal.worker.ts', import.meta.url)",
+              "new URL('/packages/terminal/src/browser/terminal.worker.ts', import.meta.url)",
+            ),
+            loader: 'ts',
+          }))
+        },
+      },
+    ],
+    bundle: true,
+    write: false,
+    format: 'esm',
+    jsx: 'automatic',
+    platform: 'browser',
+    loader: { '.css': 'empty', '.png': 'dataurl', '.woff2': 'dataurl', '.md': 'text' },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      'import.meta.url': JSON.stringify(origin + '/entry.mjs'),
+    },
+    alias: {
+      react: root + 'packages/studio-ui/node_modules/react',
+      'react-dom': root + 'packages/studio-ui/node_modules/react-dom',
+    },
+  })
+  const css = (await server.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+  const taskCSS = (await server.transformRequest('/packages/extension-tasks/src/styles.css?direct'))
+    .code
+  browser = await chromium.launch()
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 960 },
+    deviceScaleFactor: 1,
+  })
+  await page.addInitScript(() => {
+    // Image and export editors own sandboxed frames; reset only this catalog's top-level page.
+    if (window.top !== window) return
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route(origin + '/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/entry.mjs')
+      return route.fulfill({ contentType: 'text/javascript', body: built.outputFiles[0].text })
+    if (path === '/')
+      return route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><head><title>Dovo UI review</title><style>${css}\n${taskCSS}</style></head><body><div id="app"></div><script type="module" src="/entry.mjs"></script></body></html>`,
+      })
+    return route.continue()
+  })
+  await page.goto(origin + '/?mode=dark&route=tasks')
+  const routes = await page.evaluate(() => window.uiRoutes)
+  const screens = process.argv.includes('--dialogs-only')
+    ? []
+    : [
+        ['welcome', 'tasks'],
+        ['conversation', 'tasks', 'preview-task'],
+        ['pulls', 'pulls'],
+        ['settings', 'general'],
+        ...(all
+          ? [
+              ...routes
+                .filter(({ id }) => !['tasks', 'pulls', 'general'].includes(id))
+                .map(({ id }) => [id, id]),
+              ...['overview', 'changes', 'checks'].map((tab) => [
+                'pull-' + tab,
+                'pulls',
+                undefined,
+                'pull-' + tab,
+              ]),
+              ...['Files', 'Linked projects', 'Side chats', 'Browsers', 'Devices'].map((tool) => [
+                tool.toLowerCase().replaceAll(' ', '-') + '-panel',
+                'tasks',
+                'preview-task',
+                tool,
+              ]),
+              ['thread-info', 'tasks', 'preview-task', 'info'],
+              ['terminal', 'tasks', 'preview-task', 'terminal'],
+              ['unified-workspace', 'tasks', 'preview-task', 'unified'],
+            ]
+          : []),
+      ]
+  for (const mode of ['dark', 'light'])
+    for (const [name, route, thread, action] of screens.filter(
+      ([name]) =>
+        !process.argv.some((arg) => arg.startsWith('--only=')) ||
+        process.argv
+          .find((arg) => arg.startsWith('--only='))
+          .slice(7)
+          .split(',')
+          .includes(name),
+    )) {
+      await page.goto(
+        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}`,
+      )
+      await page.locator('.studio').waitFor()
+      await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
+      if (route === 'tasks') {
+        await page
+          .getByRole('textbox', { name: 'Message task', exact: true })
+          .waitFor({ state: 'visible' })
+      }
+      if (action && !action.startsWith('pull-')) {
+        if (['terminal', 'unified'].includes(action))
+          await page.getByRole('button', { name: 'Show bottom terminal', exact: true }).click()
+        if (action === 'info') {
+          const info = page.getByRole('button', { name: 'Show thread info', exact: true })
+          if (await info.count()) await info.click()
+        } else if (action !== 'terminal')
+          await page
+            .getByRole('navigation', { name: 'Thread tools' })
+            .getByRole('button', { name: action === 'unified' ? 'Files' : action, exact: true })
+            .click()
+      }
+      await page.mouse.move(0, 0)
+      if (['terminal', 'unified'].includes(action)) {
+        await page.locator('[data-terminal-session] canvas').first().waitFor({ state: 'visible' })
+        assert.ok(
+          (await page.locator('[data-terminal-session]').first().boundingBox()).height > 100,
+          'Bottom terminal remains visible alongside tools',
+        )
+      }
+      if (['terminal', 'unified'].includes(action)) {
+        await page.waitForFunction(() =>
+          document
+            .querySelector('.dovo-terminal-accessible')
+            ?.textContent.includes('src/navigation.tsx'),
+        )
+      }
+      await page.waitForFunction(
+        () =>
+          !['Loading activity…', 'Loading provider models…'].some((text) =>
+            document.body.innerText.includes(text),
+          ),
+      )
+      await page.evaluate(() => document.fonts.ready)
+      await page.waitForFunction(() => {
+        const navigation = document.querySelector('[aria-label="Settings navigation"]')
+        const selected = navigation?.querySelector('[aria-current="page"]')
+        if (!navigation || !selected) return true
+        const area = navigation.getBoundingClientRect(),
+          item = selected.getBoundingClientRect()
+        return item.top >= area.top && item.bottom <= area.bottom - 16
+      })
+      await page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .every(
+            (a) =>
+              a.effect?.getComputedTiming().iterations === Infinity ||
+              ['finished', 'idle', 'paused'].includes(a.playState),
+          ),
+      )
+      const alerts = await page.getByRole('alert').allTextContents()
+      if (!all) assert.deepEqual(alerts, [], `${name}: no preview errors`)
+      const controls = await page
+        .locator('button, input, textarea, select, [role="switch"], [role="tab"]')
+        .evaluateAll((elements) =>
+          elements.map((element) => ({
+            role: element.getAttribute('role') ?? element.tagName.toLowerCase(),
+            label:
+              element.getAttribute('aria-label') ??
+              element.getAttribute('title') ??
+              element.textContent?.trim(),
+            disabled: element.matches(':disabled, [aria-disabled="true"]'),
+          })),
+        )
+      manifest.push({
+        name,
+        mode,
+        route,
+        alerts,
+        controls,
+        text: await page.locator('body').innerText(),
+      })
+      assert.equal(await page.evaluate(() => document.fonts.check('400 14px Inter')), true)
+      assert.equal(Math.round((await page.locator('.studio').boundingBox()).height), 960)
+      assert.ok(
+        (await page.getByRole('navigation', { name: 'Main navigation', exact: true }).boundingBox())
+          .width <= 64,
+        'Activity bar stays thin',
+      )
+      if (mode === 'dark')
+        assert.equal(
+          await page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue('--background').trim(),
+          ),
+          '#080808',
+        )
+      if (route === 'tasks') {
+        const placeholder = await page
+          .getByRole('textbox', { name: 'Message task', exact: true })
+          .evaluate((el) => getComputedStyle(el, '::before').content)
+        assert.ok(placeholder.length > 2 && placeholder !== 'none', 'Writing prompt is visible')
+      }
+      await writeFile(
+        resolve(output, 'manifest.json'),
+        JSON.stringify({ screens: manifest, errors }, null, 2),
+      )
+      await page.screenshot({ path: resolve(output, `${name}-${mode}.png`) })
+      if (name === 'conversation') {
+        const files = page
+          .getByRole('navigation', { name: 'Thread tools' })
+          .getByRole('button', { name: 'Files', exact: true })
+        await files.hover()
+        await page.getByRole('tooltip', { name: 'Files', exact: true }).waitFor()
+        await page.screenshot({ path: resolve(output, `tools-tooltip-${mode}.png`) })
+        await page.mouse.move(0, 0)
+        await page.keyboard.press('Escape')
+        await page.getByRole('tooltip').waitFor({ state: 'hidden' })
+        await files.focus()
+        assert.equal(await files.evaluate((el) => document.activeElement === el), true)
+        await page.keyboard.press('Tab')
+        await page.getByRole('button', { name: 'Linked projects', exact: true }).waitFor()
+        await page.evaluate(() => document.activeElement?.blur())
+        await page.keyboard.press('Escape')
+        await page.mouse.move(0, 0)
+        await page.waitForFunction(() => !document.querySelector('[role="tooltip"]'))
+      }
+      if (name === 'welcome' || name === 'conversation') {
+        await page.setViewportSize({ width: 1100, height: 960 })
+        await page.screenshot({ path: resolve(output, `${name}-compact-${mode}.png`) })
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        await page.setViewportSize({ width: 1440, height: 960 })
+      }
+      if (process.argv.includes('--controls')) {
+        const control =
+          name === 'conversation'
+            ? page.getByRole('button', { name: 'Choose agent and model', exact: true })
+            : name === 'pulls'
+              ? page.getByRole('button', { name: 'Actions for PR #42', exact: true })
+              : name === 'appearance'
+                ? page.getByRole('button', { name: 'Terminal font size', exact: true })
+                : name === 'browser'
+                  ? page.getByRole('button', { name: 'Browser options', exact: true })
+                  : name === 'thread-info'
+                    ? page.getByRole('button', { name: 'Customize thread info', exact: true })
+                    : null
+        if (control) {
+          await control.scrollIntoViewIfNeeded()
+          await control.click()
+          await page.waitForFunction(
+            () => !document.body.innerText.includes('Loading provider models…'),
+          )
+          await page.screenshot({
+            path: resolve(output, `${name}-controls-${mode}.png`),
+            animations: 'disabled',
+          })
+          await page.keyboard.press('Escape')
+        }
+      }
+      console.log(
+        `${name}-${mode}: ${(await page.locator('body').innerText()).slice(0, 100).replaceAll('\n', ' | ')}`,
+      )
+    }
+  if (process.argv.includes('--dialogs') || process.argv.includes('--dialogs-only'))
+    await captureFollowUpDialogs(page, origin, output)
+  await writeFile(
+    resolve(output, 'manifest.json'),
+    JSON.stringify({ screens: manifest, errors }, null, 2),
+  )
+  if (errors.length) throw Error(errors.join('\n'))
+  console.log(`Screenshots: ${output}`)
+} finally {
+  for (const peer of sockets.clients) peer.terminate()
+  sockets.close()
+  await browser?.close()
+  await server.close()
+}

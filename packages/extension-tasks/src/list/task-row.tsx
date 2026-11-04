@@ -369,7 +369,7 @@ function TaskRowView({
                     compact && editable && 'pr-24',
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate" data-thread-title>
+                  <span className="line-clamp-2 min-w-0 flex-1 break-words" data-thread-title>
                     {task.title}
                   </span>
                   {(general || (compact && !!childCount)) && executionIcons}

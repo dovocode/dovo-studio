@@ -240,7 +240,7 @@ export function TerminalPane({
   }, [connected, shellReady, taskId, sessions, focusId, visible])
   return (
     <section
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0d0e10]"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-t bg-background text-foreground"
       aria-label="Terminal"
       onKeyDownCapture={(event) => {
         if (
@@ -283,11 +283,17 @@ export function TerminalPane({
         {groups.map((tab, index) => {
           const session = sessions.find((session) => session.id === tab.sessions[0])!
           return (
-            <div key={tab.id} className="flex shrink-0 items-center rounded">
+            <div
+              key={tab.id}
+              className={cn(
+                'flex shrink-0 items-center rounded-md',
+                tab.id === group?.id && 'bg-accent',
+              )}
+            >
               <Button
                 size="sm"
                 variant="ghost"
-                className={cn('h-6 px-2 text-[0.625rem]', tab.id === group?.id && 'bg-accent')}
+                className="h-6 px-2 text-[0.6875rem]"
                 onClick={() => focusPane(session.id)}
               >
                 {tab.sessions.length > 1
@@ -302,7 +308,7 @@ export function TerminalPane({
                 disabled={!connected || busy}
                 onClick={() => askClose(tab.sessions)}
               >
-                <X size={12} />
+                <X className="size-3" />
               </IconButton>
             </div>
           )
@@ -390,7 +396,7 @@ export function TerminalPane({
                   group && group.sessions.length > 1 && 'border',
                   group &&
                     group.sessions.length > 1 &&
-                    (session.id === active?.id ? 'border-primary/70' : 'border-white/10'),
+                    (session.id === active?.id ? 'border-primary/70' : 'border-border'),
                 )}
               >
                 {group && group.sessions.length > 1 && (

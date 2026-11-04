@@ -29,6 +29,7 @@ import {
   repositorySourceKey,
   issueLabel,
   forgeLabels,
+  formatDateTime,
   matchesWorkItem,
   type StudioViewProps,
 } from '@dovo/studio-core'
@@ -495,7 +496,7 @@ function WorkView({
                     </strong>{' '}
                     without a linked project
                   </span>
-                  <span>In loaded, filtered results</span>
+                  <span className="sr-only">In loaded, filtered results</span>
                 </div>
               )}
 
@@ -664,9 +665,7 @@ function WorkView({
               )}
               {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
                 <div role="group" aria-label="Filter loaded runs by status" className="space-y-2">
-                  <p className="text-[0.6875rem] text-muted-foreground">
-                    In loaded, searched results
-                  </p>
+                  <p className="sr-only">Counts in loaded, searched results</p>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
@@ -694,9 +693,9 @@ function WorkView({
                         }
                         className="h-9 min-w-0 max-w-full gap-2 px-2 aria-pressed:bg-muted aria-pressed:ring-1 aria-pressed:ring-ring"
                       >
-                        <PipelineState status={status} />
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {count}
+                        <span className="inline-flex items-center gap-1.5 text-xs">
+                          {label}{' '}
+                          <span className="tabular-nums text-muted-foreground">{count}</span>
                         </span>
                       </Button>
                     ))}
@@ -713,12 +712,12 @@ function WorkView({
           <div
             ref={list}
             tabIndex={-1}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-3"
+            className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-3"
           >
             <p
               role="status"
               aria-live="polite"
-              className="mb-2 min-h-4 text-xs text-muted-foreground"
+              className="pointer-events-none absolute bottom-3 left-5 z-10 rounded-md border bg-popover px-2 py-1 text-xs text-muted-foreground empty:hidden"
             >
               {opening
                 ? 'Opening on its computer…'
@@ -897,7 +896,7 @@ function WorkView({
                       {'state' in item && <span>{item.type}</span>}
                       <time className="ml-auto" dateTime={item.updatedAt}>
                         {item.updatedAt && !Number.isNaN(Date.parse(item.updatedAt))
-                          ? new Date(item.updatedAt).toLocaleDateString()
+                          ? formatDateTime(item.updatedAt, { dateStyle: 'medium' })
                           : ''}
                       </time>
                     </div>

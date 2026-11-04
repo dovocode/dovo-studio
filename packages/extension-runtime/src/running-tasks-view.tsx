@@ -9,6 +9,7 @@ function LifecycleLink() {
   return (
     <Button
       variant="link"
+      className="px-0"
       onClick={() =>
         host.navigate({ viewId: 'task-behavior', entityId: activeRuntimeId ?? undefined })
       }

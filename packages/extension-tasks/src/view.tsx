@@ -24,7 +24,7 @@ import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { X, Maximize2, Minimize2, Bot, FolderSymlink, FolderOpen, FileDiff } from 'lucide-react'
+import { X, Maximize2, Minimize2, Bot, FolderSymlink, FileDiff } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
@@ -1096,6 +1096,7 @@ export default function TasksView({
         >
           <div
             data-project-panel-frame
+            data-info-open={projectPanelOpen || undefined}
             ref={(element) => {
               panes.current.chat = element
             }}
@@ -1107,7 +1108,7 @@ export default function TasksView({
                 'hidden',
             )}
           >
-            <TaskProjectPopover>
+            <TaskProjectPopover title={task.title}>
               {!temporary && projectPanelOpen && (
                 <TaskProjectPanel
                   active={
@@ -1192,7 +1193,7 @@ export default function TasksView({
                 defaultSize={bottomTerminalOpen ? '65%' : '100%'}
                 minSize="30%"
               >
-                <div className="relative h-full min-h-0">
+                <div className="relative h-full min-h-0" data-conversation-boundary>
                   <TaskConversation
                     historyLoaded={usingStartupDraft || historyLoaded}
                     historyError={historyError}
@@ -1235,9 +1236,9 @@ export default function TasksView({
                   />
                 </div>
               </ResizablePanel>
-              {bottomTerminalOpen && surface === 'chat' && (
+              {bottomTerminalOpen && surface !== 'terminal' && (
                 <>
-                  <ResizableHandle />
+                  <ResizableHandle className="bg-transparent hover:bg-border focus-visible:bg-border data-[separator=active]:bg-border" />
                   <ResizablePanel id="bottom-terminal" defaultSize="35%" minSize="15%">
                     <div
                       ref={(element) => {
@@ -1272,7 +1273,9 @@ export default function TasksView({
             }
             side="right"
             label="tools sidebar"
-            maxFraction={surface === 'artifacts' ? 0.6 : fileViewer ? 0.5 : 0.48}
+            maxFraction={
+              surface === 'artifacts' ? 0.6 : fileViewer ? (surface === 'files' ? 0.4 : 0.5) : 0.48
+            }
             maxWidth={960}
             resizable={
               !compact && !browserDetached && surface !== 'chat' && !(fileViewer && viewerExpanded)
@@ -1300,16 +1303,10 @@ export default function TasksView({
                   : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[inherit]'
               }
             >
-              {fileViewer && (
+              {surface === 'changes' && (
                 <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
-                  {surface === 'files' ? (
-                    <FolderOpen size={16} className="text-muted-foreground" aria-hidden="true" />
-                  ) : (
-                    <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />
-                  )}
-                  <h2 className="min-w-0 flex-1 truncate font-medium">
-                    {surface === 'files' ? 'Project files' : 'Changes'}
-                  </h2>
+                  <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />
+                  <h2 className="min-w-0 flex-1 truncate font-medium">Changes</h2>
                   <IconButton
                     label={viewerExpanded ? 'Restore side panel' : 'Expand viewer'}
                     aria-pressed={viewerExpanded}
@@ -1578,6 +1575,9 @@ export default function TasksView({
                 {surface === 'files' && (
                   <TaskFiles
                     key={task.id}
+                    onClose={() => selectSurface('chat', true)}
+                    onExpand={() => setViewerExpanded((value) => !value)}
+                    expanded={viewerExpanded}
                     task={task}
                     reveal={fileReveal?.threadKey === threadKey ? fileReveal : undefined}
                     onEditingChange={setFileEditing}

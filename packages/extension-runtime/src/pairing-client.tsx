@@ -2,7 +2,6 @@ import { LinuxSetupGuide } from './linux-setup-guide'
 import {
   connectionProgress,
   runtimePeerAddress,
-  runtimeTransportAddress,
   runtimeReachability,
   workspaceRecoveriesSchema,
   type WorkspaceRecovery,
@@ -187,7 +186,7 @@ export function PairingClient({
     setOpen(true)
   }
   return (
-    <article className="space-y-4 rounded-md border bg-card/40 p-3">
+    <article className="space-y-4 rounded-md border bg-card/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium">Your computers</h2>
@@ -308,7 +307,7 @@ export function PairingClient({
                     ·{' '}
                     {runtimePeerAddress(entry.profile.connection)
                       ? 'Encrypted peer connection'
-                      : runtimeTransportAddress(entry.profile.connection)}
+                      : 'LAN / VPN'}
                   </p>
                 )}
                 <p className="truncate text-xs text-muted-foreground">

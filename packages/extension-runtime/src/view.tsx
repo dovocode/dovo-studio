@@ -5,7 +5,7 @@ import { ComputerSshSettings } from './computer-ssh-settings'
 import { RuntimeIconSettings } from './runtime-icon-settings'
 import { runtimeSettings } from './settings-views'
 import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
-import { PageHeader } from '@dovo/studio-ui'
+import { SettingsPage } from '@dovo/studio-ui'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { resolveThreadRuntime } from '@dovo/protocol'
@@ -47,80 +47,73 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
       entry.profile.connection.address === managing.connection.address,
   )
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <PageHeader
-        title="Devices & runtime"
-        description="Connect computers and phones, manage trusted devices and check runtime health."
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-4xl space-y-4">
-          {threadConnection && (
-            <article className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <h2 className="text-sm font-medium">
-                Pair computer to open {threadConnection.title}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Pair the computer running this thread with its LAN/VPN address and pairing code. The
-                thread will open after its computer identity is verified.
-              </p>
-              <Button onClick={() => setDiscovered({ address: '' })}>Pair thread computer</Button>
-              {!threadConnection.runtimeIdentity && (
-                <>
-                  <p className="text-xs text-muted-foreground">
-                    This older thread link has no computer identity. Choose its owning computer
-                    explicitly after pairing.
-                  </p>
-                  {runtimeRegistry.profiles.map((profile) => (
-                    <Button
-                      key={profile.id}
-                      onClick={() =>
-                        studio.openThread?.({ ...threadConnection, runtimeId: profile.id })
-                      }
-                    >
-                      Open on {profile.name}
-                    </Button>
-                  ))}
-                </>
-              )}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  threadConnection.parent
-                    ? studio.openThread?.(threadConnection.parent)
-                    : studio.navigate({ viewId: 'tasks' })
-                }
-              >
-                Cancel
-              </Button>
-            </article>
-          )}
-          <WindowsRuntimeSettings />
-          {sources
-            .filter((entry) => entry.snapshot?.lastCrash)
-            .map((entry) => (
-              <LastCrashNotice key={entry.profile.id} source={entry} />
-            ))}
-          {host && (
-            <article className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-4">
-              <div className="min-w-0">
-                <h2 className="text-sm font-medium">Connect your phone</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Follow and answer tasks from the Dovo iPhone or Android app. Scan a QR code or
-                  type an eight-digit code.
-                </p>
-              </div>
-              <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
-            </article>
-          )}
-          <ServiceUrlSettings />
-          <AccountPanel onPair={(address) => setDiscovered({ address })} />
-          <PairingClient onManage={setManaging} discovered={discovered} />
-          <p className="text-xs leading-6 text-muted-foreground">
-            Tasks and projects appear together; each runs on its own computer. Use a reachable LAN,
-            Tailscale or NetBird address. HTTP and optional HTTPS are supported.
+    <SettingsPage
+      title="Devices & runtime"
+      description="Connect computers and phones, manage trusted devices and check runtime health."
+    >
+      {threadConnection && (
+        <article className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
+          <h2 className="text-sm font-medium">Pair computer to open {threadConnection.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            Pair the computer running this thread with its LAN/VPN address and pairing code. The
+            thread will open after its computer identity is verified.
           </p>
-        </div>
-      </div>
+          <Button onClick={() => setDiscovered({ address: '' })}>Pair thread computer</Button>
+          {!threadConnection.runtimeIdentity && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                This older thread link has no computer identity. Choose its owning computer
+                explicitly after pairing.
+              </p>
+              {runtimeRegistry.profiles.map((profile) => (
+                <Button
+                  key={profile.id}
+                  onClick={() =>
+                    studio.openThread?.({ ...threadConnection, runtimeId: profile.id })
+                  }
+                >
+                  Open on {profile.name}
+                </Button>
+              ))}
+            </>
+          )}
+          <Button
+            variant="outline"
+            onClick={() =>
+              threadConnection.parent
+                ? studio.openThread?.(threadConnection.parent)
+                : studio.navigate({ viewId: 'tasks' })
+            }
+          >
+            Cancel
+          </Button>
+        </article>
+      )}
+      <WindowsRuntimeSettings />
+      {sources
+        .filter((entry) => entry.snapshot?.lastCrash)
+        .map((entry) => (
+          <LastCrashNotice key={entry.profile.id} source={entry} />
+        ))}
+      {host && (
+        <article className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-medium">Connect your phone</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Follow and answer tasks from the Dovo iPhone or Android app. Scan a QR code or type an
+              eight-digit code.
+            </p>
+          </div>
+          <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
+        </article>
+      )}
+      <ServiceUrlSettings />
+      <AccountPanel onPair={(address) => setDiscovered({ address })} />
+      <PairingClient onManage={setManaging} discovered={discovered} />
+      <p className="text-xs leading-6 text-muted-foreground">
+        Tasks and projects appear together; each runs on its own computer. Use a reachable LAN,
+        Tailscale or NetBird address. HTTP and optional HTTPS are supported.
+      </p>
       {pairingPhone && (
         <Dialog open onOpenChange={(open) => !open && setPairingPhone(null)}>
           <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
@@ -194,7 +187,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
           </DialogContent>
         </Dialog>
       )}
-    </section>
+    </SettingsPage>
   )
 }
 

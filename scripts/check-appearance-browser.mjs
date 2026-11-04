@@ -326,7 +326,7 @@ try {
           JSON.stringify(effects.selections),
       )
       assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
-      assert.match(effects.dialog, /linear-gradient/)
+      assert.equal(effects.dialog, 'none', 'Dialogs keep a calm, flat surface with effects enabled')
       const actual = await page.evaluate(() => {
         const color = (value) => {
           const div = document.createElement('div')
@@ -381,7 +381,7 @@ try {
       )
       assert.equal(actual.user, rgb(expected.secondary))
       assert.equal(actual.userText, rgb(expected.foreground))
-      assert.equal(actual.terminal.background, expected.card)
+      assert.equal(actual.terminal.background, expected.background, 'Terminal uses the workspace canvas')
       assert.equal(actual.terminal.foreground, expected.foreground)
       assert.equal(actual.sessions, 1, 'Changing themes must not reconnect the terminal')
       assert.ok(actual.buffer.includes('theme session preserved'))

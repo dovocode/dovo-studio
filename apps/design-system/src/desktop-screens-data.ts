@@ -9,6 +9,11 @@ import {
 } from '../../../packages/protocol/src'
 const date = '2026-10-21T10:00:00.000Z'
 export const screenPull = decode(pullDetailSchema, {
+  capabilities: {
+    actions: ['comment', 'review', 'edit', 'reviewers', 'merge', 'draft', 'auto-merge', 'close'],
+    reviewDecisions: ['comment', 'approve', 'request-changes'],
+    mergeMethods: ['squash', 'merge', 'rebase'],
+  },
   warnings: [],
   pull: {
     number: 42,

@@ -2,21 +2,33 @@ import { orderedThreadInfoSections, moveThreadInfoSection } from '@dovo/protocol
 import { readAppPreferences, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { DropdownMenu, IconButton } from '@dovo/studio-ui'
 import { ArrowUp, ArrowDown, Check, SlidersHorizontal } from 'lucide-react'
+import { useRef, useState } from 'react'
 
 export function ThreadInfoCustomization() {
   const { threadInfoSections: choices, threadInfoOrder } = useAppPreferences()
   const sections = orderedThreadInfoSections(threadInfoOrder)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [sideOffset, setSideOffset] = useState(8)
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root
+      onOpenChange={(open) => {
+        const button = trigger.current
+        const header = button?.closest('header')
+        if (open && button && header)
+          setSideOffset(
+            header.getBoundingClientRect().bottom - button.getBoundingClientRect().bottom + 8,
+          )
+      }}
+    >
       <DropdownMenu.Trigger asChild>
-        <IconButton label="Customize thread info" className="size-7">
+        <IconButton ref={trigger} label="Customize thread info" className="size-7">
           <SlidersHorizontal size={14} />
         </IconButton>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="end"
-          sideOffset={6}
+          sideOffset={sideOffset}
           className="studio-menu-surface z-50 max-h-[80dvh] min-w-60 overflow-y-auto rounded-xl border bg-popover p-1 text-xs text-popover-foreground"
         >
           <DropdownMenu.Label className="px-2 py-2 text-muted-foreground">

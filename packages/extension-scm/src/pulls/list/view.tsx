@@ -330,7 +330,9 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
           className={`min-h-0 min-w-0 flex-col overflow-hidden bg-background ${hasDetail ? 'hidden w-full shrink-0 md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
           <SidebarHeader enabled={hasDetail} />
-          <div className="studio-overview-pane @container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]">
+          <div
+            className={`@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${hasDetail ? 'studio-overview-pane bg-sidebar' : 'bg-background'}`}
+          >
             <PageHeader title="Pull requests" embedded={hasDetail}>
               <Button
                 size="icon"
@@ -352,7 +354,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 onClick={() => setPicking('connections')}
               >
                 <Plug className="size-3.5" />
-                <span className="hidden @xl/pr-list:inline">Connections</span>
+                <span className="hidden xl:inline">Connections</span>
               </Button>
               <Button
                 size="sm"
@@ -361,7 +363,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 onClick={() => setPicking('create')}
               >
                 <Plus className="size-3.5" />
-                <span className="hidden @sm/pr-list:inline">Create</span>
+                <span className="hidden sm:inline">Create PR</span>
               </Button>
             </PageHeader>
             <div className="shrink-0 border-b border-border/70 px-3 py-2">
@@ -379,7 +381,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div
-                className="min-h-10 max-h-[max(2.5rem,calc(100%-8rem))] shrink-0 overflow-y-auto overscroll-contain"
+                className="max-h-[max(2.5rem,calc(100%-8rem))] shrink-0 overflow-y-auto overscroll-contain"
                 aria-label="Pull request filters"
               >
                 <div className="flex shrink-0 items-center border-b border-border/70">
@@ -583,7 +585,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               </div>
               <div
                 aria-label="Pull request rows"
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+                className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
               >
                 {filtersOpen && personal !== 'all' && (
                   <p className="mb-3 px-2 text-xs text-muted-foreground">
@@ -598,7 +600,10 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                     Choose All PRs to see these results.
                   </p>
                 )}
-                <p role="status" className="mb-3 min-h-4 text-xs text-muted-foreground">
+                <p
+                  role="status"
+                  className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[calc(100%-24px)] rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-sm empty:hidden"
+                >
                   {unavailable
                     ? ''
                     : !connected
@@ -664,7 +669,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                   </p>
                 )}
                 {!hasDetail && !!pulls.length && (
-                  <div className="hidden items-center gap-3 border-b py-2 pl-3 pr-12 text-[0.625rem] font-medium text-muted-foreground @4xl/pr-list:flex">
+                  <div className="hidden items-center gap-3 border-b py-2 pl-3 pr-12 text-xs font-medium text-muted-foreground @4xl/pr-list:flex">
                     <span className="flex-1">Pull request</span>
                     {statusColumn && <span className="w-44">Checks & review</span>}
                     <span className="w-22 text-right">Updated</span>

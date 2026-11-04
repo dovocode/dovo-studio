@@ -96,7 +96,7 @@ export function ComposerEffortColumn({
                   ? effort.description
                   : undefined
               }
-              className="flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
+              className="flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
               onClick={() =>
                 void (automatic
                   ? onSelectDifficulty?.(effort.id)
@@ -246,6 +246,7 @@ export function ComposerPickerSpeed({
       aria-label="Service tier"
       className="flex flex-wrap rounded-lg bg-accent/40 p-0.5"
     >
+      <span className="self-center px-2 text-xs text-muted-foreground">Speed</span>
       {modelServiceTiers(catalog, value.model, value.serviceTier).map((tier) => {
         const checked = serviceTierValue(value.serviceTier) === tier.id
         return (

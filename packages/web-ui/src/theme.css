@@ -126,12 +126,12 @@
 /* Resolve effects locally when an action overrides the inherited palette accent. */
 :root,
 .studio-destructive-accent {
-  --studio-selected-fill: color-mix(in srgb, var(--primary) 16%, var(--sidebar));
+  --studio-selected-fill: color-mix(in srgb, var(--foreground) 6%, var(--sidebar));
   --studio-selected-gradient: linear-gradient(
     140deg,
-    color-mix(in srgb, var(--primary) 28%, var(--sidebar)),
+    color-mix(in srgb, var(--primary) 14%, var(--sidebar)),
     color-mix(in srgb, var(--primary) 12%, var(--sidebar)) 68%,
-    color-mix(in srgb, var(--primary) 22%, var(--sidebar))
+    color-mix(in srgb, var(--primary) 13%, var(--sidebar))
   );
   --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
     color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
@@ -164,20 +164,24 @@
   border-color: var(--dialog-edge);
   border-radius: 18px;
   background-color: var(--card);
-  background-image: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--card) 92%, var(--foreground) 8%),
-    color-mix(in srgb, var(--card) 97%, var(--foreground) 3%)
-  );
+  background-image: none;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
     0 24px 80px #0004,
     var(--studio-glow-wide);
 }
+.dovo-dialog-content [data-slot='dialog-title']:not(.sr-only) {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.dovo-dialog-content [data-slot='dialog-description']:not(.sr-only) {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
 .dovo-dialog-content [data-dialog-close] {
-  border: 1px solid color-mix(in srgb, var(--foreground) 5%, transparent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--foreground) 7%, var(--card));
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
 }
 .dovo-dialog-content [data-dialog-close]:hover {
   background: color-mix(in srgb, var(--foreground) 12%, var(--card));
@@ -204,7 +208,12 @@
   :where(input, textarea, select, button[role='combobox']):not([aria-invalid='true']) {
   border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
 }
-.dovo-dialog-content input[type='checkbox'] {
+.dovo-dialog-content textarea {
+  resize: none;
+  border-radius: 8px;
+}
+.dovo-dialog-content input[type='checkbox'],
+.dovo-dialog-content input[type='radio'] {
   accent-color: var(--primary);
 }
 .dovo-dialog-content [data-slot='button'][data-variant='default'] {

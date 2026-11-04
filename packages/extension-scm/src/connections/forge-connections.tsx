@@ -620,7 +620,7 @@ function ConnectionsContent({
         </div>
       </article>
       {!loading && connected && !connections.length && !error && (
-        <p className="py-4 text-sm text-muted-foreground">
+        <p className="py-3 text-xs leading-relaxed text-muted-foreground">
           No saved connections. Add one to select a specific account or another provider. Projects
           using automatic GitHub CLI detection are shown above.
         </p>

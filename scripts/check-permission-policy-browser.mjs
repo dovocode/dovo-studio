@@ -523,10 +523,7 @@ try {
     assert.equal(await page.getByRole(role, { name: 'Sandbox', exact: true }).isDisabled(), true)
     assert.ok((await page.getByText(/Update this runtime/).count()) > 0)
     if (kind === 'desktop-agent')
-      assert.equal(
-        await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
-        true,
-      )
+      assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
     if (kind === 'native-agent')
       assert.equal(
         await page.getByRole('button', { name: 'Save agent', exact: true }).isDisabled(),

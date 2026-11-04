@@ -125,7 +125,7 @@ export function PullRow({
                   className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : statusColumn ? '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_5.5rem]'}`}
                 >
                   <div className="min-w-0">
-                    <div className="mb-1 flex min-w-0 items-center gap-2 text-[0.6875rem] text-muted-foreground">
+                    <div className="mb-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                       <span
                         className={`inline-flex shrink-0 items-center gap-1.5 font-medium ${stateColor}`}
                       >
@@ -143,7 +143,7 @@ export function PullRow({
                     >
                       {pull.title}
                     </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
                       <span
                         className="inline-flex min-w-0 items-center gap-1.5"
                         title={pull.author}

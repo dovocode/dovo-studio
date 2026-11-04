@@ -97,6 +97,12 @@ export function ComposerModelPicker({
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [boundary, setBoundary] = useApplicationState<{
+    left: number
+    right: number
+    width: number
+  } | null>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
   const [choosing, setChoosing] = useApplicationState(false)
   const choosingRef = useRef(false)
@@ -360,6 +366,15 @@ export function ComposerModelPicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
+        if (next) {
+          const pane = triggerRef.current?.closest<HTMLElement>('[data-conversation-boundary]')
+          const bounds = pane?.getBoundingClientRect()
+          setBoundary(
+            bounds && bounds.width >= 360
+              ? { left: bounds.left, right: bounds.right, width: bounds.width }
+              : null,
+          )
+        }
         setProvider(value.provider)
         setInstallationId(value.acpInstallationId)
         setMode(selectedAgent ? 'agents' : 'models')
@@ -373,6 +388,7 @@ export function ComposerModelPicker({
           variant="ghost"
           disabled={disabled}
           aria-label="Choose agent and model"
+          ref={triggerRef}
           title={
             modelSelection
               ? { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[modelSelection]
@@ -427,13 +443,19 @@ export function ComposerModelPicker({
           side="top"
           align="start"
           sideOffset={8}
-          collisionPadding={12}
+          collisionPadding={{
+            top: 12,
+            bottom: 12,
+            left: boundary ? boundary.left + 12 : 12,
+            right: boundary ? window.innerWidth - boundary.right + 12 : 12,
+          }}
+          style={{ maxWidth: boundary ? boundary.width - 24 : undefined }}
           onOpenAutoFocus={(event) => {
             event.preventDefault()
             searchRef.current?.focus()
           }}
           className={cn(
-            'studio-menu-surface z-50 flex h-[min(25rem,var(--radix-popover-content-available-height))] max-h-[var(--radix-popover-content-available-height)] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl',
+            'studio-menu-surface z-50 flex max-h-[min(25rem,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl',
             settings ? 'w-[min(40rem,calc(100vw-1.5rem))]' : 'w-[min(26rem,calc(100vw-1.5rem))]',
           )}
           data-model-picker=""
@@ -625,7 +647,7 @@ export function ComposerModelPicker({
                 )}
               </div>
               <div className="flex min-w-0 flex-1 flex-col p-2">
-                <div className="flex items-center gap-1 border-b">
+                <div className="flex items-center gap-2 border-b pb-2">
                   <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
                     <Input
@@ -645,7 +667,7 @@ export function ComposerModelPicker({
                         setQuery(event.target.value)
                         setActive(0)
                       }}
-                      className="h-9 rounded-none border-0 bg-transparent pl-8 shadow-none focus-visible:ring-0"
+                      className="h-9 rounded-lg bg-transparent pl-8 shadow-none"
                       onKeyDown={(event) => {
                         if (event.nativeEvent.isComposing || event.keyCode === 229) return
                         if (
@@ -738,7 +760,7 @@ export function ComposerModelPicker({
                   id={listId}
                   role="listbox"
                   aria-label={mode === 'agents' ? 'Configurations' : 'Models'}
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2"
+                  className="min-h-0 overflow-y-auto overscroll-contain py-2"
                 >
                   {filtered.map((item, index) => {
                     const key = itemKey(item)
@@ -767,7 +789,7 @@ export function ComposerModelPicker({
                           onMouseEnter={() => setActive(index)}
                           onClick={() => void choose(item)}
                         >
-                          <span className="flex items-center gap-2 text-sm">
+                          <span className="flex items-center gap-2 text-[0.8125rem]">
                             {item.agent && (
                               <AgentAvatar
                                 provider={item.provider}
@@ -881,7 +903,7 @@ export function ComposerModelPicker({
                     {(mode === 'models' && error) || storageError}
                   </p>
                 )}
-                <div className="flex items-center justify-end border-t pt-1">
+                <div className="flex items-center justify-end pt-1">
                   {mode === 'models' && (
                     <Button
                       type="button"

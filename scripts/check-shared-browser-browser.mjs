@@ -3318,7 +3318,7 @@ try {
     'Selecting a pin must not reorder it',
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.equal(await row('normal-b').getAttribute('draggable'), 'true')
   await row('normal-c').dragTo(row('normal-a'), { targetPosition: { x: 30, y: 3 } })
@@ -3336,7 +3336,7 @@ try {
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.map((tab) => tab.id),
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).check()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).check()
   await orderPage.keyboard.press('Escape')
   await row('normal-b').getByRole('button').first().click()
   assert.equal((await visibleOrder())[2], 'normal-a', 'Activity mode ignores selection')
@@ -3348,7 +3348,7 @@ try {
   )
   assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows navigation')
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.deepEqual(await visibleOrder(), savedOrder, 'Returning to manual mode restores its order')
   await loadOrderPage()

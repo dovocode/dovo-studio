@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ChevronRight, Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import { Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import { confirmDiscardChanges } from '../dialogs/unsaved-changes'
 import { TaskTemplatesDialog } from '../dialogs/task-templates-dialog'
 import { SavedPromptsDialog } from '../dialogs/saved-prompts-dialog'
 import { ProjectInstructionsDialog } from '../dialogs/project-instructions-dialog'
@@ -66,9 +67,8 @@ export function TaskProjectActions({
           >
             <Plus className="size-3.5" />
             <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
-              {actions.length ? 'Project scripts' : 'Add project script'}
+              {actions.length ? 'Project scripts' : 'Add script'}
             </span>
-            {panel && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
@@ -193,7 +193,14 @@ function ApprovalRulesDialog({
               : 'Always allow web requests'}
           </Button>
         </div>
-        <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+        <div
+          className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
+          aria-hidden="true"
+        >
+          <span className="w-36 shrink-0">Name</span>
+          <span className="flex-1">Command</span>
+        </div>
+        <div className="-m-1 max-h-[50vh] space-y-2 overflow-y-auto p-1">
           {rules.map((command) => (
             <div key={command} className="flex items-center gap-2">
               <code className="min-w-0 flex-1 break-all rounded bg-muted p-2 text-xs">
@@ -241,6 +248,10 @@ function ProjectActionsDialog({
   const [rows, setRows] = useState<ProjectAction[]>(() =>
     actions.length ? actions : [{ id: randomUUID(), name: 'Run tests', command: '' }],
   )
+  const [initialRows] = useState(rows)
+  const close = () => {
+    if (confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
+  }
   const [error, setError] = useState('')
   const change = (id: string, changes: Partial<ProjectAction>) =>
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...changes } : row)))
@@ -267,13 +278,20 @@ function ProjectActionsDialog({
     }
   }
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent className="max-w-xl">
         <DialogTitle>Project actions</DialogTitle>
         <DialogDescription>
           One-click commands for {name}. They run in the task’s terminal, in its checkout.
         </DialogDescription>
-        <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+        <div
+          className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
+          aria-hidden="true"
+        >
+          <span className="w-36 shrink-0">Name</span>
+          <span className="flex-1">Command</span>
+        </div>
+        <div className="-m-1 max-h-[50vh] space-y-2 overflow-y-auto p-1">
           {rows.map((row) => (
             <div key={row.id} className="flex items-start gap-2">
               <Input
@@ -319,7 +337,7 @@ function ProjectActionsDialog({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <Button onClick={save}>Save</Button>

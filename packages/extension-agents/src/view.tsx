@@ -8,7 +8,6 @@ export default function AgentsView() {
   const host = useStudioHost()
   return (
     <SettingsScopePage
-      wide
       title="Agents"
       description="Agent profiles: the provider, model, access and instructions each coding agent uses."
     >

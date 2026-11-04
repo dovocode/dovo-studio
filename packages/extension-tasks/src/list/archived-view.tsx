@@ -1,4 +1,4 @@
-import { PageHeader } from '@dovo/studio-ui'
+import { SettingsPage } from '@dovo/studio-ui'
 import { useMemo } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useRuntimeSources, useWorkspace } from '@dovo/studio-core'
@@ -54,87 +54,82 @@ export default function ArchivedTasksView() {
     }
   }
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <PageHeader
-        title="Archived tasks"
-        description="Archived tasks from all your computers. Restore one to return it to your task list."
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-3xl space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Conversations are kept. If its checkout was cleaned up, restoring the task recreates it
-            from the saved branch.
-          </p>
-          {sources.some((source) => !source.connected) && (
-            <p role="status" className="text-xs text-muted-foreground">
-              Offline computers show saved tasks. Reconnect them to restore a task.
-            </p>
-          )}
-          <div className="relative">
-            <Search
-              aria-hidden="true"
-              className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
-            />
-            <Input
-              aria-label="Search archived tasks"
-              placeholder="Search archived tasks"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-9 pl-8 text-sm"
-            />
-          </div>
-          {error && (
-            <p role="alert" className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
-          {!!rows.length && (
-            <p role="status" className="text-xs text-muted-foreground">
-              {rows.length} archived task{rows.length === 1 ? '' : 's'}
-              {query.trim() ? ' matching your search' : ''}
-            </p>
-          )}
-          {rows.length ? (
-            <ul className="divide-y rounded-md border">
-              {rows.map((row) => (
-                <li key={row.key} className="flex items-center gap-3 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-medium">{row.task.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {row.project}
-                      {sources.length > 1 ? ` · ${row.source.name}` : ''}
-                      {!row.source.connected ? ' · Offline' : ''}
-                      {row.task.archivedAt
-                        ? ` · Archived ${new Date(row.task.archivedAt).toLocaleDateString()}`
-                        : ''}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!!busy || !row.source.connected}
-                    aria-label={`Restore ${row.task.title}`}
-                    title={row.source.connected ? undefined : `${row.source.name} is offline`}
-                    onClick={() => void restore(row)}
-                  >
-                    {busy === row.key ? 'Restoring…' : 'Restore'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="flex flex-col items-center gap-2 py-16 text-center">
-              <Archive aria-hidden="true" className="size-6 text-muted-foreground" />
-              <p className="text-sm">{query ? 'No archived tasks match' : 'No archived tasks'}</p>
-              <p className="text-xs text-muted-foreground">
-                {query.trim()
-                  ? 'Try another task title, project or computer name.'
-                  : 'Archive a task from its menu to keep your list focused.'}
-              </p>
-            </div>
-          )}
-        </div>
+    <SettingsPage
+      title="Archived tasks"
+      description="Archived tasks from all your computers. Restore one to return it to your task list."
+    >
+      <p className="text-xs text-muted-foreground">
+        Conversations are kept. If its checkout was cleaned up, restoring the task recreates it from
+        the saved branch.
+      </p>
+      {sources.some((source) => !source.connected) && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Offline computers show saved tasks. Reconnect them to restore a task.
+        </p>
+      )}
+      <div className="relative">
+        <Search
+          aria-hidden="true"
+          className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+        />
+        <Input
+          aria-label="Search archived tasks"
+          placeholder="Search archived tasks"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="h-9 pl-8 text-sm"
+        />
       </div>
-    </section>
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      {!!rows.length && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {rows.length} archived task{rows.length === 1 ? '' : 's'}
+          {query.trim() ? ' matching your search' : ''}
+        </p>
+      )}
+      {rows.length ? (
+        <ul className="divide-y rounded-md border">
+          {rows.map((row) => (
+            <li key={row.key} className="flex items-center gap-3 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-sm font-medium">{row.task.title}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {row.project}
+                  {sources.length > 1 ? ` · ${row.source.name}` : ''}
+                  {!row.source.connected ? ' · Offline' : ''}
+                  {row.task.archivedAt
+                    ? ` · Archived ${new Date(row.task.archivedAt).toLocaleDateString()}`
+                    : ''}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!!busy || !row.source.connected}
+                aria-label={`Restore ${row.task.title}`}
+                title={row.source.connected ? undefined : `${row.source.name} is offline`}
+                onClick={() => void restore(row)}
+              >
+                {busy === row.key ? 'Restoring…' : 'Restore'}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="flex flex-col items-center gap-2 py-16 text-center">
+          <Archive aria-hidden="true" className="size-6 text-muted-foreground" />
+          <p className="text-sm">{query ? 'No archived tasks match' : 'No archived tasks'}</p>
+          <p className="text-xs text-muted-foreground">
+            {query.trim()
+              ? 'Try another task title, project or computer name.'
+              : 'Archive a task from its menu to keep your list focused.'}
+          </p>
+        </div>
+      )}
+    </SettingsPage>
   )
 }
