@@ -736,8 +736,8 @@ try {
   const reportsSection = checkPanel
     .locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Check reports 1', exact: true }) })
-  await sourceValue(repositoryCI, 'Repository CI', 'passed').waitFor()
-  assert.equal(await repositoryCI.locator('dt').count(), 1)
+  await repositoryCI.getByRole('heading', { name: 'Repository CI', exact: true }).waitFor()
+  await repositoryCI.getByText('Passed', { exact: true }).waitFor()
   assert.equal(await repositoryCI.getByText('Tests', { exact: true }).count(), 0)
   assert.equal(await repositoryCI.getByText('Pipeline build', { exact: true }).count(), 0)
   assert.equal(
@@ -835,7 +835,7 @@ try {
   })
   await checkSummary.click()
   await checkPanel.getByText('Loading check reports…', { exact: true }).waitFor()
-  await sourceValue(repositoryCI, 'Repository CI', 'CI status not loaded').waitFor()
+  await repositoryCI.getByText('CI status not loaded', { exact: true }).waitFor()
   assert.equal(await checkSummary.getByText(/checks? passed/i).count(), 0)
   await pipelineSection.getByText('Failed', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()

@@ -3108,6 +3108,16 @@ a.studio-project-row:hover {
 .studio-agents-detail {
   min-width: 0;
 }
+.studio-agent-profile-header {
+  position: sticky;
+  top: calc(
+    var(--studio-settings-toolbar-height, 0px) - var(--studio-settings-scroll-padding, 0px)
+  );
+  z-index: 15;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
 .studio-agent-editor {
   container: agent-form / inline-size;
 }

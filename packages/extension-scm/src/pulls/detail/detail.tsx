@@ -45,7 +45,7 @@ import {
 } from 'lucide-react'
 import { PullComments } from './comments'
 import { PullChanges } from './changes'
-import { PullStatus, PullStatusSources, Signal } from './status'
+import { PullStatus, Signal } from './status'
 import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
@@ -851,7 +851,17 @@ function PullDetailContent({
               >
                 {repositorySource && (
                   <section aria-label="Repository CI" className="mb-4 rounded-xl border px-4 py-3">
-                    <PullStatusSources sources={[repositorySource]} />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-medium">{repositorySource.name}</h3>
+                      <Signal
+                        signal={{
+                          ...repositorySource.signal,
+                          label: repositorySource.signal.label.replace(/^./, (letter) =>
+                            letter.toUpperCase(),
+                          ),
+                        }}
+                      />
+                    </div>
                     <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                       CI status reported by the repository provider. Check reports and linked
                       pipelines are listed separately.

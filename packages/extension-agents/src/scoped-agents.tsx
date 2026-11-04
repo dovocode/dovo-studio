@@ -281,10 +281,12 @@ export function ScopedAgents({
         <div className="studio-agents-detail studio-agent-editor min-w-0">
           {selected ? (
             <>
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+              <div className="studio-agent-profile-header mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
                   <AgentAvatar provider={selected.provider} className="size-5" />
-                  <h3 className="text-sm font-medium">{selected.name}</h3>
+                  <h3 className="truncate text-sm font-medium" title={selected.name}>
+                    {selected.name}
+                  </h3>
                 </div>
                 <div className="flex items-center gap-1">
                   <Button

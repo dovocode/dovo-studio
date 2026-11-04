@@ -260,6 +260,24 @@ try {
         'Agent columns have no enclosing card surface',
       )
     }
+    const assertProfileIdentity = async () => {
+      const header = page.locator('.studio-agent-profile-header')
+      assert.equal(
+        await header.evaluate((element) => {
+          const bounds = element.getBoundingClientRect()
+          const toolbar = document.querySelector('.studio-settings-toolbar').getBoundingClientRect()
+          const viewport = element.closest('.studio-settings-scroll').getBoundingClientRect()
+          const hit = document.elementFromPoint(bounds.left + 8, bounds.top + bounds.height / 2)
+          return (
+            bounds.top >= toolbar.bottom - 1 &&
+            bounds.bottom <= viewport.bottom &&
+            element.contains(hit)
+          )
+        }),
+        true,
+        'The active profile heading stays visible below the scoped target without being covered',
+      )
+    }
     const project = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
     const environment = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,
@@ -307,12 +325,18 @@ try {
         const helperBounds = await helper.boundingBox()
         const noteBounds = await cleanNote.boundingBox()
         assert.ok(noteBounds.y >= helperBounds.y + helperBounds.height)
+        await assertProfileIdentity()
         await assertUnobstructed(helper)
       }
       await assertAgentContentLayout(page)
     }
     assert.equal(await page.getByLabel('Configuration scope', { exact: true }).count(), 0)
     await page.getByLabel('Name', { exact: true }).fill('Project writer')
+    if (!mobile)
+      await page
+        .locator('.studio-agent-profile-header')
+        .getByRole('heading', { name: 'Writer', exact: true })
+        .waitFor()
     await setCloudIntegrations('false', 'Disabled')
     await page
       .getByRole('button', { name: mobile ? 'Save agent' : 'Save changes', exact: true })
@@ -322,6 +346,11 @@ try {
         .getByRole('button', { name: 'More actions for Project writer', exact: true })
         .click()
     await page.getByRole('button', { name: 'Reset', exact: true }).waitFor()
+    if (!mobile)
+      await page
+        .locator('.studio-agent-profile-header')
+        .getByRole('heading', { name: 'Project writer', exact: true })
+        .waitFor()
     assert.deepEqual(
       await page.evaluate(() => ({
         host: window.writes.at(-1).host,
@@ -514,6 +543,7 @@ try {
             element.scrollTop = position * (element.scrollHeight - element.clientHeight)
           }, position)
           const bounds = await saveActions.boundingBox()
+          await assertProfileIdentity()
           assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width)
           assert.ok(
             bounds.y >= 0 && bounds.y + bounds.height <= 800,

@@ -3,18 +3,12 @@ import { useEffect, useRef } from 'react'
 import { useStudioHost, useWorkspace, useSettingsTarget } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { SettingsScopePage, TaskBehaviorSettings } from '@dovo/studio-ui'
-import { runtimeComputerName } from '@dovo/protocol'
 
 function ComputerDefaultsLinks() {
   const host = useStudioHost()
-  const { activeRuntimeId, runtimes, snapshot } = useWorkspace()
-  const computer = runtimeComputerName({
-    profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
-    snapshot,
-  })
+  const { activeRuntimeId } = useWorkspace()
   return (
     <div className="mt-2 space-y-1">
-      <p>Computer policies shown here are reported by {computer}.</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         <Button
           variant="link"

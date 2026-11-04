@@ -4,7 +4,7 @@ import type { SettingsChange } from '@dovo/protocol'
 import { Card } from '@dovo/web-ui/card'
 import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
-import { useId, useRef, useState, useEffect, type ReactNode } from 'react'
+import { useId, useRef, useState, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { Button } from './components/ui/button'
 import { Disclosure } from './disclosure'
 
@@ -28,6 +28,32 @@ export function SettingsPage({
   toolbar?: ReactNode
   wide?: boolean
 }) {
+  const content = useRef<HTMLDivElement>(null)
+  const toolbarElement = useRef<HTMLDivElement>(null)
+  const hasToolbar = !!toolbar
+  useLayoutEffect(() => {
+    const frame = content.current
+    const bar = toolbarElement.current
+    const scroll = frame?.parentElement
+    if (!frame || !bar || !scroll) return
+    const measure = () => {
+      scroll.style.setProperty('--studio-settings-toolbar-height', `${bar.offsetHeight}px`)
+      const profile = frame.querySelector<HTMLElement>('.studio-agent-profile-header')
+      scroll.style.setProperty(
+        '--studio-settings-profile-height',
+        `${profile?.offsetHeight ?? 0}px`,
+      )
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(bar)
+    observer.observe(frame)
+    measure()
+    return () => {
+      observer.disconnect()
+      scroll.style.removeProperty('--studio-settings-toolbar-height')
+      scroll.style.removeProperty('--studio-settings-profile-height')
+    }
+  }, [hasToolbar])
   return (
     <section className="studio-settings-page flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
@@ -46,9 +72,10 @@ export function SettingsPage({
         role="region"
         aria-label={`${title} settings`}
         tabIndex={0}
-        className="studio-settings-scroll min-h-0 flex-1 overflow-y-auto px-4 py-[var(--studio-settings-scroll-padding)] outline-none [--studio-settings-scroll-padding:1.75rem] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
+        className="studio-settings-scroll min-h-0 flex-1 scroll-pt-[calc(var(--studio-settings-toolbar-height,0px)+var(--studio-settings-profile-height,0px)+0.75rem)] overflow-y-auto px-4 py-[var(--studio-settings-scroll-padding)] outline-none [--studio-settings-scroll-padding:1.75rem] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
       >
         <div
+          ref={content}
           className={`studio-settings-content ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}
         >
           <div className="studio-settings-intro space-y-2">
@@ -72,7 +99,10 @@ export function SettingsPage({
           </div>
           {beforeToolbar}
           {toolbar && (
-            <div className="studio-settings-toolbar sticky top-[calc(-1*var(--studio-settings-scroll-padding))] z-20 bg-background">
+            <div
+              ref={toolbarElement}
+              className="studio-settings-toolbar sticky top-[calc(-1*var(--studio-settings-scroll-padding))] z-20 bg-background"
+            >
               {toolbar}
             </div>
           )}

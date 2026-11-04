@@ -27,33 +27,37 @@ control styles make the workspace and its secondary surfaces feel consistent.
   project/computer targets pinned during scoped editing. Controls respond to the actual content
   width; Agent profiles switch between flat master/detail and a searchable compact picker. Automatic
   and explicit saves remain clearly distinguished, including an initial save cue on scoped forms.
-  Agent draft actions stay reachable in an opaque footer with readable profile and target identity.
-  Instructions spans the form with six readable lines; substantial help uses full-width rows.
-  Appearance retains all palettes and font previews, with a bounded terminal size stepper. Search,
-  legacy notices, explicit-save groups and unsaved-navigation guards remain. Save cues and
-  Editing/Viewing context follow the selected computer’s capabilities; offline targets show one
-  reconnect instruction. Mixed-save pages name their explicit-save exceptions, and computer forms
-  explain automatic-save timing. Save guidance has a readable text size and emphasis; offline
-  defaults and lifecycle offer a direct route to Devices & runtime without changing the selected
-  target. Settings search uses the visible thread labels and focuses the matching control; the
-  navigation offers a measured continuation action for lower sections. Running-thread save feedback
-  appears before its introduction, and lifecycle links retain the computer while opening the
-  relevant restart/archive or PR settling defaults. Lifecycle also names the reporting computer
-  above its controls, so the source is visible with help collapsed. The navigation continuation uses
-  its visible text as its accessible name.
+  The existing Agent profile heading remains visible below the scoped target during long edits;
+  measured scroll clearance keeps fields accessible beneath both rows. Agent draft actions stay
+  reachable in an opaque footer with readable profile and target identity. Instructions spans the
+  form with six readable lines; substantial help uses full-width rows. Appearance retains all
+  palettes and font previews, with a bounded terminal size stepper. Search, legacy notices,
+  explicit-save groups and unsaved-navigation guards remain. Save cues and Editing/Viewing context
+  follow the selected computer’s capabilities; offline targets show one reconnect instruction.
+  Mixed-save pages name their explicit-save exceptions, and computer forms explain automatic-save
+  timing. Save guidance has a readable text size and emphasis; offline defaults and lifecycle offer
+  a direct route to Devices & runtime without changing the selected target. Settings search uses the
+  visible thread labels and focuses the matching control; the navigation offers a measured
+  continuation action for lower sections. Running-thread save feedback appears before its
+  introduction, and lifecycle links retain the computer while opening the relevant restart/archive
+  or PR settling defaults. Lifecycle also names the reporting computer above its controls, so the
+  source is visible with help collapsed. The navigation continuation uses its visible text as its
+  accessible name.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
   desktop sizes; modest three/four-entry change sets fit at the captured normal and compact desktop
-  widths, while its continuation cue explains overflow in dense lists. Commit controls show the
+  widths, while its continuation cue explains overflow in dense lists. The outer Git workspace names
+  additional actions in a separate continuation strip below its viewport. Commit controls show the
   inspected branch/checkout; readable filenames retain full-path tooltips. Per-file comparisons are
   read-only, offer Previous/Next within their comparison group, and preserve Back/draft/selection
   context. Push reflects branch tracking. PR lists reserve a responsive readiness column and keep
   the target branch visible. Issues keep stable Open/Closed filters. Merge readiness separates
   repository status, check reports and linked pipelines; the Checks view explains the repository
-  provider’s separate CI summary. Failure consent is visible, accessible and invalidated by status
-  changes. CI and review signals keep the same order down the PR list. Merge dialogs keep action
-  buttons outside the scrolling form body, including when status-source details are expanded.
-  Work-list separators remain visible alongside the shared collection-row border treatment.
+  provider’s separate CI summary, with sibling heading and status styling. Failure consent is
+  visible, accessible and invalidated by status changes. CI and review signals keep the same order
+  down the PR list. Merge dialogs keep action buttons outside the scrolling form body, including
+  when status-source details are expanded. Work-list separators remain visible alongside the shared
+  collection-row border treatment.
 - **Dialogs and images:** shared themed confirmations preserve Cancel/return focus, drafts and
   queued decisions, and reject stale runtime/caller/target decisions. MCP details scroll without
   losing consent. Project-deletion blockers provide a safe route to active work. Image
