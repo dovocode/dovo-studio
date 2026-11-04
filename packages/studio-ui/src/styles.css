@@ -3093,3 +3093,83 @@ a.studio-project-row:hover {
 :root[data-high-contrast='true'] .studio-list-filter-trigger[aria-expanded='true'] {
   border-color: var(--primary);
 }
+
+/* Collection rows keep the same reading order across code, work and artifact lists. */
+.studio-collection-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.studio-collection-row:not(.studio-selected-surface):not([aria-current='true']):not(
+    :disabled
+  ):hover {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.studio-collection-body {
+  min-width: 0;
+}
+.studio-collection-meta,
+.studio-collection-context {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.studio-collection-meta {
+  min-height: 18px;
+  gap: 4px 8px;
+  font-size: 11px;
+}
+.studio-collection-title {
+  display: block;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.studio-collection-date {
+  align-self: start;
+  padding-top: 1px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.studio-collection-status {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.studio-collection-label {
+  display: inline-block;
+  max-width: min(100%, 12rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 16px;
+}

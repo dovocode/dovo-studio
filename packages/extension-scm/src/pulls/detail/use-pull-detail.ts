@@ -297,7 +297,7 @@ export function usePullDetail(
   repositoryId: string,
   number: number,
   connectionId?: string,
-  options: { tab?: string; discussionInOverview?: boolean; mergeReadinessOpen?: boolean } = {},
+  options: { tab?: string; discussionInOverview?: boolean } = {},
 ) {
   const { activeRuntimeId } = useWorkspace()
   const sources = useRepositorySources()
@@ -353,7 +353,9 @@ export function usePullDetail(
     number,
     connectionId,
     'checks',
-    available && (tab === 'checks' || !!options.mergeReadinessOpen),
+    // The header and merge dialog use this same report set on every tab. Keep it
+    // current so opening Checks cannot change the meaning of the summary.
+    available,
     revision,
   )
   const stack = usePullSection(

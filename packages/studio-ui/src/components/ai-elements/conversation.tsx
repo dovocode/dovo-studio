@@ -7,6 +7,7 @@ import {
   ConversationScrollButton as SharedConversationScrollButton,
 } from '@dovo/web-ui/conversation'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
+import { List } from 'lucide-react'
 import {
   createContext,
   useContext,
@@ -263,11 +264,13 @@ export function ConversationRail({
     status?: 'waiting' | 'running' | 'completed' | 'failed' | 'cancelled'
   }>
 }) {
-  const { scrollRef, stopScroll } = useStickToBottomContext()
+  const { scrollRef, contentRef, stopScroll } = useStickToBottomContext()
   const [hovered, setHovered] = useApplicationState<string | null>(null)
   const hoverIndex = items.findIndex((item) => item.id === hovered)
   const [visible, setVisible] = useApplicationState<Set<string>>(new Set())
+  const cancelJump = useRef<(() => void) | undefined>(undefined)
   const observedIds = JSON.stringify(items.map((item) => item.id))
+  useEffect(() => () => cancelJump.current?.(), [observedIds])
   useEffect(() => {
     const ids: string[] = JSON.parse(observedIds)
     const root = scrollRef.current
@@ -307,73 +310,144 @@ export function ConversationRail({
           if (event.key === 'Escape') setHovered(null)
         }}
         style={{ justifyContent: 'safe center' }}
-        className="absolute bottom-6 left-0 top-6 hidden w-12 flex-col items-start overflow-y-auto overflow-x-visible py-1 md:flex"
+        className="absolute bottom-6 left-1 top-6 hidden w-10 flex-col items-center overflow-y-auto overflow-x-hidden py-1 md:flex"
       >
-        {items.map((item, index) => (
-          <Tooltip key={item.id} open={hovered === item.id} disableHoverableContent>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onPointerEnter={() => setHovered(item.id)}
-                onPointerLeave={() =>
-                  setHovered((current) => (current === item.id ? null : current))
-                }
-                onFocus={() => setHovered(item.id)}
-                onBlur={() => setHovered((current) => (current === item.id ? null : current))}
-                aria-label={`Jump to turn ${index + 1}: ${item.label}`}
-                aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-6 max-h-6 w-12 shrink-0 items-center justify-start pl-3 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={() => {
-                  setHovered(null)
-                  const root = scrollRef.current
-                  const target = document.getElementById(item.id)
-                  if (!root || !target || !root.contains(target)) return
-                  stopScroll()
-                  root.scrollTo({
-                    top:
-                      root.scrollTop +
-                      target.getBoundingClientRect().top -
-                      root.getBoundingClientRect().top -
-                      16,
-                    behavior: reducedMotion() ? 'instant' : 'smooth',
-                  })
-                }}
-              >
-                <span
-                  style={{
-                    width:
-                      hoverIndex < 0
-                        ? 8
-                        : Math.abs(index - hoverIndex) === 0
-                          ? 24
-                          : Math.abs(index - hoverIndex) === 1
-                            ? 16
-                            : Math.abs(index - hoverIndex) === 2
-                              ? 12
-                              : 8,
+        <div className="flex shrink-0 flex-col items-center rounded-full bg-muted/45 py-1.5">
+          <List aria-hidden="true" className="mb-1 size-3.5 text-muted-foreground/70" />
+          {items.map((item, index) => (
+            <Tooltip key={item.id} open={hovered === item.id} disableHoverableContent>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onPointerEnter={() => setHovered(item.id)}
+                  onPointerLeave={() =>
+                    setHovered((current) => (current === item.id ? null : current))
+                  }
+                  onFocus={() => setHovered(item.id)}
+                  onBlur={() => setHovered((current) => (current === item.id ? null : current))}
+                  aria-label={`Jump to turn ${index + 1}: ${item.label}`}
+                  aria-current={visible.has(item.id) ? 'location' : undefined}
+                  className="group flex min-h-6 max-h-6 w-8 shrink-0 items-center justify-center rounded-sm outline-none hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={() => {
+                    setHovered(null)
+                    const root = scrollRef.current
+                    const target = document.getElementById(item.id)
+                    if (!root || !target || !root.contains(target)) return
+                    cancelJump.current?.()
+                    stopScroll()
+                    let frame: number | undefined
+                    let quietFrame: number | undefined
+                    let resize: ResizeObserver | undefined
+                    let mutations: MutationObserver | undefined
+                    const interactionRoot = root.ownerDocument
+                    const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+                    const cancel = () => {
+                      if (frame !== undefined) cancelAnimationFrame(frame)
+                      if (quietFrame !== undefined) cancelAnimationFrame(quietFrame)
+                      resize?.disconnect()
+                      mutations?.disconnect()
+                      root.removeEventListener('scrollend', settle)
+                      for (const event of events) interactionRoot.removeEventListener(event, cancel)
+                      if (cancelJump.current === cancel) cancelJump.current = undefined
+                    }
+                    const offset = () =>
+                      target.getBoundingClientRect().top - root.getBoundingClientRect().top - 16
+                    const correct = () => {
+                      frame = undefined
+                      if (
+                        !target.isConnected ||
+                        !root.contains(target) ||
+                        !root.getClientRects().length
+                      ) {
+                        cancel()
+                        return
+                      }
+                      // Deferred turns acquire their real height during a long jump. Once the
+                      // animation ends, settle this anchor through those layout changes.
+                      const delta = offset()
+                      if (Math.abs(delta) > 1) {
+                        root.scrollTo({ top: root.scrollTop + delta, behavior: 'instant' })
+                      }
+                      // Observers schedule another correction if this scroll mounts more turns.
+                      // A quiet layout frame ends the correction rather than retaining a lock.
+                      quietFrame = requestAnimationFrame(cancel)
+                    }
+                    const schedule = () => {
+                      if (quietFrame !== undefined) cancelAnimationFrame(quietFrame)
+                      if (frame === undefined) frame = requestAnimationFrame(correct)
+                    }
+                    const settle = () => {
+                      root.removeEventListener('scrollend', settle)
+                      const content = contentRef.current
+                      if (content) {
+                        resize = new ResizeObserver(schedule)
+                        resize.observe(content)
+                        resize.observe(root)
+                        mutations = new MutationObserver(schedule)
+                        mutations.observe(content, { childList: true, subtree: true })
+                      }
+                      schedule()
+                    }
+                    cancelJump.current = cancel
+                    for (const event of events)
+                      interactionRoot.addEventListener(event, cancel, { passive: true })
+                    const instant = reducedMotion()
+                    const top = Math.max(
+                      0,
+                      Math.min(root.scrollHeight - root.clientHeight, root.scrollTop + offset()),
+                    )
+                    const unchanged = Math.abs(top - root.scrollTop) <= 1
+                    // An already aligned or clamped jump has no scrolling or layout to settle.
+                    if (unchanged) {
+                      cancel()
+                      return
+                    }
+                    if (!instant) root.addEventListener('scrollend', settle, { once: true })
+                    root.scrollTo({
+                      top,
+                      behavior: instant ? 'instant' : 'smooth',
+                    })
+                    if (instant) settle()
                   }}
-                  className={cn(
-                    'h-[2px] rounded-full transition-[width,background-color] duration-150 ease-out group-hover:bg-foreground group-focus-visible:bg-foreground motion-reduce:transition-none',
-                    visible.has(item.id) ? 'bg-foreground/90' : 'bg-muted-foreground/30',
-                  )}
-                />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              sideOffset={10}
-              collisionPadding={12}
-              className="pointer-events-none w-80 max-w-[calc(100vw-5rem)] rounded-xl bg-popover px-3 py-3 text-left text-sm leading-5 shadow-lg"
-            >
-              <p className="line-clamp-2 break-words font-medium">{item.label}</p>
-              {item.preview && (
-                <p className="mt-1.5 line-clamp-3 break-words text-muted-foreground">
-                  {item.preview}
-                </p>
-              )}
-            </TooltipContent>
-          </Tooltip>
-        ))}
+                >
+                  <span
+                    style={{
+                      width:
+                        hoverIndex < 0
+                          ? visible.has(item.id)
+                            ? 16
+                            : 8
+                          : Math.abs(index - hoverIndex) === 0
+                            ? 24
+                            : Math.abs(index - hoverIndex) === 1
+                              ? 16
+                              : Math.abs(index - hoverIndex) === 2
+                                ? 12
+                                : 8,
+                    }}
+                    className={cn(
+                      'h-[2px] rounded-full transition-[width,background-color] duration-150 ease-out group-hover:bg-foreground group-focus-visible:bg-foreground motion-reduce:transition-none',
+                      visible.has(item.id) ? 'bg-foreground/90' : 'bg-muted-foreground/30',
+                    )}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                sideOffset={10}
+                collisionPadding={12}
+                className="pointer-events-none w-80 max-w-[calc(100vw-5rem)] rounded-xl bg-popover px-3 py-3 text-left text-sm leading-5 shadow-lg"
+              >
+                <p className="line-clamp-2 break-words font-medium">{item.label}</p>
+                {item.preview && (
+                  <p className="mt-1.5 line-clamp-3 break-words text-muted-foreground">
+                    {item.preview}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
       </nav>
     </TooltipProvider>
   )

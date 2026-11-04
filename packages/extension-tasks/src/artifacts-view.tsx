@@ -91,6 +91,7 @@ const savedTime = (value: string) =>
   })
 
 export default function ArtifactsView() {
+  const host = useStudioHost()
   const { transition, style: detailStyle } = useDetailTransition()
   const { runtimes, readRuntime, runtimeReadCache } = useWorkspace()
   const [sidebarVisible] = useLeftSidebar()
@@ -434,7 +435,7 @@ export default function ArtifactsView() {
                           : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
                   }
                   action={
-                    (failed.length > 0 || filtered) && (
+                    failed.length > 0 || filtered ? (
                       <>
                         {failed.length > 0 && (
                           <Button
@@ -452,6 +453,18 @@ export default function ArtifactsView() {
                           </Button>
                         )}
                       </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          host.navigate({
+                            viewId: unavailable || !sources.length ? 'runtime' : 'tasks',
+                          })
+                        }
+                      >
+                        {unavailable || !sources.length ? 'Devices & runtime' : 'Open threads'}
+                      </Button>
                     )
                   }
                 />
@@ -529,28 +542,31 @@ export default function ArtifactsView() {
                         aria-current={current ? 'true' : undefined}
                         onClick={() => open(entry)}
                         className={cn(
-                          'flex w-full min-w-0 items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'studio-collection-row w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           current && 'studio-selected-surface',
                         )}
                       >
-                        <ArtifactIcon
-                          format={artifact.format}
-                          className="size-4 shrink-0 text-muted-foreground"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
+                        <span className="studio-collection-body">
+                          <span className="studio-collection-meta">
+                            <ArtifactIcon format={artifact.format} className="size-3.5 shrink-0" />
+                            <span>
+                              {artifactLabel(artifact)} · v{artifact.revision}
+                            </span>
+                            <span className="capitalize">{artifact.threadState}</span>
+                          </span>
+                          <span className="studio-collection-title line-clamp-2">
                             {artifact.title}
                           </span>
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                            {artifact.threadTitle} · {source.computerName}
-                            {!source.connected &&
-                              (source.connecting ? ' · Connecting…' : ' · Offline')}
+                          <span className="studio-collection-context">
+                            <span className="min-w-0 truncate">{artifact.threadTitle}</span>
+                            <span className="min-w-0 truncate">
+                              {source.computerName}
+                              {!source.connected &&
+                                (source.connecting ? ' · Connecting…' : ' · Offline')}
+                            </span>
                           </span>
                         </span>
-                        <time
-                          dateTime={artifact.updatedAt}
-                          className="shrink-0 text-[0.6875rem] text-muted-foreground"
-                        >
+                        <time dateTime={artifact.updatedAt} className="studio-collection-date">
                           {shortDate(artifact.updatedAt)}
                         </time>
                       </button>
@@ -563,7 +579,7 @@ export default function ArtifactsView() {
                     'grid px-3',
                     layout === 'preview'
                       ? 'grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-4'
-                      : 'grid-cols-1 gap-2',
+                      : 'grid-cols-1 gap-0.5 divide-y divide-border/50',
                   )}
                 >
                   {visible.map((entry) => {
@@ -573,7 +589,8 @@ export default function ArtifactsView() {
                         key={`${source.owner}:${artifact.taskId}:${artifact.id}`}
                         className={cn(
                           'min-w-0 overflow-hidden rounded-xl border border-border/50 bg-card',
-                          layout === 'list' && 'flex flex-wrap items-center',
+                          layout === 'list' &&
+                            'flex flex-wrap items-center border-transparent bg-transparent',
                         )}
                       >
                         <button
@@ -582,81 +599,121 @@ export default function ArtifactsView() {
                           onClick={() => open(entry)}
                           className={cn(
                             'group flex w-full min-w-0 overflow-hidden text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                            layout === 'preview' ? 'flex-col' : 'flex-1 items-center gap-3 p-3',
+                            layout === 'preview' ? 'flex-col' : 'studio-collection-row flex-1',
                           )}
                         >
                           {layout === 'list' ? (
-                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40">
-                              <ArtifactIcon format={artifact.format} className="size-5" />
-                            </span>
-                          ) : (
-                            <ArtifactSnapshot
-                              profile={source.profile}
-                              artifact={artifact}
-                              connected={source.connected}
-                              connecting={source.connecting}
-                              refreshKey={reload}
-                            />
-                          )}
-                          <div
-                            className={cn(
-                              'flex min-w-0 flex-1 flex-col',
-                              layout === 'preview' ? 'gap-2.5 p-4' : 'gap-1',
-                            )}
-                          >
-                            <div className="flex items-start gap-2">
-                              <h2
-                                className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-semibold leading-5"
-                                title={artifact.title}
-                              >
-                                {artifact.title}
-                              </h2>
-                              {layout === 'preview' && (
-                                <ArrowUpRight
-                                  aria-hidden="true"
-                                  className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
-                                />
-                              )}
-                            </div>
-                            <ArtifactSharedBadge artifact={artifact} />
-                            <p
-                              className="truncate text-xs text-muted-foreground"
-                              title={artifact.threadTitle}
-                            >
-                              {artifact.threadTitle}
-                            </p>
-                            <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
-                              <span className="flex items-center gap-1.5">
-                                {layout === 'preview' && (
-                                  <ArtifactIcon format={artifact.format} className="size-3.5" />
+                            <>
+                              <span className="studio-collection-body">
+                                <span className="studio-collection-meta">
+                                  <ArtifactIcon
+                                    format={artifact.format}
+                                    className="size-3.5 shrink-0"
+                                  />
+                                  <span>
+                                    {artifactLabel(artifact)} · v{artifact.revision}
+                                  </span>
+                                  <span className="capitalize">{artifact.threadState}</span>
+                                  <ArtifactSharedBadge artifact={artifact} />
+                                </span>
+                                <span className="studio-collection-title line-clamp-2">
+                                  {artifact.title}
+                                </span>
+                                <span className="studio-collection-context">
+                                  <span className="min-w-0 truncate" title={artifact.threadTitle}>
+                                    {artifact.threadTitle}
+                                  </span>
+                                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                                    <RuntimeIcon
+                                      icon={source.icon}
+                                      aria-hidden="true"
+                                      className="size-3 shrink-0"
+                                    />
+                                    <span className="truncate">
+                                      {source.computerName}
+                                      {!source.connected &&
+                                        (source.connecting ? ' · Connecting…' : ' · Offline')}
+                                    </span>
+                                  </span>
+                                </span>
+                                {artifact.deleteAt && (
+                                  <span className="mt-1 block text-[0.6875rem] text-destructive">
+                                    Scheduled deletion:{' '}
+                                    {new Date(artifact.deleteAt).toLocaleString()}
+                                  </span>
                                 )}
-                                {artifactLabel(artifact)} · v{artifact.revision}
                               </span>
-                              <time className="shrink-0" dateTime={artifact.updatedAt}>
+                              <time
+                                className="studio-collection-date"
+                                dateTime={artifact.updatedAt}
+                              >
                                 {shortDate(artifact.updatedAt)}
                               </time>
-                            </div>
-                            <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <RuntimeIcon
-                                  icon={source.icon}
-                                  aria-hidden="true"
-                                  className="size-3 shrink-0"
-                                />
-                                <span className="truncate">
-                                  {source.computerName}
-                                  {!source.connected &&
-                                    (source.connecting ? ' · Connecting…' : ' · Offline')}
-                                </span>
-                              </span>
-                              <span className="shrink-0 capitalize">{artifact.threadState}</span>
-                            </div>
-                            {artifact.deleteAt && (
-                              <p className="text-[0.6875rem] text-destructive">
-                                Scheduled deletion: {new Date(artifact.deleteAt).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
+                            </>
+                          ) : (
+                            <>
+                              <ArtifactSnapshot
+                                profile={source.profile}
+                                artifact={artifact}
+                                connected={source.connected}
+                                connecting={source.connecting}
+                                refreshKey={reload}
+                              />
+                              <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-4">
+                                <div className="flex items-start gap-2">
+                                  <h2
+                                    className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-semibold leading-5"
+                                    title={artifact.title}
+                                  >
+                                    {artifact.title}
+                                  </h2>
+                                  <ArrowUpRight
+                                    aria-hidden="true"
+                                    className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
+                                  />
+                                </div>
+                                <ArtifactSharedBadge artifact={artifact} />
+                                <p
+                                  className="truncate text-xs text-muted-foreground"
+                                  title={artifact.threadTitle}
+                                >
+                                  {artifact.threadTitle}
+                                </p>
+                                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+                                  <span className="flex items-center gap-1.5">
+                                    <ArtifactIcon format={artifact.format} className="size-3.5" />
+                                    {artifactLabel(artifact)} · v{artifact.revision}
+                                  </span>
+                                  <time className="shrink-0" dateTime={artifact.updatedAt}>
+                                    {shortDate(artifact.updatedAt)}
+                                  </time>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    <RuntimeIcon
+                                      icon={source.icon}
+                                      aria-hidden="true"
+                                      className="size-3 shrink-0"
+                                    />
+                                    <span className="truncate">
+                                      {source.computerName}
+                                      {!source.connected &&
+                                        (source.connecting ? ' · Connecting…' : ' · Offline')}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 capitalize">
+                                    {artifact.threadState}
+                                  </span>
+                                </div>
+                                {artifact.deleteAt && (
+                                  <p className="text-[0.6875rem] text-destructive">
+                                    Scheduled deletion:{' '}
+                                    {new Date(artifact.deleteAt).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </button>
                         <ArtifactLibraryActions
                           profile={source.profile}

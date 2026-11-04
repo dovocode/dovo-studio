@@ -16,7 +16,7 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending&&(options.tab==='checks'||options.mergeReadinessOpen),enabled:key!=='checks'||options.tab==='checks'||options.mergeReadinessOpen,readConnected:window.store.connected,error:'',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:'',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
@@ -204,7 +204,7 @@ try {
   const heading = detail.getByRole('heading', { level: 2, name: /Improve pull request reviews/ })
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
-    .locator('[aria-label="Pull request status"]')
+    .locator('[aria-label="Pull request metadata"]')
     .getByText('Waiting for required reviews', { exact: true })
     .waitFor()
   assert.equal(
@@ -304,6 +304,12 @@ try {
   })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  assert.equal(
+    await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
+    'outline',
+    'Failed pipelines and a missing review must not promote Merge as the primary action',
+  )
+  assert.equal(await detail.getByRole('button', { name: 'Merge', exact: true }).isEnabled(), true)
   await detail.getByRole('button', { name: 'Merge', exact: true }).click()
   const mergeDialog = page.getByRole('dialog')
   const mergeReadiness = mergeDialog.getByRole('region', { name: 'Merge readiness' })
@@ -545,7 +551,7 @@ try {
     window.pipelineRuns = []
     window.detail.checks = window.pipelineTestChecks
   })
-  // Unopened checks remain actionable without claiming a request is running or checks passed.
+  // Overview loads check reports too, and never substitutes an aggregate passed state.
   await page.evaluate(() => {
     window.checksPending = true
     window.savedChecksState = window.detail.pull.checksState
@@ -557,13 +563,8 @@ try {
     name: 'View pull request checks',
     exact: true,
   })
-  await checkSummary.getByText('Checks · View', { exact: true }).waitFor()
-  assert.equal(
-    await checkSummary.locator('svg').count(),
-    0,
-    'Unopened checks must not use a pending icon',
-  )
-  assert.equal(await page.getByText('Loading checks…', { exact: true }).count(), 0)
+  await checkSummary.getByText('Loading checks…', { exact: true }).waitFor()
+  assert.equal(await checkSummary.getByText(/checks? passed/i).count(), 0)
   await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
@@ -612,9 +613,9 @@ try {
   await row('Dependent change').getByText('#7 → #8', { exact: true }).waitFor()
   assert.doesNotMatch(await row('Dependent change').innerText(), /No checks|No review|approved/i)
   assert.equal(
-    await row('Dependent change')
-      .locator('div.grid')
-      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+    await row('Dependent change').evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    ),
     2,
     'Basic rows must not reserve an empty status column',
   )

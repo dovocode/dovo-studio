@@ -64,7 +64,6 @@ const titles: Record<ActionKind, string> = {
 export function PullActions(
   props: PullActionContext & {
     mergeStatus: MergeStatus
-    onMergeReadinessOpenChange: (open: boolean) => void
     onStartTask?: () => void
     extraMenuItems?: ReactNode
   },
@@ -100,6 +99,12 @@ export function PullActions(
         (!props.detail.pull.draft && !!props.detail.capabilities?.mergeMethods.length)) &&
       (item !== 'review' || props.detail.pull.state === 'open'),
   )
+  const mergeReady =
+    props.mergeStatus.checks.ready &&
+    !props.mergeStatus.warnings.length &&
+    props.mergeStatus.signals.every(
+      (signal) => signal.tone === 'positive' || signal.tone === 'accent',
+    )
   if (!available.length && !props.onStartTask && !props.extraMenuItems) return null
   return (
     <>
@@ -120,6 +125,7 @@ export function PullActions(
       {available.includes('merge') && (
         <Button
           size="sm"
+          variant={mergeReady ? 'default' : 'outline'}
           className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected || !!props.detail.stale || !!props.detail.refreshError}
           onClick={() => {
@@ -256,14 +262,12 @@ function PullActionDialog({
   detail: initialDetail,
   kind,
   mergeStatus,
-  onMergeReadinessOpenChange,
   comment,
   onClose,
   onCompleted,
 }: PullActionContext & {
   kind: ActionKind
   mergeStatus?: MergeStatus
-  onMergeReadinessOpenChange?: (open: boolean) => void
   comment?: PullComment
   onClose: () => void
   onCompleted: (message: string) => void
@@ -271,13 +275,6 @@ function PullActionDialog({
   // A background refresh must not reverse the operation being confirmed.
   // The server still validates this captured head and account before writing.
   const detail = useRef(initialDetail).current
-  const mergeReadinessOpen =
-    kind === 'merge' || (kind === 'auto-merge' && !detail.pull.autoMergeEnabled)
-  useEffect(() => {
-    if (!mergeReadinessOpen) return
-    onMergeReadinessOpenChange?.(true)
-    return () => onMergeReadinessOpenChange?.(false)
-  }, [mergeReadinessOpen, onMergeReadinessOpenChange])
   const { request, connected } = useWorkspace()
   const [body, setBody] = useApplicationState(kind === 'edit' ? detail.pull.body : '')
   const [title, setTitle] = useApplicationState(detail.pull.title)

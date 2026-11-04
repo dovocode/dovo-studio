@@ -277,10 +277,6 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
       host.navigate({ viewId: 'pulls' })
     }, 'close')
   const hasDetail = !!selected || !!urlSelection
-  const statusColumn = pulls.some(
-    (pull) =>
-      pull.checksState !== undefined || pull.reviewDecision !== undefined || !!pull.statusError,
-  )
   const urlRuntimeId = urlOwnerId
   const rowKey = (pull: (typeof pulls)[number]) => JSON.stringify([pull.source.key, pull.number])
   const selectRow = (pull: (typeof pulls)[number], event: React.MouseEvent<HTMLButtonElement>) => {
@@ -669,13 +665,6 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                     {!sources.length ? ' Add a project from the Projects menu in Tasks.' : ''}
                   </p>
                 )}
-                {!hasDetail && !!pulls.length && (
-                  <div className="hidden items-center gap-3 border-b py-2 pl-3 pr-12 text-xs font-medium text-muted-foreground @4xl/pr-list:flex">
-                    <span className="flex-1">Pull request</span>
-                    {statusColumn && <span className="w-44">Checks & review</span>}
-                    <span className="w-22 text-right">Updated</span>
-                  </div>
-                )}
                 {!!marked.length && (
                   <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-sidebar px-3 py-2 text-xs dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]">
                     <span>{marked.length} PRs selected</span>
@@ -695,7 +684,6 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       key={JSON.stringify([p.source.key, p.number])}
                       pull={p}
                       compact={hasDetail}
-                      statusColumn={statusColumn}
                       repository={`${p.repositoryName} · ${p.source.runtimeName}${p.source.connected ? '' : ' · Offline'}`}
                       selected={
                         marked.includes(rowKey(p)) ||

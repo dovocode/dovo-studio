@@ -80,11 +80,11 @@ export function ComposerSettingsControls({
           <Button
             type="button"
             variant="outline"
-            className="h-7 w-44 min-w-0 max-w-[65%] gap-2 text-xs font-normal"
+            className="h-7 w-52 min-w-0 max-w-[65%] gap-2 text-xs font-normal"
             style={{ borderColor: 'var(--control-edge)' }}
             disabled={locked}
             aria-label="Configure thread permissions"
-            title="Agent access"
+            title={`Agent access: ${permissionPolicyLabel(value)}`}
           >
             <AccessIcon className="size-3.5" />
             <span className="min-w-0 flex-1 truncate text-left">

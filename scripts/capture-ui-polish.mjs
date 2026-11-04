@@ -407,7 +407,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         resolve(output, 'manifest.json'),
         JSON.stringify({ screens: manifest, errors }, null, 2),
       )
-      await page.screenshot({ path: resolve(output, `${name}-${mode}.png`) })
+      await page.screenshot({
+        path: resolve(output, `${name}-${mode}.png`),
+        animations: 'disabled',
+      })
       if (name === 'conversation') {
         const files = page
           .getByRole('navigation', { name: 'Thread tools' })

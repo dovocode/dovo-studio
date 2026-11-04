@@ -120,12 +120,11 @@ function PullDetailContent({
   const [starting, setStarting] = useApplicationState(false)
   const stateKey = usePullStateKey(repositoryId, number, connectionId)
   const [tab, setTab] = useRetainedPullState(tabCache, stateKey, initialTab ?? 'overview')
-  const [mergeReadinessOpen, setMergeReadinessOpen] = useApplicationState(false)
   const { detail, error, busy, readConnected, refresh, invalidate, sections } = usePullDetail(
     repositoryId,
     number,
     connectionId,
-    { tab, discussionInOverview: true, mergeReadinessOpen },
+    { tab, discussionInOverview: true },
   )
   const pipelineRuns = usePullPipelineRuns({
     repositoryId,
@@ -142,22 +141,31 @@ function PullDetailContent({
     ? { label: `Pipeline runs: ${failedRuns} failed`, tone: 'danger' as const }
     : activeRuns
       ? { label: `Pipeline runs: ${activeRuns} running`, tone: 'warning' as const }
-      : { label: `Pipeline runs: ${pipelineRuns.runs.length} loaded`, tone: 'neutral' as const }
-  const checksReady =
-    sections.checks.ready || (sections.status.ready && detail?.pull.checksState !== undefined)
+      : pipelineRuns.runs.length &&
+          pipelineRuns.runs.every((run) => pipelineSignal(run.status).tone === 'success')
+        ? { label: `Pipeline runs: ${pipelineRuns.runs.length} passed`, tone: 'positive' as const }
+        : { label: `Pipeline runs: ${pipelineRuns.runs.length} loaded`, tone: 'neutral' as const }
+  const checksReady = sections.checks.ready
   const checkSummary: PullSignal = sections.checks.error
     ? { label: 'Check reports unavailable', tone: 'warning' }
-    : sections.checks.busy && !sections.checks.ready
-      ? { label: 'Loading checks…', tone: 'neutral' }
-      : detail && checksReady
-        ? {
-            ...pullDetailChecks(detail),
-            label: `Check reports: ${pullDetailChecks(detail).label}`,
-          }
-        : {
-            label: sections.checks.busy ? 'Loading checks…' : 'Check reports not loaded',
-            tone: 'neutral',
-          }
+    : detail && checksReady
+      ? {
+          ...pullDetailChecks(detail),
+          label: `Check reports: ${pullDetailChecks(detail).label}${
+            !sections.checks.readConnected
+              ? ' · offline'
+              : sections.checks.detail?.stale
+                ? ' · saved'
+                : ''
+          }`,
+          ...(!sections.checks.readConnected || sections.checks.detail?.stale
+            ? { tone: 'warning' as const }
+            : {}),
+        }
+      : {
+          label: sections.checks.readConnected ? 'Loading checks…' : 'Check reports offline',
+          tone: 'neutral',
+        }
   const reviewSummary: PullSignal =
     detail && (sections.status.ready || sections.discussion.ready)
       ? pullDetailReviews(detail)
@@ -352,7 +360,6 @@ function PullDetailContent({
                   ),
                 ],
               }}
-              onMergeReadinessOpenChange={setMergeReadinessOpen}
               onDone={changed}
               extraMenuItems={
                 <>
@@ -556,15 +563,10 @@ function PullDetailContent({
                   onClick={() => selectTab('checks')}
                   className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
                 >
-                  {checksReady || sections.checks.busy ? (
-                    <Signal signal={checkSummary} />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Checks · View</span>
-                  )}
+                  <Signal signal={checkSummary} />
                 </button>
                 {pipelineRuns.runs.length > 0 && <Signal signal={pipelineSummary} />}
                 <Signal signal={reviewSummary} />
-                <Signal signal={pullMergeability(detail.pull)} />
                 {detail.pull.autoMergeEnabled && (
                   <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
                 )}
@@ -762,11 +764,9 @@ function PullDetailContent({
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-medium">Updated</dt>
-                      <dd className="mt-2 text-muted-foreground">
-                        <time dateTime={detail.pull.updatedAt}>
-                          {formatDateTime(detail.pull.updatedAt)}
-                        </time>
+                      <dt className="font-medium">Mergeability</dt>
+                      <dd className="mt-2">
+                        <Signal signal={pullMergeability(detail.pull)} />
                       </dd>
                     </div>
                   </dl>

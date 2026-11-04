@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { CircleDot } from 'lucide-react'
-import { issueLabel, type ForgeIssue } from '@dovo/studio-core'
+import { formatDateTime, issueLabel, type ForgeIssue } from '@dovo/studio-core'
 import type { WorkSource } from './work-sources'
 import { formatDate } from './format-date'
 
@@ -63,17 +63,6 @@ export function JiraIssueList({
   const ordered = [...groups.values()].flat()
   return (
     <div role="region" className="@container/jira-list" aria-label="Jira issue results">
-      {!!rows.length && (
-        <div
-          aria-hidden="true"
-          className="hidden grid-cols-[minmax(0,1fr)_7rem_5rem_7rem] gap-3 border-b px-3 py-2 text-xs text-muted-foreground @xl/jira-list:grid"
-        >
-          <span>Issue</span>
-          <span>Status</span>
-          <span>Priority</span>
-          <span>Assignee</span>
-        </div>
-      )}
       {[...groups.entries()].map(([key, group]) => {
         const { source, stale, cachedAt } = group[0]!
         return (
@@ -112,7 +101,7 @@ export function JiraIssueList({
                     aria-label={`${issueLabel(item.id)} · ${item.title} · ${item.state} · ${item.priority ? `${item.priority} priority` : 'No priority'} · ${assignee}`}
                     aria-current={active ? 'true' : undefined}
                     disabled={opening}
-                    className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_7rem] items-start gap-3 rounded-xl border border-transparent px-3 py-3 text-left text-xs transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 @xl/jira-list:grid-cols-[minmax(0,1fr)_7rem_5rem_7rem] ${active ? 'studio-selected-surface' : ''}`}
+                    className={`studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 ${active ? 'studio-selected-surface' : ''}`}
                     onClick={() => void onOpen(source, item.id, item.url)}
                     onKeyDown={(event) => {
                       if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
@@ -138,33 +127,45 @@ export function JiraIssueList({
                       })
                     }}
                   >
-                    <span className="min-w-0 space-y-1">
-                      <span className="block break-words text-sm font-medium">{item.title}</span>
-                      <span className="block break-words text-muted-foreground">
-                        {issueLabel(item.id)} · {item.type}
-                        {item.labels.length ? ` · ${item.labels.slice(0, 3).join(', ')}` : ''}
-                        {item.labels.length > 3 ? ` · +${item.labels.length - 3} labels` : ''}
-                      </span>
-                      <span className="block break-words text-muted-foreground @xl/jira-list:hidden">
-                        {item.priority ? `${priority} priority · ` : ''}
-                        {assignee}
-                      </span>
-                      {source.projectLinks?.[item.id] && (
-                        <span className="block break-words text-muted-foreground">
-                          Project: {source.projectLinks[item.id]}
+                    <span className="studio-collection-body">
+                      <span className="studio-collection-meta">
+                        <span className="studio-collection-status">
+                          <CircleDot className="size-3.5 shrink-0" />
+                          {item.state}
                         </span>
-                      )}
+                        <span className="font-mono">{issueLabel(item.id)}</span>
+                        <span>{item.type}</span>
+                      </span>
+                      <span className="studio-collection-title">{item.title}</span>
+                      <span className="studio-collection-context">
+                        <span>{assignee}</span>
+                        {item.priority && (
+                          <span className="studio-collection-label">Priority: {priority}</span>
+                        )}
+                        {source.projectLinks?.[item.id] && (
+                          <span>Project: {source.projectLinks[item.id]}</span>
+                        )}
+                        {item.labels.slice(0, 3).map((label) => (
+                          <span key={label} className="studio-collection-label" title={label}>
+                            {label}
+                          </span>
+                        ))}
+                        {item.labels.length > 3 && (
+                          <span title={item.labels.slice(3).join(', ')}>
+                            +{item.labels.length - 3} labels
+                          </span>
+                        )}
+                      </span>
                     </span>
-                    <span className="inline-flex min-w-0 items-start gap-1.5 break-words text-muted-foreground">
-                      <CircleDot className="mt-0.5 size-3 shrink-0" />
-                      {item.state}
-                    </span>
-                    <span className="hidden min-w-0 break-words @xl/jira-list:block">
-                      {priority}
-                    </span>
-                    <span className="hidden min-w-0 break-words text-muted-foreground @xl/jira-list:block">
-                      {assignee}
-                    </span>
+                    <time
+                      className="studio-collection-date"
+                      dateTime={item.updatedAt}
+                      title={formatDate(item.updatedAt)}
+                    >
+                      {item.updatedAt && !Number.isNaN(Date.parse(item.updatedAt))
+                        ? formatDateTime(item.updatedAt, { dateStyle: 'medium' })
+                        : ''}
+                    </time>
                   </button>
                 )
               })}

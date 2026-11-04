@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
+import { mkdir } from 'node:fs/promises'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -13,9 +16,10 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '../chat/composer/chat-image-edit': `export const ChatImageEditProvider=({children})=>children;`,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
+  '@dovo/web-ui/conversation': `export * from '${root}packages/web-ui/src/conversation.tsx';`,
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,
-  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory,active}){return <Conversation><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content style={{padding:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{Array.from({length:20},(_,index)=>index).map(index=><section key={index} style={{contentVisibility:"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-'+index} pinned={index>=18}>{()=> <div style={{height:350}}>Turn {task.id} {index}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div></ConversationContent></ConversationHistory><ConversationScrollButton/></Conversation>}`,
-  '../chat/composer/composer': `export function Composer({collapsed}){return <form data-collapsed={collapsed} style={{height:collapsed?48:150}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form>}`,
+  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationRail,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory,active}){const indices=Array.from({length:window.turnCount??20},(_,index)=>index);return <Conversation><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content className="studio-conversation-content mx-auto w-full" style={{paddingBlock:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{indices.map(index=><section id={task.id+'-'+index} key={index} style={{contentVisibility:window.staticTurns?"visible":"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-deferred-'+index} pinned={window.staticTurns||index>=indices.length-2}>{()=> <div style={{height:350}}>Turn {task.id} {index+1}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div></ConversationContent></ConversationHistory><ConversationRail items={indices.map(index=>({id:task.id+'-'+index,label:'Turn '+(index+1),preview:'Request and response for this turn'}))}/><ConversationScrollButton/></Conversation>}`,
+  '../chat/composer/composer': `export function Composer({collapsed}){return <div className="task-composer"><form data-collapsed={collapsed} style={{height:collapsed?48:150,maxWidth:'var(--chat-max)',marginInline:'auto'}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form></div>}`,
 }
 for (const [path, name] of [
   ['../chat/composer/composer-activity', 'ComposerActivity'],
@@ -32,7 +36,7 @@ for (const [path, name] of [
   mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
   },
@@ -59,14 +63,24 @@ const built = await build({
     },
   ],
 })
+const cssServer = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  logLevel: 'error',
+})
+let css
+try {
+  css = (await cssServer.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await cssServer.close()
+}
 const browser = await chromium.launch({ headless: true })
 try {
-  const page = await browser.newPage()
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.setContent(`<style>
-    *{box-sizing:border-box} body{margin:0} .flex{display:flex}.flex-col{flex-direction:column}.flex-col-reverse{flex-direction:column-reverse}.flex-1{flex:1}.h-full{height:100%}.min-h-0{min-height:0}.overflow-y-hidden{overflow-y:hidden}
-  </style><div id="app"></div>`)
+  await page.setContent(`<style>${css}</style><div id="app"></div>`)
   // Delay initial scrolling to check the content before its first anchored frame.
   await page.evaluate(() => {
     const requestFrame = window.requestAnimationFrame.bind(window)
@@ -91,7 +105,7 @@ try {
       .locator('[role=log] > div')
       .evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop)) < 3,
   )
-  assert.equal(await content.evaluate((e) => getComputedStyle(e).padding), '16px')
+  assert.equal(await content.evaluate((e) => getComputedStyle(e).paddingBlock), '16px')
   await page.evaluate(() => window.releaseInitialFrames())
   const bottom = () =>
     page.waitForFunction(
@@ -180,9 +194,190 @@ try {
   await page.waitForTimeout(50)
   await page.evaluate(() => window.setVisible(true))
   await bottom()
+  // The turn index remains usable when its list exceeds the viewport.
+  await page.evaluate(() => window.setTurnCount(80))
+  await bottom()
+  const rail = page.getByRole('navigation', { name: 'Conversation turns', exact: true })
+  const targets = rail.getByRole('button')
+  assert.equal(await targets.count(), 80)
+  assert.ok(await rail.evaluate((element) => element.scrollHeight > element.clientHeight))
+  await targets.nth(39).focus()
+  await page.getByRole('tooltip').filter({ hasText: 'Turn 40' }).waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => {
+    const target = document.getElementById('second-39')
+    const scroll = document.querySelector('[role=log] > div')
+    return (
+      Math.abs(target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16) < 3
+    )
+  })
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="Jump to turn 40: Turn 40"]')
+        ?.getAttribute('aria-current') === 'location',
+  )
+  // A newer explicit jump replaces a smooth jump that is still in flight.
+  await targets.nth(9).focus()
+  await page.keyboard.press('Enter')
+  await targets.nth(59).focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => {
+    const target = document.getElementById('second-59')
+    const scroll = document.querySelector('[role=log] > div')
+    return (
+      Math.abs(target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16) < 3
+    )
+  })
+  // Reader interruption cancels correction, including later deferred-layout signals.
+  const interrupted = await page.evaluate(() => {
+    const root = document.querySelector('[role=log] > div')
+    root.dispatchEvent(new WheelEvent('wheel', { deltaY: 400, bubbles: true }))
+    root.scrollTo({ top: root.scrollTop + 400, behavior: 'instant' })
+    return root.scrollTop
+  })
+  await page.evaluate(() => window.resizeHistory(9000, 2700))
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.locator('[role=log] > div').evaluate((element) => element.scrollTop),
+    interrupted,
+  )
+  // Returning to latest during a smooth turn jump cancels its native animation and correction.
+  await targets.nth(9).focus()
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await bottom()
+  await page.evaluate(() => window.resizeHistory(9000, 3000))
+  await bottom()
+  await targets.nth(39).focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => {
+    const target = document.getElementById('second-39')
+    const scroll = document.querySelector('[role=log] > div')
+    return (
+      Math.abs(target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16) < 3
+    )
+  })
+  const screenshots = process.env.DOVO_SCROLL_SCREENSHOTS
+  if (screenshots) await mkdir(screenshots, { recursive: true })
+  for (const width of [1280, 560, 360]) {
+    await page.setViewportSize({ width: width === 560 ? 1280 : width, height: 720 })
+    await page.locator('#app').evaluate((element, width) => {
+      element.style.width = `${width}px`
+    }, width)
+    const latest = page.getByRole('button', { name: 'Scroll to latest message' })
+    await latest.waitFor()
+    const geometry = await latest.evaluate((button) => {
+      const action = button.getBoundingClientRect()
+      const log = document.querySelector('[role=log]').getBoundingClientRect()
+      const composer = document.querySelector('form').getBoundingClientRect()
+      const content = document.querySelector('[data-conversation-content]')
+      const proseRight =
+        content.getBoundingClientRect().right - parseFloat(getComputedStyle(content).paddingRight)
+      return {
+        action: { left: action.left, right: action.right, bottom: action.bottom },
+        logRight: log.right,
+        logBottom: log.bottom,
+        composerRight: composer.right,
+        composerTop: composer.top,
+        proseRight,
+      }
+    })
+    assert.ok(
+      geometry.action.right <= geometry.logRight - 11,
+      'Latest action stays within narrow panes',
+    )
+    assert.ok(
+      geometry.action.bottom <= geometry.logBottom - 11,
+      'Latest action clears the conversation edge',
+    )
+    assert.ok(geometry.action.bottom < geometry.composerTop, 'Latest action clears the composer')
+    if (width >= 560) {
+      assert.ok(geometry.action.left >= geometry.proseRight, 'Latest action stays outside prose')
+      assert.ok(
+        Math.abs(geometry.action.left - geometry.composerRight) <= 12,
+        'Latest action follows the reading/composer column',
+      )
+    }
+    assert.equal(await rail.isVisible(), width !== 360)
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    if (screenshots) await page.screenshot({ path: `${screenshots}/conversation-${width}.png` })
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.locator('#app').evaluate((element) => {
+    element.style.width = '1280px'
+  })
+  await targets.last().focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => {
+    const target = document.getElementById('second-79')
+    const scroll = document.querySelector('[role=log] > div')
+    return (
+      Math.abs(target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16) < 3
+    )
+  })
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await bottom()
+  assert.equal(await page.getByRole('button', { name: 'Scroll to latest message' }).count(), 0)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const layoutFrames = () =>
+    page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+  const programmaticScroll = () =>
+    page.evaluate(async () => {
+      const root = document.querySelector('[role=log] > div')
+      const expected = root.scrollTop - 1000
+      const done = new Promise((resolve) =>
+        root.addEventListener(
+          'scrollend',
+          () => requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          { once: true },
+        ),
+      )
+      root.scrollTo({ top: expected, behavior: 'instant' })
+      await done
+      return { expected, actual: root.scrollTop }
+    })
+  // A repeated zero-distance jump must not leave a listener for some future scroll.
+  await targets.nth(39).focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(
+    () => Math.abs(document.getElementById('second-39').getBoundingClientRect().top - 16) < 3,
+  )
+  await layoutFrames()
+  await page.keyboard.press('Enter')
+  await layoutFrames()
+  let result = await programmaticScroll()
+  assert.equal(result.actual, result.expected, 'An aligned turn jump releases its anchor')
+  // A last turn without room below it clamps to the end and also releases its anchor.
+  await page.evaluate(() => {
+    window.staticTurns = true
+    window.resizeHistory(9000, 0)
+  })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await bottom()
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await targets.last().focus()
+  await page.keyboard.press('Enter')
+  await layoutFrames()
+  result = await programmaticScroll()
+  assert.equal(result.actual, result.expected, 'A clamped last-turn jump releases its anchor')
+  // Unmounting a thread cancels an in-flight jump before the new thread follows latest.
+  await targets.nth(9).focus()
+  await page.keyboard.press('Enter')
+  await page.evaluate(() => window.openThread('third'))
+  await page.waitForSelector('[data-task-conversation=third]')
+  await bottom()
   assert.deepEqual(errors, [])
   console.log(
-    'Newest-first thread opening, initial visibility, deferred layout, composer resizing, and reading-history focus checks passed.',
+    'Thread following, composer resizing, long turn navigation, keyboard previews, reduced motion, and reading-column action placement passed.',
   )
 } finally {
   await browser.close()

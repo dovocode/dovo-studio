@@ -223,10 +223,13 @@ export function ComposerPickerDaybreak({
   if (value.provider !== 'codex') return null
   return (
     <label className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
-      <span>Daybreak</span>
+      <span title="Optional Codex Daybreak access program. Automatic uses the provider default.">
+        Daybreak
+      </span>
       <ChoicePicker
         aria-label="Daybreak mode"
-        className="h-7 w-44 max-w-[65%]"
+        aria-description="Optional Codex Daybreak access program. Automatic uses the provider default."
+        className="h-7 w-52 max-w-[65%]"
         value={value.cyberAccessProgram ?? ''}
         disabled={disabled}
         onValueChange={(program) =>

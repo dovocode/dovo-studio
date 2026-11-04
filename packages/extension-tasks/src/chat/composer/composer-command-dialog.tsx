@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
 
 export function ComposerCommandDialog({
@@ -25,10 +26,22 @@ export function ComposerCommandDialog({
   onConfirm: () => void
   onRefresh: () => void
 }) {
+  const refreshButton = useRef<HTMLButtonElement>(null)
   const busy = commandBusy || refreshing
+  useEffect(() => {
+    if (command === 'undo' && needsRefresh && connected && !busy) refreshButton.current?.focus()
+  }, [command, needsRefresh, connected, busy])
   return (
     <Dialog open={!!command} onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className="max-w-md"
+        onOpenAutoFocus={(event) => {
+          if (command === 'undo' && needsRefresh && connected && !busy) {
+            event.preventDefault()
+            refreshButton.current?.focus()
+          }
+        }}
+      >
         <DialogTitle className="text-sm">
           {command === 'undo' ? 'Undo the last turn’s changes?' : 'Start a new agent session?'}
         </DialogTitle>
@@ -63,11 +76,12 @@ export function ComposerCommandDialog({
             Cancel
           </Button>
           {command === 'undo' && needsRefresh && (
-            <Button variant="outline" disabled={busy || !connected} onClick={onRefresh}>
+            <Button ref={refreshButton} disabled={busy || !connected} onClick={onRefresh}>
               {refreshing ? 'Refreshing…' : 'Refresh thread'}
             </Button>
           )}
           <Button
+            variant={command === 'undo' && needsRefresh ? 'outline' : 'default'}
             disabled={
               busy || !connected || running || (command === 'undo' && (!canUndo || needsRefresh))
             }

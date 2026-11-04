@@ -46,11 +46,11 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 274 captures: production desktop routes/compositions in
-both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
-Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
-zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
-records which frozen gallery each council round inspected. The checked-in WebP files are lossless
+The refreshed gallery includes 274 captures: production desktop routes/compositions in both themes,
+compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
+comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
+consistent thread terminology, dialog fields and expanded file tree. Review status below records
+which frozen gallery each council round inspected. The checked-in WebP files are lossless
 conversions of the reviewed PNGs. All captures use production components with schema-checked
 synthetic workspace data; account/runtime mutations are blocked. Empty collections are intentional
 empty states.
@@ -60,8 +60,12 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-The New automation dialog includes a subsequent verified label-spacing correction in both themes.
-The frozen gallery37 reviews predate that two-field adjustment.
+Frozen gallery38 includes the automation spacing correction, consistent collection rows and stable
+PR check summaries across tabs. Merge receives primary emphasis only when readiness is positive.
+Undo recovery emphasizes Refresh, access values remain readable, and conversation navigation has a
+grouped gutter and a latest-message action beside the reading column. Artifact empty states offer a
+useful next action. Long-history navigation also settles deferred message layouts and respects
+interrupted jumps.
 
 Council review is **in progress**. Fresh Opus and Muse conversations assess the current UI without
 past ratings, target scores or historical findings in their briefs. Earlier numeric reviews are
@@ -77,8 +81,8 @@ Needs input, Waiting and Snoozed groups show the retained section controls in us
 share quick views and a secondary Filters action; Automations uses the same flat list composition.
 Unavailable pipeline actions explain the missing capability and link to Sources.
 
-Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only mode,
-and a direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a review.
+Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only mode, and a
+direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a review.
 Static design reviews do not replace interaction and accessibility checks.
 
 ## Verification
@@ -88,8 +92,8 @@ Static design reviews do not replace interaction and accessibility checks.
 - Preferences, themes and accessibility unit tests.
 - Shared control checks: keyboard activation/focus, touch targets, selected/disabled states,
   constrained selects, searchable pickers, toggle contrast and forced colors.
-- Composer and rich editor: undo-refresh recovery and stale-runtime guards, drafts, checkout locking, queue geometry, attachment counts,
-  placeholder, narrow panes and stop-button contrast.
+- Composer and rich editor: undo-refresh recovery and stale-runtime guards, drafts, checkout
+  locking, queue geometry, attachment counts, placeholder, narrow panes and stop-button contrast.
 - PR workspace/list: tabs, filters, row menus, comments, review/merge confirmations, retained
   drafts, offline and compact layouts.
 - Terminal: typing, resizing, split/orientation/shortcuts, focus, scrollback, file drops, clipboard,
@@ -121,11 +125,11 @@ previews isolate runtime/account writes and use no live user data.
 
 | Surface                          | Dark                                                                 | Light                                                                 |
 | -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| busy-sections | [Screenshot](screenshots/busy-sections-dark.webp) | [Screenshot](screenshots/busy-sections-light.webp) |
-| busy-conversation | [Screenshot](screenshots/busy-conversation-dark.webp) | [Screenshot](screenshots/busy-conversation-light.webp) |
-| busy-unified-workspace | [Screenshot](screenshots/busy-unified-workspace-dark.webp) | [Screenshot](screenshots/busy-unified-workspace-light.webp) |
-| busy-long-draft | [Screenshot](screenshots/busy-long-draft-dark.webp) | [Screenshot](screenshots/busy-long-draft-light.webp) |
-| busy-mid-scroll | [Screenshot](screenshots/busy-mid-scroll-dark.webp) | [Screenshot](screenshots/busy-mid-scroll-light.webp) |
+| busy-sections                    | [Screenshot](screenshots/busy-sections-dark.webp)                    | [Screenshot](screenshots/busy-sections-light.webp)                    |
+| busy-conversation                | [Screenshot](screenshots/busy-conversation-dark.webp)                | [Screenshot](screenshots/busy-conversation-light.webp)                |
+| busy-unified-workspace           | [Screenshot](screenshots/busy-unified-workspace-dark.webp)           | [Screenshot](screenshots/busy-unified-workspace-light.webp)           |
+| busy-long-draft                  | [Screenshot](screenshots/busy-long-draft-dark.webp)                  | [Screenshot](screenshots/busy-long-draft-light.webp)                  |
+| busy-mid-scroll                  | [Screenshot](screenshots/busy-mid-scroll-dark.webp)                  | [Screenshot](screenshots/busy-mid-scroll-light.webp)                  |
 | welcome                          | [Screenshot](screenshots/welcome-dark.webp)                          | [Screenshot](screenshots/welcome-light.webp)                          |
 | conversation                     | [Screenshot](screenshots/conversation-dark.webp)                     | [Screenshot](screenshots/conversation-light.webp)                     |
 | pulls                            | [Screenshot](screenshots/pulls-dark.webp)                            | [Screenshot](screenshots/pulls-light.webp)                            |

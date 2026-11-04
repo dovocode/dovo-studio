@@ -140,22 +140,22 @@ try {
   await open()
   await detail.getByText('Review workflow description', { exact: true }).waitFor()
   await detail.getByText('Loading stack…', { exact: true }).waitFor()
-  assert.equal(
-    await page.evaluate(
-      () => window.sectionReads.includes('changes') || window.sectionReads.includes('checks'),
-    ),
-    false,
-  )
+  await detail
+    .getByRole('button', { name: 'View pull request checks', exact: true })
+    .getByText('Loading checks…', { exact: true })
+    .waitFor()
+  assert.equal(await page.evaluate(() => window.sectionReads.includes('changes')), false)
   assert.equal(
     await page.evaluate(() =>
       window.cacheReads.some((key) => {
         const parts = JSON.parse(key)
-        return parts[1] === 'detail-section' && ['changes', 'checks'].includes(parts[2])
+        return parts[1] === 'detail-section' && parts[2] === 'changes'
       }),
     ),
     false,
-    'Closed PR tabs must not hydrate unused sections from disk',
+    'Closed Changes must not hydrate the diff from disk',
   )
+  assert.equal(await page.evaluate(() => window.sectionReads.includes('checks')), true)
   assert.equal(await detail.getByTestId('PR title').textContent(), 'Improve pull request reviews')
   await detail.getByRole('button', { name: 'View pull request files', exact: true }).click()
   assert.equal(
@@ -220,6 +220,19 @@ try {
   })
   await detail.getByRole('button', { name: 'Refresh checks', exact: true }).click()
   await detail.getByText('All tests passed', { exact: true }).waitFor()
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).waitFor()
+  await detail.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.store.connected = false
+  })
+  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
+  await detail.getByText('Check reports: 1 check passed · offline', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.store.connected = true
+  })
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.releaseSection('stack')
     window.detail.pull.headSha = 'a'.repeat(40)
@@ -228,7 +241,7 @@ try {
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
 
-  // Merge readiness must load its own reports without requiring a visit to Checks.
+  // Overview and merge readiness share an in-flight report read without requiring Checks.
   await page.evaluate(() => {
     window.savedReads.clear()
     window.detail.capabilities = {
@@ -240,15 +253,20 @@ try {
     window.showStandalone()
   })
   await detail.getByRole('button', { name: 'Merge', exact: true }).waitFor()
+  await detail
+    .getByRole('button', { name: 'View pull request checks', exact: true })
+    .getByText('Loading checks…', { exact: true })
+    .waitFor()
   const beforeMergeChecks = await page.evaluate(
     () => window.sectionReads.filter((section) => section === 'checks').length,
   )
   await detail.getByRole('button', { name: 'Merge', exact: true }).click()
   const merge = page.getByRole('dialog')
   await merge.getByText('Loading checks…', { exact: true }).waitFor()
-  await page.waitForFunction(
-    (count) => window.sectionReads.filter((section) => section === 'checks').length > count,
+  assert.equal(
+    await page.evaluate(() => window.sectionReads.filter((section) => section === 'checks').length),
     beforeMergeChecks,
+    'Opening Merge must reuse the current report read',
   )
   assert.equal(await detail.locator('#pr-tab-overview').getAttribute('aria-selected'), 'true')
   await page.evaluate(() => {

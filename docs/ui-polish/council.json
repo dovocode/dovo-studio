@@ -279,12 +279,19 @@
       "score": 8,
       "shipVerdict": "ship; remaining material consistency and clarity findings",
       "brief": "No past ratings, target score or historical findings supplied."
+    },
+    {
+      "round": "independent37",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "929d390f-0444-470b-b2a6-9b81ba2e27a0",
+      "score": 8,
+      "shipVerdict": "ship; remaining consistency and clarity findings",
+      "brief": "No past ratings, target scores or historical findings supplied."
     }
   ],
   "remaining": [
-    "Unify collection row/status presentation and stable PR status summaries",
-    "Address verified controls/legibility findings",
-    "Complete independent assessment and finish PR #50"
+    "Complete independent gallery38 assessment and any verified follow-up",
+    "Finish PR #50 after quality gate"
   ],
   "approvalTarget": {
     "model": "Opus 5.5",
@@ -323,10 +330,22 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent37",
+      "round": "independent38",
+      "model": "Opus 5.5",
+      "id": "e005ca33-ad12-4195-b5b0-13255ea25c14",
+      "brief": "Fresh context; current screenshots and constraints only. No past ratings, target scores or historical findings supplied."
+    },
+    {
+      "round": "independent38",
+      "model": "Opus 5.5",
+      "id": "77444fc7-de6d-4bb5-babc-65bce340ac86",
+      "brief": "Fresh context; current screenshots and constraints only. No past ratings, target scores or historical findings supplied."
+    },
+    {
+      "round": "independent38",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "929d390f-0444-470b-b2a6-9b81ba2e27a0",
-      "brief": "Fresh context, exact full-size verification emphasized; no prior or target scores."
+      "id": "45de0858-b2c8-4348-b216-29c33daf536b",
+      "brief": "Fresh context; current screenshots and constraints only. No past ratings, target scores or historical findings supplied."
     }
   ],
   "queuedReviews": [
@@ -343,28 +362,22 @@
       "model": "Muse muse-wonder-full-1.0",
       "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "2b79c874-91e4-4335-95cb-f81950e52b42",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
     }
   ],
-  "postGalleryRefinements": [
-    {
-      "change": "New automation labels use explicit grid gaps to separate focus ring from label",
-      "verification": "Both-theme targeted production dialog captures, jobs typecheck and scoped lint",
-      "captures": "/tmp/dovo-automation-label38"
-    }
-  ]
+  "postGalleryRefinements": []
 }

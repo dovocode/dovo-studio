@@ -892,85 +892,86 @@ function WorkView({
                     type="button"
                     key={JSON.stringify([source.key, item.id])}
                     disabled={opening}
-                    className="block w-full min-w-0 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
+                    className="studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
                     onClick={() => void open(source, item.id, item.url)}
                   >
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground">
-                      {'status' in item ? (
-                        <PipelineState status={item.status} />
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded bg-muted/40 px-1.5 py-0.5">
-                          <CircleDot className="size-3.5" />
-                          {item.state.charAt(0).toUpperCase() + item.state.slice(1)}
-                        </span>
-                      )}
-                      <span>
-                        {'status' in item ? `Run ${item.number || item.id}` : issueLabel(item.id)} ·{' '}
-                        {source.name}
-                        {source.jira
-                          ? ` · ${source.jira.project}`
-                          : provider && provider !== 'jira'
-                            ? ` · ${forgeLabels[provider]}`
-                            : ''}
-                      </span>
-                      {'state' in item && <span>{item.type}</span>}
-                      <time className="ml-auto" dateTime={item.updatedAt}>
-                        {item.updatedAt && !Number.isNaN(Date.parse(item.updatedAt))
-                          ? formatDateTime(item.updatedAt, { dateStyle: 'medium' })
-                          : ''}
-                      </time>
-                    </div>
-                    <span className="my-1.5 block break-words text-sm font-medium leading-relaxed">
-                      {item.title}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span className="inline-flex min-w-0 items-center gap-1">
-                        <Monitor className="size-3 shrink-0" />
-                        <span className="truncate">
-                          {source.runtimeName}
-                          {!source.connected ? ' · Offline' : stale ? ' · Cached' : ''}
-                        </span>
-                      </span>
-                      {'status' in item ? (
-                        <>
-                          <span className="inline-flex min-w-0 items-center gap-1">
-                            <GitBranch className="size-3 shrink-0" />
-                            <span className="truncate">{item.ref}</span>
+                    <div className="studio-collection-body">
+                      <div className="studio-collection-meta">
+                        {'status' in item ? (
+                          <PipelineState status={item.status} plain />
+                        ) : (
+                          <span className="studio-collection-status">
+                            <CircleDot className="size-3.5" />
+                            {item.state.charAt(0).toUpperCase() + item.state.slice(1)}
                           </span>
-                          <span>{item.actor}</span>
-                        </>
-                      ) : (
-                        <>
-                          {source.jira && (
-                            <span>{source.projectLinks?.[item.id] ?? 'No project linked'}</span>
-                          )}
-                          <span>{item.author}</span>
-                          {item.priority && (
-                            <span className="rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-foreground">
-                              Priority: {item.priority}
-                            </span>
-                          )}
-                          <span className="text-foreground/80">
-                            {(item.assigneeNames ?? item.assignees).length
-                              ? `Assigned to ${(item.assigneeNames ?? item.assignees).join(', ')}`
-                              : 'Unassigned'}
+                        )}
+                        <span className="min-w-0 truncate">
+                          {'status' in item ? `Run ${item.number || item.id}` : issueLabel(item.id)}{' '}
+                          · {source.name}
+                          {source.jira
+                            ? ` · ${source.jira.project}`
+                            : provider && provider !== 'jira'
+                              ? ` · ${forgeLabels[provider]}`
+                              : ''}
+                        </span>
+                        {'state' in item && <span>{item.type}</span>}
+                      </div>
+                      <span className="studio-collection-title">{item.title}</span>
+                      <div className="studio-collection-context">
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <Monitor className="size-3 shrink-0" />
+                          <span className="truncate">
+                            {source.runtimeName}
+                            {!source.connected ? ' · Offline' : stale ? ' · Cached' : ''}
                           </span>
-                          {item.labels.slice(0, 3).map((label) => (
-                            <span
-                              className="rounded bg-[var(--studio-selected-fill)] px-1.5 py-0.5 text-foreground"
-                              key={label}
-                            >
-                              {label}
+                        </span>
+                        {'status' in item ? (
+                          <>
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <GitBranch className="size-3 shrink-0" />
+                              <span className="truncate">{item.ref}</span>
                             </span>
-                          ))}
-                          {item.labels.length > 3 && (
-                            <span title={item.labels.slice(3).join(', ')}>
-                              +{item.labels.length - 3} labels
+                            <span>{item.actor}</span>
+                          </>
+                        ) : (
+                          <>
+                            {source.jira && (
+                              <span>{source.projectLinks?.[item.id] ?? 'No project linked'}</span>
+                            )}
+                            <span>{item.author}</span>
+                            {item.priority && (
+                              <span className="studio-collection-label">
+                                Priority: {item.priority}
+                              </span>
+                            )}
+                            <span className="text-foreground/80">
+                              {(item.assigneeNames ?? item.assignees).length
+                                ? `Assigned to ${(item.assigneeNames ?? item.assignees).join(', ')}`
+                                : 'Unassigned'}
                             </span>
-                          )}
-                        </>
-                      )}
+                            {item.labels.slice(0, 3).map((label) => (
+                              <span className="studio-collection-label" key={label} title={label}>
+                                {label}
+                              </span>
+                            ))}
+                            {item.labels.length > 3 && (
+                              <span title={item.labels.slice(3).join(', ')}>
+                                +{item.labels.length - 3} labels
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
+                    <time
+                      className="studio-collection-date"
+                      dateTime={item.updatedAt}
+                      title={item.updatedAt ? formatDateTime(item.updatedAt) : undefined}
+                    >
+                      {item.updatedAt && !Number.isNaN(Date.parse(item.updatedAt))
+                        ? formatDateTime(item.updatedAt, { dateStyle: 'medium' })
+                        : ''}
+                    </time>
                   </button>
                 ))}
               </div>

@@ -3,9 +3,10 @@ import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { ArrowLeft, ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
+import { ArrowLeft, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
 import {
   clientScopeKey,
+  formatDateTime,
   isActiveRuntime,
   useWorkspace,
   type RuntimeConnection,
@@ -218,7 +219,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
     setBusy(false)
   }, [pending, activeRuntimeId, connection, setWorkspace, runtimes])
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {!selected && (
         <PageHeader title="Automations">
           <Button
@@ -302,40 +303,50 @@ export default function JobsView({ entityId }: StudioViewProps) {
                   aria-current={chosen?.key === row.key ? 'true' : undefined}
                   onClick={() => void open(row)}
                   className={cn(
-                    'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-accent disabled:opacity-60',
+                    'studio-collection-row w-full text-left disabled:opacity-60',
                     chosen?.key === row.key && 'bg-accent',
                   )}
                 >
-                  <Workflow className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{row.flow.name}</span>
-                    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                      <Monitor className="size-3 shrink-0" />
-                      <span className="truncate">
-                        {row.runtimeName}
-                        {row.projects.length ? ` · ${row.projects.join(', ')}` : ''}
-                        {!row.runtime.connected ? ' · Offline' : ''}
+                  <span className="studio-collection-body">
+                    <span className="studio-collection-meta">
+                      <span
+                        className={cn(
+                          'studio-collection-status',
+                          row.needsInput || row.latest?.status === 'waiting'
+                            ? 'text-status-warning'
+                            : row.latest?.status === 'failed'
+                              ? 'text-destructive'
+                              : 'text-muted-foreground',
+                        )}
+                      >
+                        <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+                        {row.status}
                       </span>
+                      {!row.runtime.connected && <span>Offline · Last saved state</span>}
                     </span>
-                    <span
-                      className={cn(
-                        'mt-1 block text-xs',
-                        row.needsInput || row.latest?.status === 'waiting'
-                          ? 'text-status-warning'
-                          : row.latest?.status === 'failed'
-                            ? 'text-destructive'
-                            : 'text-muted-foreground',
+                    <span className="studio-collection-title truncate">{row.flow.name}</span>
+                    <span className="studio-collection-context">
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <Monitor className="size-3 shrink-0" />
+                        <span className="truncate">{row.runtimeName}</span>
+                      </span>
+                      {row.projects.length > 0 && (
+                        <span className="truncate">{row.projects.join(', ')}</span>
                       )}
-                    >
-                      {row.runtime.connected
-                        ? row.status
-                        : `Last seen: ${row.status.toLowerCase()}`}
-                      {row.latest
-                        ? ` · ${new Date(row.latest.updatedAt ?? row.latest.createdAt).toLocaleDateString()}`
-                        : ''}
                     </span>
                   </span>
-                  <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
+                  {row.latest && (
+                    <time
+                      className="studio-collection-date"
+                      dateTime={row.latest.updatedAt ?? row.latest.createdAt}
+                      title={`Last run updated ${formatDateTime(row.latest.updatedAt ?? row.latest.createdAt)}`}
+                    >
+                      {formatDateTime(row.latest.updatedAt ?? row.latest.createdAt, {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </time>
+                  )}
                 </button>
               ))}
               {!visible.length && (
