@@ -154,7 +154,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
               ...routes
                 .filter(({ id }) => !['tasks', 'pulls', 'general'].includes(id))
                 .map(({ id }) => [id, id]),
-              ...['agents', 'task-behavior', 'remote-desktop'].map((route) => [
+              ...['agents', 'task-defaults', 'task-behavior', 'remote-desktop'].map((route) => [
                 route + '-legacy',
                 route,
                 undefined,
@@ -581,9 +581,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
                 ? page.getByRole('spinbutton', { name: 'Terminal font size', exact: true })
                 : name === 'browser'
                   ? page.getByRole('button', { name: 'Browser options', exact: true })
-                  : name === 'thread-info'
-                    ? page.getByRole('button', { name: 'Customize thread info', exact: true })
-                    : null
+                  : name === 'task-behavior'
+                    ? page.getByText('How inherited lifecycle rules work', { exact: true })
+                    : name === 'thread-info'
+                      ? page.getByRole('button', { name: 'Customize thread info', exact: true })
+                      : null
         if (control) {
           await control.scrollIntoViewIfNeeded()
           await control.click()

@@ -852,6 +852,10 @@ function PullDetailContent({
                 {repositorySource && (
                   <section aria-label="Repository CI" className="mb-4 rounded-xl border px-4 py-3">
                     <PullStatusSources sources={[repositorySource]} />
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      CI status reported by the repository provider. Check reports and linked
+                      pipelines are listed separately.
+                    </p>
                   </section>
                 )}
                 {checksOpened && repository && (

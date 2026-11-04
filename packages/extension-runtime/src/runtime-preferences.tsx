@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { SlidersHorizontal, WandSparkles } from 'lucide-react'
 import {
@@ -13,6 +13,7 @@ import {
 } from '@dovo/protocol'
 import { clientTaskScope, useWorkspace, useSettingsDraft, useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { LifecycleLink } from './lifecycle-link'
 import {
   Input,
   Select,
@@ -123,7 +124,7 @@ function useRuntimePreferences(onSaved?: () => void) {
 
 /** Settings → Computers → Running threads: what this computer does with tasks on its own. Stored
  * on the computer, so every device that manages it sees the same choices. */
-export function RunningTaskPreferences() {
+export function RunningTaskPreferences({ children }: { children?: ReactNode }) {
   const { snapshot } = useWorkspace()
   const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
@@ -136,6 +137,7 @@ export function RunningTaskPreferences() {
         connected={connected}
         textFields
       />
+      {children}
       <SettingsGroup advanced title="Model modes (experimental)">
         <SettingRow
           label="Tune & Maestro modes (experimental)"
@@ -353,6 +355,7 @@ export function PullRequestPreferences() {
             onChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
           />
         </SettingRow>
+        <LifecycleLink />
       </SettingsGroup>
       <SettingsGroup
         title="Shared GitHub and Jira retrieval"

@@ -13,7 +13,7 @@ const ui = `${root}/packages/studio-ui/src`
 // Exercise actual Radix controls. Only runtime context and the surrounding host shell are adapted.
 const mocks = {
   './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
-  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({});export const useWorkspace=()=>window.runtime;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useAppPreferences=()=>({themePalette:'dovo',...window.localPreferences});export const updateAppPreferences=changes=>{Object.assign(window.localPreferences,changes);window.show('creation')};export const useResolvedTheme=()=> 'dark';export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
+  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const useWorkspace=()=>window.runtime;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useAppPreferences=()=>({themePalette:'dovo',...window.localPreferences});export const updateAppPreferences=changes=>{Object.assign(window.localPreferences,changes);window.show('creation')};export const useResolvedTheme=()=> 'dark';export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui':
     ['button', 'input', 'textarea', 'dialog', 'select', 'checkbox']
@@ -25,7 +25,7 @@ const mocks = {
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';import {RuntimeDiagnosticsPanel} from '${root}/packages/extension-runtime/src/runtime-diagnostics.tsx';window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={diagnostics:RuntimeDiagnosticsPanel,creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={runtimeRegistry:{profiles:[]},connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>{if(path==='/api/runtime/preferences/save'&&window.preferenceSaveFailure)throw new Error(window.preferenceSaveFailure);return decode(schema,await window.callRuntime(path,input))},requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<StudioConfirmationProvider><Component key={name}/></StudioConfirmationProvider>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
+      contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import RunningTasksView from '${root}/packages/extension-runtime/src/running-tasks-view.tsx';import {PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';import {RuntimeDiagnosticsPanel} from '${root}/packages/extension-runtime/src/runtime-diagnostics.tsx';window.navigations=[];window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={diagnostics:RuntimeDiagnosticsPanel,creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTasksView,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={activeRuntimeId:'computer',runtimeRegistry:{profiles:[]},connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>{if(path==='/api/runtime/preferences/save'&&window.preferenceSaveFailure)throw new Error(window.preferenceSaveFailure);return decode(schema,await window.callRuntime(path,input))},requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<StudioConfirmationProvider><Component key={name}/></StudioConfirmationProvider>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -169,6 +169,29 @@ try {
       { exact: true },
     )
     .waitFor()
+  assert.equal(
+    await page
+      .getByText(
+        'Changes save automatically on this computer. Text fields save on Enter or when you leave the field.',
+        { exact: true },
+      )
+      .evaluate((element) =>
+        Boolean(
+          element.compareDocumentPosition(
+            [...document.querySelectorAll('p')].find((node) =>
+              node.textContent.startsWith('These are computer defaults.'),
+            ),
+          ) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      ),
+    true,
+    'Running-thread save feedback precedes its scope explanation and navigation',
+  )
+  await page.getByRole('button', { name: 'Open scoped thread lifecycle', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+    viewId: 'task-behavior',
+    entityId: 'computer',
+  })
   await page.evaluate(() => {
     window.preferenceSaveFailure = 'Could not save computer preferences'
   })

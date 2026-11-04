@@ -35,7 +35,10 @@ control styles make the workspace and its secondary surfaces feel consistent.
   reconnect instruction. Mixed-save pages name their explicit-save exceptions, and computer forms
   explain automatic-save timing. Save guidance has a readable text size and emphasis; offline
   defaults and lifecycle offer a direct route to Devices & runtime without changing the selected
-  target.
+  target. Settings search uses the visible thread labels and focuses the matching control; the
+  navigation offers a measured continuation action for lower sections. Running-thread save feedback
+  appears before its introduction, and lifecycle links retain the computer while opening the
+  relevant restart/archive or PR settling defaults.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
   desktop sizes; modest three/four-entry change sets fit at the captured normal and compact desktop
@@ -44,11 +47,11 @@ control styles make the workspace and its secondary surfaces feel consistent.
   read-only, offer Previous/Next within their comparison group, and preserve Back/draft/selection
   context. Push reflects branch tracking. PR lists reserve a responsive readiness column and keep
   the target branch visible. Issues keep stable Open/Closed filters. Merge readiness separates
-  repository status, check reports and linked pipelines; failure consent is visible, accessible and
-  invalidated by status changes. CI and review signals keep the same order down the PR list. Merge
-  dialogs keep action buttons outside the scrolling form body, including when status-source details
-  are expanded. Work-list separators remain visible alongside the shared collection-row border
-  treatment.
+  repository status, check reports and linked pipelines; the Checks view explains the repository
+  provider’s separate CI summary. Failure consent is visible, accessible and invalidated by status
+  changes. CI and review signals keep the same order down the PR list. Merge dialogs keep action
+  buttons outside the scrolling form body, including when status-source details are expanded.
+  Work-list separators remain visible alongside the shared collection-row border treatment.
 - **Dialogs and images:** shared themed confirmations preserve Cancel/return focus, drafts and
   queued decisions, and reject stale runtime/caller/target decisions. MCP details scroll without
   losing consent. Project-deletion blockers provide a safe route to active work. Image
@@ -57,12 +60,12 @@ control styles make the workspace and its secondary surfaces feel consistent.
 
 ## Evidence and limits
 
-The gallery contains **340 actual app captures across 170 surfaces**, each in dark and light,
+The gallery contains **344 actual app captures across 172 surfaces**, each in dark and light,
 including 1100px compact layouts, dense lists, edited Agent forms, long Git comparisons, open
 controls and follow-up/image dialogs. Checked-in WebPs are lossless conversions, verified
 pixel-for-pixel against the PNGs. The latest pass recaptures every state after the final Settings
-and Git refinements, against matching frozen source. The frozen manifest records this provenance.
-Six earlier comparisons remain below.
+search/navigation and PR source-explanation refinements, against matching frozen source. The frozen
+manifest records this provenance. Six earlier comparisons remain below.
 
 Captures use production components with schema-checked synthetic data and blocked account/runtime
 writes. Dense lists contain 14 rows; some other collections intentionally show empty states. The

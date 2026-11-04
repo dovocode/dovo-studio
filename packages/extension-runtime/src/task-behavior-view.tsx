@@ -3,20 +3,42 @@ import { useEffect, useRef } from 'react'
 import { useStudioHost, useWorkspace, useSettingsTarget } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { SettingsScopePage, TaskBehaviorSettings } from '@dovo/studio-ui'
+import { runtimeComputerName } from '@dovo/protocol'
 
-function ComputerDefaultsLink() {
+function ComputerDefaultsLinks() {
   const host = useStudioHost()
-  const { activeRuntimeId } = useWorkspace()
+  const { activeRuntimeId, runtimes, snapshot } = useWorkspace()
+  const computer = runtimeComputerName({
+    profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
+    snapshot,
+  })
   return (
-    <Button
-      variant="link"
-      className="px-0"
-      onClick={() =>
-        host.navigate({ viewId: 'running-tasks', entityId: activeRuntimeId ?? undefined })
-      }
-    >
-      Open computer running-thread defaults
-    </Button>
+    <div className="mt-2 space-y-1">
+      <p>Computer policies shown here are reported by {computer}.</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <Button
+          variant="link"
+          className="px-0"
+          onClick={() =>
+            host.navigate({ viewId: 'running-tasks', entityId: activeRuntimeId ?? undefined })
+          }
+        >
+          Restart & archiving defaults
+        </Button>
+        <Button
+          variant="link"
+          className="px-0"
+          onClick={() =>
+            host.navigate({
+              viewId: 'pull-request-monitoring-settings',
+              entityId: activeRuntimeId ?? undefined,
+            })
+          }
+        >
+          PR settling defaults
+        </Button>
+      </div>
+    </div>
   )
 }
 export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
@@ -50,7 +72,7 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
               and PR settling fall back to the computer defaults when all levels inherit. Archiving
               falls back to the computer’s inactivity policy when no scoped rule is set.
             </p>
-            <ComputerDefaultsLink />
+            <ComputerDefaultsLinks />
           </Disclosure>
           <TaskBehaviorSettings
             scope={scope}

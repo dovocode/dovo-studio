@@ -922,10 +922,55 @@
       "verdict": "ship; nonblocking refinements",
       "coverage": "52 full-size frames;25 dark/27 light;five compact",
       "summary": "Prior fixes confirmed; legacy Viewing wording, inheritance copy and repeated merge prose remain minor."
+    },
+    {
+      "round": "independent55",
+      "id": "/root/independent55_sol_a",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.4,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "64 full-size;32 per theme;six compact",
+      "summary": "No visual blockers. Lifecycle/Running/PR setting relationships and metadata scanning remain comprehension/density refinements; repeated merge prose and Git lower continuation are optional."
+    },
+    {
+      "round": "independent55",
+      "id": "/root/independent55_sol_b",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.5,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "52 full-size;26 per theme;six compact",
+      "summary": "No blockers. Confirmed capability/save/Git improvements; nav overflow and save-feedback placement worth improving. Dense-list metadata and named Git continuation are optional."
+    },
+    {
+      "round": "independent55",
+      "id": "/root/independent55_sol_c",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.5,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "80 full-size;40 per theme;10 compact",
+      "summary": "No blockers. Settings/save boundaries and Git modest-set geometry confirmed. Active Agent identity, metadata density and Git directory tails remain optional."
+    },
+    {
+      "round": "independent55",
+      "id": "85d05299-a99f-48d6-867d-90f4e76a5af8",
+      "model": "Opus 5.5",
+      "score": 8.2,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "50 full-size;25 per theme",
+      "summary": "No material-harm/workflow blockers. Checks/source explanation, discoverability of clean-state Save actions and minor alignment/overflow preferences. Current Repository merge status heading already names provider verdict; retain independent sources."
+    },
+    {
+      "round": "independent55",
+      "id": "5c5c46f1-29b0-4125-b49e-c1f54882bbca",
+      "model": "Opus 5.5",
+      "score": 8.4,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "50 full-size;26 dark/24 light;five compact",
+      "summary": "No P0/P1 defects. Repository CI source explanation and nav overflow cue accepted for refinement. Footer gutter, read-only states and disclosure alignment are minor/preferences."
     }
   ],
   "remaining": [
-    "Complete refreshed gallery55 review without prior or target scores; retry exact Muse after its provider reset",
+    "Complete fresh gallery56 independent reviews; retry exact Muse after its provider reset",
     "Finish PR #50 after the independent design approval gate"
   ],
   "approvalTarget": {
@@ -944,12 +989,12 @@
     "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
   },
   "gallery": {
-    "round": 55,
-    "captures": 340,
-    "corePass": 55,
-    "dialogPass": 55,
-    "settingsPass": 55,
-    "note": "170 paired surfaces fully recaptured after final production edits;128 main manifest entries and158 dialog entries, no errors/alerts.22 contact sheets are separate. All3582 frozen tracked source files byte-match current apps/packages/scripts. Lossless pixel equality, #080808 canvas and image-editor source parity verified."
+    "round": 56,
+    "captures": 344,
+    "corePass": 56,
+    "dialogPass": 56,
+    "settingsPass": 56,
+    "note": "342-frame full capture plus 2 focused expanded-lifecycle controls against unchanged production source; 172 theme pairs, 326 ordinary and 18 compact. 130 main manifest entries and 158 dialogs; 22 contacts separate. All 3583 tracked apps/packages/scripts files match frozen source56, including the added lifecycle-link. No errors/alerts; lossless pixel equality, #080808 canvas and image-source parity verified."
   },
   "unavailableReviews": [
     {
@@ -1018,39 +1063,39 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent55",
+      "round": "independent56",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent55_sol_a",
+      "id": "/root/independent56_sol_a",
       "status": "running",
-      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
     },
     {
-      "round": "independent55",
+      "round": "independent56",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent55_sol_b",
+      "id": "/root/independent56_sol_b",
       "status": "running",
-      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
     },
     {
-      "round": "independent55",
+      "round": "independent56",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent55_sol_c",
+      "id": "/root/independent56_sol_c",
       "status": "running",
-      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
     },
     {
-      "round": "independent55",
+      "round": "independent56",
       "model": "Opus 5.5",
-      "id": "85d05299-a99f-48d6-867d-90f4e76a5af8",
+      "id": "f071b22e-7a55-4764-a064-bb9c62ccf1eb",
       "status": "running",
-      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
     },
     {
-      "round": "independent55",
+      "round": "independent56",
       "model": "Opus 5.5",
-      "id": "5c5c46f1-29b0-4125-b49e-c1f54882bbca",
+      "id": "02d6cb12-f79d-4e5f-8f4e-705c67019da0",
       "status": "running",
-      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
     }
   ],
   "queuedReviews": [
@@ -1062,7 +1107,7 @@
       "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
     },
     {
-      "round": "independent55",
+      "round": "independent56",
       "model": "Muse muse-wonder-full-1.0",
       "status": "waiting-provider-reset",
       "retryAfter": "2026-11-04T23:52:05Z",
@@ -1142,6 +1187,11 @@
       "round": "pass55",
       "summary": "Capability-aware Editing/Viewing and inheritance-popover context on legacy Agents/lifecycle, with matching save hints and unchanged legacy Thread defaults editing. Readable profile/target/effect context in dirty Settings footers. Higher bounded Git file region and tighter group/Commit composition keep three/four displayed entries fully visible at1440x960 and1100x960; all filenames, statuses, partial staging, drafts, guards, read-only reviews and mobile target rows retained. Straight work-list divider ends. Opus concrete guidance and corrected continuation/gutter findings recorded.",
       "verification": "Final-source production web/desktop builds, affected package types, scoped lint/format/diff passed. Managed Chromium; Settings target desktop/mobile, scoped Agents1600/1100/390 both-theme scrolled footer/save failure-retry/discard/drafts, General Settings and Pipeline lists passed. Repository actions tests check real3/4-entry rectangles, visible staging/commit controls, dense80-entry bounds/accurate cues and stationary controls; task-project-panel suite passed. Four entries intentionally still scroll at1280x900. Full340-frame capture and lossless export verified against matching frozen source."
+    },
+    {
+      "round": "pass56",
+      "summary": "Corrected 21 stale Settings field-search labels across app/runtime/Agents catalogs. Measured More sections continuation preserves search, narrow navigation and keyboard focus. Running-thread save feedback precedes a compact introduction. Lifecycle help names its reporting computer and links to both restart/archive and PR settling owners; PR defaults link back to scoped lifecycle with the selected computer retained. Repository CI card explains its independent provider source. Added legacy Thread defaults and expanded lifecycle-help evidence in both themes.",
+      "verification": "Final production web/desktop builds, affected studio-ui/shell/runtime/SCM/Agents types, scoped lint/format/diff passed. Managed Chromium installed. General Settings browser suite verifies 18 previously broken exact jumps/focus, real-overflow navigation continuation/end/no-overflow/keyboard focus, existing save/draft/search/narrow guards. Runtime suite verifies feedback order, lifecycle target identity, save failure/retry and existing controls. PR workspace suite passed existing source/guard/tab/merge-footer checks. Full 344-frame lossless evidence and all 3583 matching frozen source files verified; no capture alerts/errors."
     }
   ],
   "designConsultations": [
@@ -1193,6 +1243,13 @@
       "id": "f58f8fcf-35f1-4f64-b73b-4a208872f2a9",
       "status": "completed",
       "summary": "Concrete Git composition guidance without a rating. Adopted a higher bounded file region, tighter group spacing and shared Commit summary/target rows, preserving three-line file identity and separate staging controls. Geometry checks show three/four entries fully visible at1440x960 and1100x960. Larger single-list/sticky-header changes were unnecessary for that verified result. Opus corrected its chevron finding: this is the existing dialog continuation indicator. Footer/body7px offset downgraded to optical, with no clipping, hit-target, reading-order or shift issue; no compensating margin applied."
+    },
+    {
+      "round": "design56",
+      "model": "Opus 5.5",
+      "id": "5c5c46f1-29b0-4125-b49e-c1f54882bbca",
+      "status": "completed",
+      "summary": "Source-backed Settings investigation found stale field-search catalog labels and a lifecycle help link that omitted the PR settling owner. Root verified 21 task/thread mismatches across three catalogs, corrected them and added 18 real jump/focus browser regressions. Adopted measured navigation continuation with keyboard focus retained, earlier single-source Running-thread save feedback and a compact introduction. Lifecycle help names the reporting computer and links to restart/archive and PR settling owners; PR defaults link back with the selected computer preserved. Retained existing source popovers instead of expanding every inherited row in this pass. No numeric rating requested."
     }
   ],
   "findingTriage": [
@@ -1245,6 +1302,16 @@
       "round": "independent54",
       "finding": "Misplaced Branch chevron and7px dialog body/footer offset",
       "result": "Opus source-backed consultation corrected the chevron allegation: it belongs to GitActionsScrollArea and correctly indicates continuation. The7px scrollbar-gutter offset is cosmetic; no clipping, target-size, reading-order or shift defect. Keep existing scroll indicator and stable gutter."
+    },
+    {
+      "round": "independent55",
+      "finding": "Settings field-search labels drifted after task-to-thread terminology changes",
+      "result": "Confirmed 21 mismatches: 10 app settings, 10 runtime settings and 1 Agents field. Search requires exact data-setting-label correspondence. Catalog fields now use rendered thread labels, while legacy task terminology remains in keywords/IDs where appropriate. Browser regression exercises 18 previously broken field jumps and verifies exact focused/highlighted controls; existing runtime tests cover the remaining rendered control names."
+    },
+    {
+      "round": "independent55",
+      "finding": "Merge headline conflates independent sources; footer gutter creates clipping",
+      "result": "Exact merge frame already labels its provider verdict Repository merge status; independent failure lines remain separately named. Footer/body offset is the previously confirmed cosmetic scrollbar gutter and does not clip actions. Do not replace the provider verdict with computed failures. Accepted a source explanation on the otherwise terse Repository CI card in Checks."
     }
   ],
   "previousApprovalTarget": {

@@ -1,23 +1,6 @@
-import { useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { Button } from '@dovo/studio-ui'
 import { HostPage } from './host-page'
 import { RunningTaskPreferences } from './runtime-preferences'
-
-function LifecycleLink() {
-  const host = useStudioHost()
-  const { activeRuntimeId } = useWorkspace()
-  return (
-    <Button
-      variant="link"
-      className="px-0"
-      onClick={() =>
-        host.navigate({ viewId: 'task-behavior', entityId: activeRuntimeId ?? undefined })
-      }
-    >
-      Open scoped thread lifecycle
-    </Button>
-  )
-}
+import { LifecycleLink } from './lifecycle-link'
 export default function RunningTasksView({ entityId }: { entityId?: string }) {
   return (
     <HostPage
@@ -25,12 +8,15 @@ export default function RunningTasksView({ entityId }: { entityId?: string }) {
       title="Running threads"
       description="Control web approvals, thread recovery, child agent limits and automatic archiving."
     >
-      <p className="text-xs text-muted-foreground">
-        These are computer defaults. Scoped lifecycle settings override restart and archiving
-        defaults.
-      </p>
-      <LifecycleLink />
-      <RunningTaskPreferences />
+      <RunningTaskPreferences>
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            These are computer defaults. Scoped lifecycle settings override restart and archiving
+            defaults.
+          </p>
+          <LifecycleLink />
+        </div>
+      </RunningTaskPreferences>
     </HostPage>
   )
 }

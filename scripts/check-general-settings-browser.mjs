@@ -318,9 +318,22 @@ try {
   const titleBefore = await settingsSidebar
     .getByRole('heading', { name: 'Settings', exact: true })
     .boundingBox()
+  const moreSections = settingsSidebar.getByRole('button', {
+    name: 'Scroll to more settings',
+    exact: true,
+  })
+  await moreSections.waitFor()
+  await moreSections.click()
+  assert.ok(await navigation.evaluate((element) => element.scrollTop > 0))
+  assert.equal(
+    await navigation.evaluate((element) => element === document.activeElement),
+    true,
+    'The continuation action leaves keyboard focus in the navigation',
+  )
   await navigation.evaluate((element) => {
     element.scrollTop = element.scrollHeight
   })
+  await moreSections.waitFor({ state: 'detached' })
   assert.ok(
     await navigation.evaluate((element) => element.scrollTop > 0),
     'Settings links actually scroll',
@@ -347,6 +360,7 @@ try {
   )
   await page.getByRole('textbox', { name: 'Search settings', exact: true }).fill('General')
   await settingsSidebar.getByRole('button', { name: 'General', exact: true }).waitFor()
+  await moreSections.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
   await navigation.evaluate((element) => {
     element.scrollTop = 0
@@ -445,6 +459,40 @@ try {
   await settingsSidebar.getByRole('status').filter({ hasText: 'No settings match' }).waitFor()
   await search.press('Escape')
   assert.equal(await search.inputValue(), '')
+  // The catalogs must use the rendered thread labels: stale task labels used to navigate to
+  // a page but never find or focus its corresponding control.
+  for (const label of [
+    'Global new thread shortcut',
+    'Group running threads',
+    'Default thread sort',
+    'Confirm before archiving a thread',
+    'Confirm before stopping a running thread',
+    'Confirm before deleting a thread',
+    'Confirm before unpinning a thread',
+    'Follow-ups while a thread runs',
+    'When a thread needs your input',
+    'When a thread finishes',
+    'Default agent for new threads',
+    'Auto-resume limited threads',
+    'Snooze limited threads',
+    'Auto-settle merged threads',
+    'Auto-settle closed threads',
+    'Auto-settle inactive threads',
+    'Auto-archive settled threads',
+    'Continue threads after restarts',
+  ]) {
+    await search.fill(label)
+    await search.press('Enter')
+    await page.waitForFunction(
+      (label) => document.activeElement?.dataset.settingLabel === label,
+      label,
+    )
+    assert.equal(
+      await page.locator('[data-search-highlight]').getAttribute('data-setting-label'),
+      label,
+    )
+  }
+  await search.press('Escape')
   // Search opens the exact control, including inside collapsed advanced groups.
   await search.fill('long lines')
   await search.press('ArrowDown')

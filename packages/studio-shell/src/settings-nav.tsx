@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   useSettingsTarget,
   type SettingsSection,
@@ -30,6 +30,7 @@ import {
   Bell,
   Bot,
   ChartNoAxesCombined,
+  ChevronDown,
   FileDiff,
   FileClock,
   GitBranch,
@@ -143,6 +144,8 @@ export function SettingsNav({
   const input = useRef<HTMLInputElement>(null)
   const navigation = useRef<HTMLElement>(null)
   const links = useRef<HTMLDivElement>(null)
+  const linksId = useId()
+  const [moreSections, setMoreSections] = useState(false)
   const selectionAttempt = useRef(0)
   const [query, setQuery] = useApplicationState('')
   const [jump, setJump] = useState<{ viewId: string; label: string } | null>(null)
@@ -298,11 +301,10 @@ export function SettingsNav({
     const region = links.current
     if (!region) return
     const updateEdges = () => {
+      const moreBelow = region.scrollHeight - region.clientHeight - region.scrollTop > 1
+      setMoreSections(moreBelow)
       region.style.setProperty('--settings-nav-fade-top', region.scrollTop > 1 ? '14px' : '0px')
-      region.style.setProperty(
-        '--settings-nav-fade-bottom',
-        region.scrollHeight - region.clientHeight - region.scrollTop > 1 ? '18px' : '0px',
-      )
+      region.style.setProperty('--settings-nav-fade-bottom', moreBelow ? '18px' : '0px')
     }
     updateEdges()
     const observer = new ResizeObserver(updateEdges)
@@ -414,6 +416,7 @@ export function SettingsNav({
         )}
         <div
           ref={links}
+          id={linksId}
           role="region"
           aria-label="Settings navigation"
           style={{
@@ -536,6 +539,22 @@ export function SettingsNav({
             </p>
           )}
         </div>
+        {moreSections && (
+          <button
+            type="button"
+            aria-label="Scroll to more settings"
+            aria-controls={linksId}
+            onClick={() => {
+              const region = links.current
+              if (!region) return
+              region.focus({ preventScroll: true })
+              region.scrollBy({ top: Math.max(160, region.clientHeight * 0.7) })
+            }}
+            className="hidden h-7 shrink-0 items-center justify-center gap-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex"
+          >
+            More sections <ChevronDown size={13} aria-hidden="true" />
+          </button>
+        )}
         {searchStatus && (
           <p role="status" className="px-2 text-xs text-muted-foreground">
             {searchStatus}
