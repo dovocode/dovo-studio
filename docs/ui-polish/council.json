@@ -967,10 +967,55 @@
       "verdict": "ship; nonblocking refinements",
       "coverage": "50 full-size;26 dark/24 light;five compact",
       "summary": "No P0/P1 defects. Repository CI source explanation and nav overflow cue accepted for refinement. Footer gutter, read-only states and disclosure alignment are minor/preferences."
+    },
+    {
+      "round": "independent56",
+      "id": "/root/independent56_sol_a",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.3,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "64 exact full-size;32 per theme;five compact",
+      "summary": "No blockers. Confirms Settings navigation/save/lifecycle and CI source improvements. Recommends concise merge acknowledgement, persistent lifecycle-source attribution, stronger Agent grouping and metadata separation."
+    },
+    {
+      "round": "independent56",
+      "id": "/root/independent56_sol_b",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.6,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "90 exact full-size;45 per theme;five compact",
+      "summary": "No blockers. Confirms navigation, save boundaries and separate CI sources. Recommends lifecycle-source attribution, persistent Agent identity and selective metadata emphasis; informative continuation is optional."
+    },
+    {
+      "round": "independent56",
+      "id": "/root/independent56_sol_c",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.2,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "94 exact full-size;47 per theme",
+      "summary": "No confirmed blockers. Recommends lifecycle-source attribution, tighter Agent label/control distance, path-tail retention and concise merge acknowledgement. On factual recheck reviewer withdrew the blank crop claim and retained independent 8.2/10 ship verdict."
+    },
+    {
+      "round": "independent56",
+      "id": "f071b22e-7a55-4764-a064-bb9c62ccf1eb",
+      "model": "Opus 5.5",
+      "score": 8.5,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "61 exact full-size;30 dark/31 light;four compact",
+      "summary": "No workflow blockers. Verified More sections visible/accessibility-label mismatch; legacy lifecycle computer naming and sibling Checks heading hierarchy can improve. Retain provider merge verdict rather than treating it as computed status."
+    },
+    {
+      "round": "independent56",
+      "id": "02d6cb12-f79d-4e5f-8f4e-705c67019da0",
+      "model": "Opus 5.5",
+      "score": 8.3,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "50 exact full-size;25 per theme;four compact",
+      "summary": "No material-harm/release blockers. Verified navigation label mismatch; save-status visual consistency and Checks hierarchy are refinements. Legacy Thread defaults intentionally remains editable and does not require an unsupported-state banner."
     }
   ],
   "remaining": [
-    "Complete fresh gallery56 independent reviews; retry exact Muse after its provider reset",
+    "Complete fresh gallery57 independent reviews; exact Muse waits for its reported quota reset",
     "Finish PR #50 after the independent design approval gate"
   ],
   "approvalTarget": {
@@ -989,12 +1034,12 @@
     "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
   },
   "gallery": {
-    "round": 56,
+    "round": 57,
     "captures": 344,
-    "corePass": 56,
-    "dialogPass": 56,
-    "settingsPass": 56,
-    "note": "342-frame full capture plus 2 focused expanded-lifecycle controls against unchanged production source; 172 theme pairs, 326 ordinary and 18 compact. 130 main manifest entries and 158 dialogs; 22 contacts separate. All 3583 tracked apps/packages/scripts files match frozen source56, including the added lifecycle-link. No errors/alerts; lossless pixel equality, #080808 canvas and image-source parity verified."
+    "corePass": 57,
+    "dialogPass": 57,
+    "settingsPass": 57,
+    "note": "172 theme pairs;326 ordinary1440x960 and18 compact1100x960 frames;22 contacts separate. Full344-frame capture followed by final focused replacement of six lifecycle frames after unknown-policy handling. Main manifest130 entries;dialog manifest158 entries. All3583 tracked source files match source57; digest27efc78678d5cf73c16b0e4691f79d2131537043dc047b9b6fcfce7ef975fd19. No errors/alerts; lossless export, canvas and image-source parity verified."
   },
   "unavailableReviews": [
     {
@@ -1063,39 +1108,39 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent56",
+      "round": "independent57",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent56_sol_a",
+      "id": "/root/independent57_sol_a",
       "status": "running",
-      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
+      "brief": "Fresh frozen gallery57/source57; no previous or target scores supplied."
     },
     {
-      "round": "independent56",
+      "round": "independent57",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent56_sol_b",
+      "id": "/root/independent57_sol_b",
       "status": "running",
-      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
+      "brief": "Fresh frozen gallery57/source57; no previous or target scores supplied."
     },
     {
-      "round": "independent56",
+      "round": "independent57",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent56_sol_c",
+      "id": "/root/independent57_sol_c",
       "status": "running",
-      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
+      "brief": "Fresh frozen gallery57/source57; no previous or target scores supplied."
     },
     {
-      "round": "independent56",
+      "round": "independent57",
       "model": "Opus 5.5",
-      "id": "f071b22e-7a55-4764-a064-bb9c62ccf1eb",
+      "id": "1eaada22-7448-4f8a-b44e-831477aea039",
       "status": "running",
-      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
+      "brief": "Fresh frozen gallery57/source57; no previous or target scores supplied."
     },
     {
-      "round": "independent56",
+      "round": "independent57",
       "model": "Opus 5.5",
-      "id": "02d6cb12-f79d-4e5f-8f4e-705c67019da0",
+      "id": "ddadf34a-6f34-4129-b8a2-f90c22cb4cd7",
       "status": "running",
-      "brief": "Fresh context; frozen gallery56/source56 and verified findings, no previous or target scores."
+      "brief": "Fresh frozen gallery57/source57; no previous or target scores supplied."
     }
   ],
   "queuedReviews": [
@@ -1107,7 +1152,7 @@
       "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
     },
     {
-      "round": "independent56",
+      "round": "independent57",
       "model": "Muse muse-wonder-full-1.0",
       "status": "waiting-provider-reset",
       "retryAfter": "2026-11-04T23:52:05Z",
@@ -1192,6 +1237,11 @@
       "round": "pass56",
       "summary": "Corrected 21 stale Settings field-search labels across app/runtime/Agents catalogs. Measured More sections continuation preserves search, narrow navigation and keyboard focus. Running-thread save feedback precedes a compact introduction. Lifecycle help names its reporting computer and links to both restart/archive and PR settling owners; PR defaults link back to scoped lifecycle with the selected computer retained. Repository CI card explains its independent provider source. Added legacy Thread defaults and expanded lifecycle-help evidence in both themes.",
       "verification": "Final production web/desktop builds, affected studio-ui/shell/runtime/SCM/Agents types, scoped lint/format/diff passed. Managed Chromium installed. General Settings browser suite verifies 18 previously broken exact jumps/focus, real-overflow navigation continuation/end/no-overflow/keyboard focus, existing save/draft/search/narrow guards. Runtime suite verifies feedback order, lifecycle target identity, save failure/retry and existing controls. PR workspace suite passed existing source/guard/tab/merge-footer checks. Full 344-frame lossless evidence and all 3583 matching frozen source files verified; no capture alerts/errors."
+    },
+    {
+      "round": "pass57",
+      "summary": "More sections now derives its accessible name from its visible label, preserving measured overflow/focus. Lifecycle policy provenance remains visible with help collapsed, and legacy update notices name the computer. Unknown computer policies no longer appear as Off during delayed or failed reads; pending/error feedback is described by the affected controls, known scoped values remain usable, and separate policy errors do not masquerade as save failures. Existing scope resolution, save behavior, inheritance popovers and icon-only composer actions retained.",
+      "verification": "Managed Chromium installed. Final production web/desktop builds, studio-ui/shell types, scoped lint/format/diff passed. General Settings browser suite passed actual navigation-label/focus/overflow checks, existing 18 field-search jumps and all existing Settings/save/draft/narrow checks, plus delayed policy read, eventual true/false values, failed reads and preservation of known scoped inheritance. Full344-frame capture plus final focused replacement of all six lifecycle frames; no capture errors/alerts. All3583 tracked apps/packages/scripts files match final frozen source. Lossless export rechecked."
     }
   ],
   "designConsultations": [
@@ -1250,6 +1300,13 @@
       "id": "5c5c46f1-29b0-4125-b49e-c1f54882bbca",
       "status": "completed",
       "summary": "Source-backed Settings investigation found stale field-search catalog labels and a lifecycle help link that omitted the PR settling owner. Root verified 21 task/thread mismatches across three catalogs, corrected them and added 18 real jump/focus browser regressions. Adopted measured navigation continuation with keyboard focus retained, earlier single-source Running-thread save feedback and a compact introduction. Lifecycle help names the reporting computer and links to restart/archive and PR settling owners; PR defaults link back with the selected computer preserved. Retained existing source popovers instead of expanding every inherited row in this pass. No numeric rating requested."
+    },
+    {
+      "round": "design57",
+      "model": "Opus 5.5",
+      "id": "02d6cb12-f79d-4e5f-8f4e-705c67019da0",
+      "status": "completed",
+      "summary": "Requested concrete source-aware Settings implementation instructions without a score. Confirmed that all-computer editing reads fallback policies from one selected computer, and found that pending/failed reads could be presented as Off. Adopted persistent named provenance plus distinct checking/offline/unavailable feedback, retaining known scoped values and original boolean resolution. Deferred broader save-mode component and Agent subject propagation as separate nonblocking layout work; existing explicit-save state remains authoritative. Did not pass display strings as authoritative inherited booleans or invent fleet policy values."
     }
   ],
   "findingTriage": [
@@ -1312,6 +1369,26 @@
       "round": "independent55",
       "finding": "Merge headline conflates independent sources; footer gutter creates clipping",
       "result": "Exact merge frame already labels its provider verdict Repository merge status; independent failure lines remain separately named. Footer/body offset is the previously confirmed cosmetic scrollbar gutter and does not clip actions. Do not replace the provider verdict with computed failures. Accepted a source explanation on the otherwise terse Repository CI card in Checks."
+    },
+    {
+      "round": "independent56",
+      "finding": "Claimed blank light-theme crop capture",
+      "result": "Root opened the exact image-editor-crop-light/dark PNGs at full size: image, red arrow, dashed crop outline and outside scrim are visible in both. The full 800x500 image/crop region at (320,281) is pixel-identical across themes, with 980 distinct RGB colors and red arrow pixel (239,68,68). Does not reproduce; no product change justified. Reviewer notified to recheck the factual claim without score pressure. Reviewer independently rechecked exact PNGs/pixels and withdrew the claim; rating unchanged."
+    },
+    {
+      "round": "independent56",
+      "finding": "More sections Label in Name mismatch; lifecycle policy provenance hidden behind help",
+      "result": "Confirmed and addressed: remove the redundant aria-label so the visible button text supplies its accessible name. Browser navigation check selects More sections by its visible name. Lifecycle now persistently names the computer reporting final policy fallbacks and clarifies that each computer uses its own policies; the legacy update banner names that computer. Per-field inheritance source popovers and all resolution/save behavior retained."
+    },
+    {
+      "round": "independent56",
+      "finding": "Legacy Thread defaults should display unsupported-state banner; provider merge verdict should be replaced with computed failing-source total",
+      "result": "Not adopted: Thread defaults remains editable on the legacy fixture and its capability flags intentionally do not restrict that page. A banner implying otherwise would be misleading. Repository merge status is the provider verdict, distinct from Repository CI/check reports/pipelines; do not replace it with locally aggregated failures. Repeated acknowledgement prose and sibling heading styling remain optional refinements."
+    },
+    {
+      "round": "design57",
+      "finding": "Loading or failed runtime policy reads rendered inherited Off values",
+      "result": "Confirmed: false was the terminal fallback even when no computer-policy result existed. Keep undefined for unknown restart/PR-settling defaults, show checking/offline/unavailable text with aria-describedby, and preserve the built-in Off fallback for unrelated keys. Clear the prior computer-policy result before a fresh read and retain stale-response guards. Policy-read errors have a separate authoritative state from settings-read/save errors. Browser regressions verify delayed true/false completion, read failure and a known scoped archive value surviving failure."
     }
   ],
   "previousApprovalTarget": {

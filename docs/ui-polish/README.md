@@ -38,7 +38,9 @@ control styles make the workspace and its secondary surfaces feel consistent.
   target. Settings search uses the visible thread labels and focuses the matching control; the
   navigation offers a measured continuation action for lower sections. Running-thread save feedback
   appears before its introduction, and lifecycle links retain the computer while opening the
-  relevant restart/archive or PR settling defaults.
+  relevant restart/archive or PR settling defaults. Lifecycle also names the reporting computer
+  above its controls, so the source is visible with help collapsed. The navigation continuation uses
+  its visible text as its accessible name.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
   desktop sizes; modest three/four-entry change sets fit at the captured normal and compact desktop

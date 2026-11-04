@@ -96,7 +96,7 @@ window.request=async(path,input)=>{
  if(path==='/api/previews/browser/profiles/save'){window.browserWrites=input.profiles;return {profiles:input.profiles}};
  if(path==='/api/usage/history/read')return {sourceId:'computer',records:[],notices:[]};
  if(path==='/api/usage/limits/read')return {accounts:[]};
- if(path==='/api/runtime/preferences/read')return {autoContinueAfterRestart:false,settleOnPullClose:false};
+ if(path==='/api/runtime/preferences/read'){if(window.policyRead==='hold')return new Promise(resolve=>window.resolvePolicyRead=resolve);if(window.policyRead==='fail')throw Error('Could not read computer policies');return {autoContinueAfterRestart:false,settleOnPullClose:false}};
  if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1',reasoning:['low','medium','high'].map(id=>({id,name:id}))},{id:'claude-sonnet-4-6',name:'Claude Sonnet 4.6',reasoning:['low','medium','high'].map(id=>({id,name:id}))}],reasoning:['low','medium','high'].map(id=>({id,name:id}))};
  const key=input.scope;
  const inherited={...(key==='global'?{}:window.documents.global),agents:builtInAgentPresets()};
@@ -319,7 +319,7 @@ try {
     .getByRole('heading', { name: 'Settings', exact: true })
     .boundingBox()
   const moreSections = settingsSidebar.getByRole('button', {
-    name: 'Scroll to more settings',
+    name: 'More sections',
     exact: true,
   })
   await moreSections.waitFor()
@@ -786,6 +786,72 @@ try {
   await page.waitForFunction(
     () => window.writes.at(-1).after.taskBehavior.quotaResume === undefined,
   )
+  // Scoped values can arrive before the computer policies they fall back to. Unknown is not Off.
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await page.evaluate(() => {
+    window.policyRead = 'hold'
+  })
+  await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
+  for (const label of [
+    'Continue threads after restarts',
+    'Auto-settle merged threads',
+    'Auto-settle closed threads',
+  ]) {
+    const control = page.getByRole('combobox', { name: label, exact: true })
+    await control.waitFor()
+    assert.equal(await control.innerText(), 'Inherit')
+    assert.equal(
+      await control.evaluate(
+        (element) => document.getElementById(element.getAttribute('aria-describedby'))?.textContent,
+      ),
+      'Checking MacBook Pro…',
+    )
+  }
+  await page.evaluate(() => {
+    window.policyRead = undefined
+    window.resolvePolicyRead({ autoContinueAfterRestart: true, settleOnPullClose: false })
+  })
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Continue threads after restarts"]')?.textContent ===
+      'Inherit (On)',
+  )
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Auto-settle merged threads', exact: true })
+      .innerText(),
+    'Inherit (Off)',
+  )
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await page.evaluate(() => {
+    window.policyRead = 'fail'
+  })
+  await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Could not read computer policies' }).waitFor()
+  for (const label of [
+    'Continue threads after restarts',
+    'Auto-settle merged threads',
+    'Auto-settle closed threads',
+  ]) {
+    const control = page.getByRole('combobox', { name: label, exact: true })
+    assert.equal(await control.innerText(), 'Inherit')
+    assert.equal(
+      await control.evaluate(
+        (element) => document.getElementById(element.getAttribute('aria-describedby'))?.textContent,
+      ),
+      'Computer policy unavailable · MacBook Pro',
+    )
+  }
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Auto-archive settled threads', exact: true })
+      .innerText(),
+    'Inherit (On)',
+    'A known scoped value stays available when the unrelated computer policy read fails',
+  )
+  await page.evaluate(() => {
+    window.policyRead = undefined
+  })
   await settingsSidebar.getByRole('button', { name: 'Thread defaults', exact: true }).click()
   await choose('Working directory', 'New worktree')
   await choose('Settings computer', 'All computers')

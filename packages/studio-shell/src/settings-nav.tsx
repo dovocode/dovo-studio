@@ -542,7 +542,6 @@ export function SettingsNav({
         {moreSections && (
           <button
             type="button"
-            aria-label="Scroll to more settings"
             aria-controls={linksId}
             onClick={() => {
               const region = links.current

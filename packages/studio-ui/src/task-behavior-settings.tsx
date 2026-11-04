@@ -5,6 +5,7 @@ import {
   settingsChanges,
   validSettingsDays,
   runtimePreferencesSchema,
+  runtimeComputerName,
   scopedSettingsResultSchema,
   taskBehaviorOrigin,
   type Repository,
@@ -72,7 +73,10 @@ export function TaskBehaviorSettings({
   onOpenRuntime?: () => void
 }) {
   const id = useId()
-  const { request, connected, snapshot } = useWorkspace()
+  const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace()
+  const computer = runtimeComputerName(
+    runtimes.find((entry) => entry.profile.id === activeRuntimeId) ?? { snapshot },
+  )
   const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
   const [draft, setDraft] = useState<TaskBehavior>({})
   const [error, setError] = useState('')
@@ -85,6 +89,7 @@ export function TaskBehaviorSettings({
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [legacy, setLegacy] = useState<typeof runtimePreferencesSchema.Type | null>(null)
+  const [policyError, setPolicyError] = useState('')
   const [retry, setRetry] = useState(0)
   const dirty =
     !!loaded &&
@@ -100,13 +105,17 @@ export function TaskBehaviorSettings({
     if (protectDraft.current && loadedTarget.current === target) return
     setLoaded(null)
     setError('')
+    setLegacy(null)
+    setPolicyError('')
     if (connected)
       void request('/api/runtime/preferences/read', {}, runtimePreferencesSchema).then(
         (value) => {
           if (active) setLegacy(value)
         },
         (cause) => {
-          if (active) setError(cause instanceof Error ? cause.message : String(cause))
+          if (active) {
+            setPolicyError(cause instanceof Error ? cause.message : String(cause))
+          }
         },
       )
     if (connected)
@@ -137,13 +146,21 @@ export function TaskBehaviorSettings({
   const fallback = (key: (typeof fields)[number][0]) =>
     inherited?.[key] ??
     (key === 'continueAfterRestart'
-      ? legacy?.autoContinueAfterRestart
+      ? legacy
+        ? (legacy.autoContinueAfterRestart ?? false)
+        : undefined
       : key === 'settleMerged' || key === 'settleClosed'
-        ? legacy?.settleOnPullClose
-        : false) ??
-    false
+        ? legacy
+          ? (legacy.settleOnPullClose ?? false)
+          : undefined
+        : false)
+  const pendingPolicy = !connected
+    ? `Computer offline · ${computer}`
+    : policyError
+      ? `Computer policy unavailable · ${computer}`
+      : `Checking ${computer}…`
   const archivePolicy = !legacy
-    ? 'Computer policy · loading…'
+    ? pendingPolicy
     : legacy.autoArchiveDays
       ? `Computer policy · ${legacy.autoArchiveDays} days of inactivity`
       : 'Computer policy · Never'
@@ -184,7 +201,7 @@ export function TaskBehaviorSettings({
           role="status"
           className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
         >
-          <p>Lifecycle settings require a newer runtime. Update this computer to edit them.</p>
+          <p>Update Dovo on {computer} to edit lifecycle settings at every settings level.</p>
           {onOpenRuntime && (
             <Button variant="outline" size="sm" onClick={onOpenRuntime}>
               Open Devices & runtime
@@ -192,6 +209,10 @@ export function TaskBehaviorSettings({
           )}
         </div>
       )}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Computer-policy fallbacks shown here are reported by {computer}. Each computer uses its own
+        policies.
+      </p>
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
           title="Automation & limits"
@@ -214,7 +235,7 @@ export function TaskBehaviorSettings({
                     inheritedValue:
                       key === 'autoArchiveSettled' && inherited?.[key] === undefined
                         ? archivePolicy
-                        : fallback(key),
+                        : (fallback(key) ?? pendingPolicy),
                   }}
                   origin={taskBehaviorOrigin(
                     snapshot?.defaults,
@@ -243,10 +264,10 @@ export function TaskBehaviorSettings({
                     aria-label={label}
                     className="w-full"
                     aria-describedby={
-                      key === 'autoArchiveSettled' &&
                       draft[key] === undefined &&
-                      inherited?.[key] === undefined
-                        ? `${id}-archive-policy`
+                      ((key === 'autoArchiveSettled' && inherited?.[key] === undefined) ||
+                        fallback(key) === undefined)
+                        ? `${id}-${key}-policy`
                         : undefined
                     }
                   >
@@ -254,7 +275,8 @@ export function TaskBehaviorSettings({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="inherit">
-                      {key === 'autoArchiveSettled' && inherited?.[key] === undefined
+                      {(key === 'autoArchiveSettled' && inherited?.[key] === undefined) ||
+                      fallback(key) === undefined
                         ? 'Inherit'
                         : `Inherit (${fallback(key) ? 'On' : 'Off'})`}
                     </SelectItem>
@@ -262,14 +284,14 @@ export function TaskBehaviorSettings({
                     <SelectItem value="off">Off</SelectItem>
                   </SelectContent>
                 </Select>
-                {key === 'autoArchiveSettled' &&
-                  draft[key] === undefined &&
-                  inherited?.[key] === undefined && (
+                {draft[key] === undefined &&
+                  ((key === 'autoArchiveSettled' && inherited?.[key] === undefined) ||
+                    fallback(key) === undefined) && (
                     <p
-                      id={`${id}-archive-policy`}
+                      id={`${id}-${key}-policy`}
                       className="text-xs leading-relaxed text-muted-foreground"
                     >
-                      {archivePolicy}
+                      {key === 'autoArchiveSettled' ? archivePolicy : pendingPolicy}
                     </p>
                   )}
               </div>
@@ -396,14 +418,14 @@ export function TaskBehaviorSettings({
           </SettingRow>
         </SettingsGroup>
       </fieldset>
-      {connected && supported && !loaded && !error && (
+      {connected && supported && !loaded && !error && !policyError && (
         <p role="status" className="text-xs text-muted-foreground">
           Loading lifecycle settings…
         </p>
       )}
-      {error && (
+      {(error || policyError) && (
         <p role="alert" className="text-xs text-destructive">
-          {error}{' '}
+          {error || policyError}{' '}
           <Button
             variant="ghost"
             disabled={!connected || busy}
