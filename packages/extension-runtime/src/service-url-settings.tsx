@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { ACCOUNT_DIRECTORY_URL, normalizeServiceUrls } from '@dovo/protocol'
 import { useAppPreferences, updateAppPreferences, useSettingsDraft } from '@dovo/studio-core'
-import { Button, Input, SettingsGroup } from '@dovo/studio-ui'
+import { Button, Input, SettingsGroup, SettingsSaveBar } from '@dovo/studio-ui'
 
 export function ServiceUrlSettings() {
   const saved = useAppPreferences()
@@ -13,25 +13,29 @@ export function ServiceUrlSettings() {
   const dirty =
     fields.connectOrigin !== saved.connectOrigin || fields.artifactsOrigin !== saved.artifactsOrigin
   useSettingsDraft(dirty)
+  const save = () => {
+    if (!dirty) return
+    try {
+      const normalized = normalizeServiceUrls(fields)
+      updateAppPreferences({
+        ...normalized,
+        connectOrigin:
+          normalized.connectOrigin === ACCOUNT_DIRECTORY_URL ? '' : normalized.connectOrigin,
+      })
+      setDraft(undefined)
+      setError('')
+      setNotice('Service URLs saved on this device.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Check the service URLs')
+    }
+  }
   return (
     <form
-      className="space-y-4 rounded-lg border bg-card/40 p-4"
+      className="space-y-4"
       aria-label="Dovo service URLs"
       onSubmit={(event) => {
         event.preventDefault()
-        try {
-          const normalized = normalizeServiceUrls(fields)
-          updateAppPreferences({
-            ...normalized,
-            connectOrigin:
-              normalized.connectOrigin === ACCOUNT_DIRECTORY_URL ? '' : normalized.connectOrigin,
-          })
-          setDraft(undefined)
-          setError('')
-          setNotice('Service URLs saved on this device.')
-        } catch (cause) {
-          setError(cause instanceof Error ? cause.message : 'Check the service URLs')
-        }
+        save()
       }}
     >
       <SettingsGroup
@@ -87,15 +91,7 @@ export function ServiceUrlSettings() {
             configured on your Connect broker and artifact server; Studio checks they match before
             sharing.
           </p>
-          <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-            {dirty && (
-              <span role="status" className="mr-auto text-xs text-muted-foreground">
-                Unsaved changes
-              </span>
-            )}
-            <Button type="submit" size="sm" disabled={!dirty}>
-              Save service URLs
-            </Button>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
             <Button
               type="button"
               size="sm"
@@ -114,13 +110,26 @@ export function ServiceUrlSettings() {
               {error}
             </p>
           )}
-          {notice && (
-            <p role="status" className="text-xs text-muted-foreground">
-              {notice}
-            </p>
-          )}
         </div>
       </SettingsGroup>
+      <SettingsSaveBar
+        dirty={dirty}
+        saving={false}
+        saveLabel="Save service URLs"
+        saveType="submit"
+        saved={!!notice}
+        description="Service URLs are saved on this device."
+        changeCount={
+          Number(fields.connectOrigin !== saved.connectOrigin) +
+          Number(fields.artifactsOrigin !== saved.artifactsOrigin)
+        }
+        onSave={save}
+        onDiscard={() => {
+          setDraft(undefined)
+          setError('')
+          setNotice('')
+        }}
+      />
     </form>
   )
 }

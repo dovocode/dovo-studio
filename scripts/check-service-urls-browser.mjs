@@ -57,7 +57,7 @@ const built = await bundleBrowser(
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {SettingsGroup} from '${root}packages/studio-ui/src/settings-layout';`,
+      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {SettingsGroup,SettingsSaveBar} from '${root}packages/studio-ui/src/settings-layout';`,
     },
     {
       path: '../preferences/app-preferences',
@@ -104,7 +104,8 @@ try {
     const connect = page.getByLabel('Dovo Connect URL', { exact: true })
     const artifacts = page.getByLabel('Dovo Artifacts URL', { exact: true })
     const save = page.getByRole('button', { name: 'Save service URLs', exact: true })
-    assert.equal(await save.isDisabled(), true)
+    if (kind === 'desktop') assert.equal(await save.count(), 0)
+    else assert.equal(await save.isDisabled(), true)
     if (kind === 'desktop') {
       const group = page.getByRole('heading', { name: 'Dovo services', exact: true }).locator('..')
       await group.getByText('Saves separately', { exact: true }).waitFor()
@@ -112,15 +113,28 @@ try {
     await connect.fill('https://user:secret@connect.example.com/path')
     if (kind === 'desktop') {
       assert.equal(await page.evaluate(() => window.serviceDraftDirty), true)
-      await page.getByRole('status').filter({ hasText: 'Unsaved changes' }).waitFor()
+      await page.getByRole('status').filter({ hasText: '1 unsaved change' }).waitFor()
     }
     await save.click()
     await page.getByRole('alert').waitFor()
     assert.equal(await page.evaluate(() => window.saves.length), 0)
+    if (kind === 'desktop') {
+      await page.getByRole('button', { name: 'Discard', exact: true }).click()
+      assert.equal(await connect.inputValue(), '')
+      assert.equal(await page.getByRole('alert').count(), 0)
+      assert.equal(await save.count(), 0)
+      assert.equal(await page.evaluate(() => window.serviceDraftDirty), false)
+      assert.equal(await page.evaluate(() => window.saves.length), 0)
+    }
     await connect.fill(' https://CONNECT.example.com/ ')
     await artifacts.fill('https://artifacts.example.com/')
-    await save.click()
+    if (kind === 'desktop') {
+      await page.getByRole('status').filter({ hasText: '2 unsaved changes' }).waitFor()
+      assert.equal(await page.evaluate(() => window.saves.length), 0, 'Editing does not save')
+      await connect.press('Enter')
+    } else await save.click()
     await account.filter({ hasText: 'https://connect.example.com' }).waitFor()
+    assert.equal(await page.evaluate(() => window.saves.length), 1, 'Submission saves exactly once')
     assert.deepEqual(await page.evaluate(() => window.saves.at(-1)), {
       connectOrigin: 'https://connect.example.com',
       artifactsOrigin: 'https://artifacts.example.com',
@@ -128,9 +142,16 @@ try {
     await page.evaluate(() => window.render())
     if (kind === 'desktop') assert.equal(await page.evaluate(() => window.serviceDraftDirty), false)
     assert.equal(await connect.inputValue(), 'https://connect.example.com')
+    const savedCount = await page.evaluate(() => window.saves.length)
     await page.getByRole('button', { name: 'Use defaults', exact: true }).click()
+    assert.equal(
+      await page.evaluate(() => window.saves.length),
+      savedCount,
+      'Use defaults changes the draft until explicitly saved',
+    )
     await save.click()
     await account.filter({ hasText: 'https://connect.dovo.studio' }).waitFor()
+    assert.equal(await page.evaluate(() => window.saves.length), savedCount + 1)
     assert.deepEqual(await page.evaluate(() => window.saves.at(-1)), {
       connectOrigin: '',
       artifactsOrigin: '',

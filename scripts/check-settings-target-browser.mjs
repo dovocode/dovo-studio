@@ -100,6 +100,7 @@ try {
     else {
       await page.getByText('Scope', { exact: true }).waitFor()
       await page.getByText('Shared defaults', { exact: true }).waitFor()
+      await page.getByText('Editing all projects on all computers', { exact: true }).waitFor()
       assert.equal(await page.getByText('Applies to', { exact: true }).count(), 0)
     }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
@@ -134,6 +135,8 @@ try {
     else {
       assert.equal(await value(projects), 'git:github.com/team/repo')
       assert.equal(await value(environments), 'linux')
+      await page.getByText('Editing Shared project on Linux', { exact: true }).waitFor()
+      await page.getByText('Project overrides', { exact: true }).waitFor()
     }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Saved on Linux', { exact: true }).waitFor()
@@ -164,6 +167,25 @@ try {
       await select(environments, 'linux')
       await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
       await page.getByLabel('Setup command', { exact: true }).fill('project setup')
+      const savebar = await page
+        .getByRole('group', { name: 'Settings save actions' })
+        .evaluate((node) => {
+          const style = getComputedStyle(node)
+          return {
+            radius: style.borderRadius,
+            shadow: style.boxShadow,
+            bottom: style.bottom,
+            background: style.backgroundColor,
+            topBorder: style.borderTopWidth,
+            sideBorder: style.borderLeftWidth,
+          }
+        })
+      assert.equal(savebar.radius, '0px')
+      assert.equal(savebar.shadow, 'none')
+      assert.equal(savebar.bottom, '0px')
+      assert.equal(savebar.topBorder, '1px')
+      assert.equal(savebar.sideBorder, '0px')
+      assert.notEqual(savebar.background, 'rgba(0, 0, 0, 0)')
     }
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page
@@ -189,6 +211,7 @@ try {
         exact: true,
       })
       .waitFor()
+    if (!mobile) await page.getByText('Editing Shared project on Empty', { exact: true }).waitFor()
     assert.equal(await page.getByTestId('target').count(), 0)
     await select(environments, '')
     await assertTarget('project:mac-repo')
@@ -365,6 +388,51 @@ try {
             .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
           true,
         )
+        await layoutPage.evaluate(() => {
+          const app = document.getElementById('app')
+          app.style.height = '100vh'
+          app.style.display = 'flex'
+          app.style.flexDirection = 'column'
+          const spacer = document.createElement('div')
+          spacer.style.height = '2000px'
+          document.querySelector('.studio-settings-content').append(spacer)
+        })
+        const scrollport = layoutPage.getByRole('region', { name: 'tools settings', exact: true })
+        const toolbar = layoutPage.locator('.studio-settings-toolbar')
+        for (const position of ['top', 'middle', 'bottom']) {
+          await scrollport.evaluate((node, position) => {
+            node.scrollTop =
+              position === 'top' ? 0 : position === 'middle' ? 500 : node.scrollHeight
+          }, position)
+          const geometry = await toolbar.evaluate((node) => {
+            const scrollport = node.closest('.studio-settings-scroll')
+            return {
+              top: node.getBoundingClientRect().top,
+              viewportTop: scrollport.getBoundingClientRect().top,
+              viewportBottom: scrollport.getBoundingClientRect().bottom,
+              bottom: node.getBoundingClientRect().bottom,
+              scrollTop: scrollport.scrollTop,
+            }
+          })
+          assert.ok(geometry.top >= geometry.viewportTop - 1, 'Sticky target stays fully visible')
+          assert.ok(
+            geometry.bottom <= geometry.viewportBottom + 1,
+            'Wrapped target fits the scrollport',
+          )
+          if (position !== 'top') {
+            assert.ok(geometry.scrollTop > 0, 'Fixture scrolls within Settings')
+            assert.ok(
+              Math.abs(geometry.top - geometry.viewportTop) <= 1,
+              `Target sticks at scrollport top: ${JSON.stringify({ hasTouch, position, ...geometry })}`,
+            )
+          }
+        }
+        const computer = layoutPage.getByRole('button', { name: 'Settings computer', exact: true })
+        await computer.focus()
+        await computer.press('Enter')
+        await layoutPage.getByRole('option', { name: 'Mac', exact: true }).waitFor()
+        await layoutPage.keyboard.press('Escape')
+        assert.equal(await computer.evaluate((node) => node === document.activeElement), true)
         await layoutPage.close()
       }
     }

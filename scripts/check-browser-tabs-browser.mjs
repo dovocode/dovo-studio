@@ -40,10 +40,13 @@ const built = await build({
         builder.onLoad({ filter: /.*/, namespace: 'shared-panel-fixture' }, ({ path }) => ({
           contents: `export function ${path === './browser-thread-panel' ? 'BrowserThreadPanel' : 'ResizableSidebar'}(){throw new Error('Shared browser panel rendered in per-thread browser fixture')}`,
         }))
-        builder.onResolve({ filter: /^@dovo\/studio-core(\/state)?$/ }, ({ path }) => ({
-          path,
-          namespace: 'fixture',
-        }))
+        builder.onResolve(
+          { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
+          ({ path }) => ({
+            path: path.endsWith('/state') ? path : '@dovo/studio-core',
+            namespace: 'fixture',
+          }),
+        )
         builder.onResolve(
           { filter: /^\.\/(device-list|physical-controls|screenshot-attachment)$/ },
           ({ path }) => ({
@@ -66,6 +69,7 @@ const built = await build({
 import {createContext,createElement,useContext,useState} from 'react';
 import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';

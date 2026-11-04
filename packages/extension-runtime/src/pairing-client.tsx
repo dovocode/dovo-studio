@@ -18,7 +18,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { Plus, Circle } from 'lucide-react'
+import { Plus, Circle, ChevronDown } from 'lucide-react'
 import { responses, runtimeRequest, useWorkspace, startPolling } from '@dovo/studio-core'
 import {
   Button,
@@ -28,6 +28,7 @@ import {
   DialogTitle,
   FormField,
   Input,
+  DropdownMenu,
   cn,
 } from '@dovo/studio-ui'
 export function PairingClient({
@@ -187,11 +188,11 @@ export function PairingClient({
     setOpen(true)
   }
   return (
-    <article className="space-y-4 rounded-md border bg-card/40 p-4">
+    <section className="studio-settings-group space-y-4" aria-label="Your computers">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium">Your computers</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <h2 className="text-sm font-semibold tracking-tight">Your computers</h2>
+          <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">
             Threads and projects from these computers appear in your workspace.
           </p>
         </div>
@@ -211,7 +212,7 @@ export function PairingClient({
         </p>
       )}
       {pendingSync && (
-        <div className="space-y-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3">
+        <div className="space-y-3 border-y border-status-warning/30 py-4">
           <div>
             <h3 className="text-xs font-medium">Unsent changes</h3>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -234,12 +235,12 @@ export function PairingClient({
           </div>
         </div>
       )}
-      <div className="divide-y">
+      <div className="divide-y divide-border/50">
         {runtimes.map((entry) => {
           return (
             <div
               key={entry.profile.id}
-              className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 py-3"
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
             >
               <RuntimeIcon
                 icon={entry.snapshot?.runtimeIcon}
@@ -249,7 +250,7 @@ export function PairingClient({
               />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="min-w-0 break-words">{entry.profile.name}</span>
+                  <span className="min-w-0 break-words font-medium">{entry.profile.name}</span>
                   <span
                     className={cn(
                       'inline-flex items-center gap-1 text-[0.6875rem]',
@@ -328,7 +329,7 @@ export function PairingClient({
                   <p className="break-words text-xs text-destructive">{entry.error}</p>
                 )}
               </div>
-              <div className="col-start-2 flex flex-wrap items-center gap-1">
+              <div className="col-start-2 flex items-center gap-1 sm:col-start-3 sm:row-start-1">
                 <Button
                   size="sm"
                   variant="outline"
@@ -338,87 +339,101 @@ export function PairingClient({
                 >
                   Manage
                 </Button>
-                {mutationStatus(entry.profile).pending > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => {
-                      setError('')
-                      setDiscardTarget(entry.profile)
-                    }}
-                  >
-                    Discard saved actions ({mutationStatus(entry.profile).pending})
-                  </Button>
-                )}
-                {!entry.snapshot?.owner && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    aria-label={`Update address for ${entry.profile.name}`}
-                    onClick={() => {
-                      setReplaceId(entry.profile.id)
-                      setAddress('')
-                      setCode('')
-                      setError('')
-                      setOpen(true)
-                    }}
-                  >
-                    Update address
-                  </Button>
-                )}
-                {entry.connected && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-muted-foreground"
-                    disabled={busy || !entry.connected}
-                    onClick={() =>
-                      void act(async () => {
-                        const value = await readRuntime(
-                          entry.profile,
-                          '/api/workspace/recovered-edits',
-                          undefined,
-                          workspaceRecoveriesSchema,
-                          'GET',
-                        )
-                        setRecoveries(value.edits)
-                        setRecoveryCursor(value.nextCursor)
-                        setRecoveryOwner(entry.profile)
-                        setRecoveryWarnings(value.warnings ?? [])
-                      })
-                    }
-                  >
-                    Recovered edits
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground"
-                  aria-label={`Reconnect ${entry.profile.name}`}
-                  disabled={busy}
-                  onClick={() =>
-                    void act(() => {
-                      retryRuntimeSync(entry.profile.connection)
-                      return refreshRuntime(entry.profile)
-                    })
-                  }
-                >
-                  Reconnect
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  aria-label={`Forget ${entry.profile.name}`}
-                  title="Remove this saved connection from this device"
-                  disabled={busy}
-                  onClick={() => void act(() => forgetRuntime(entry.profile.id))}
-                >
-                  Forget
-                </Button>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`More actions for ${entry.profile.name}`}
+                      title={`More actions for ${entry.profile.name}`}
+                      disabled={busy}
+                    >
+                      More <ChevronDown className="size-3" aria-hidden="true" />
+                    </Button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      align="end"
+                      sideOffset={6}
+                      className="studio-menu-surface z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
+                    >
+                      {!entry.snapshot?.owner && (
+                        <DropdownMenu.Item
+                          className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                          disabled={busy}
+                          aria-label={`Update address for ${entry.profile.name}`}
+                          onSelect={() => {
+                            setReplaceId(entry.profile.id)
+                            setAddress('')
+                            setCode('')
+                            setError('')
+                            setOpen(true)
+                          }}
+                        >
+                          Update address
+                        </DropdownMenu.Item>
+                      )}
+                      {entry.connected && (
+                        <DropdownMenu.Item
+                          className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                          disabled={busy || !entry.connected}
+                          onSelect={() =>
+                            void act(async () => {
+                              const value = await readRuntime(
+                                entry.profile,
+                                '/api/workspace/recovered-edits',
+                                undefined,
+                                workspaceRecoveriesSchema,
+                                'GET',
+                              )
+                              setRecoveries(value.edits)
+                              setRecoveryCursor(value.nextCursor)
+                              setRecoveryOwner(entry.profile)
+                              setRecoveryWarnings(value.warnings ?? [])
+                            })
+                          }
+                        >
+                          Recovered edits
+                        </DropdownMenu.Item>
+                      )}
+                      <DropdownMenu.Item
+                        className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                        aria-label={`Reconnect ${entry.profile.name}`}
+                        disabled={busy}
+                        onSelect={() =>
+                          void act(() => {
+                            retryRuntimeSync(entry.profile.connection)
+                            return refreshRuntime(entry.profile)
+                          })
+                        }
+                      >
+                        Reconnect
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                      {mutationStatus(entry.profile).pending > 0 && (
+                        <DropdownMenu.Item
+                          className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
+                          disabled={busy}
+                          onSelect={() => {
+                            setError('')
+                            setDiscardTarget(entry.profile)
+                          }}
+                        >
+                          Discard saved actions ({mutationStatus(entry.profile).pending})
+                        </DropdownMenu.Item>
+                      )}
+                      <DropdownMenu.Item
+                        className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
+                        aria-label={`Forget ${entry.profile.name}`}
+                        title="Remove this saved connection from this device"
+                        disabled={busy}
+                        onSelect={() => void act(() => forgetRuntime(entry.profile.id))}
+                      >
+                        Forget
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             </div>
           )
@@ -677,6 +692,6 @@ export function PairingClient({
           )}
         </DialogContent>
       </Dialog>
-    </article>
+    </section>
   )
 }

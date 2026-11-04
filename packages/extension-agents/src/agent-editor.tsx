@@ -196,7 +196,7 @@ export function AgentEditor({
                           key={id}
                           type="button"
                           variant="outline"
-                          className={`h-auto min-h-10 justify-start gap-2 whitespace-normal p-3 text-left ${agent.provider === id ? 'border-primary/40 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60'}`}
+                          className={`h-auto min-h-10 justify-start gap-2 whitespace-normal p-3 text-left ${agent.provider === id ? 'studio-nav-selected' : 'border-border/60 bg-background/60'}`}
                           aria-pressed={agent.provider === id}
                           onClick={() => setAgent(changeAgentProvider(agent, id))}
                         >
@@ -523,7 +523,7 @@ export function AgentEditor({
         >
           <fieldset
             disabled={busy || !connected}
-            className="min-w-0 space-y-3 [&>.studio-settings-savebar]:static [&>.studio-settings-savebar]:bg-card [&>.studio-settings-savebar]:backdrop-blur-none"
+            className="min-w-0 space-y-3 [&>.studio-settings-savebar]:static [&>.studio-settings-savebar]:backdrop-blur-none"
           >
             {error && (
               <p role="alert" className="break-words text-xs text-destructive">
@@ -611,7 +611,7 @@ function EditorShell({
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden p-6">
+      <DialogContent className="studio-agent-editor flex max-h-[90vh] max-w-2xl flex-col overflow-hidden p-6">
         <DialogHeader>
           <DialogTitle>{creating ? 'Add agent profile' : 'Edit agent profile'}</DialogTitle>
           <DialogDescription>

@@ -101,7 +101,7 @@ export function JiraIssueList({
                     aria-label={`${issueLabel(item.id)} · ${item.title} · ${item.state} · ${item.priority ? `${item.priority} priority` : 'No priority'} · ${assignee}`}
                     aria-current={active ? 'true' : undefined}
                     disabled={opening}
-                    className={`studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 ${active ? 'studio-selected-surface' : ''}`}
+                    className={`studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 ${active ? 'studio-nav-selected' : ''}`}
                     onClick={() => void onOpen(source, item.id, item.url)}
                     onKeyDown={(event) => {
                       if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return

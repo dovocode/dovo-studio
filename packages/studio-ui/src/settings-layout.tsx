@@ -50,7 +50,7 @@ export function SettingsPage({
           className={`studio-settings-content ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}
         >
           <div className="studio-settings-intro space-y-2">
-            <h1 className="text-[1.375rem] font-semibold tracking-tight">{title}</h1>
+            <h1 className="text-xl leading-7 font-semibold tracking-tight">{title}</h1>
             {description && (
               <p className="max-w-[68ch] text-[0.8125rem] leading-relaxed text-muted-foreground">
                 {description}
@@ -67,8 +67,12 @@ export function SettingsPage({
                 {storageInfo}
               </div>
             )}
-            {toolbar && <div className="pt-2">{toolbar}</div>}
           </div>
+          {toolbar && (
+            <div className="studio-settings-toolbar sticky top-[calc(-1*var(--studio-settings-scroll-padding))] z-20 bg-background">
+              {toolbar}
+            </div>
+          )}
           {children}
         </div>
       </div>
@@ -168,7 +172,7 @@ export function SettingRow({
     <div
       data-setting-label={label}
       tabIndex={-1}
-      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
+      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring"
     >
       <div className="studio-setting-copy min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">
@@ -190,7 +194,7 @@ export function SettingRow({
         role="group"
         aria-labelledby={`${id}-label`}
         aria-describedby={description ? `${id}-description` : undefined}
-        className="studio-setting-control flex w-full max-w-full items-center justify-end sm:w-auto sm:min-w-36 sm:max-w-[50%] sm:shrink-0"
+        className="studio-setting-control flex w-full min-w-0 max-w-full items-center justify-start"
       >
         {children}
       </div>
@@ -203,6 +207,7 @@ export function SettingsSaveBar({
   dirty,
   saving,
   saveLabel = 'Save changes',
+  saveType = 'button',
   disabled,
   saved,
   description,
@@ -219,6 +224,7 @@ export function SettingsSaveBar({
   saveError?: string
   readLatestChanges?: () => Promise<SettingsChange[]>
   saveLabel?: string
+  saveType?: 'button' | 'submit'
   dirty: boolean
   saving: boolean
   disabled?: boolean
@@ -277,7 +283,7 @@ export function SettingsSaveBar({
         : description
   return (
     <div
-      className={`studio-settings-savebar sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur ${dirty || saving ? 'border-border/70 shadow-sm' : 'border-border/40 text-muted-foreground'}`}
+      className="studio-settings-savebar sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-none border-t border-border/70 bg-background py-3 shadow-none"
       role="group"
       aria-label="Settings save actions"
       aria-busy={saving}
@@ -307,7 +313,7 @@ export function SettingsSaveBar({
         {children && (
           <Popover.Root>
             <Popover.Trigger asChild>
-              <Button variant="ghost" size="sm" aria-label="More settings actions">
+              <Button type="button" variant="ghost" size="sm" aria-label="More settings actions">
                 More <ChevronDown className="size-3" aria-hidden="true" />
               </Button>
             </Popover.Trigger>
@@ -332,7 +338,11 @@ export function SettingsSaveBar({
         >
           Discard
         </Button>
-        <Button type="button" disabled={!dirty || saving || disabled} onClick={onSave}>
+        <Button
+          type={saveType}
+          disabled={!dirty || saving || disabled}
+          onClick={saveType === 'submit' ? undefined : onSave}
+        >
           {saveLabel}
         </Button>
       </div>

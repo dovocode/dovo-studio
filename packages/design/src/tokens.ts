@@ -4,14 +4,14 @@ export const dovoColors = {
     background: '#080808',
     foreground: '#e6e6e6',
     sidebar: '#0c0c0c',
-    card: '#141414',
-    popover: '#181818',
-    secondary: '#142432',
+    card: '#131313',
+    popover: '#131313',
+    secondary: '#121a22',
     'muted-foreground': '#a3a3a3',
-    border: '#282828',
+    border: '#1e1e1e',
     primary: '#7cc9ff',
     'primary-foreground': '#080808',
-    selection: '#142432',
+    selection: '#121a22',
     action: '#e6e6e6',
     'action-foreground': '#080808',
     signal: '#bcefff',
@@ -22,12 +22,12 @@ export const dovoColors = {
   light: {
     background: '#fafbfc',
     foreground: '#242933',
-    sidebar: '#f0f1f3',
+    sidebar: '#f3f4f6',
     card: '#ffffff',
     popover: '#ffffff',
     secondary: '#e8eff9',
     'muted-foreground': '#5d6674',
-    border: '#dfe2e7',
+    border: '#e6e8ec',
     primary: '#3565a1',
     'primary-foreground': '#ffffff',
     selection: '#e8eff9',
@@ -117,6 +117,13 @@ export const designTokens = {
     sans: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   },
+  typography: {
+    page: { size: 20, line: 28, weight: 600 },
+    section: { size: 13, line: 20, weight: 600 },
+    row: { size: 13, line: 18, weight: 500 },
+    meta: { size: 12, line: 16, weight: 400 },
+    machine: { size: 12, line: 16, weight: 400 },
+  },
   radius: { control: 8, card: 12, composer: 16 },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, section: 32 },
   touchTarget: 44,
@@ -136,6 +143,12 @@ export function cssVariables(mode: keyof typeof dovoColors) {
     ';--dovo-font-mono:' +
     designTokens.font.mono +
     ';' +
+    Object.entries(designTokens.typography)
+      .map(
+        ([name, value]) =>
+          `--dovo-type-${name}-size:${value.size / 16}rem;--dovo-type-${name}-line:${value.line / 16}rem;--dovo-type-${name}-weight:${value.weight};`,
+      )
+      .join('') +
     Object.entries(designTokens.radius)
       .map(([name, value]) => '--dovo-radius-' + name + ':' + value + 'px;')
       .join('')

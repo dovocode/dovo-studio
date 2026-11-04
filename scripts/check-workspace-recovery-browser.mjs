@@ -241,7 +241,17 @@ try {
   const recoveries = await page.evaluate(() => window.seedLegacyRecoveries())
   assert.ok(recoveries.migrated.some((edit) => edit.id === 'legacy-local'))
   assert.equal(recoveries.all.filter((edit) => edit.id === 'new-local').length, 1)
-  await page.getByRole('button', { name: 'Recovered edits', exact: true }).first().click()
+  const more = page.getByRole('button', { name: 'More actions for Computer 0', exact: true })
+  await more.focus()
+  await page.keyboard.press('Enter')
+  await page.getByRole('menuitem', { name: 'Update address for Computer 0', exact: true }).waitFor()
+  await page.getByRole('menuitem', { name: 'Reconnect Computer 0', exact: true }).waitFor()
+  const forget = page.getByRole('menuitem', { name: 'Forget Computer 0', exact: true })
+  assert.match(await forget.getAttribute('class'), /text-destructive/)
+  await page.keyboard.press('Escape')
+  assert.equal(await more.evaluate((button) => button === document.activeElement), true)
+  await more.click()
+  await page.getByRole('menuitem', { name: 'Recovered edits', exact: true }).click()
   await page
     .getByRole('dialog')
     .getByText('2026-10-13T00:00:00Z · agents/agent', { exact: true })
@@ -254,7 +264,8 @@ try {
   await page.getByRole('dialog').getByText('2026-10-01 · agents/agent', { exact: true }).waitFor()
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.corruptLocalRecoveries())
-  await page.getByRole('button', { name: 'Recovered edits', exact: true }).first().click()
+  await more.click()
+  await page.getByRole('menuitem', { name: 'Recovered edits', exact: true }).click()
   await page
     .getByRole('dialog')
     .getByText('Local recovered edits could not be read. They remain preserved on this device.', {
@@ -267,8 +278,25 @@ try {
     .waitFor()
   await page.keyboard.press('Escape')
 
+  await more.click()
+  await page.getByRole('menuitem', { name: 'Update address for Computer 0', exact: true }).click()
+  const addressDialog = page.getByRole('dialog', { name: 'Update connection address', exact: true })
+  await addressDialog.getByRole('textbox', { name: 'Runtime address', exact: true }).waitFor()
+  assert.equal(await addressDialog.getByLabel('Pairing code', { exact: true }).inputValue(), '')
+  await addressDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () => window.workspaceContext.runtimeRegistry.profiles[0].connection.address,
+    ),
+    'http://host0.lan:8787',
+    'Opening address pairing keeps the existing HTTP connection until pairing succeeds',
+  )
+
   await page.evaluate(() => window.saveMessage())
   assert.equal((await page.evaluate(() => window.pendingCommands())).length, 1)
+  await more.click()
+  await page.getByRole('menuitem', { name: 'Discard saved actions (1)', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
   await page.evaluate(() => window.workspaceContext.discardAndReload())
   const pending = await page.evaluate(() => window.pendingCommands())
   assert.equal(pending.length, 1, 'Workspace reload must retain saved commands')

@@ -1215,11 +1215,7 @@ textarea {
   background-color: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 .studio-selected-surface,
-.studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-.studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-.studio-browser-sidebar .studio-browser-tab[data-active],
-.studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-.studio-task-sidebar .studio-thread-child[aria-current='true'] {
+.studio-filter-selected {
   border-radius: 6px;
   border-color: transparent;
   background-color: var(--studio-selected-fill);
@@ -2200,16 +2196,38 @@ select:focus-visible,
   background: transparent;
   box-shadow: none;
 }
-.dark .studio-selected-surface,
-.dark .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-.dark .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-.dark .studio-browser-sidebar .studio-browser-tab[data-active],
-.dark .studio-task-sidebar .studio-thread-child[aria-current='true'],
-.dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card {
+/* Navigation has one selected surface and one small location marker. Filters keep a neutral fill. */
+.studio-nav-selected,
+.studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+.studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+.studio-browser-sidebar .studio-browser-tab[data-active],
+.studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+.studio-task-sidebar .studio-thread-child[aria-current='true'] {
+  position: relative;
+  border-radius: 6px;
   border-color: transparent;
-  background-color: var(--studio-selected-fill);
+  background-color: var(--selection);
   background-image: var(--studio-selected-gradient);
+  color: var(--foreground);
   box-shadow: var(--studio-glow);
+}
+.studio-nav-selected::before,
+.studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card::before,
+.studio-task-sidebar .studio-thread-child[aria-current='true']::before,
+.studio-browser-tab[data-active] > .studio-browser-tab-select::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--primary);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.studio-browser-tab-select {
+  position: relative;
 }
 .studio-task-sidebar .studio-list-section-header,
 .studio-browser-sidebar .studio-list-section-header {
@@ -2268,6 +2286,7 @@ select:focus-visible,
   .studio-thread-card,
 [data-high-contrast='true'] .studio-task-sidebar .studio-thread-child[aria-current='true'],
 :root[data-high-contrast='true'] .studio-selected-surface,
+:root[data-high-contrast='true'] .studio-nav-selected,
 :root[data-high-contrast='true'] .studio-browser-sidebar .studio-browser-tab[data-active],
 :root[data-high-contrast='true']
   .studio-navigation[aria-label='Main navigation']
@@ -2543,13 +2562,9 @@ a.studio-project-row:hover {
   }
 }
 
-/* A draft is a state, not a competing selection. */
+/* The location marker owns selection; keep row contents aligned with unselected rows. */
 .studio-task-sidebar .studio-thread-card {
   border-left-width: 2px;
-}
-.studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-.dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card {
-  border-left-color: var(--primary);
 }
 .studio-thread-status[data-tone='active'] {
   color: var(--muted-foreground);
@@ -2593,6 +2608,7 @@ a.studio-project-row:hover {
     .studio-thread-card,
     .studio-thread-child,
     .studio-selected-surface,
+    .studio-nav-selected,
     .project-transfer-icon,
     .dovo-dialog-content,
     .dovo-dialog-content [data-slot='button'][data-variant='default']
@@ -2623,7 +2639,8 @@ a.studio-project-row:hover {
     .studio-list-section-header,
     .studio-thread-card,
     .studio-thread-child,
-    .studio-selected-surface
+    .studio-selected-surface,
+    .studio-nav-selected
   ) {
   background-image: none;
 }
@@ -2631,6 +2648,7 @@ a.studio-project-row:hover {
 /* Keep keyboard focus visible when the OS supplies its own high-contrast palette. */
 @media (forced-colors: active) {
   :root .studio-selected-surface,
+  :root .studio-nav-selected,
   :root
     .studio-navigation[aria-label='Main navigation']
     .studio-navigation-item[aria-current='page'],
@@ -2643,6 +2661,12 @@ a.studio-project-row:hover {
     background: Canvas;
     color: CanvasText;
     box-shadow: none;
+  }
+  .studio-nav-selected::before,
+  .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card::before,
+  .studio-task-sidebar .studio-thread-child[aria-current='true']::before,
+  .studio-browser-tab[data-active] > .studio-browser-tab-select::before {
+    background: Highlight;
   }
   :focus-visible {
     outline: 2px solid Highlight !important;
@@ -2933,16 +2957,43 @@ a.studio-project-row:hover {
   }
 }
 
-/* Settings use one quiet reading column with spaced section headings. */
+/* Settings share a reading rhythm; layout responds to the actual content column. */
 .studio-settings-page {
   container: settings / inline-size;
 }
+.studio-settings-content {
+  container: settings-content / inline-size;
+}
 .studio-settings-intro {
-  padding-bottom: 16px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.studio-settings-intro > p {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
 }
 .studio-settings-storage {
-  padding: 5px 0;
+  padding: 0;
+}
+.studio-settings-toolbar {
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+.studio-settings-target {
+  position: relative;
+}
+.studio-settings-target[data-override='true'] {
+  padding-left: 0.75rem;
+}
+.studio-settings-target[data-override='true']::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.375rem;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--primary);
 }
 .studio-terminal-size-input {
   appearance: textfield;
@@ -2956,11 +3007,23 @@ a.studio-project-row:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.studio-settings-group-heading > p,
+.studio-setting-copy > p {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+.studio-settings-content > .studio-settings-group {
+  margin-top: 2rem;
 }
 .studio-settings-page .studio-setting-control {
-  width: 208px;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  justify-content: flex-start;
 }
 .studio-settings-page
   .studio-setting-control
@@ -2977,12 +3040,12 @@ a.studio-project-row:hover {
 }
 .studio-settings-target-field {
   display: grid;
-  gap: 5px;
+  gap: 0.25rem;
 }
 .studio-settings-target-label {
   color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 1.25;
+  font-size: 0.6875rem;
+  line-height: 1rem;
 }
 @media (pointer: coarse) {
   .studio-settings-target-summary,
@@ -2991,38 +3054,99 @@ a.studio-project-row:hover {
   }
 }
 .studio-settings-savebar {
-  box-shadow: 0 6px 24px #00000018;
+  border-radius: 0;
+  border-inline: 0;
+  border-bottom: 0;
+  background: var(--background);
+  box-shadow: none;
+  backdrop-filter: none;
 }
 .studio-settings-saved {
-  padding-top: 4px;
+  padding-top: 0.25rem;
 }
-
-@container settings (max-width: 36rem) {
-  .studio-setting-row {
-    flex-direction: column;
-    align-items: stretch;
+@container settings-content (min-width: 45rem) {
+  .studio-settings-page .studio-setting-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 15rem;
+    align-items: center;
+    gap: 1.5rem;
   }
-  .studio-settings-page .studio-setting-row .studio-setting-control {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    justify-content: flex-start;
+  .studio-settings-page .studio-setting-control {
+    width: 15rem;
+    justify-content: flex-end;
   }
-  .studio-settings-page
-    .studio-setting-control
-    > :is([data-choice-picker], [data-slot='select-trigger'], [data-slot='input']) {
-    min-width: 0;
-    width: 100%;
-  }
+}
+@container settings-content (max-width: 44.999rem) {
   .studio-settings-target-inner {
     align-items: center;
   }
   .studio-settings-target-field {
-    flex: 1 1 180px;
+    flex: 1 1 10rem;
   }
   .studio-settings-target-field > [data-choice-picker] {
     width: 100%;
     min-width: 0;
+  }
+}
+
+/* Agent profiles use the content width, rather than squeezing a desktop split into narrow panes. */
+.studio-agents-profiles {
+  container: agents / inline-size;
+}
+.studio-agents-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.studio-agents-picker {
+  display: block;
+}
+.studio-agents-navigation {
+  display: none;
+  min-width: 0;
+}
+.studio-agents-detail {
+  min-width: 0;
+}
+.studio-agent-editor {
+  container: agent-form / inline-size;
+}
+.studio-agent-editor label[data-setting-label] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
+.studio-agent-editor label[data-setting-label] > span:first-child {
+  padding-top: 0;
+}
+.studio-agent-editor label[data-setting-label] > div {
+  min-width: 0;
+}
+@container agents (min-width: 60rem) {
+  .studio-agents-layout {
+    grid-template-columns: 14.5rem minmax(0, 1fr);
+  }
+  .studio-agents-picker {
+    display: none;
+  }
+  .studio-agents-navigation {
+    display: block;
+    padding-right: 1rem;
+    border-right: 1px solid var(--border);
+  }
+  .studio-agents-detail {
+    padding-left: 1.5rem;
+  }
+}
+@container agent-form (min-width: 35rem) {
+  .studio-agent-editor label[data-setting-label] {
+    grid-template-columns: minmax(9rem, 1fr) 15rem;
+    column-gap: 1.5rem;
+  }
+  .studio-agent-editor label[data-setting-label] > span:first-child {
+    padding-top: 0.5rem;
   }
 }
 
@@ -3203,7 +3327,7 @@ a.studio-project-row:hover {
   column-gap: 16px;
   border: 1px solid transparent;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 .studio-collection-row:not(.studio-selected-surface):not([aria-current='true']):not(
     :disabled
@@ -3230,19 +3354,19 @@ a.studio-project-row:hover {
 }
 .studio-collection-title {
   display: block;
-  margin: 4px 0;
+  margin: 2px 0;
   overflow-wrap: anywhere;
   color: var(--foreground);
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.25rem;
+  font-size: var(--dovo-type-row-size);
+  font-weight: var(--dovo-type-row-weight);
+  line-height: var(--dovo-type-row-line);
 }
 .studio-collection-date {
   align-self: start;
   padding-top: 1px;
   color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  line-height: 1.125rem;
+  font-size: var(--dovo-type-meta-size);
+  line-height: var(--dovo-type-meta-line);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -3272,4 +3396,68 @@ a.studio-project-row:hover {
   font-size: 0.625rem;
   font-weight: 400;
   line-height: 1rem;
+}
+
+/* A small shared scale keeps page, section, row and machine information distinct. */
+.studio-settings-intro h1 {
+  font-size: var(--dovo-type-page-size);
+  line-height: var(--dovo-type-page-line);
+  font-weight: var(--dovo-type-page-weight);
+}
+.studio-settings-group-heading > h2 {
+  font-size: var(--dovo-type-section-size);
+  line-height: var(--dovo-type-section-line);
+  font-weight: var(--dovo-type-section-weight);
+}
+.studio-setting-copy > div > p,
+.studio-agent-editor label[data-setting-label] {
+  font-size: var(--dovo-type-row-size);
+  line-height: var(--dovo-type-row-line);
+  font-weight: var(--dovo-type-row-weight);
+}
+.studio-settings-intro > p,
+.studio-settings-group-heading > p,
+.studio-setting-copy > p {
+  font-size: var(--dovo-type-meta-size);
+  line-height: var(--dovo-type-meta-line);
+}
+.studio-collection-context .font-mono {
+  font-size: var(--dovo-type-machine-size);
+  line-height: var(--dovo-type-machine-line);
+}
+.studio-task-sidebar .studio-thread-card:not([data-compact]) {
+  min-height: 2.75rem;
+  padding-block: 0.25rem;
+}
+.studio-thread-card:not([data-compact]) .studio-thread-card-body {
+  gap: 0;
+}
+.studio-thread-card:not([data-compact]) .studio-thread-card-title {
+  font-size: var(--dovo-type-row-size);
+  line-height: var(--dovo-type-row-line);
+  font-weight: var(--dovo-type-row-weight);
+}
+
+/* Icon rails stay marker-only; system colors must keep that marker visible. */
+@media (forced-colors: active) {
+  .studio
+    .studio-navigation[aria-label='Main navigation']
+    .studio-navigation-item[aria-current='page'],
+  .studio .studio-tools-navigation .studio-navigation-item[aria-pressed='true'] {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+  }
+  .studio
+    .studio-navigation[aria-label='Main navigation']
+    .studio-navigation-item[aria-current='page']::before,
+  .studio
+    .studio-tools-navigation
+    .studio-navigation-item[aria-pressed='true']:not([data-tools-pane-control])::before,
+  .studio-settings-target[data-override='true']::before {
+    background: Highlight;
+  }
+}
+.studio-thread-card-context {
+  line-height: var(--dovo-type-meta-line);
 }

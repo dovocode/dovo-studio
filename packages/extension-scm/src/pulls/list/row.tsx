@@ -96,7 +96,7 @@ export function PullRow({
   return (
     <div className="@container/pr-row relative">
       <div
-        className={`group flex min-w-0 items-center rounded-xl border motion-safe:transition-colors ${selected ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
+        className={`group flex min-w-0 items-center rounded-xl border motion-safe:transition-colors ${selected ? 'studio-nav-selected forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
       >
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
@@ -144,7 +144,7 @@ export function PullRow({
                         <span className="truncate">{pull.author}</span>
                       </span>
                       <span
-                        className="inline-flex min-w-0 flex-1 items-center gap-1"
+                        className="inline-flex min-w-0 flex-1 items-center gap-1 font-mono"
                         title={`${pull.head} → ${pull.base}`}
                       >
                         <span data-pull-branch-head className="min-w-0 truncate">

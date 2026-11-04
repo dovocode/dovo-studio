@@ -122,7 +122,7 @@ export function ScopedAgents({
   )
   const origin = origins.find((entry) => entry.agent.id === selected?.id)?.scope ?? 'built-in'
   return (
-    <section className="space-y-3">
+    <section className="studio-agents-profiles space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">Agent profiles</h2>
@@ -147,7 +147,7 @@ export function ScopedAgents({
           <Plus size={14} /> Add profile
         </Button>
       </div>
-      <div className="lg:hidden">
+      <div className="studio-agents-picker">
         <ChoicePicker
           aria-label="Agent profile"
           value={selected?.id ?? ''}
@@ -170,17 +170,23 @@ export function ScopedAgents({
         >
           {agents.map((agent) => (
             <option key={agent.id} value={agent.id}>
-              {agent.name} · {own.some((entry) => entry.id === agent.id) ? 'Set here' : 'Inherited'}
+              {[
+                agent.name,
+                agent.name === providerDisplayName(agent.provider)
+                  ? ''
+                  : providerDisplayName(agent.provider),
+                agent.model,
+                own.some((entry) => entry.id === agent.id) ? 'Set here' : 'Inherited',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </option>
           ))}
         </ChoicePicker>
       </div>
-      <div className="grid overflow-clip rounded-xl border border-border/60 bg-muted/20 lg:grid-cols-[14rem_minmax(0,1fr)]">
-        <nav
-          aria-label="Provider configurations"
-          className="hidden min-w-0 border-r border-border/60 bg-background/40 lg:block"
-        >
-          <div className="border-b border-border/50 p-3">
+      <div className="studio-agents-layout">
+        <nav aria-label="Provider configurations" className="studio-agents-navigation min-w-0">
+          <div className="pb-3">
             <div className="relative">
               <Search
                 aria-hidden="true"
@@ -195,7 +201,7 @@ export function ScopedAgents({
               />
             </div>
           </div>
-          <div className="space-y-0.5 p-2">
+          <div className="space-y-0.5">
             {filtered.map((agent) => {
               const local = own.some((entry) => entry.id === agent.id)
               const origin = origins.find((entry) => entry.agent.id === agent.id)?.scope
@@ -233,7 +239,7 @@ export function ScopedAgents({
                     setNotice('')
                     setSelectedId(agent.id)
                   }}
-                  className={`flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'border-primary/30 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-transparent'}`}
+                  className={`flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'studio-nav-selected' : ''}`}
                 >
                   <AgentAvatar
                     provider={agent.provider}
@@ -270,7 +276,7 @@ export function ScopedAgents({
             </p>
           )}
         </nav>
-        <div className="min-w-0 bg-background/30 p-4 lg:p-5">
+        <div className="studio-agents-detail studio-agent-editor min-w-0">
           {selected ? (
             <>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">

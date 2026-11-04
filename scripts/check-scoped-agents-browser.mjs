@@ -21,10 +21,14 @@ try {
 const controls = `export const Icon=()=>null;import {cloneElement,isValidElement,useState,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)&&children.type!=='div'?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><span>{children}</span>;export const Platform={OS:'ios'};export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={row:{}};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark',palette:'dovo'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=View;export const DialogDescription=Text;export const DialogHeader=View;export const DialogTitle=Text;export const useInsideSheet=()=>false;export const Sheet=({children,title})=><div role="dialog">{title}{children}</div>;export const AgentAvatar=()=>null;export const agentIconChoices={};export const PageHeader=({title})=><h1>{title}</h1>;export const ScreenHeader=PageHeader;export const TaskDefaultSettings=()=> <p>Default agent settings</p>;export const HarnessLabel=({agent})=><span>{agent.provider}</span>;export const ModelLabel=({agent})=><span>{agent.model}</span>;`
 const state = `export {useState as useApplicationState} from 'react';`
 // Desktop geometry checks need the production field and dialog markup, including their CSS hooks.
-const desktopControls = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/web-ui/src/input.tsx';export {Textarea} from '${root}/packages/web-ui/src/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle} from '${root}/packages/web-ui/src/dialog.tsx';export const AgentAvatar=()=>null;export const agentIconChoices={};export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`
+const desktopControls = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/web-ui/src/input.tsx';export {Textarea} from '${root}/packages/web-ui/src/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle} from '${root}/packages/web-ui/src/dialog.tsx';export const AgentAvatar=()=>null;export const agentIconChoices={};import {ChoicePicker as ProfilePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export const ChoicePicker=({value,onValueChange,children,...props})=>props['aria-label']==='Agent profile'?<ProfilePicker {...props} value={value} onValueChange={onValueChange}>{children}</ProfilePicker>:<select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`
 const browser = await chromium.launch()
 try {
-  for (const mobile of [false, true]) {
+  for (const { mobile, initialWidth, label } of [
+    { mobile: false, initialWidth: 1600, label: 'Wide desktop' },
+    { mobile: false, initialWidth: 1100, label: 'Compact desktop' },
+    { mobile: true, initialWidth: 390, label: 'Mobile' },
+  ]) {
     const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';export const useStudioHost=()=>({navigate:target=>window.navigation=target});export {providers} from '${root}/packages/studio-core/src/providers.ts';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
     const native = `import {createContext,useContext} from 'react';import {Effect} from 'effect';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,profile:entry.profile,snapshot:entry.snapshot,connected:entry.connected,callEffect:window.effects[runtimeId]}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
@@ -100,7 +104,7 @@ try {
         },
       ],
     })
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    const page = await browser.newPage({ viewport: { width: initialWidth, height: 800 } })
     const errors = []
     page.on('pageerror', (error) => {
       errors.push(error.message)
@@ -108,7 +112,10 @@ try {
     })
     page.on('dialog', (dialog) => dialog.accept())
     await page.setContent('<div id="app" style="display:flex;height:100dvh"></div>')
-    if (!mobile) await page.addStyleTag({ content: stylesheet })
+    if (!mobile)
+      await page.addStyleTag({
+        content: stylesheet + '@media(min-width:900px){.studio-settings-page{margin-left:320px}}',
+      })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const assertUnobstructed = async (locator) => {
       await locator.scrollIntoViewIfNeeded()
@@ -157,6 +164,69 @@ try {
         await page.getByRole('option', { name: label, exact: true }).click()
       }
     }
+    const selectProfile = async (name, query = name) => {
+      const navigation = page.getByRole('navigation', { name: 'Provider configurations' })
+      if (await navigation.isVisible()) {
+        await navigation.getByRole('button', { name: new RegExp(name) }).click()
+        return
+      }
+      await page.getByRole('button', { name: 'Agent profile', exact: true }).click()
+      const picker = page.getByRole('dialog', { name: 'Agent profile', exact: true })
+      const search = picker.getByRole('combobox', { name: 'Search agent profile', exact: true })
+      await search.fill(query)
+      await picker.getByRole('option', { name: new RegExp(name) }).waitFor()
+      await search.press('Home')
+      await search.press('Enter')
+      await picker.waitFor({ state: 'hidden' })
+    }
+    const assertProfileComposition = async () => {
+      const profiles = page.locator('.studio-agents-profiles')
+      const width = await profiles.evaluate((element) => element.clientWidth)
+      const navigation = profiles.getByRole('navigation', { name: 'Provider configurations' })
+      assert.equal(await navigation.isVisible(), width >= 960)
+      assert.equal(
+        await profiles.getByRole('button', { name: 'Agent profile', exact: true }).isVisible(),
+        width < 960,
+      )
+      if (width >= 960) {
+        assert.equal(Math.round((await navigation.boundingBox()).width), 232)
+        assert.equal(
+          await navigation
+            .locator('[aria-pressed=true]')
+            .evaluate((element) => element.classList.contains('studio-nav-selected')),
+          true,
+        )
+      }
+      const form = await page.getByLabel('Name', { exact: true }).evaluate((input) => {
+        const pane = input.closest('.studio-agents-detail')
+        const field = input.closest('[data-setting-label]')
+        const label = field.querySelector(':scope > span')
+        const style = getComputedStyle(pane)
+        return {
+          width: pane.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          input: input.getBoundingClientRect().toJSON(),
+          label: label.getBoundingClientRect().toJSON(),
+          field: field.getBoundingClientRect().toJSON(),
+        }
+      })
+      if (form.width >= 560) {
+        assert.ok(Math.abs(form.input.width - 240) < 1, 'Wide form controls align at 240px')
+        assert.ok(form.input.x > form.label.right, 'Wide form keeps label and control columns')
+      } else {
+        assert.ok(form.label.bottom <= form.input.y, 'Narrow form stacks its labels')
+        assert.ok(
+          Math.abs(form.input.width - form.field.width) < 1,
+          'Narrow fields use the full form',
+        )
+      }
+      assert.equal(
+        await profiles
+          .locator('.studio-agents-layout')
+          .evaluate((element) => getComputedStyle(element).backgroundColor),
+        'rgba(0, 0, 0, 0)',
+        'Agent columns have no enclosing card surface',
+      )
+    }
     const project = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
     const environment = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,
@@ -164,10 +234,18 @@ try {
     await (
       mobile
         ? page.getByRole('button', { name: 'Configure', exact: true })
-        : page
-            .getByRole('navigation', { name: 'Provider configurations' })
-            .getByRole('button', { name: /Writer/ })
+        : page.getByLabel('Name', { exact: true })
     ).waitFor()
+    if (!mobile) {
+      await assertProfileComposition()
+      if (initialWidth === 1100) await selectProfile('Writer', 'gpt-6.1')
+      else {
+        const search = page.getByRole('textbox', { name: 'Search agent profiles', exact: true })
+        await search.fill('no-matching-provider')
+        await page.getByRole('status').filter({ hasText: 'No profiles match' }).waitFor()
+        await search.fill('')
+      }
+    }
     await project.selectOption('git:github.com/team/repo')
     await environment.selectOption('linux')
     if (mobile) await page.getByRole('button', { name: 'Override', exact: true }).click()
@@ -266,7 +344,7 @@ try {
           await editor.getByLabel('Environment variables', { exact: true }).fill('')
         }
       }
-      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.setViewportSize({ width: initialWidth, height: 800 })
     }
     await setCloudIntegrations('true', 'Enabled')
     await setCloudIntegrations('default', 'Provider default')
@@ -277,9 +355,7 @@ try {
     await (
       mobile
         ? page.getByText('Research', { exact: true })
-        : page
-            .getByRole('navigation', { name: 'Provider configurations' })
-            .getByRole('button', { name: /Research/ })
+        : page.getByRole('heading', { name: 'Research', exact: true })
     ).waitFor()
     assert.equal(await page.evaluate(() => window.writes.at(-1).after.agents[0].provider), 'claude')
     assert.equal(
@@ -345,9 +421,7 @@ try {
     await (
       mobile
         ? page.getByText('Cursor worker', { exact: true })
-        : page
-            .getByRole('navigation', { name: 'Provider configurations' })
-            .getByRole('button', { name: /Cursor worker/ })
+        : page.getByRole('heading', { name: 'Cursor worker', exact: true })
     ).waitFor()
     assert.deepEqual(
       await page.evaluate(() => {
@@ -359,12 +433,13 @@ try {
       { provider: 'cursor', permission: 'read-only' },
     )
     if (!mobile) {
-      const navigation = page.getByRole('navigation', { name: 'Provider configurations' })
-      const researchRow = navigation.getByRole('button', { name: /Research/ })
+      const researchRow = page
+        .locator('.studio-agents-navigation')
+        .getByRole('button', { name: /Research/, includeHidden: true })
       assert.equal(await researchRow.getByText('Default model', { exact: true }).count(), 0)
       assert.equal(await researchRow.locator(':scope > span > span').count(), 2)
       assert.match(await researchRow.textContent(), /Claude.*Customized here/)
-      await navigation.getByRole('button', { name: /Research/ }).click()
+      await selectProfile('Research')
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Research')
       assert.equal(await page.getByRole('dialog').count(), 0)
       assert.equal(
@@ -383,13 +458,14 @@ try {
       await page.getByLabel('Instructions', { exact: true }).fill('Updated instructions')
       const scroll = page.getByRole('region', { name: 'Agents settings', exact: true })
       const saveActions = page.getByRole('group', { name: 'Settings save actions', exact: true })
-      for (const { width, dark } of [1280, 390].flatMap((width) =>
+      for (const { width, dark } of [1600, 1100, 390].flatMap((width) =>
         [false, true].map((dark) => ({ width, dark })),
       )) {
         await page.setViewportSize({ width, height: 800 })
         await page
           .locator('html')
           .evaluate((element, dark) => element.classList.toggle('dark', dark), dark)
+        await assertProfileComposition()
         await assertInstructionTypography(page)
         for (const position of [0, 0.45, 1]) {
           await scroll.evaluate((element, position) => {
@@ -436,7 +512,7 @@ try {
       await env.fill('EXAMPLE=value')
       await page.getByLabel('Instructions', { exact: true }).fill('Updated instructions')
       await setCloudIntegrations('false', 'Disabled')
-      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.setViewportSize({ width: initialWidth, height: 800 })
       await page.evaluate(() => (window.rejectSave = true))
       await page.getByRole('button', { name: 'Save changes', exact: true }).click()
       await page.getByRole('alert').filter({ hasText: 'Save rejected' }).waitFor()
@@ -465,14 +541,14 @@ try {
         },
       )
       await page.getByLabel('Instructions', { exact: true }).fill('Unsaved changes')
-      await navigation.getByRole('button', { name: /Cursor worker/ }).click()
+      await selectProfile('Cursor worker')
       const confirmation = page.getByRole('dialog')
       await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
       assert.equal(
         await page.getByLabel('Instructions', { exact: true }).inputValue(),
         'Unsaved changes',
       )
-      await navigation.getByRole('button', { name: /Cursor worker/ }).click()
+      await selectProfile('Cursor worker')
       await confirmation.getByRole('button', { name: 'Discard changes', exact: true }).click()
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Cursor worker')
     }
@@ -511,7 +587,7 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
     console.log(
-      (mobile ? 'Mobile' : 'Desktop') +
+      label +
         ' scoped agents: inherited override, reset, host/project ownership, account apps, Cursor SDK access/auth fields and editor save passed',
     )
   }

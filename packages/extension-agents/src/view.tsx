@@ -10,6 +10,7 @@ export default function AgentsView() {
     <SettingsScopePage
       title="Agents"
       description="Agent profiles: the provider, model, access and instructions each coding agent uses."
+      wide
     >
       {({ scope, repository }) => (
         <>
@@ -58,7 +59,7 @@ function LinkCard({
     <div
       data-setting-label={title}
       tabIndex={-1}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/20 p-3"
+      className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 py-4"
     >
       <div className="min-w-0 flex-1">
         <h2 className="text-xs font-medium">{title}</h2>
@@ -85,7 +86,7 @@ function EnvironmentTools() {
       <fieldset disabled={!connected} className="mt-4 space-y-4">
         <HarnessUpdates />
         <AcpRegistrySettings />
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-4">
           <p className="text-xs text-muted-foreground">
             Titles and dictation cleanup use their own model on each computer.
           </p>

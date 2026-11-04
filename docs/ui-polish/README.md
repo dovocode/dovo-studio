@@ -24,11 +24,12 @@ control styles make the workspace and its secondary surfaces feel consistent.
   Stop, Queue and Steer are icon-only with hover titles and accessible names. Wrapped Markdown
   bullets and checklists retain hanging indents.
 - **Settings:** page-specific breadcrumbs, aligned fields, consistent section hierarchy and labeled
-  project/computer targets. Automatic and explicit saves remain clearly distinguished. Agent draft
-  actions stay reachable in an opaque footer that identifies the profile and target. Instructions
-  has six readable lines. Appearance retains all palettes and font previews, with a bounded terminal
-  size stepper. Search, legacy notices, separately saved groups and unsaved-navigation guards
-  remain.
+  project/computer targets pinned during scoped editing. Controls respond to the actual content
+  width; Agent profiles switch between flat master/detail and a searchable compact picker. Automatic
+  and explicit saves remain clearly distinguished. Agent draft actions stay reachable in an opaque
+  footer that identifies the profile and target. Instructions has six readable lines. Appearance
+  retains all palettes and font previews, with a bounded terminal size stepper. Search, legacy
+  notices, separately saved groups and unsaved-navigation guards remain.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Commit controls show the inspected branch/checkout; readable filenames retain full-path tooltips.
   Per-file comparisons are read-only and preserve Back/draft/selection context. Push reflects branch
@@ -61,7 +62,9 @@ resumed on `muse-wonder-full-1.0`. AGY lists `gemini-4-argon-high`, but its late
 review returned `503 auth_not_found`; no Gemini assessment is claimed.
 
 A [generated Settings reference](../../output/imagegen/README.md) informed hierarchy and field
-alignment. Generated concepts are separate from the actual application evidence.
+alignment, responsive composition and quieter navigation. The [Opus direction](design-direction.md)
+records the implementation priorities. Generated concepts are separate from the actual application
+evidence.
 
 ## Verification
 

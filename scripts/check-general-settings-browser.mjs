@@ -229,7 +229,66 @@ try {
     assert.ok(bounds.gap >= 0 && bounds.gap <= 24, 'Cue sits directly below the page description')
     assert.ok(bounds.right <= 1, 'Cue fits the page content column')
   }
+  const assertTargetToolbar = async () => {
+    const target = page.getByLabel('Settings target', { exact: true })
+    const bounds = await target.evaluate((element) => {
+      const toolbar = element.closest('.studio-settings-toolbar')
+      const column = element.closest('.studio-settings-content')
+      if (!toolbar || !column) return null
+      const content = column.getBoundingClientRect()
+      const target = element.getBoundingClientRect()
+      return {
+        left: target.left - content.left,
+        right: target.right - content.right,
+        outsideIntro: !element.closest('.studio-settings-intro'),
+        sticky: getComputedStyle(toolbar).position,
+        scrollport: !!toolbar.closest('.studio-settings-scroll'),
+      }
+    })
+    assert.ok(bounds, 'Target belongs to a dedicated Settings toolbar')
+    assert.ok(Math.abs(bounds.left) <= 1 && bounds.right <= 1, 'Target fits the content gutter')
+    assert.ok(bounds.outsideIntro && bounds.scrollport, 'Toolbar is inside the Settings scrollport')
+    assert.equal(bounds.sticky, 'sticky')
+  }
   await assertIntroCue(page.getByText('This device · saved automatically', { exact: true }))
+  const headingScale = await page
+    .getByRole('heading', { name: 'General', level: 1 })
+    .evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { size: style.fontSize, lineHeight: style.lineHeight, weight: style.fontWeight }
+    })
+  assert.deepEqual(headingScale, { size: '20px', lineHeight: '28px', weight: '600' })
+  const contentColumn = page.locator('.studio-settings-content')
+  for (const width of [720, 719]) {
+    await contentColumn.evaluate((node, width) => {
+      node.style.maxWidth = `${width}px`
+    }, width)
+    const row = await page
+      .locator('.studio-setting-row')
+      .first()
+      .evaluate((node) => {
+        const copy = node.querySelector('.studio-setting-copy').getBoundingClientRect()
+        const control = node.querySelector('.studio-setting-control').getBoundingClientRect()
+        const row = node.getBoundingClientRect()
+        return {
+          rowWidth: row.width,
+          controlWidth: control.width,
+          copyRight: copy.right,
+          copyBottom: copy.bottom,
+          controlLeft: control.left,
+          controlTop: control.top,
+        }
+      })
+    assert.ok(Math.abs(row.rowWidth - width) <= 1, 'Probe measures the actual content width')
+    if (width === 720) {
+      assert.equal(row.controlWidth, 240, 'Wide Settings rows use a fixed 240px control column')
+      assert.ok(row.controlLeft >= row.copyRight, 'Wide controls sit beside their labels')
+    } else {
+      assert.equal(row.controlWidth, row.rowWidth, 'Controls fill the stacked row below 720px')
+      assert.ok(row.controlTop >= row.copyBottom, 'Narrow content stacks despite a wide viewport')
+    }
+  }
+  await contentColumn.evaluate((node) => node.style.removeProperty('max-width'))
   if (process.env.DOVO_HEADER_SCREENSHOTS) {
     const brand = await page.locator('.studio-titlebar').boundingBox()
     const heading = await page.locator('.studio-page-header').first().boundingBox()
@@ -591,7 +650,7 @@ try {
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).click()
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
   await page.getByLabel('Settings target', { exact: true }).waitFor()
-  await assertIntroCue(page.getByLabel('Settings target', { exact: true }))
+  await assertTargetToolbar()
   await page.getByRole('button', { name: 'Settings inheritance details', exact: true }).waitFor()
   assert.equal(
     await settingsSidebar.getByLabel('Inherited settings target').count(),
@@ -599,6 +658,13 @@ try {
     'Scope controls appear once in the content toolbar',
   )
   const profiles = page.getByRole('navigation', { name: 'Provider configurations' })
+  await page.getByRole('button', { name: 'Agent profile', exact: true }).waitFor()
+  assert.equal(
+    await profiles.isVisible(),
+    false,
+    'Agent profiles use the compact picker below 960px content',
+  )
+  await page.setViewportSize({ width: 1600, height: 900 })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
   assert.equal(await profiles.getByRole('button').count(), 9, 'Providers are present before setup')
   assert.equal(await profiles.getByText('Default model', { exact: true }).count(), 0)
@@ -620,6 +686,7 @@ try {
   await page.getByText(/Saving creates an override/).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
   await page.getByRole('button', { name: 'Open thread defaults', exact: true }).click()
+  await page.setViewportSize({ width: 1280, height: 900 })
   await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
   await page.getByRole('combobox', { name: 'Auto-resume limited threads', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
@@ -894,7 +961,7 @@ try {
     )
     .waitFor()
   await page.getByText('Computer: MacBook Pro', { exact: true }).waitFor()
-  const hostTarget = page.locator('.studio-settings-intro .studio-settings-target')
+  const hostTarget = page.locator('.studio-settings-toolbar .studio-settings-target')
   const hostGeometry = await hostTarget.evaluate((node) => {
     const content = node.closest('.studio-settings-content').getBoundingClientRect()
     const target = node.getBoundingClientRect()
@@ -912,7 +979,7 @@ try {
   assert.equal(
     hostGeometry.border,
     '0px',
-    'Computer target does not nest a second divider inside the intro',
+    'Computer target does not nest a second divider inside the toolbar',
   )
 
   assert.equal(
@@ -1077,7 +1144,7 @@ try {
   }
   await choose('Settings section', 'Agents')
   await page.getByRole('button', { name: 'Agent profile', exact: true }).waitFor()
-  await assertIntroCue(page.getByLabel('Settings target', { exact: true }))
+  await assertTargetToolbar()
   await page.getByLabel('Name', { exact: true }).waitFor()
   await screenshot('agents-narrow')
   assert.equal(

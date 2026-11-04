@@ -51,10 +51,11 @@ function App(){useAppearance();return <TooltipProvider><div className="studio fl
 <div data-testid="effects" className="flex flex-col gap-2">
 <nav className="studio-navigation" aria-label="Main navigation"><button className="studio-navigation-item" aria-current="page">T</button></nav>
 <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button className="studio-navigation-item" aria-pressed="true">F</button></nav>
-<div className="studio-browser-sidebar"><button className="studio-browser-tab" data-active>Selected browser tab</button><details open className="studio-list-section"><summary className="studio-list-section-header">Browser section</summary></details></div>
+<div className="studio-browser-sidebar"><div className="studio-browser-tab" data-active><button className="studio-browser-tab-select">Selected browser tab</button></div><details open className="studio-list-section"><summary className="studio-list-section-header">Browser section</summary></details></div>
 <div className="studio-task-sidebar"><details open className="studio-list-section"><summary className="studio-list-section-header">Thread section</summary></details><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div><button className="studio-thread-child" aria-current="true">Selected child thread</button></div>
 <button className="studio-selected-surface rounded-lg border" aria-current="true">Selected artifact</button>
-<div className="studio-selected-surface rounded-lg border">Selected settings page</div>
+<div className="studio-nav-selected rounded-lg border">Selected settings page</div>
+<div className="studio-settings-target" data-override="true">Project override target</div>
 <Segmented label="Effects settings choice" value="selected" options={[["selected","Selected option"],["other","Other option"]]} onChange={()=>{}}/>
 <div className="task-composer"><div className="studio-composer"><textarea aria-label="Effects composer"/><button type="submit">Send</button><ComposerSubmit type="button" variant="destructive" className="studio-destructive-accent" data-composer-stop aria-label="Stop">■</ComposerSubmit></div></div>
 <div className="dovo-dialog-content p-3"><Button>Dialog action</Button></div>
@@ -298,8 +299,8 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
-      // Rails use an edge marker; filled selections share tokens while each
-      // component keeps its own border and corner treatment.
+      // Navigation uses the palette's selection fill; filter-like choices keep
+      // the neutral fill. Both retain the selected effects when enabled.
       await page.waitForFunction(() => {
         const probe = document.createElement('span')
         probe.style.backgroundColor = 'var(--studio-selected-fill)'
@@ -307,14 +308,19 @@ try {
         probe.style.boxShadow = 'var(--studio-glow)'
         document.body.append(probe)
         const expected = getComputedStyle(probe)
+        const neutralFill = expected.backgroundColor
+        probe.style.backgroundColor = 'var(--selection)'
+        const navigationFill = getComputedStyle(probe).backgroundColor
         const settled = [
           ...document.querySelectorAll(
-            '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child',
+            '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-card, [data-testid=effects] .studio-thread-child',
           ),
         ].every((el) => {
           const selected = getComputedStyle(el)
-          return ['backgroundColor', 'backgroundImage', 'boxShadow'].every(
-            (key) => selected[key] === expected[key],
+          return (
+            selected.backgroundColor ===
+              (el.classList.contains('studio-selected-surface') ? neutralFill : navigationFill) &&
+            ['backgroundImage', 'boxShadow'].every((key) => selected[key] === expected[key])
           )
         })
         probe.remove()
@@ -358,8 +364,20 @@ try {
             probe.remove()
             return accent
           })(),
-          threadEdge: style('.studio-thread-card').borderLeftColor,
           threadEdgeWidth: style('.studio-thread-card').borderLeftWidth,
+          navigationMarkers: [
+            ...document.querySelectorAll(
+              '[data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-browser-tab-select, [data-testid=effects] .studio-thread-card, [data-testid=effects] .studio-thread-child',
+            ),
+          ].map((el) => {
+            const marker = getComputedStyle(el, '::before')
+            return {
+              color: marker.backgroundColor,
+              width: marker.width,
+              height: marker.height,
+              content: marker.content,
+            }
+          }),
           sectionsMatch: [
             'backgroundImage',
             'borderColor',
@@ -410,8 +428,22 @@ try {
           ' active rails use visible accent edge markers: ' +
           JSON.stringify(effects.rails),
       )
-      assert.equal(effects.threadEdge, effects.accent, 'Selected thread keeps its accent edge')
       assert.equal(effects.threadEdgeWidth, '2px')
+      assert.ok(
+        effects.navigationMarkers.length === 4 &&
+          effects.navigationMarkers.every(
+            (marker) =>
+              marker.color === effects.accent &&
+              marker.width === '2px' &&
+              marker.height === '16px' &&
+              marker.content === '""',
+          ),
+        id +
+          ' ' +
+          scheme +
+          ' navigation keeps 2px accent markers: ' +
+          JSON.stringify(effects.navigationMarkers),
+      )
       assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
       assert.equal(effects.dialog, 'none', 'Dialogs keep a calm, flat surface with effects enabled')
       const actual = await page.evaluate(() => {
@@ -512,12 +544,50 @@ try {
         })
     }
   }
+  const assertForcedColorMarkers = async (scheme) => {
+    const markers = await page.locator('[data-testid=effects]').evaluate((preview) => {
+      const probe = document.createElement('span')
+      probe.style.backgroundColor = 'Highlight'
+      probe.style.forcedColorAdjust = 'none'
+      document.body.append(probe)
+      const highlight = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return [
+        ...preview.querySelectorAll(
+          '.studio-navigation-item, .studio-nav-selected, .studio-browser-tab-select, .studio-thread-card, .studio-thread-child, .studio-settings-target',
+        ),
+      ].map((element) => {
+        const marker = getComputedStyle(element, '::before')
+        return {
+          color: marker.backgroundColor,
+          highlight,
+          width: marker.width,
+          height: marker.height,
+          content: marker.content,
+          target: element.classList.contains('studio-settings-target'),
+        }
+      })
+    })
+    assert.ok(
+      markers.length === 7 &&
+        markers.every(
+          (marker) =>
+            marker.color === marker.highlight &&
+            marker.width === '2px' &&
+            (marker.target ? parseFloat(marker.height) > 0 : marker.height === '16px') &&
+            marker.content === '""',
+        ),
+      scheme +
+        ' selected navigation and target markers survive forced colors: ' +
+        JSON.stringify(markers),
+    )
+  }
   for (const scheme of ['light', 'dark']) {
     await mode(scheme === 'dark' ? 'Dark' : 'Light')
     await page.emulateMedia({ forcedColors: 'active' })
     const selections = await page
       .locator(
-        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
       )
       .evaluateAll((elements) =>
         elements.map((el) => ({
@@ -535,6 +605,7 @@ try {
       ),
       scheme + ' selections stay visible without decorative effects in forced colors',
     )
+    await assertForcedColorMarkers(scheme)
     await page.emulateMedia({ forcedColors: 'none' })
   }
   await choose('Claude')
@@ -634,7 +705,7 @@ try {
     await page.emulateMedia({ forcedColors: 'active' })
     const selections = await page
       .locator(
-        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
       )
       .evaluateAll((elements) =>
         elements.map((el) => ({
@@ -652,6 +723,7 @@ try {
       ),
       scheme + ' selections stay visible without decorative effects in forced colors',
     )
+    await assertForcedColorMarkers(scheme)
     await page.emulateMedia({ forcedColors: 'none' })
   }
   await choose('Claude')

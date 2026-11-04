@@ -441,7 +441,7 @@ export function SettingsNav({
                         <div
                           className={`group flex min-h-8 w-full items-center gap-1 rounded-xl border border-transparent pr-1 text-[0.8125rem] transition-colors ${
                             active
-                              ? 'studio-selected-surface font-medium'
+                              ? 'studio-nav-selected font-medium'
                               : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                           }`}
                         >
@@ -457,7 +457,7 @@ export function SettingsNav({
                               size={16}
                               strokeWidth={1.7}
                               aria-hidden="true"
-                              className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
+                              className={`shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground/70'}`}
                             />
                             <span className="min-w-0 flex-1 break-words leading-snug">
                               {view.title}

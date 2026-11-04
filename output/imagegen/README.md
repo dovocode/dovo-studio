@@ -23,3 +23,15 @@ Prompt:
 Applied to production UI: scope/save cues below the description, aligned field columns, spaced
 section headings, smaller inner segment corners and reduced nested framing. Existing navigation,
 palettes and controls remain intact.
+
+## Quiet Instrument composition reference
+
+[settings-quiet-instrument49.png](settings-quiet-instrument49.png) was generated with
+`gpt-image-2.5` through CLIProxyAPI. The exact submitted [prompt](quiet-instrument49-prompt.txt) is
+saved alongside it.
+
+Opus supplied the art direction: a graphite workspace, one small navigation marker, flat
+master/detail settings, aligned controls and a quiet save area. This informed the responsive Agent
+layout, pinned project/computer targets, shared selection treatment and reduced Runtime framing. The
+generated image contains invented content; it is a composition reference, not application evidence
+or a specification for additional controls.

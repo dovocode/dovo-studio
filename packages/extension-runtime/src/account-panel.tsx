@@ -65,7 +65,7 @@ function AccountPanelContent({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [selected, setSelected] = useState<Record<string, string>>({})
   return (
-    <section className="space-y-3 rounded-md border p-4" aria-label="Dovo account">
+    <section className="studio-settings-group space-y-3" aria-label="Dovo account">
       <div>
         <h2 className="text-sm font-medium">
           {directory ? `Signed in as ${directory.user.name}` : 'Your computers, across devices'}

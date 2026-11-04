@@ -647,6 +647,15 @@
       "score": 7.5,
       "verdict": "ship; no blockers",
       "gallery": 48
+    },
+    {
+      "round": "independent48",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "d454cc37-5975-40b0-b8d4-de5bdaae9258",
+      "score": 8.0,
+      "verdict": "ship; no visible blockers",
+      "gallery": 48,
+      "coverage": "All21 contact sheets inventoried; about40 full-size frames. Static visual review; interaction behavior not inferred from stills."
     }
   ],
   "remaining": [
@@ -728,10 +737,46 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent48",
+      "round": "independent50",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent50_sol_a",
+      "status": "running",
+      "gallery": 50
+    },
+    {
+      "round": "independent50",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent50_sol_b",
+      "status": "running",
+      "gallery": 50
+    },
+    {
+      "round": "independent50",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent50_sol_c",
+      "status": "running",
+      "gallery": 50
+    },
+    {
+      "round": "independent50",
+      "model": "Opus 5.5",
+      "id": "3e5e51f8-16b3-431c-9c7d-9270d0da2a4b",
+      "status": "running",
+      "gallery": 50
+    },
+    {
+      "round": "independent50",
+      "model": "Opus 5.5",
+      "id": "43dd4719-0ea3-4753-8066-aaef50e4a445",
+      "status": "running",
+      "gallery": 50
+    },
+    {
+      "round": "independent50",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "d454cc37-5975-40b0-b8d4-de5bdaae9258",
-      "status": "running"
+      "id": "4c8074bb-19a6-44d5-be61-3d127c757b94",
+      "status": "running",
+      "gallery": 50
     }
   ],
   "queuedReviews": [
@@ -786,6 +831,11 @@
     {
       "round": "pass49",
       "summary": "Stop/Queue/Add-to-queue/Steer icon-only with hover titles, accessible names and unchanged keyboard/busy/disabled/dropdown semantics; Send/Save remain labeled. PR target branches independently visible; Agent save footer names profile and scope; stable Open/Closed Issue filters; failure consent is emphasized and accessible without changing merge payload/acknowledgment/reset guards. Git commit target repeats inspected branch/checkout, filenames readable at12px; continuation fade matches dialog surface. Markdown bullets use outside markers with nested/ordered/checklist geometry verified. Relevant browser suites, builds, affected types, lint and diff passed."
+    },
+    {
+      "round": "pass50",
+      "summary": "Implemented Opus Quiet Instrument direction: small common navigation marker, shared type/surface tokens, tighter thread/list rhythm; sticky scoped Settings targets with accurate defaults/override context, actual-content responsive240px controls, flat save areas and responsive Agent master/detail/picker. Runtime uses flat sections and Manage/More computer actions, preserving recovery/destructive guards and HTTP/pairing policies. Native service URL form submission remains explicit and protected. Generated gpt-image-2.5 layout reference documented separately from real captures.",
+      "verification": "Production web/desktop builds, affected types, lint/format/diff passed; all34 palette/theme cases, custom effects/text scale and seven forced-color selection markers per mode; wide/compact/mobile Agent and shared Settings target/save guards; Runtime/service URL/pairing/recovery; composer/PR list/workspace/navigation; thread/sidebar/file-tree and corrected Browser fixtures.336 frozen captures across168 pairs, no capture errors/alerts, exact #080808 sampled in chat/Browser; lossless exports verified."
     }
   ],
   "designConsultations": [

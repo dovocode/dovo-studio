@@ -13,7 +13,7 @@ import { Button } from './components/ui/button'
 import { SettingsPage } from './settings-layout'
 import { ProjectOrganizationSettings } from './project-organization'
 
-/** Scoped settings share project and computer controls beneath the page description. */
+/** Scoped settings share a persistent project and computer target within the scrollport. */
 export function SettingsScopePage({
   title,
   description,
@@ -30,20 +30,42 @@ export function SettingsScopePage({
   const { target, setTarget, sources, source, scope, repository } = useSettingsTarget()
   const projects = settingsProjectChoices(sources, target.environmentId)
   const summary = settingsScopeSummary(scope, { project: repository?.name, computer: source?.name })
+  const projectName = target.projectId
+    ? (repository?.name ??
+      settingsProjectChoices(sources, '').find((project) => project.id === target.projectId)
+        ?.name ??
+      'unavailable project')
+    : 'all projects'
+  const computerName = target.environmentId
+    ? (sources.find((entry) => entry.profile.id === target.environmentId)?.name ??
+      'unavailable computer')
+    : 'all computers'
+  const scopeLabel = target.projectId
+    ? target.environmentId
+      ? 'Project overrides'
+      : 'Project defaults'
+    : target.environmentId
+      ? 'Computer overrides'
+      : 'Shared defaults'
   return (
     <SettingsPage
       title={title}
       description={description}
       wide={wide}
       toolbar={
-        <div className="studio-settings-target" aria-label="Settings target">
+        <div
+          className="studio-settings-target"
+          data-override={scope !== 'global' || undefined}
+          aria-label="Settings target"
+        >
+          <p className="studio-settings-target-context mb-3 text-xs font-medium">
+            Editing {projectName} on {computerName}
+          </p>
           <div className="studio-settings-target-inner flex flex-wrap items-end gap-x-4 gap-y-3 text-xs">
             <div className="studio-settings-target-field min-w-0 max-w-full">
               <span className="studio-settings-target-label">Scope</span>
               <div className="studio-settings-target-summary flex min-h-9 items-center gap-1">
-                <span className="break-words font-medium">
-                  {target.environmentId ? 'Computer overrides' : 'Shared defaults'}
-                </span>
+                <span className="break-words font-medium">{scopeLabel}</span>
                 <Popover.Root>
                   <Popover.Trigger asChild>
                     <Button

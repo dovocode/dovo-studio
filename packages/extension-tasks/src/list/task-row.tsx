@@ -170,13 +170,13 @@ function TaskRowView({
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
       <MessageCircleDashed
-        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-7')}
+        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-5')}
         aria-hidden="true"
       />
     ) : (
       <ProjectIcon
         repository={displayProject}
-        className={cn('shrink-0', compact ? 'size-4' : 'size-7 rounded-[7px] text-[10px]')}
+        className={cn('shrink-0', compact ? 'size-4' : 'size-5 rounded-[5px] text-[10px]')}
       />
     )
   const latest = task.turns?.at(-1)
@@ -289,6 +289,7 @@ function TaskRowView({
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
               data-draft={draft || undefined}
+              data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact

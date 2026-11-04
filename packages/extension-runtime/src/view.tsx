@@ -52,8 +52,10 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
       description="Connect computers and phones, manage trusted devices and check runtime health."
     >
       {threadConnection && (
-        <article className="rounded-md border bg-card/40 p-4 space-y-3">
-          <h2 className="text-sm font-medium">Pair computer to open {threadConnection.title}</h2>
+        <section className="studio-settings-group space-y-3 border-b border-border/50 pb-5">
+          <h2 className="text-sm font-semibold tracking-tight">
+            Pair computer to open {threadConnection.title}
+          </h2>
           <p className="text-xs text-muted-foreground">
             Pair the computer running this thread with its LAN/VPN address and pairing code. The
             thread will open after its computer identity is verified.
@@ -87,7 +89,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
           >
             Cancel
           </Button>
-        </article>
+        </section>
       )}
       <WindowsRuntimeSettings />
       {sources
@@ -97,10 +99,10 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
         ))}
       <PairingClient onManage={setManaging} discovered={discovered} />
       {host && (
-        <article className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card/40 p-4">
+        <section className="studio-settings-group flex flex-wrap items-center justify-between gap-3 border-y border-border/50 py-5">
           <div className="min-w-0">
-            <h2 className="text-sm font-medium">Connect your phone</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <h2 className="text-sm font-semibold tracking-tight">Connect your phone</h2>
+            <p className="mt-1 max-w-[62ch] text-[0.8125rem] leading-relaxed text-muted-foreground">
               Follow and answer threads from the Dovo iPhone or Android app. Scan a QR code or type
               an eight-digit code.
             </p>
@@ -108,7 +110,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
           <Button variant="outline" onClick={() => setPairingPhone(host.profile)}>
             Connect your phone
           </Button>
-        </article>
+        </section>
       )}
       <ServiceUrlSettings />
       <AccountPanel onPair={(address) => setDiscovered({ address })} />
@@ -203,7 +205,7 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
   return (
     <article
       role="alert"
-      className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-status-warning/30 bg-status-warning/5 p-4"
+      className="flex flex-wrap items-start justify-between gap-3 border-l-2 border-status-warning/50 py-1 pl-4"
     >
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-medium">{source.name} restarted after an unexpected error</h2>
