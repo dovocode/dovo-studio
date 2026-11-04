@@ -51,6 +51,18 @@
 .studio-markdown .contains-task-list {
   list-style: none;
 }
+.studio-markdown li:has(> input[type='checkbox']),
+.studio-markdown li:has(> p:first-child > input[type='checkbox']) {
+  position: relative;
+  padding-inline-start: 1.325rem;
+}
+.studio-markdown li > input[type='checkbox'],
+.studio-markdown li > p:first-child > input[type='checkbox'] {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.3em;
+  margin-right: 0;
+}
 .studio-markdown input[type='checkbox'] {
   margin-right: 0.45em;
   appearance: none;

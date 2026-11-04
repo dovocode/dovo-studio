@@ -159,7 +159,12 @@ export function ComposerActivity({
           })}
           {hasQueue && !both && (
             <span className="truncate text-xs text-muted-foreground">
-              · {task.queuePaused || task.queue?.[0]?.paused ? 'paused' : 'after this turn'}
+              ·{' '}
+              {task.queuePaused || task.queue?.[0]?.paused
+                ? 'paused'
+                : task.status === 'running'
+                  ? 'after this turn'
+                  : 'ready to send'}
             </span>
           )}
         </div>

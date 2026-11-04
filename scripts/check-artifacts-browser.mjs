@@ -139,6 +139,8 @@ const mocks = {
   './artifact-sharing':
     'export const ArtifactSharing=({artifact,onClose})=>onClose?<section role="dialog" aria-label="Share artifact"><p>{artifact.title} · Version {artifact.revision}</p><button onClick={onClose}>Close sharing</button></section>:null;',
   './artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
+  // Side-thread attention is outside the artifact navigation scenarios.
+  '../chat/thread/side-threads-panel': 'export const useSideThreadAttention=()=>null;',
   './chat/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '../ui/content/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
@@ -1380,7 +1382,10 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     })
     const chooseLibrary = async (label, value) => {
       if (native) return library.getByLabel(label, { exact: true }).selectOption(value)
-      await library.getByRole('button', { name: label, exact: true }).click()
+      const control = library.getByRole('button', { name: label, exact: true })
+      if (label === 'Artifact thread state' && !(await control.isVisible()))
+        await library.getByRole('button', { name: 'Filters', exact: true }).click()
+      await control.click()
       await library.getByRole('dialog').locator(`[role="option"][data-value="${value}"]`).click()
       await library.getByRole('dialog').waitFor({ state: 'hidden' })
     }

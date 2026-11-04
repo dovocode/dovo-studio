@@ -31,6 +31,7 @@ import {
   List,
   LoaderCircle,
   RotateCw,
+  SlidersHorizontal,
   WifiOff,
 } from 'lucide-react'
 import { ArtifactSnapshot } from './chat/artifact-snapshot'
@@ -97,6 +98,7 @@ export default function ArtifactsView() {
   const [state, setState] = useState(remembered.state)
   const [format, setFormat] = useState(remembered.format)
   const [sort, setSort] = useState(remembered.sort)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [layout, setLayout] = useState(remembered.layout)
   const [selection, setSelection] = useState(remembered.selection)
   const [reload, setReload] = useState(0)
@@ -304,55 +306,67 @@ export default function ArtifactsView() {
               </div>
               <div
                 className={cn(
-                  'flex flex-wrap items-center gap-1.5',
+                  'min-w-0',
                   selection ? 'mb-3' : 'mb-3 shrink-0 border-b border-border/70 px-3 py-1',
                 )}
                 aria-label="Artifact filters"
               >
-                <div
-                  className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
-                  aria-label="Artifact formats"
-                >
-                  {formats.map((value) => (
-                    <Button
-                      key={value}
-                      aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
-                      variant="ghost"
-                      size="sm"
-                      aria-pressed={format === value}
-                      onClick={() => setFormat(value)}
-                      className={cn(
-                        'h-8 shrink-0 rounded-md border px-2.5 text-xs',
-                        format === value
-                          ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
-                          : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
-                      )}
-                    >
-                      {value === 'all' ? 'All' : artifactFormatLabels[value]}
-                      <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
-                        {
-                          matching.filter(
-                            ({ artifact }) => value === 'all' || artifact.format === value,
-                          ).length
-                        }
-                      </span>
-                    </Button>
-                  ))}
+                <div className="studio-list-toolbar">
+                  <div className="studio-list-quick-views" aria-label="Artifact formats">
+                    {formats.map((value) => (
+                      <Button
+                        key={value}
+                        aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
+                        variant="ghost"
+                        size="sm"
+                        aria-pressed={format === value}
+                        onClick={() => setFormat(value)}
+                        className="studio-list-quick-filter"
+                      >
+                        {value === 'all' ? 'All' : artifactFormatLabels[value]}
+                        <span className="studio-list-filter-count">
+                          {
+                            matching.filter(
+                              ({ artifact }) => value === 'all' || artifact.format === value,
+                            ).length
+                          }
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="studio-list-filter-trigger"
+                    aria-label="Filters"
+                    aria-expanded={filtersOpen}
+                    aria-controls="artifact-list-filters"
+                    data-active={state !== 'all' || undefined}
+                    onClick={() => setFiltersOpen((value) => !value)}
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                    Filters
+                    {state !== 'all' && <span className="studio-list-filter-count">1</span>}
+                  </Button>
                 </div>
-                <ChoicePicker
-                  aria-label="Artifact thread state"
-                  className="h-8 w-auto max-w-full text-xs"
-                  value={state}
-                  onValueChange={(value) =>
-                    setState(threadStates.find((item) => item.value === value)?.value ?? 'all')
-                  }
-                >
-                  {threadStates.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </ChoicePicker>
+                <div id="artifact-list-filters" hidden={!filtersOpen}>
+                  <div className="studio-list-filter-fields">
+                    <ChoicePicker
+                      aria-label="Artifact thread state"
+                      className="h-8 w-auto max-w-full text-xs"
+                      value={state}
+                      onValueChange={(value) =>
+                        setState(threadStates.find((item) => item.value === value)?.value ?? 'all')
+                      }
+                    >
+                      {threadStates.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </ChoicePicker>
+                  </div>
+                </div>
               </div>
               {failed.map(({ source, current }) => (
                 <p
@@ -456,7 +470,7 @@ export default function ArtifactsView() {
                   <div className="flex flex-wrap items-center gap-2">
                     <ChoicePicker
                       aria-label="Sort artifacts"
-                      className="w-auto max-w-full bg-card"
+                      className="h-8 w-auto max-w-full text-xs"
                       value={sort}
                       onValueChange={(value) =>
                         setSort(
@@ -469,17 +483,13 @@ export default function ArtifactsView() {
                       <option value="title">Title A–Z</option>
                     </ChoicePicker>
                     {!selection && (
-                      <div
-                        role="group"
-                        aria-label="Artifact layout"
-                        className="flex rounded-lg bg-muted/40 p-0.5"
-                      >
+                      <div role="group" aria-label="Artifact layout" className="flex gap-1">
                         <IconButton
                           label="Preview view"
                           aria-pressed={layout === 'preview'}
                           onClick={() => setLayout('preview')}
                           className={cn(
-                            'size-8 rounded-xl border border-transparent',
+                            'studio-list-quick-filter size-8 px-0',
                             layout === 'preview' && 'studio-selected-surface',
                           )}
                         >
@@ -490,7 +500,7 @@ export default function ArtifactsView() {
                           aria-pressed={layout === 'list'}
                           onClick={() => setLayout('list')}
                           className={cn(
-                            'size-8 rounded-xl border border-transparent',
+                            'studio-list-quick-filter size-8 px-0',
                             layout === 'list' && 'studio-selected-surface',
                           )}
                         >

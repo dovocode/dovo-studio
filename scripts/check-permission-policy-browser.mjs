@@ -92,7 +92,7 @@ const mocks = {
   '@dovo/protocol': `export * from '${root}packages/protocol/src/index.ts';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}packages/studio-core/src/providers';export {updateTask} from '${root}packages/studio-core/src/workspace/actions';import {createContext,useContext} from 'react';export const WorkspaceContext=createContext(null);export const useWorkspace=()=>useContext(WorkspaceContext);export const useSettingsDraft=()=>{};`,
-  '@dovo/studio-ui': `export {SettingsSaveBar} from '${ui}src/settings-layout';export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
+  '@dovo/studio-ui': `export {Disclosure} from '${ui}src/disclosure';export {SettingsSaveBar} from '${ui}src/settings-layout';export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
   'react-native': `
     export const Platform={OS:'android'};
     export const Alert={alert:()=>{}};
@@ -227,7 +227,7 @@ async function expandAdvanced(page) {
   for (const details of await page.locator('details').all()) {
     if (
       /^(Advanced|Custom agent defaults)/.test(
-        (await details.locator(':scope > summary').textContent()) ?? '',
+        ((await details.locator(':scope > summary').textContent()) ?? '').trim(),
       ) &&
       (await details.getAttribute('open')) === null
     )
@@ -262,6 +262,32 @@ async function composerChoice(page, label, name) {
 try {
   // Actual composer advanced menus, custom task overrides, access changes and clear semantics.
   const composer = await pageFor({ kind: 'composer', custom: true })
+  await openComposerPicker(composer)
+  const accessField = composer.getByRole('button', { name: 'Configure thread permissions' })
+  const daybreakField = composer.getByRole('button', { name: 'Daybreak mode', exact: true })
+  assert.equal(await accessField.getAttribute('data-variant'), 'outline')
+  for (const viewport of [
+    { width: 380, height: 500 },
+    { width: 1100, height: 1000 },
+  ]) {
+    await composer.setViewportSize(viewport)
+    const accessBounds = await accessField.boundingBox()
+    const daybreakBounds = await daybreakField.boundingBox()
+    assert.equal(accessBounds.width, daybreakBounds.width, 'Picker footer fields share a width')
+    assert.equal(accessBounds.height, daybreakBounds.height, 'Picker footer fields share a height')
+    assert.equal(
+      await accessField.evaluate((element) => getComputedStyle(element).borderColor),
+      await daybreakField.evaluate((element) => getComputedStyle(element).borderColor),
+      'Picker footer fields use the same visible boundary',
+    )
+    assert.ok(
+      accessBounds.x >= 0 &&
+        accessBounds.x + accessBounds.width <= viewport.width &&
+        accessBounds.y >= 0 &&
+        accessBounds.y + accessBounds.height <= viewport.height,
+      'Access remains visible in the pinned picker footer at narrow sizes',
+    )
+  }
   await composerChoice(composer, 'Approval policy', 'On request')
   await composerChoice(composer, 'Sandbox', 'Workspace write')
   await composer.waitForFunction(() => window.value.sandboxMode === 'workspace-write')

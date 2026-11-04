@@ -79,15 +79,18 @@ export function ComposerSettingsControls({
         <DropdownMenu.Trigger asChild>
           <Button
             type="button"
-            variant="ghost"
-            className="h-6 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal text-muted-foreground"
+            variant="outline"
+            className="h-7 w-44 min-w-0 max-w-[65%] gap-2 text-xs font-normal"
+            style={{ borderColor: 'var(--control-edge)' }}
             disabled={locked}
             aria-label="Configure thread permissions"
             title="Agent access"
           >
             <AccessIcon className="size-3.5" />
-            {permissionPolicyLabel(value)}
-            <ChevronDown size={12} />
+            <span className="min-w-0 flex-1 truncate text-left">
+              {permissionPolicyLabel(value)}
+            </span>
+            <ChevronDown className="size-4 text-muted-foreground" />
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

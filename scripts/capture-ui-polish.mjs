@@ -140,6 +140,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         ['busy-unified-workspace', 'tasks', 'preview-task', 'unified', 'busy'],
         ['busy-long-draft', 'tasks', 'preview-task', undefined, 'busy-long-draft'],
         ['busy-mid-scroll', 'tasks', 'preview-task', 'mid-scroll', 'busy'],
+        ['busy-sections', 'tasks', 'preview-task', undefined, 'busy'],
         ['pulls', 'pulls'],
         ['settings', 'general'],
         ...(all
@@ -252,6 +253,23 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
           `${name}: no page overflow`,
         )
+      }
+      if (name === 'busy-sections') {
+        for (const [label, expanded] of [
+          ['Open', false],
+          ['Needs input', true],
+          ['Waiting', true],
+          ['Snoozed', true],
+        ]) {
+          const summary = page
+            .locator('summary')
+            .filter({ hasText: new RegExp('^' + label) })
+            .first()
+          await summary.waitFor()
+          if ((await summary.evaluate((element) => element.parentElement.open)) !== expanded)
+            await summary.click()
+          assert.equal(await summary.evaluate((element) => element.parentElement.open), expanded)
+        }
       }
       if (name === 'busy-long-draft') {
         const editor = page.getByRole('textbox', { name: 'Message thread', exact: true })

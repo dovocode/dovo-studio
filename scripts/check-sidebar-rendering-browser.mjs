@@ -688,11 +688,22 @@ try {
   )
   const projectless = page.getByRole('button', { name: /Projectless layout/ }).first()
   await projectless.waitFor()
-  const draftGlyph = projectless.getByLabel('Draft', { exact: true })
+  const draftStatus = projectless.locator('[data-thread-state="Draft"]')
+  const draftGlyph = draftStatus.locator('.studio-thread-status-icon')
   await draftGlyph.waitFor()
   assert.ok(
-    (await draftGlyph.boundingBox()).x <
+    (await draftGlyph.boundingBox()).x >
       (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
+    'Draft status sits after the project name with the other row statuses',
+  )
+  assert.equal(await draftStatus.innerText(), 'Draft')
+  const draftProjectBox = await projectless.getByText('No Project', { exact: true }).boundingBox()
+  const draftStatusBox = await draftStatus.boundingBox()
+  assert.ok(
+    Math.abs(
+      draftProjectBox.y + draftProjectBox.height / 2 - draftStatusBox.y - draftStatusBox.height / 2,
+    ) < 1,
+    'Draft status and project name share the top line',
   )
   assert.equal(
     await projectless.evaluate((el) => getComputedStyle(el).backgroundColor),
@@ -920,8 +931,8 @@ try {
         .then((value) => value.includes('font-mono')),
       true,
     )
+    assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 1)
     if (status !== 'draft') {
-      assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 1)
       assert.equal(
         await row.locator('[data-thread-execution] img, [data-thread-execution] svg').count(),
         1,
@@ -932,7 +943,7 @@ try {
     .locator('.studio-thread-card')
     .filter({ has: page.getByText('State draft', { exact: true }) })
   assert.ok(!(await draftStateRow.getAttribute('class')).includes('bg-status-warning'))
-  assert.equal(await draftStateRow.getByLabel('Draft', { exact: true }).count(), 1)
+  assert.equal(await draftStateRow.locator('[data-thread-state="Draft"]').count(), 1)
   const reviewStateRow = page
     .locator('.studio-thread-card')
     .filter({ has: page.getByText('State review', { exact: true }) })

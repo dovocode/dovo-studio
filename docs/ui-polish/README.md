@@ -46,7 +46,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 272 captures: production desktop routes/compositions in
+The refreshed gallery includes 274 captures: production desktop routes/compositions in
 both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
 Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
 zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
@@ -69,7 +69,10 @@ controls, thread state is explicit, and the composer and queue are shorter. Thre
 project, checkout and next actions while preserving every section and its ordering/visibility
 customization. The model picker uses one compact column with a pinned access footer. Thread-list
 sections and grouping remain available. Populated workspace, long-draft and mid-scroll captures
-supplement sparse catalog pages so density and overflow can be assessed realistically.
+supplement sparse catalog pages so density and overflow can be assessed realistically. Populated
+Needs input, Waiting and Snoozed groups show the retained section controls in use. Collection pages
+share quick views and a secondary Filters action; Automations uses the same flat list composition.
+Unavailable pipeline actions explain the missing capability and link to Sources.
 
 Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only mode,
 and a direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a review.
@@ -115,6 +118,7 @@ previews isolate runtime/account writes and use no live user data.
 
 | Surface                          | Dark                                                                 | Light                                                                 |
 | -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| busy-sections | [Screenshot](screenshots/busy-sections-dark.webp) | [Screenshot](screenshots/busy-sections-light.webp) |
 | busy-conversation | [Screenshot](screenshots/busy-conversation-dark.webp) | [Screenshot](screenshots/busy-conversation-light.webp) |
 | busy-unified-workspace | [Screenshot](screenshots/busy-unified-workspace-dark.webp) | [Screenshot](screenshots/busy-unified-workspace-light.webp) |
 | busy-long-draft | [Screenshot](screenshots/busy-long-draft-dark.webp) | [Screenshot](screenshots/busy-long-draft-light.webp) |

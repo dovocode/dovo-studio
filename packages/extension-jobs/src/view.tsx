@@ -1,5 +1,6 @@
 import { randomUUID, resolveRuntimeTarget } from '@dovo/protocol'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
+import { SearchField } from '@dovo/studio-ui/search-field'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ArrowLeft, ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
@@ -269,21 +270,30 @@ export default function JobsView({ entityId }: StudioViewProps) {
           )}
         >
           <SidebarHeader enabled={!!selected} />
-          <div className="studio-overview-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
-            <div className="p-3">
-              <Input
+          <div
+            className={cn(
+              'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+              selected ? 'studio-overview-pane bg-sidebar' : 'bg-background',
+            )}
+          >
+            <div className="shrink-0 border-b border-border/70 px-3 py-2">
+              <SearchField
                 aria-label="Search automations"
                 placeholder="Search automations, projects or computers…"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onValueChange={setSearch}
               />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
-              </p>
             </div>
+            <p
+              role="status"
+              className="shrink-0 border-b border-border/70 px-3 py-2 text-xs text-muted-foreground"
+            >
+              {visible.length} automation{visible.length === 1 ? '' : 's'}
+              {query ? ` of ${rows.length}` : ' across your computers'}
+            </p>
             <nav
               aria-label="Automations across computers"
-              className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+              className="min-h-0 flex-1 divide-y divide-border/50 overflow-y-auto px-3 py-2"
             >
               {visible.map((row) => (
                 <button

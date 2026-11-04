@@ -384,9 +384,9 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 className="max-h-[max(2.5rem,calc(100%-8rem))] shrink-0 overflow-y-auto overscroll-contain"
                 aria-label="Pull request filters"
               >
-                <div className="flex shrink-0 items-center border-b border-border/70">
+                <div className="studio-list-toolbar shrink-0 border-b border-border/70 px-3 py-1">
                   <div
-                    className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 [scrollbar-width:none]"
+                    className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]"
                     aria-label="Personal pull request filters"
                   >
                     {(
@@ -421,26 +421,24 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                         aria-label={item.label}
                         aria-pressed={personal === item.id}
                         title={`${item.count} in loaded, filtered results`}
-                        className={`my-1 h-8 shrink-0 rounded-md border px-2.5 text-xs ${personal === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                        className="studio-list-quick-filter shrink-0"
                         onClick={() => {
                           setPersonal(item.id)
                           setMarked([])
                         }}
                       >
                         {item.label}
-                        <span
-                          aria-hidden
-                          className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
-                        >
+                        <span aria-hidden className="studio-list-filter-count">
                           {item.count}
                         </span>
                       </Button>
                     ))}
                   </div>
                   <Button
-                    className="mx-2 h-8 shrink-0"
+                    className="studio-list-filter-trigger"
                     size="sm"
-                    variant={activeFilters ? 'secondary' : 'ghost'}
+                    variant="ghost"
+                    data-active={activeFilters > 0 || undefined}
                     aria-label="Filters"
                     aria-expanded={filtersOpen}
                     aria-controls="pr-list-filters"
@@ -448,11 +446,13 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                   >
                     <SlidersHorizontal className="size-3.5" />
                     Filters
-                    {!!activeFilters && <span className="tabular-nums">{activeFilters}</span>}
+                    {!!activeFilters && (
+                      <span className="studio-list-filter-count">{activeFilters}</span>
+                    )}
                   </Button>
                 </div>
                 <div id="pr-list-filters" hidden={!filtersOpen}>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-background/30 p-3">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pb-2 pt-3">
                     <ChoicePicker
                       aria-label="PR repository"
                       className={selectStyle}
@@ -504,7 +504,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       <option value="updated">Recently updated</option>
                     </ChoicePicker>
                   </div>
-                  <div className="shrink-0 space-y-3 border-b border-border/70 bg-background/30 p-3">
+                  <div className="flex shrink-0 flex-col-reverse gap-3 border-b border-border/70 px-3 pb-3">
                     {!!pulls.length && (
                       <div
                         className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
@@ -552,7 +552,8 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       </ChoicePicker>
                       <Button
                         size="sm"
-                        variant={attention ? 'secondary' : 'ghost'}
+                        variant="ghost"
+                        className="studio-list-quick-filter"
                         aria-pressed={attention}
                         title="Your review requests, blocked PRs, and your approved PRs with passing checks"
                         onClick={() => {

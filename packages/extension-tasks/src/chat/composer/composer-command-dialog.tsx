@@ -46,7 +46,7 @@ export function ComposerCommandDialog({
         )}
         {command === 'undo' && needsRefresh && (
           <p className="text-xs text-muted-foreground">
-            Refresh the thread before trying again. Refreshing keeps your draft and queued messages.
+            Refreshing keeps your draft and queued messages.
           </p>
         )}
         {!connected ? (

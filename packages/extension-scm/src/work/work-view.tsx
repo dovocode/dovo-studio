@@ -8,7 +8,7 @@ import {
   type JiraIssueFilters,
 } from '@dovo/protocol'
 import { JiraToolbar } from './jira-toolbar'
-import { EmptyState, PageHeader, SidebarHeader, cn, useLeftSidebar } from '@dovo/studio-ui'
+import { EmptyState, PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import {
@@ -128,6 +128,7 @@ function WorkView({
     setPreferences((value) => ({ ...value, jiraLayout }))
   const setSort = (sort: string) => setPreferences((value) => ({ ...value, sort }))
   const setLinked = (linked: string) => setPreferences((value) => ({ ...value, linked }))
+  const [filtersOpen, setFiltersOpen] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
   useEffect(() => {
     const timer = setTimeout(() => setQuery(mode === 'issues' ? search.trim() : ''), 300)
@@ -314,11 +315,12 @@ function WorkView({
     state,
   )
   const states = [
-    ...new Set(
-      visiblePages.flatMap((page) =>
+    ...new Set([
+      ...visiblePages.flatMap((page) =>
         page.items.map((item) => ('state' in item ? item.state : item.status)),
       ),
-    ),
+      ...(state !== 'all' ? [state] : []),
+    ]),
   ].sort()
   const canCreate = pages
     .filter(
@@ -371,7 +373,22 @@ function WorkView({
     !!search ||
     state !== defaultState ||
     linked !== 'all' ||
-    (isJira && (!!project || hasJiraIssueFilters(jiraFilters)))
+    !!project ||
+    (isJira && hasJiraIssueFilters(jiraFilters))
+  const secondaryFilters = Number(!!project) + Number(linked !== 'all') + Number(sort !== 'updated')
+  const canCreateSelected = canCreate.some((source) => matchesWorkSource(source, projectRemote))
+  const pipelineRunNotice =
+    mode === 'pipelines' &&
+    !canCreateSelected &&
+    (!busy || visiblePages.some((page) => page.options))
+      ? !visibleSources.length
+        ? 'Connect a code project to run pipelines.'
+        : !visibleSources.some((source) => source.connected)
+          ? 'Reconnect a project’s computer to run pipelines.'
+          : visiblePages.some((page) => page.error || page.optionsError || page.stale)
+            ? 'Refresh the source connection to make pipeline actions available.'
+            : 'These sources support viewing pipeline runs only.'
+      : null
   const closePreview = () =>
     transition(() => {
       if (selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
@@ -460,12 +477,9 @@ function WorkView({
               )}
               <Button
                 size="sm"
-                disabled={
-                  opening ||
-                  !(project
-                    ? canCreate.some((source) => matchesWorkSource(source, projectRemote))
-                    : canCreate.length)
-                }
+                disabled={opening || !canCreateSelected}
+                title={pipelineRunNotice ?? undefined}
+                aria-describedby={pipelineRunNotice ? 'pipeline-run-notice' : undefined}
                 onClick={() => void chooseSource('create')}
               >
                 <Plus className="size-3.5" />
@@ -535,165 +549,173 @@ function WorkView({
                     setJiraFilters({})
                     setProject('')
                     setLinked('all')
+                    setSort('updated')
                     setSelected(null)
                   }}
                 />
               ) : (
-                <div
-                  className="flex flex-wrap items-center gap-2"
-                  title={
-                    mode === 'issues'
-                      ? 'Search your issue trackers · states filter loaded results'
-                      : undefined
-                  }
-                >
-                  <ChoicePicker
-                    aria-label={mode === 'issues' ? 'Issue source' : 'Pipeline source'}
-                    className="h-8 w-auto max-w-72 text-xs"
-                    value={project}
-                    onValueChange={(value) => {
-                      void (chooseReader?.(value) ?? Promise.resolve())
-                        .then(() => setProject(value))
-                        .catch((cause: unknown) =>
-                          setError(cause instanceof Error ? cause.message : String(cause)),
-                        )
-                      if (isJira) setSelected(null)
-                      else setState('all')
-                    }}
-                  >
-                    <option value="">All sources</option>
-                    {sources.map((source) => (
-                      <option key={source.key} value={source.key}>
-                        {source.name} · {source.runtimeName}
-                      </option>
-                    ))}
-                  </ChoicePicker>
-                  {mode === 'issues' && (
-                    <ChoicePicker
-                      aria-label="Issue state"
-                      className="h-8 w-auto text-xs"
-                      value={state}
-                      onValueChange={(value) => {
-                        setState(value)
-                        if (isJira) setSelected(null)
-                      }}
-                    >
-                      {isJira ? (
-                        <>
-                          <option value="open">Open issues</option>
-                          <option value="all">All issues</option>
-                          <option value="closed">Done issues</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="all">All states</option>
-                          {states.map((state) => (
-                            <option key={state} value={state}>
-                              {state.charAt(0).toUpperCase() + state.slice(1)}
-                            </option>
-                          ))}
-                        </>
-                      )}
-                    </ChoicePicker>
-                  )}
-                  {mode === 'issues' && (
-                    <ChoicePicker
-                      aria-label="Project links"
-                      className="h-8 w-auto text-xs"
-                      value={linked}
-                      onValueChange={setLinked}
-                    >
-                      <option value="all">All project links</option>
-                      <option value="unlinked">Not linked to a project</option>
-                      <option value="linked">Linked to a project</option>
-                    </ChoicePicker>
-                  )}
-                  <ChoicePicker
-                    aria-label="Sort results"
-                    className="h-8 w-auto text-xs"
-                    value={sort}
-                    onValueChange={setSort}
-                  >
-                    <option value="updated">
-                      {isJira ? 'Jira order · per source' : 'Recently updated'}
-                    </option>
-                    <option value="project">Source</option>
-                    <option value="title">Title</option>
-                  </ChoicePicker>
-                  {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
-                    <div
-                      role="group"
-                      aria-label="Filter loaded runs by status"
-                      className="flex flex-wrap items-center gap-1"
-                    >
-                      <p className="sr-only">Counts in loaded, searched results</p>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-pressed={state === 'all'}
-                        aria-label={`All runs: ${matchingRows.length}`}
-                        onClick={() => setState('all')}
-                        className={cn(
-                          'h-8 gap-2 rounded-md border px-2.5 text-xs',
-                          state === 'all'
-                            ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
-                            : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
-                        )}
+                <div className="min-w-0">
+                  <div className="studio-list-toolbar">
+                    {mode === 'issues' ? (
+                      <div
+                        role="group"
+                        aria-label="Issue states"
+                        className="studio-list-quick-views"
                       >
-                        All runs <span className="tabular-nums">{matchingRows.length}</span>
-                      </Button>
-                      {pipelineStatuses.map(({ status, label, count }) => (
+                        {['all', ...states.filter((value) => value !== 'all')].map((value) => (
+                          <Button
+                            key={value}
+                            size="sm"
+                            variant="ghost"
+                            className="studio-list-quick-filter"
+                            aria-pressed={state === value}
+                            onClick={() => setState(value)}
+                          >
+                            {value === 'all'
+                              ? 'All states'
+                              : value.charAt(0).toUpperCase() + value.slice(1)}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        role="group"
+                        aria-label="Filter loaded runs by status"
+                        className="studio-list-quick-views"
+                      >
+                        <p className="sr-only">Counts in loaded, searched results</p>
                         <Button
-                          key={label}
                           size="sm"
                           variant="ghost"
-                          aria-label={`Filter ${label}: ${count} runs`}
-                          aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
-                          onClick={() =>
-                            setState(
-                              state !== 'all' && pipelineSignal(state).label === label
-                                ? 'all'
-                                : status,
-                            )
-                          }
-                          className={cn(
-                            'h-8 min-w-0 max-w-full gap-2 rounded-md border px-2.5 text-xs',
-                            state !== 'all' && pipelineSignal(state).label === label
-                              ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
-                              : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
-                          )}
+                          aria-pressed={state === 'all'}
+                          aria-label={`All runs: ${matchingRows.length}`}
+                          onClick={() => setState('all')}
+                          className="studio-list-quick-filter"
                         >
-                          <span className="inline-flex items-center gap-1.5 text-xs">
-                            {label}{' '}
-                            <span className="tabular-nums text-muted-foreground">{count}</span>
-                          </span>
+                          All runs{' '}
+                          <span className="studio-list-filter-count">{matchingRows.length}</span>
                         </Button>
-                      ))}
-                    </div>
-                  )}
-                  {hasFilters && (
+                        {pipelineStatuses.map(({ status, label, count }) => (
+                          <Button
+                            key={label}
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Filter ${label}: ${count} runs`}
+                            aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
+                            onClick={() =>
+                              setState(
+                                state !== 'all' && pipelineSignal(state).label === label
+                                  ? 'all'
+                                  : status,
+                              )
+                            }
+                            className="studio-list-quick-filter"
+                          >
+                            <span className="truncate">{label}</span>
+                            <span className="studio-list-filter-count">{count}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
                     <Button
-                      className="h-8 text-xs"
-                      variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        setSearch('')
-                        setLinked('all')
-                        setState(defaultState)
-                        if (isJira) {
-                          setJiraFilters({})
-                          setProject('')
-                        }
-                        if (isJira) setSelected(null)
-                      }}
+                      variant="ghost"
+                      className="studio-list-filter-trigger"
+                      aria-label="Filters"
+                      aria-expanded={filtersOpen}
+                      aria-controls="work-list-filters"
+                      data-active={secondaryFilters > 0 || undefined}
+                      onClick={() => setFiltersOpen((value) => !value)}
                     >
-                      Clear filters
+                      <SlidersHorizontal className="size-3.5" />
+                      Filters
+                      {!!secondaryFilters && (
+                        <span className="studio-list-filter-count">{secondaryFilters}</span>
+                      )}
                     </Button>
-                  )}
+                  </div>
+                  <div id="work-list-filters" hidden={!filtersOpen}>
+                    <div className="studio-list-filter-fields">
+                      <ChoicePicker
+                        aria-label={mode === 'issues' ? 'Issue source' : 'Pipeline source'}
+                        className="h-8 w-auto max-w-72 text-xs"
+                        value={project}
+                        onValueChange={(value) => {
+                          void (chooseReader?.(value) ?? Promise.resolve())
+                            .then(() => setProject(value))
+                            .catch((cause: unknown) =>
+                              setError(cause instanceof Error ? cause.message : String(cause)),
+                            )
+                          setState('all')
+                        }}
+                      >
+                        <option value="">All sources</option>
+                        {sources.map((source) => (
+                          <option key={source.key} value={source.key}>
+                            {source.name} · {source.runtimeName}
+                          </option>
+                        ))}
+                      </ChoicePicker>
+                      {mode === 'issues' && (
+                        <ChoicePicker
+                          aria-label="Project links"
+                          className="h-8 w-auto text-xs"
+                          value={linked}
+                          onValueChange={setLinked}
+                        >
+                          <option value="all">All project links</option>
+                          <option value="unlinked">Not linked to a project</option>
+                          <option value="linked">Linked to a project</option>
+                        </ChoicePicker>
+                      )}
+                      <ChoicePicker
+                        aria-label="Sort results"
+                        className="h-8 w-auto text-xs"
+                        value={sort}
+                        onValueChange={setSort}
+                      >
+                        <option value="updated">Recently updated</option>
+                        <option value="project">Source</option>
+                        <option value="title">Title</option>
+                      </ChoicePicker>
+                      {(hasFilters || sort !== 'updated') && (
+                        <Button
+                          className="h-8 text-xs"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSearch('')
+                            setLinked('all')
+                            setState(defaultState)
+                            setProject('')
+                            setSort('updated')
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </div>
+          {pipelineRunNotice && (
+            <p
+              id="pipeline-run-notice"
+              className="flex flex-wrap items-center gap-x-2 border-b border-border/70 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span>{pipelineRunNotice}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => host.navigate({ viewId: 'source-control' })}
+              >
+                Sources
+              </Button>
+            </p>
+          )}
           {error && (
             <p role="alert" className="px-5 py-2 text-xs text-destructive">
               {error}
@@ -831,10 +853,8 @@ function WorkView({
                       setSearch('')
                       setLinked('all')
                       setState(defaultState)
-                      if (isJira) {
-                        setJiraFilters({})
-                        setProject('')
-                      }
+                      setProject('')
+                      if (isJira) setJiraFilters({})
                       if (isJira) setSelected(null)
                     }}
                   >

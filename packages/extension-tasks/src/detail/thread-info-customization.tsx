@@ -1,7 +1,7 @@
 import { orderedThreadInfoSections, moveThreadInfoSection } from '@dovo/protocol'
 import { readAppPreferences, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { DropdownMenu, IconButton } from '@dovo/studio-ui'
-import { ArrowUp, ArrowDown, Check, SlidersHorizontal, X } from 'lucide-react'
+import { ArrowUp, ArrowDown, Check, SlidersHorizontal } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 export function ThreadInfoCustomization() {
@@ -60,9 +60,9 @@ export function ThreadInfoCustomization() {
             </DropdownMenu.Label>
             <DropdownMenu.Item
               aria-label="Done customizing thread info"
-              className="flex size-7 items-center justify-center rounded-lg outline-none data-[highlighted]:bg-accent"
+              className="flex h-7 items-center justify-center rounded-lg px-2 outline-none data-[highlighted]:bg-accent"
             >
-              <X size={14} />
+              Done
             </DropdownMenu.Item>
           </div>
           <div className="px-4 py-2">

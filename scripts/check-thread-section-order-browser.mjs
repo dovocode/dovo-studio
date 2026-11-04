@@ -198,7 +198,14 @@ try {
   await chevron(workingSummary, false)
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
+  const resetOrder = dialog.getByRole('button', { name: 'Reset section order', exact: true })
+  assert.equal(await resetOrder.isDisabled(), true, 'Reset is disabled at the default order')
+  assert.match(
+    await dialog.innerText(),
+    /Needs input appears automatically below it and cannot be moved/,
+  )
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  assert.equal(await resetOrder.isEnabled(), true, 'Reset is available after reordering')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
   assert.deepEqual(await names(), ['Waiting', 'Open', 'Working'])
   assert.equal(
@@ -270,16 +277,20 @@ try {
     'Collapsed sections retain their state across cold starts',
   )
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).waitFor()
-  assert.equal(
-    await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).isDisabled(),
-    true,
-  )
+  const pinnedOrderRow = dialog.getByRole('listitem').filter({ hasText: 'Pinned' })
+  await pinnedOrderRow.getByText('Fixed first', { exact: true }).waitFor()
+  assert.equal(await pinnedOrderRow.getByRole('button').count(), 0)
+  assert.equal(await pinnedOrderRow.locator('svg.lucide-lock-keyhole').count(), 1)
   assert.equal(
     await dialog.getByRole('button', { name: 'Move settled down', exact: true }).isDisabled(),
     true,
   )
-  await dialog.getByRole('button', { name: 'Reset section order', exact: true }).click()
+  await resetOrder.click()
+  assert.equal(
+    await resetOrder.isDisabled(),
+    true,
+    'Reset becomes disabled after restoring defaults',
+  )
   assert.deepEqual(await page.evaluate(() => window.savedOrder()), [
     'pinned',
     'active',

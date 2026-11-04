@@ -22,7 +22,11 @@ import {
 } from './desktop-screens-data'
 import sampleImage from './assets/ui-polish-image.png'
 import { ComposerFixtureProvider } from './composer-fixture'
-import { busyDesktopDraft, busyDesktopWorkspace } from './desktop-busy-workspace'
+import {
+  busyDesktopDraft,
+  busyDesktopQuestion,
+  busyDesktopWorkspace,
+} from './desktop-busy-workspace'
 
 const readCache: RuntimeReadCache = {
   closed: false,
@@ -100,6 +104,10 @@ function ScreenWorkspace({
       ? {
           ...root.snapshot,
           workspace,
+          questions:
+            state === 'busy' || state === 'busy-long-draft'
+              ? [...root.snapshot.questions, busyDesktopQuestion]
+              : root.snapshot.questions,
           artifactsEnabled: true,
           terminals: [
             {

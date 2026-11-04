@@ -1,6 +1,7 @@
 import {
   decode,
   defaultTaskHarness,
+  pendingQuestionSchema,
   workspaceSchema,
   type Workspace,
 } from '../../../packages/protocol/src'
@@ -8,6 +9,25 @@ import { screenPull } from './desktop-screens-data'
 
 // Deliberately synthetic reading/overflow evidence; no live runtime or provider results.
 const date = '2026-10-21T10:00:00.000Z'
+export const busyDesktopQuestion = decode(pendingQuestionSchema, {
+  id: 'preview-busy-navigation-question',
+  taskId: 'preview-busy-navigation',
+  createdAt: date,
+  prompt: {
+    title: 'Confirm keyboard focus behavior',
+    questions: [
+      {
+        id: 'project-focus',
+        header: 'Project focus',
+        question: 'Where should keyboard focus move after switching projects?',
+        options: [
+          { value: 'thread', label: 'Selected thread' },
+          { value: 'project', label: 'Project heading' },
+        ],
+      },
+    ],
+  },
+})
 export const busyDesktopDraft = `Keep the blue accent and the current keyboard flow.
 Check the attached screenshot at desktop and mobile widths.
 Include remaining layout issues in the PR summary.`
@@ -199,6 +219,9 @@ export function busyDesktopWorkspace(base: Workspace, draft?: string): Workspace
         agentId: provider === 'claude' ? 'preview-claude' : 'preview-codex',
         harness: defaultTaskHarness(provider === 'claude' ? 'claude' : 'codex'),
         activeRunId: status === 'running' ? `preview-busy-run-${id}` : undefined,
+        waitingForFeedback: id === 'billing',
+        // Keep the lifecycle fixture snoozed regardless of the capture machine's clock.
+        snoozedUntil: id === 'onboarding' ? '2099-01-01T10:00:00.000Z' : undefined,
         createdAt: `2026-10-21T09:${String(50 - index).padStart(2, '0')}:00.000Z`,
         checkoutBranch: `feature/${id}`,
         messages: [

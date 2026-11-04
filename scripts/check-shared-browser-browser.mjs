@@ -1529,6 +1529,13 @@ try {
     'Changing profiles loads the current redirected URL',
   )
   const sourceBeforeOpen = await selected()
+  assert.equal(
+    await page
+      .locator(`[data-browser-tab-id="${sourceBeforeOpen.id}"] .studio-browser-tab-profile`)
+      .textContent(),
+    'This computer · Local Work',
+    'Regular tabs show readable names for nondefault profiles',
+  )
   await page.evaluate(async () => {
     window.openedLinks.push('http://localhost:3000/new-window')
     await window.pollBrowser()
@@ -2841,6 +2848,23 @@ try {
     'Home stays in the URL bar, not the pinned-tab panel',
   )
   await pins.first().getByLabel('This computer · Local Default').waitFor()
+  assert.equal(
+    await pins.first().getByLabel('This computer · Local Default').textContent(),
+    '',
+    'Default pins retain machine identity without cryptic profile initials',
+  )
+  assert.equal(
+    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
+    'LW',
+    'Nondefault pins retain compact profile identity',
+  )
+  assert.equal(
+    await compactSidebar
+      .locator('[data-browser-tab-id="compact-4"] .studio-browser-tab-profile')
+      .textContent(),
+    'This computer',
+    'Default regular tabs show readable machine identity without redundant profile initials',
+  )
   await controlsPage.evaluate(() =>
     window.setCleanup({
       browserProfiles: [

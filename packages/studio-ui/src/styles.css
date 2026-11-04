@@ -1237,7 +1237,7 @@ textarea {
 }
 .studio-browser-tab:not([data-pinned]) {
   display: grid;
-  grid-template-columns: 24px max-content minmax(0, 1fr) auto;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
   column-gap: 8px;
   padding: 6px 4px 6px 8px;
 }
@@ -3028,4 +3028,68 @@ a.studio-project-row:hover {
 }
 .studio-thread-info-links {
   border-bottom: 0;
+}
+
+/* Collection pages share compact quick views and one secondary-filter disclosure. */
+.studio-list-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.studio-list-quick-views {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.studio-list-quick-filter,
+.studio-list-filter-trigger {
+  height: 32px;
+  max-width: 100%;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.studio-list-filter-trigger {
+  flex-shrink: 0;
+}
+.studio-list-quick-filter[aria-pressed='true'],
+.studio-list-filter-trigger[data-active='true'],
+.studio-list-filter-trigger[aria-expanded='true'] {
+  border-color: transparent;
+  background: var(--studio-selected-fill);
+  color: var(--foreground);
+}
+.studio-list-filter-count {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-list-filter-fields {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+}
+@media (forced-colors: active) {
+  .studio-list-quick-filter[aria-pressed='true'],
+  .studio-list-filter-trigger[data-active='true'],
+  .studio-list-filter-trigger[aria-expanded='true'] {
+    outline: 1px solid Highlight;
+  }
+}
+
+:root[data-high-contrast='true'] .studio-list-quick-filter[aria-pressed='true'],
+:root[data-high-contrast='true'] .studio-list-filter-trigger[data-active='true'],
+:root[data-high-contrast='true'] .studio-list-filter-trigger[aria-expanded='true'] {
+  border-color: var(--primary);
 }

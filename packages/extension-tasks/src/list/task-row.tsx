@@ -53,6 +53,7 @@ import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
 import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
+  Draft: FilePenLine,
   Working: CircleDashed,
   Done: CircleCheck,
   Finished: CircleCheck,
@@ -220,11 +221,7 @@ function TaskRowView({
       ? presentation.time
       : ''
     : compactStatus
-  const StatusIcon = offline
-    ? CloudOff
-    : presentation.state === 'Draft'
-      ? undefined
-      : (statusIcons[presentation.state] ?? CircleDashed)
+  const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
   const statusTone = offline ? 'neutral' : presentation.tone
   const statusDetail = [
     status,
@@ -332,12 +329,6 @@ function TaskRowView({
                         'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                     )}
                   >
-                    {draft && (
-                      <FilePenLine
-                        aria-label="Draft"
-                        className="size-3.5 shrink-0 text-muted-foreground"
-                      />
-                    )}
                     <span
                       className="min-w-0 flex-1 truncate"
                       title={`${statusDetail} · ${agentDetail}`}
