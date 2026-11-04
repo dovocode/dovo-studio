@@ -434,14 +434,15 @@ function WorkView({
               title={mode === 'issues' ? (sourceKind === 'jira' ? 'Jira' : 'Issues') : 'Pipelines'}
             >
               <Button
-                size="sm"
-                variant="outline"
+                size="icon"
+                variant="ghost"
                 aria-label="Refresh"
+                title="Refresh"
+                className="size-8"
                 disabled={busy || !visiblePages.some((page) => page.reader.connected)}
                 onClick={refresh}
               >
                 <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
-                <span className="sr-only sm:not-sr-only">Refresh</span>
               </Button>
               {mode === 'issues' && (
                 <Button
@@ -500,7 +501,7 @@ function WorkView({
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col items-stretch gap-2">
                 <span className="text-xs text-muted-foreground">
                   {rows.length === matchingRows.length
                     ? `${rows.length} loaded`
@@ -508,7 +509,7 @@ function WorkView({
                   · {visibleSources.length} {visibleSources.length === 1 ? 'source' : 'sources'}
                 </span>
                 <SearchField
-                  containerClassName="ml-auto min-w-40 max-w-full flex-1 sm:max-w-72"
+                  containerClassName="order-first w-full min-w-0"
                   aria-label={`Search ${mode}`}
                   placeholder={
                     mode === 'issues'
@@ -712,7 +713,7 @@ function WorkView({
           <div
             ref={list}
             tabIndex={-1}
-            className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-3"
+            className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3"
           >
             <p
               role="status"
@@ -872,7 +873,7 @@ function WorkView({
                     type="button"
                     key={JSON.stringify([source.key, item.id])}
                     disabled={opening}
-                    className="block w-full min-w-0 rounded-lg px-3 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
+                    className="block w-full min-w-0 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
                     onClick={() => void open(source, item.id, item.url)}
                   >
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground">
@@ -936,7 +937,10 @@ function WorkView({
                               : 'Unassigned'}
                           </span>
                           {item.labels.slice(0, 3).map((label) => (
-                            <span className="rounded bg-muted px-1.5 py-0.5" key={label}>
+                            <span
+                              className="rounded bg-[var(--studio-selected-fill)] px-1.5 py-0.5 text-foreground"
+                              key={label}
+                            >
                               {label}
                             </span>
                           ))}

@@ -155,8 +155,8 @@ export function initializeArtifactExportEditor(
 const editorButton = (id: string, label: string, paths: string, disabled = false) =>
   `<button id="${id}" type="button" aria-label="${label}" title="${label}"${disabled ? ' disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg></button>`
 
-export const artifactExportEditorDocument = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src about:; base-uri 'none'; form-action 'none'"><style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;font:14px system-ui;color:#151515;background:#fff}body{display:flex;flex-direction:column}header{padding:10px 12px;border-bottom:1px solid #ddd;display:flex;flex-direction:column;gap:6px}.heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}p{margin:0;color:#666;font-size:12px}.row{display:flex;gap:3px;align-items:center}.divider{height:20px;width:1px;background:#ddd;margin:0 4px}button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:36px;height:36px;padding:8px;border:0;border-radius:8px;background:transparent;font:inherit;color:#555;cursor:pointer}button svg{width:18px;height:18px}button:hover:enabled{background:#f0f0f0;color:#151515}button[aria-pressed=true]{background:#e8f1fc;color:#1976d2}button:disabled{opacity:.3;cursor:default}button:focus-visible{outline:2px solid #1976d2;outline-offset:2px}#remove:hover:enabled{background:#fff0f0;color:#b91c1c}#apply{background:#151515;color:white}#apply:hover:enabled{background:#333;color:white}#status{flex:1;min-width:0}#canvas{flex:1;min-height:0;width:100%;border:0}@media(max-width:480px){button{width:44px;height:44px}.row{gap:1px}.divider{margin:0 2px}.heading p{width:100%}}
+export const artifactExportEditorDocument = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; frame-src about:; base-uri 'none'; form-action 'none'"><style>
+*{box-sizing:border-box}:root{color-scheme:light;--surface:#fff;--text:#242933;--muted:#5d6674;--edge:#dfe2e7;--hover:#f0f1f3;--selected:#e8eff9;--focus:#3565a1;--action:#242933;--action-text:#fff}:root[data-theme=dark]{color-scheme:dark;--surface:#181818;--text:#e6e6e6;--muted:#a3a3a3;--edge:#282828;--hover:#242424;--selected:#142432;--focus:#7cc9ff;--action:#e6e6e6;--action-text:#080808}html,body{margin:0;height:100%;font:14px Inter,system-ui,sans-serif;color:var(--text);background:var(--surface)}body{display:flex;flex-direction:column}header{padding:16px 20px;border-bottom:1px solid var(--edge);display:flex;flex-direction:column;gap:12px}.heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.heading strong{font-size:16px;font-weight:600;letter-spacing:-.02em}p{margin:0;color:var(--muted);font-size:12px}.row{display:flex;gap:4px;align-items:center}.divider{height:20px;width:1px;background:var(--edge);margin:0 8px}button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:36px;height:36px;padding:8px;border:1px solid transparent;border-radius:8px;background:transparent;font:inherit;color:var(--muted);cursor:pointer}button svg{width:18px;height:18px}button:hover:enabled{background:var(--hover);color:var(--text)}button[aria-pressed=true]{background:var(--selected);border-color:var(--focus);color:var(--text)}button:disabled{opacity:.4;cursor:default}button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}#remove:hover:enabled{color:#d75050}footer{display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;border-top:1px solid var(--edge)}footer button{width:auto;padding:8px 12px;color:var(--text)}#apply{background:var(--action);color:var(--action-text)}#apply:hover:enabled{background:var(--action);color:var(--action-text);filter:brightness(.94)}#status{flex:1;min-width:0}#canvas{flex:1;min-height:0;width:100%;border:0;background:white}@media(max-width:480px){button{min-height:44px;min-width:44px}.row{gap:1px}.divider{margin:0 2px}.heading p{width:100%}}
 </style></head><body><header><div class="heading"><strong>Export copy</strong><p>Only PDF / MHTML exports change. Saved source stays unchanged.</p></div><div class="row">
 ${editorButton('text', 'Edit text', '<path d="m16 3 5 5M4 20l4-1L21 6a2 2 0 0 0-4-4L4 15l-1 6Z"/>')}
 ${editorButton('pick', 'Select elements', '<path d="m4 3 7 18 2-8 8-2L4 3Z"/>')}
@@ -166,10 +166,18 @@ ${editorButton('remove', 'Delete element', '<path d="M3 6h18M9 6V4h6v2M5 6l1 14h
 ${editorButton('exclude', 'Exclude from export', '<path d="m3 3 18 18M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>', true)}
 <span class="divider" aria-hidden="true"></span>
 ${editorButton('undo', 'Undo removal / exclusion', '<path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 0 12"/>', true)}
-</div><div class="row"><p id="status" role="status">Preparing editor…</p>
-${editorButton('cancel', 'Discard edits', '<path d="m6 6 12 12M6 18 18 6"/>')}
-${editorButton('apply', 'Use edited copy', '<path d="m5 12 4 4L19 6"/>', true)}
-</div></header><iframe id="canvas" title="Editable export content" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe></body></html>`
+</div><p>Undo restores removed or excluded elements.</p><div class="row"><p id="status" role="status">Preparing editor…</p>
+</div></header><iframe id="canvas" title="Editable export content" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe><footer><button id="cancel" type="button">Cancel</button><button id="apply" type="button" disabled>Use edited copy</button></footer></body></html>`
+
+/** Theme only the editor chrome; exported document content keeps its original styles. */
+export function themedArtifactExportEditorDocument(theme: 'dark' | 'light', fontData = '') {
+  const font = /^data:font\/woff2;base64,[A-Za-z0-9+/=]+$/.test(fontData)
+    ? `@font-face{font-family:Inter;src:url("${fontData}") format("woff2");font-weight:100 900;font-display:swap}`
+    : ''
+  return artifactExportEditorDocument
+    .replace('<html>', `<html data-theme="${theme}">`)
+    .replace('<style>', `<style>${font}`)
+}
 
 export function artifactExportEditorHtml(content: string, nonce: string) {
   const argument = JSON.stringify(content).replace(/</g, '\\u003c')

@@ -2323,6 +2323,8 @@ select:focus-visible,
   border-top: 1px solid var(--border);
 }
 .studio-thread-info-content .studio-project-row {
+  padding-inline: 8px;
+  gap: 8px;
   min-width: 0;
   width: 100%;
   font-size: 12px;
@@ -2344,10 +2346,13 @@ select:focus-visible,
 .studio-thread-info-content .studio-project-chevron {
   width: 28px;
   height: 32px;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
 }
 .studio-thread-info-content [data-thread-info-section='scripts'] .studio-project-section,
 .studio-thread-info-content [data-thread-info-section='openIn'] .studio-project-section {
-  padding: 8px;
+  padding: 4px 0;
 }
 .studio-project-popover::-webkit-scrollbar {
   width: 4px;
@@ -2444,7 +2449,6 @@ a.studio-project-row:hover {
 .studio-project-changes {
   margin-top: 0;
   border: 0;
-  padding-top: 6px;
 }
 .studio-project-split-row {
   display: flex;
@@ -2764,8 +2768,7 @@ a.studio-project-row:hover {
   display: none;
 }
 .studio-thread-info-links
-  > [data-thread-info-section]:not(:empty)
-  ~ [data-thread-info-section]:not(:empty) {
+  > :is([data-thread-info-section='git'], [data-thread-info-section='projects']):not(:empty) {
   border-top: 1px solid var(--border);
 }
 .studio-thread-info-links .studio-project-section {
@@ -2802,26 +2805,6 @@ a.studio-project-row:hover {
   background: var(--card);
   box-shadow: none;
   resize: none;
-}
-
-/* Thread context occupies its own column rather than covering the conversation. */
-@media (min-width: 1100px) {
-  [data-project-panel-frame][data-info-open][data-info-docked='true'] {
-    padding-right: 340px;
-  }
-  .studio-thread-info-anchor[data-docked] {
-    inset-inline: 0;
-    top: 0;
-  }
-  .studio-project-popover[data-docked] {
-    width: 340px;
-    height: 100%;
-    border: 0;
-    border-left: 1px solid var(--border);
-    border-radius: 0;
-    background: var(--background);
-    box-shadow: none;
-  }
 }
 
 .task-composer:has([aria-label='Composer activity']) .studio-composer {
@@ -2876,15 +2859,6 @@ a.studio-project-row:hover {
   width: auto;
   max-width: 100%;
 }
-.studio-thread-info-content .studio-project-row {
-  padding-inline: 0;
-  gap: 8px;
-}
-.studio-thread-info-content
-  > :is([data-thread-info-section='scripts'], [data-thread-info-section='openIn'])
-  .studio-project-section {
-  padding-inline: 0;
-}
 
 .studio-settings-page {
   container: settings / inline-size;
@@ -2904,14 +2878,4 @@ a.studio-project-row:hover {
 .studio-thread-info-content
   > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts']) {
   border-bottom: 0;
-}
-.studio-thread-info-content
-  > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts'])
-  .studio-project-section {
-  padding-block: 4px;
-}
-.studio-thread-info-links
-  > [data-thread-info-section]:not(:empty)
-  ~ [data-thread-info-section]:not(:empty) {
-  border-top: 0;
 }

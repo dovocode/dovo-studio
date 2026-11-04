@@ -28,8 +28,8 @@ import {
   MessageSquare,
   MessageCircleQuestion,
   Smartphone,
-  Maximize2,
-  Minimize2,
+  PanelRightOpen,
+  PanelRightClose,
   PanelBottom,
   Terminal,
   FolderSymlink,
@@ -282,12 +282,12 @@ export function TaskHeader({
                 <PanelBottom size={15} />
               </IconButton>
               <IconButton
-                label={toolsExpanded ? 'Collapse tools pane' : 'Expand tools pane'}
+                label={toolsExpanded ? 'Hide tools pane' : 'Show tools pane'}
                 aria-pressed={toolsExpanded}
                 className="size-7"
                 onClick={onTools}
               >
-                {toolsExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                {toolsExpanded ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
               </IconButton>
             </div>
           </header>

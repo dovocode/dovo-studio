@@ -250,6 +250,16 @@
 }
 
 /* Shared controls use palette-derived layers; caller utilities can still override them. */
+.dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) + [data-slot='dialog-description'] {
+  margin-top: -10px;
+}
+.dovo-dialog-content :is([data-choice-picker], [data-slot='select-trigger']) {
+  background-color: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+  border-color: var(--input);
+  border-radius: 8px;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+}
 @layer base {
   :where(input, textarea, button):is(
     [data-slot='input'],

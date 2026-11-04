@@ -70,11 +70,14 @@ function ComputerResources({
   )
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Entries set at {settingsScopeLabels[selectedScope]} replace inherited entries with the same
-        name. Reset an override to use the inherited one again. MCP credentials shared across
-        computers must reference environment variables on each computer.
-      </p>
+      <details className="text-xs leading-relaxed text-muted-foreground">
+        <summary className="cursor-pointer">How resource overrides work</summary>
+        <p className="mt-2">
+          Entries set at {settingsScopeLabels[selectedScope]} replace inherited entries with the
+          same name. Reset an override to use the inherited one again. MCP credentials shared across
+          computers must reference environment variables on each computer.
+        </p>
+      </details>
       {!scopes.length && (
         <p className="rounded-md border p-4 text-xs text-muted-foreground">
           Add a project or custom agent to manage its resources.

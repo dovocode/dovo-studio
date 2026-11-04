@@ -42,7 +42,7 @@ export function SettingsScopePage({
           className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-6"
           aria-label="Settings target"
         >
-          <div className={`mx-auto ${width} flex flex-wrap items-center gap-2 text-xs`}>
+          <div className={`${width} flex flex-wrap items-center gap-2 text-xs`}>
             <span className="max-w-full break-words text-xs font-medium">{summary.title}</span>
             <Popover.Root>
               <Popover.Trigger asChild>

@@ -50,7 +50,7 @@ export const appSettingsExtension = defineStudioExtension(
       ],
       navigationGroup: 'settings',
       settingsScope: 'device',
-      title: 'Task list & projects',
+      title: 'Thread list & projects',
       icon: 'tasks',
       order: 2.9,
       settingsSection: 'coding',

@@ -100,14 +100,15 @@ export function ComposerActivity({
                 <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-foreground">
                   {count}
                 </span>
-                <span aria-hidden className="flex size-3 shrink-0 items-center justify-center">
-                  {notice &&
-                    (value === 'queue' ? (
+                {notice && (
+                  <span aria-hidden className="flex size-3 shrink-0 items-center justify-center">
+                    {value === 'queue' ? (
                       <Pause className="size-3 text-status-warning" />
                     ) : (
                       <CircleAlert className="size-3 text-status-warning" />
-                    ))}
-                </span>
+                    )}
+                  </span>
+                )}
               </>
             )
             return both ? (

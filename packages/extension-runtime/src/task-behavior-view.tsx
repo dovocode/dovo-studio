@@ -14,7 +14,7 @@ function ComputerDefaultsLink() {
         host.navigate({ viewId: 'running-tasks', entityId: activeRuntimeId ?? undefined })
       }
     >
-      Open computer running-task defaults
+      Open computer running-thread defaults
     </Button>
   )
 }
@@ -29,16 +29,19 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
   }, [entityId, setTarget])
   return (
     <SettingsScopePage
-      title="Task lifecycle"
-      description="Recovery, settling and archiving for new and existing tasks."
+      title="Thread lifecycle"
+      description="Recovery, settling and archiving for new and existing threads."
     >
       {({ scope, repository }) => (
         <>
-          <p className="text-xs text-muted-foreground">
-            Project on computer overrides Project, then Computer, then shared defaults. Restart and
-            PR settling fall back to the computer defaults when all levels inherit. Archiving falls
-            back to the computer’s inactivity policy when no scoped rule is set.
-          </p>
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer">How inherited lifecycle rules work</summary>
+            <p className="mt-2">
+              Project on computer overrides Project, then Computer, then shared defaults. Restart
+              and PR settling fall back to the computer defaults when all levels inherit. Archiving
+              falls back to the computer’s inactivity policy when no scoped rule is set.
+            </p>
+          </details>
           <ComputerDefaultsLink />
           <TaskBehaviorSettings scope={scope} repository={repository} />
         </>

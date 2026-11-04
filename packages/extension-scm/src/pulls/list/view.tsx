@@ -421,7 +421,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                         aria-label={item.label}
                         aria-pressed={personal === item.id}
                         title={`${item.count} in loaded, filtered results`}
-                        className={`my-1 h-8 shrink-0 rounded-md border px-2.5 text-xs ${personal === item.id ? 'border-primary/30 bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                        className={`my-1 h-8 shrink-0 rounded-md border px-2.5 text-xs ${personal === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                         onClick={() => {
                           setPersonal(item.id)
                           setMarked([])

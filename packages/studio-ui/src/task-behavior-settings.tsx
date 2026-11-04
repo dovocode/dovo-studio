@@ -185,8 +185,8 @@ export function TaskBehaviorSettings({
       )}
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
-          title="Task lifecycle"
-          description="Applies to existing and new tasks. Inherit uses the parent scope."
+          title="Thread lifecycle"
+          description="Applies to existing and new threads. Inherit uses the parent scope."
         >
           {fields.map(([key, label, description]) => (
             <SettingRow

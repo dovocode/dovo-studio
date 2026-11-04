@@ -74,6 +74,49 @@ try {
       return { type: result.type, width: c.width, height: c.height, pixel }
     })
   await ready()
+  // View controls must preserve source pixels and editing coordinates.
+  await frame.getByRole('button', { name: '100%', exact: true }).click()
+  for (let i = 0; i < 7; i++)
+    await frame.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  assert.equal(await frame.locator('canvas').evaluate((c) => c.getBoundingClientRect().width), 1600)
+  const stage = frame.locator('#stage')
+  const beforePan = await stage.evaluate((e) => ({ x: e.scrollLeft, y: e.scrollTop }))
+  await frame.getByRole('button', { name: 'Pan', exact: true }).click()
+  const viewport = await stage.boundingBox()
+  await page.mouse.move(viewport.x + viewport.width / 2, viewport.y + viewport.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(
+    viewport.x + viewport.width / 2 - 60,
+    viewport.y + viewport.height / 2 - 40,
+    { steps: 6 },
+  )
+  await page.mouse.up()
+  const afterPan = await stage.evaluate((e) => ({ x: e.scrollLeft, y: e.scrollTop }))
+  assert.ok(afterPan.x > beforePan.x + 50, 'Pan must scroll horizontally')
+  assert.ok(afterPan.y > beforePan.y + 30, 'Pan must scroll vertically')
+  assert.equal(await frame.getByRole('button', { name: 'Undo', exact: true }).isDisabled(), true)
+  await frame.getByRole('button', { name: 'Attach image', exact: true }).click()
+  await page.waitForFunction(() => window.results.length === 1)
+  assert.deepEqual(
+    await output(),
+    { type: 'original' },
+    'View-only operations must retain the original source',
+  )
+  await page.evaluate(() => window.openEditor())
+  await ready()
+  await frame.getByRole('button', { name: '100%', exact: true }).click()
+  await frame.getByRole('button', { name: 'Zoom out', exact: true }).click()
+  await drag(0.15, 0.5, 0.85, 0.5)
+  await frame.getByRole('button', { name: 'Attach image', exact: true }).click()
+  await page.waitForFunction(() => window.results.length === 1)
+  const zoomedEdit = await output()
+  assert.deepEqual([zoomedEdit.width, zoomedEdit.height], [400, 240])
+  assert.ok(
+    zoomedEdit.pixel[0] > 180 && zoomedEdit.pixel[1] < 150,
+    'Zoomed drawing must map to source pixels',
+  )
+  await page.evaluate(() => window.openEditor())
+  await ready()
   for (const [key, label] of [
     ['h', 'Highlight'],
     ['a', 'Arrow'],

@@ -120,7 +120,7 @@ function useRuntimePreferences(onSaved?: () => void) {
   }
 }
 
-/** Settings → Computers → Running tasks: what this computer does with tasks on its own. Stored
+/** Settings → Computers → Running threads: what this computer does with tasks on its own. Stored
  * on the computer, so every device that manages it sees the same choices. */
 export function RunningTaskPreferences() {
   const { snapshot } = useWorkspace()
@@ -156,7 +156,7 @@ export function RunningTaskPreferences() {
         {value?.enableAutoProjectSelection && (
           <SettingRow
             label="Scope model mode"
-            description="Independent of normal task defaults. Inherit uses the selected project's harness/model; Tune chooses a model within it; Maestro chooses both."
+            description="Independent of normal thread defaults. Inherit uses the selected project's harness/model; Tune chooses a model within it; Maestro chooses both."
           >
             <Select
               value={value.autoProjectModelSelection}
@@ -219,11 +219,11 @@ export function RunningTaskPreferences() {
       </SettingsGroup>
       <SettingsGroup title="After a restart">
         <SettingRow
-          label="Continue interrupted tasks"
-          description="Computer default for tasks set to Inherit. Resumes interrupted turns; queued messages stay paused. Stopped tasks and automations still need Retry."
+          label="Continue interrupted threads"
+          description="Computer default for threads set to Inherit. Resumes interrupted turns; queued messages stay paused. Stopped threads and automations still need Retry."
         >
           <Toggle
-            label="Continue interrupted tasks after a runtime restart"
+            label="Continue interrupted threads after a runtime restart"
             checked={value?.autoContinueAfterRestart ?? false}
             disabled={disabled}
             onChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}
@@ -237,13 +237,13 @@ export function RunningTaskPreferences() {
           onSave={(maxActiveChildAgents) => save({ maxActiveChildAgents })}
         />
       </SettingsGroup>
-      <SettingsGroup title="While tasks run">
+      <SettingsGroup title="While threads run">
         <SettingRow
           label="Keep this computer awake"
-          description="macOS only. Prevents idle sleep while a task is working. The display can still sleep."
+          description="macOS only. Prevents idle sleep while a thread is working. The display can still sleep."
         >
           <Toggle
-            label="Keep this computer awake while tasks run"
+            label="Keep this computer awake while threads run"
             checked={value?.preventSleepWhileRunning ?? false}
             disabled={disabled}
             onChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
@@ -252,8 +252,8 @@ export function RunningTaskPreferences() {
       </SettingsGroup>
       <SettingsGroup title="Archiving">
         <SettingRow
-          label="Auto-archive inactive tasks"
-          description="Computer fallback when no scoped archiving rule is set. A scoped On archives after time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned tasks and open terminals are protected."
+          label="Auto-archive inactive threads"
+          description="Computer fallback when no scoped archiving rule is set. A scoped On archives after time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned threads and open terminals are protected."
         >
           <Select
             disabled={disabled}
@@ -267,7 +267,7 @@ export function RunningTaskPreferences() {
               })
             }
           >
-            <SelectTrigger aria-label="Auto-archive inactive tasks" className="min-w-36">
+            <SelectTrigger aria-label="Auto-archive inactive threads" className="min-w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -321,11 +321,11 @@ export function PullRequestPreferences() {
       </SettingsGroup>
       <SettingsGroup
         title="When a pull request closes"
-        description="Applies when the main pull request is merged or closed. Pinned tasks and tasks with active work stay put."
+        description="Applies when the main pull request is merged or closed. Pinned threads and threads with active work stay put."
       >
         <SettingRow
           label="Settle when the PR closes"
-          description="Computer default for tasks set to Inherit. Moves the thread to Settled and keeps its history. Archiving below takes priority; queued work stays put."
+          description="Computer default for threads set to Inherit. Moves the thread to Settled and keeps its history. Archiving below takes priority; queued work stays put."
         >
           <Toggle
             label="Settle when the PR closes"
@@ -336,7 +336,7 @@ export function PullRequestPreferences() {
         </SettingRow>
         <SettingRow
           label="Archive when the PR closes"
-          description="Moves the task out of your list. Restore it later from Archived tasks."
+          description="Moves the thread out of your list. Restore it later from Archived threads."
         >
           <Toggle
             label="Archive when the PR closes"
@@ -492,7 +492,7 @@ export function ActivityRetention() {
       <SettingsGroup title="Retention">
         <SettingRow
           label="Keep activity history"
-          description={`Older requests, tool details and message history are deleted from this computer in the background. Task conversations themselves are kept. CLI diagnostics and raw provider events expire after ${DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.`}
+          description={`Older requests, tool details and message history are deleted from this computer in the background. Thread conversations themselves are kept. CLI diagnostics and raw provider events expire after ${DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.`}
         >
           <Select
             disabled={disabled}
@@ -542,11 +542,11 @@ export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) 
       </SettingsGroup>
       <SettingsGroup title="Cleanup">
         <SettingRow
-          label="Remove worktrees of archived tasks"
-          description="Removes clean Dovo checkouts in the background, including ignored local files. Keeps branches and uncommitted changes. Restoring a task recreates its checkout."
+          label="Remove worktrees of archived threads"
+          description="Removes clean Dovo checkouts in the background, including ignored local files. Keeps branches and uncommitted changes. Restoring a thread recreates its checkout."
         >
           <Toggle
-            label="Remove worktrees of archived tasks"
+            label="Remove worktrees of archived threads"
             checked={value?.removeArchivedWorktrees ?? false}
             disabled={disabled}
             onChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
@@ -664,7 +664,7 @@ function BranchPrefix({
       label="Branch prefix"
       description={
         <>
-          New task branches start with this, e.g.{' '}
+          New thread branches start with this, e.g.{' '}
           <code className="font-mono">{normalized || ''}fix-login-1a2b3c4d</code>. Leave empty for
           none. Existing branches keep their names.
           {!valid && (

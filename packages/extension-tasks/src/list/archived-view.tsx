@@ -5,8 +5,8 @@ import { responses, useRuntimeSources, useWorkspace } from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 import { Archive, Search } from 'lucide-react'
 
-/** Archived tasks across every computer, restorable in place (Codex and T3 Code keep this in
- * settings rather than as a task-list filter). */
+/** Archived threads across every computer, restorable in place (Codex and T3 Code keep this in
+ * settings rather than as a thread-list filter). */
 export default function ArchivedTasksView() {
   const sources = useRuntimeSources()
   const { readRuntime, refreshRuntime } = useWorkspace()
@@ -55,16 +55,16 @@ export default function ArchivedTasksView() {
   }
   return (
     <SettingsPage
-      title="Archived tasks"
-      description="Archived tasks from all your computers. Restore one to return it to your task list."
+      title="Archived threads"
+      description="Archived threads from all your computers. Restore one to return it to your thread list."
     >
       <p className="text-xs text-muted-foreground">
-        Conversations are kept. If its checkout was cleaned up, restoring the task recreates it from
-        the saved branch.
+        Conversations are kept. If its checkout was cleaned up, restoring the thread recreates it
+        from the saved branch.
       </p>
       {sources.some((source) => !source.connected) && (
         <p role="status" className="text-xs text-muted-foreground">
-          Offline computers show saved tasks. Reconnect them to restore a task.
+          Offline computers show saved threads. Reconnect them to restore a thread.
         </p>
       )}
       <div className="relative">
@@ -73,8 +73,8 @@ export default function ArchivedTasksView() {
           className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
         />
         <Input
-          aria-label="Search archived tasks"
-          placeholder="Search archived tasks"
+          aria-label="Search archived threads"
+          placeholder="Search archived threads"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           className="h-9 pl-8 text-sm"
@@ -87,7 +87,7 @@ export default function ArchivedTasksView() {
       )}
       {!!rows.length && (
         <p role="status" className="text-xs text-muted-foreground">
-          {rows.length} archived task{rows.length === 1 ? '' : 's'}
+          {rows.length} archived thread{rows.length === 1 ? '' : 's'}
           {query.trim() ? ' matching your search' : ''}
         </p>
       )}
@@ -122,11 +122,11 @@ export default function ArchivedTasksView() {
       ) : (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <Archive aria-hidden="true" className="size-6 text-muted-foreground" />
-          <p className="text-sm">{query ? 'No archived tasks match' : 'No archived tasks'}</p>
+          <p className="text-sm">{query ? 'No archived threads match' : 'No archived threads'}</p>
           <p className="text-xs text-muted-foreground">
             {query.trim()
-              ? 'Try another task title, project or computer name.'
-              : 'Archive a task from its menu to keep your list focused.'}
+              ? 'Try another thread title, project or computer name.'
+              : 'Archive a thread from its menu to keep your list focused.'}
           </p>
         </div>
       )}

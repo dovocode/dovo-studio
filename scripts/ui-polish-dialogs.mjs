@@ -338,6 +338,11 @@ export async function captureFollowUpDialogs(page, origin, output) {
           await page.mouse.up()
           await frame.getByText('Keyboard shortcuts', { exact: true }).click()
           await page.screenshot({ path: resolve(output, `image-editor-shortcuts-${mode}.png`) })
+          await frame.getByRole('button', { name: '100%', exact: true }).click()
+          for (let i = 0; i < 4; i++)
+            await frame.getByRole('button', { name: 'Zoom in', exact: true }).click()
+          await frame.getByRole('button', { name: 'Pan', exact: true }).click()
+          await page.screenshot({ path: resolve(output, `image-editor-zoom-${mode}.png`) })
           await frame.getByRole('button', { name: 'Cancel', exact: true }).click()
         } else if (name === 'add-agent') {
           const dialog = page.getByRole('dialog').last()
@@ -358,6 +363,18 @@ export async function captureFollowUpDialogs(page, origin, output) {
             'Agent setup completion stays inside the dialog viewport',
           )
           await page.screenshot({ path: resolve(output, `add-agent-model-${mode}.png`) })
+          await dialog
+            .locator('summary')
+            .filter({ hasText: 'Connection & account' })
+            .scrollIntoViewIfNeeded()
+          const afterScroll = await completion.boundingBox()
+          assert.ok(
+            afterScroll &&
+              dialogBox &&
+              afterScroll.y + afterScroll.height <= dialogBox.y + dialogBox.height,
+            'Agent completion remains visible after scrolling provider options',
+          )
+          await page.screenshot({ path: resolve(output, `add-agent-model-scrolled-${mode}.png`) })
           await page.keyboard.press('Escape')
         } else await page.keyboard.press('Escape')
       } catch (error) {

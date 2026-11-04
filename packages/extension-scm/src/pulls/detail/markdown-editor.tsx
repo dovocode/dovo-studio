@@ -36,7 +36,8 @@ export function PullMarkdownEditor({
           <Button
             type="button"
             size="sm"
-            variant={!preview ? 'secondary' : 'ghost'}
+            variant="ghost"
+            className={!preview ? 'studio-selected-surface' : undefined}
             aria-pressed={!preview}
             disabled={disabled}
             onClick={() => setPreview(false)}
@@ -46,7 +47,8 @@ export function PullMarkdownEditor({
           <Button
             type="button"
             size="sm"
-            variant={preview ? 'secondary' : 'ghost'}
+            variant="ghost"
+            className={preview ? 'studio-selected-surface' : undefined}
             aria-pressed={preview}
             onClick={() => setPreview(true)}
           >

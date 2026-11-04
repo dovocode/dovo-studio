@@ -144,7 +144,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   'expo-router': `export const router={canGoBack:()=>!!window.artifactHistory,back:()=>window.artifactBackRoute=window.artifactHistory,replace:href=>window.artifactBackRoute=href};`,
   // Keep account/feed hooks real; these local-artifact scenarios have no account host.
-  '@dovo/studio-core': `export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target,taskNavigationGuard:()=>{const epoch=window.navigationEpoch;return ()=>epoch===window.navigationEpoch}});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({workspace:{tasks:[]},request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
+  '@dovo/studio-core': `export {imageEditorFont as offlineEditorFont} from '${root}packages/client-runtime/src/images/image-editor-script.ts';export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target,taskNavigationGuard:()=>{const epoch=window.navigationEpoch;return ()=>epoch===window.navigationEpoch}});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({workspace:{tasks:[]},request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${uiRoot}lib/utils.ts';
@@ -934,10 +934,10 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     // Reopening the edit copy, then discarding, retains the previously applied draft.
     await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
     await editHeading('Discard this change')
-    await editor.getByRole('button', { name: 'Discard edits', exact: true }).click()
+    await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
     await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
     assert.equal(await editing.locator('#keep h1').textContent(), 'Edited export heading')
-    await editor.getByRole('button', { name: 'Discard edits', exact: true }).click()
+    await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
     await view.getByRole('button', { name: 'Reset edits', exact: true }).click()
     assert.equal(await view.getByRole('button', { name: 'Reset edits', exact: true }).count(), 0)
     assert.ok(

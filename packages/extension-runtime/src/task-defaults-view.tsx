@@ -9,7 +9,7 @@ export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
   }, [entityId, setTarget])
   return (
     <SettingsScopePage
-      title="Task defaults"
+      title="Thread defaults"
       description="Choose the agent, access and workspace for new tasks."
     >
       {({ scope, repository }) => (

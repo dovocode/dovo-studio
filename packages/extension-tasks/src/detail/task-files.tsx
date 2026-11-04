@@ -611,7 +611,7 @@ export function TaskFiles({
         </div>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className={selected ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'hidden'}>
           {selected ? (
             <>
               {readError && !drafts.get(draftKey) ? (
@@ -725,12 +725,17 @@ export function TaskFiles({
         </div>
         <ResizableSidebar
           preference="projectFilesSidebarWidth"
+          resizable={!!selected}
           side="left"
           label="project file tree"
           maxFraction={0.4}
           maxWidth={640}
           aria-label="Project file tree"
-          className="order-first flex min-h-0 flex-col border-r bg-background"
+          className={
+            selected
+              ? 'order-first flex min-h-0 flex-col border-r bg-background'
+              : 'order-first flex min-h-0 flex-1 flex-col bg-background'
+          }
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
             <ProjectFileBrowser

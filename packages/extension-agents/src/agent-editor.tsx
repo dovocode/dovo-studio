@@ -123,7 +123,7 @@ export function AgentEditor({
       )}
       <form
         ref={form}
-        className={inline ? 'space-y-5' : 'min-h-0 overflow-y-auto'}
+        className={inline ? 'space-y-5' : 'flex min-h-0 flex-col'}
         onSubmit={(event) => {
           event.preventDefault()
           if (creating && step < 2) {
@@ -176,347 +176,362 @@ export function AgentEditor({
             })
         }}
       >
-        <fieldset disabled={busy || !connected} className="min-w-0 space-y-5">
-          <div className="space-y-5">
-            {creating && step === 0 && (
-              <section className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-semibold">Choose a provider</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Start with your provider’s normal installation and login.
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {availableProviders
-                    .filter((id) => id !== 'acp')
-                    .map((id) => (
-                      <Button
-                        key={id}
-                        type="button"
-                        variant="outline"
-                        className={`h-auto min-h-10 justify-start gap-2 whitespace-normal p-3 text-left ${agent.provider === id ? 'border-primary/40 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60'}`}
-                        aria-pressed={agent.provider === id}
-                        onClick={() => setAgent(changeAgentProvider(agent, id))}
-                      >
-                        <AgentAvatar provider={id} className="size-5" />
-                        <span>{providerDisplayName(id)}</span>
-                        {agent.provider === id && <Check className="ml-auto size-3.5" />}
-                      </Button>
-                    ))}
-                </div>
-                <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                  <summary className="cursor-pointer text-xs font-medium">
-                    More agents from the ACP registry
-                  </summary>
-                  <div className="mt-3">
-                    <AcpRegistry agent={changeAgentProvider(agent, 'acp')} onChange={setAgent} />
+        <div className={inline ? undefined : 'min-h-0 flex-1 overflow-y-auto pb-5'}>
+          <fieldset disabled={busy || !connected} className="min-w-0 space-y-5">
+            <div className="space-y-5">
+              {creating && step === 0 && (
+                <section className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Choose a provider</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Start with your provider’s normal installation and login.
+                    </p>
                   </div>
-                </details>
-              </section>
-            )}
-            {(step === 1 || !creating) && (
-              <section className="space-y-4">
-                {!creating && <h3 className="text-sm font-semibold">Profile</h3>}
-                <FormField layout="settings" label="Name">
-                  <Input
-                    aria-label="Name"
-                    required
-                    value={agent.name}
-                    placeholder="Give this profile a name"
-                    onChange={(event) => setAgent({ ...agent, name: event.target.value })}
-                  />
-                </FormField>
-                {!creating && !fixedProvider && (
-                  <FormField layout="settings" label="Provider">
-                    <Select
-                      value={agent.provider}
-                      onValueChange={(value) =>
-                        setAgent(
-                          changeAgentProvider(agent, decode(agentSchema.fields.provider, value)),
-                        )
-                      }
-                    >
-                      <SelectTrigger aria-label="Provider" className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableProviders.map((id) => (
-                          <SelectItem key={id} value={id}>
-                            {providerDisplayName(id)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormField>
-                )}
-                <details
-                  className="text-xs text-muted-foreground"
-                  open={creating ? true : undefined}
-                >
-                  <summary className="cursor-pointer">Profile icon</summary>
-                  <div role="group" aria-label="Agent icon" className="mt-3 flex flex-wrap gap-1.5">
-                    {Object.entries(agentIconChoices).map(([id, { label, icon: Icon }]) => (
-                      <label key={id} title={label} className="cursor-pointer">
-                        <input
-                          type="radio"
-                          name="agent-icon"
-                          value={id}
-                          aria-label={label}
-                          checked={(agent.icon ?? 'bot') === id}
-                          onChange={() =>
-                            setAgent({
-                              ...agent,
-                              icon: decode(
-                                Schema.required(agentSchema.fields.icon.schema.schema),
-                                id,
-                              ),
-                            })
-                          }
-                          className="peer sr-only"
-                        />
-                        <span className="flex size-8 items-center justify-center rounded-md border border-transparent peer-checked:border-primary/40 peer-checked:bg-[var(--studio-selected-fill)] peer-checked:text-foreground peer-checked:[background-image:var(--studio-selected-gradient)] peer-checked:[box-shadow:var(--studio-glow)] peer-focus-visible:ring-2 peer-focus-visible:ring-ring hover:bg-muted">
-                          <Icon size={15} />
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </details>
-              </section>
-            )}
-            {step === 2 && (
-              <>
-                <section className="space-y-4 border-t pt-5">
-                  <h3 className="text-sm font-semibold">Model & behavior</h3>
-                  {agent.provider === 'acp' && (
-                    <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
-                  )}
-                  <ModelSettings agent={agent} onChange={setAgent} />
-                  {(agent.provider === 'claude' || agent.provider === 'codex') && (
-                    <FormField layout="settings" label="Cloud integrations">
-                      <div className="space-y-2">
-                        <Select
-                          value={
-                            agent.cloudIntegrations === undefined
-                              ? 'default'
-                              : String(agent.cloudIntegrations)
-                          }
-                          onValueChange={(value) => {
-                            if (!value) return
-                            setAgent({
-                              ...agent,
-                              cloudIntegrations: value === 'default' ? undefined : value === 'true',
-                            })
-                          }}
+                  <div className="grid grid-cols-2 gap-2">
+                    {availableProviders
+                      .filter((id) => id !== 'acp')
+                      .map((id) => (
+                        <Button
+                          key={id}
+                          type="button"
+                          variant="outline"
+                          className={`h-auto min-h-10 justify-start gap-2 whitespace-normal p-3 text-left ${agent.provider === id ? 'border-primary/40 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60'}`}
+                          aria-pressed={agent.provider === id}
+                          onClick={() => setAgent(changeAgentProvider(agent, id))}
                         >
-                          <SelectTrigger aria-label="Cloud integrations" className="h-9 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="default">Provider default</SelectItem>
-                            <SelectItem value="true">Enabled</SelectItem>
-                            <SelectItem value="false">Disabled</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs font-normal leading-relaxed text-muted-foreground">
-                          Use apps already connected to your{' '}
-                          {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
-                          Google Drive or Slack. Requires account sign-in on the computer running
-                          the task. Provider restrictions and tool approvals still apply.
-                        </p>
-                      </div>
-                    </FormField>
-                  )}
-                  <FormField layout="settings" label="Access mode">
-                    <div className="space-y-2">
+                          <AgentAvatar provider={id} className="size-5" />
+                          <span>{providerDisplayName(id)}</span>
+                          {agent.provider === id && <Check className="ml-auto size-3.5" />}
+                        </Button>
+                      ))}
+                  </div>
+                  <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                    <summary className="cursor-pointer text-xs font-medium">
+                      More agents from the ACP registry
+                    </summary>
+                    <div className="mt-3">
+                      <AcpRegistry agent={changeAgentProvider(agent, 'acp')} onChange={setAgent} />
+                    </div>
+                  </details>
+                </section>
+              )}
+              {(step === 1 || !creating) && (
+                <section className="space-y-4">
+                  {!creating && <h3 className="text-sm font-semibold">Profile</h3>}
+                  <FormField layout="settings" label="Name">
+                    <Input
+                      aria-label="Name"
+                      required
+                      value={agent.name}
+                      placeholder="Give this profile a name"
+                      onChange={(event) => setAgent({ ...agent, name: event.target.value })}
+                    />
+                  </FormField>
+                  {!creating && !fixedProvider && (
+                    <FormField layout="settings" label="Provider">
                       <Select
-                        value={
-                          permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission
-                        }
-                        onValueChange={(value) => {
-                          // Radix's form bridge emits an empty value while switching to Custom.
-                          if (!value || value === 'custom') return
+                        value={agent.provider}
+                        onValueChange={(value) =>
                           setAgent(
-                            selectPermissionPreset(
-                              agent,
-                              decode(agentSchema.fields.permission, value),
-                            ),
+                            changeAgentProvider(agent, decode(agentSchema.fields.provider, value)),
                           )
-                        }}
+                        }
                       >
-                        <SelectTrigger aria-label="Access mode" className="h-9 text-xs">
+                        <SelectTrigger aria-label="Provider" className="h-9 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {permissionPolicyLabel(agent) === 'Custom' && (
-                            <SelectItem value="custom" disabled>
-                              Custom
-                            </SelectItem>
-                          )}
-                          {accessModes.map((mode) => (
-                            <SelectItem
-                              key={mode.id}
-                              value={mode.id}
-                              disabled={!supportsAccess(agent.provider, mode.id)}
-                            >
-                              {mode.name}
-                              {supportsAccess(agent.provider, mode.id) ? '' : ' · Not supported'}
+                          {availableProviders.map((id) => (
+                            <SelectItem key={id} value={id}>
+                              {providerDisplayName(id)}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs font-normal leading-relaxed text-muted-foreground">
-                        {accessModes.find((mode) => mode.id === agent.permission)?.description}
-                      </p>
-                    </div>
-                  </FormField>
-                  <PermissionPolicyFields
-                    value={agent}
-                    layout="settings"
-                    supported={snapshot?.permissionPolicySupported === true}
-                    disabled={busy || !connected}
-                    onChange={(policy) => setAgent({ ...agent, ...policy })}
-                  />
-                  {!supportsAccess(agent.provider, agent.permission) && (
-                    <p role="alert" className="text-xs text-destructive">
-                      Choose an access mode supported by this provider.
-                    </p>
+                    </FormField>
                   )}
-                  <FormField layout="settings" label="Instructions">
-                    <Textarea
-                      aria-label="Instructions"
-                      value={agent.instructions}
-                      placeholder="Optional. Added to every task that uses this profile…"
-                      onChange={(event) => setAgent({ ...agent, instructions: event.target.value })}
-                    />
-                  </FormField>
-                </section>
-                <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                  <summary className="cursor-pointer text-xs font-medium">
-                    Connection & account
-                  </summary>
-                  <div className="mt-4 space-y-4">
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Optional. Leave blank to use the provider installed and signed in on the
-                      computer that runs the task. Paths refer to that computer.
-                    </p>
-                    {agent.provider === 'hermes' && (
-                      <p className="text-xs text-muted-foreground">
-                        Uses Hermes installed on this computer, including its memory and skills.
-                        Configure its provider with <code>hermes model</code>.
-                      </p>
-                    )}
-                    {agent.provider === 'cursor' && (
-                      <p className="text-xs text-muted-foreground">
-                        Use CURSOR_API_KEY on this computer or the Cursor SDK browser login. Cursor
-                        desktop login is separate.
-                      </p>
-                    )}
-                    {agent.provider !== 'cursor' && (
-                      <FormField
-                        layout="settings"
-                        label={
-                          agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'
-                        }
-                      >
-                        <Input
-                          aria-label={
-                            agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'
-                          }
-                          value={agentConnectionValue(agent)}
-                          placeholder={
-                            agent.provider === 'opencode'
-                              ? 'Automatic local OpenCode server'
-                              : 'Use provider default'
-                          }
-                          onChange={(event) =>
-                            setAgent(changeAgentConnection(agent, event.target.value))
-                          }
-                        />
-                      </FormField>
-                    )}
-                    {agent.provider === 'opencode' && !agent.endpoint.trim() && (
-                      <FormField layout="settings" label="OpenCode executable path (optional)">
-                        <Input
-                          value={agent.executablePath ?? ''}
-                          placeholder="opencode"
-                          onChange={(event) =>
-                            setAgent({ ...agent, executablePath: event.target.value })
-                          }
-                        />
-                      </FormField>
-                    )}
-                    {(['codex', 'claude', 'vibe', 'hermes', 'copilot'] as const).some(
-                      (provider) => provider === agent.provider,
-                    ) && (
-                      <FormField
-                        layout="settings"
-                        label={`Config directory (${
-                          agent.provider === 'vibe'
-                            ? 'VIBE_HOME'
-                            : agent.provider === 'hermes'
-                              ? 'HERMES_HOME'
-                              : agent.provider === 'copilot'
-                                ? 'COPILOT_HOME'
-                                : agent.provider === 'codex'
-                                  ? 'CODEX_HOME'
-                                  : 'CLAUDE_CONFIG_DIR'
-                        })`}
-                      >
-                        <Input
-                          value={agent.configDirectory ?? ''}
-                          placeholder="Provider default"
-                          onChange={(event) =>
-                            setAgent({ ...agent, configDirectory: event.target.value })
-                          }
-                        />
-                      </FormField>
-                    )}
-                    {agent.provider !== 'cursor' &&
-                      (agent.provider !== 'opencode' || !agent.endpoint.trim()) && (
-                        <FormField layout="settings" label="Executable arguments (one per line)">
-                          <Textarea
-                            value={(agent.args ?? []).join('\n')}
-                            onChange={(event) =>
+                  <details
+                    className="text-xs text-muted-foreground"
+                    open={creating ? true : undefined}
+                  >
+                    <summary className="cursor-pointer">Profile icon</summary>
+                    <div
+                      role="group"
+                      aria-label="Agent icon"
+                      className="mt-3 flex flex-wrap gap-1.5"
+                    >
+                      {Object.entries(agentIconChoices).map(([id, { label, icon: Icon }]) => (
+                        <label key={id} title={label} className="cursor-pointer">
+                          <input
+                            type="radio"
+                            name="agent-icon"
+                            value={id}
+                            aria-label={label}
+                            checked={(agent.icon ?? 'bot') === id}
+                            onChange={() =>
                               setAgent({
                                 ...agent,
-                                args: event.target.value.split('\n').filter((line) => line.trim()),
+                                icon: decode(
+                                  Schema.required(agentSchema.fields.icon.schema.schema),
+                                  id,
+                                ),
                               })
+                            }
+                            className="peer sr-only"
+                          />
+                          <span className="flex size-8 items-center justify-center rounded-md border border-transparent peer-checked:border-primary/40 peer-checked:bg-[var(--studio-selected-fill)] peer-checked:text-foreground peer-checked:[background-image:var(--studio-selected-gradient)] peer-checked:[box-shadow:var(--studio-glow)] peer-focus-visible:ring-2 peer-focus-visible:ring-ring hover:bg-muted">
+                            <Icon size={15} />
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                </section>
+              )}
+              {step === 2 && (
+                <>
+                  <section className="space-y-4 border-t pt-5">
+                    <h3 className="text-sm font-semibold">Model & behavior</h3>
+                    {agent.provider === 'acp' && (
+                      <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
+                    )}
+                    <ModelSettings agent={agent} onChange={setAgent} />
+                    {(agent.provider === 'claude' || agent.provider === 'codex') && (
+                      <FormField layout="settings" label="Cloud integrations">
+                        <div className="space-y-2">
+                          <Select
+                            value={
+                              agent.cloudIntegrations === undefined
+                                ? 'default'
+                                : String(agent.cloudIntegrations)
+                            }
+                            onValueChange={(value) => {
+                              if (!value) return
+                              setAgent({
+                                ...agent,
+                                cloudIntegrations:
+                                  value === 'default' ? undefined : value === 'true',
+                              })
+                            }}
+                          >
+                            <SelectTrigger aria-label="Cloud integrations" className="h-9 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="default">Provider default</SelectItem>
+                              <SelectItem value="true">Enabled</SelectItem>
+                              <SelectItem value="false">Disabled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs font-normal leading-relaxed text-muted-foreground">
+                            Use apps already connected to your{' '}
+                            {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
+                            Google Drive or Slack. Requires account sign-in on the computer running
+                            the task. Provider restrictions and tool approvals still apply.
+                          </p>
+                        </div>
+                      </FormField>
+                    )}
+                    <FormField layout="settings" label="Access mode">
+                      <div className="space-y-2">
+                        <Select
+                          value={
+                            permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission
+                          }
+                          onValueChange={(value) => {
+                            // Radix's form bridge emits an empty value while switching to Custom.
+                            if (!value || value === 'custom') return
+                            setAgent(
+                              selectPermissionPreset(
+                                agent,
+                                decode(agentSchema.fields.permission, value),
+                              ),
+                            )
+                          }}
+                        >
+                          <SelectTrigger aria-label="Access mode" className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {permissionPolicyLabel(agent) === 'Custom' && (
+                              <SelectItem value="custom" disabled>
+                                Custom
+                              </SelectItem>
+                            )}
+                            {accessModes.map((mode) => (
+                              <SelectItem
+                                key={mode.id}
+                                value={mode.id}
+                                disabled={!supportsAccess(agent.provider, mode.id)}
+                              >
+                                {mode.name}
+                                {supportsAccess(agent.provider, mode.id) ? '' : ' · Not supported'}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs font-normal leading-relaxed text-muted-foreground">
+                          {accessModes.find((mode) => mode.id === agent.permission)?.description}
+                        </p>
+                      </div>
+                    </FormField>
+                    <PermissionPolicyFields
+                      value={agent}
+                      layout="settings"
+                      supported={snapshot?.permissionPolicySupported === true}
+                      disabled={busy || !connected}
+                      onChange={(policy) => setAgent({ ...agent, ...policy })}
+                    />
+                    {!supportsAccess(agent.provider, agent.permission) && (
+                      <p role="alert" className="text-xs text-destructive">
+                        Choose an access mode supported by this provider.
+                      </p>
+                    )}
+                    <FormField layout="settings" label="Instructions">
+                      <Textarea
+                        aria-label="Instructions"
+                        value={agent.instructions}
+                        placeholder="Optional. Added to every task that uses this profile…"
+                        onChange={(event) =>
+                          setAgent({ ...agent, instructions: event.target.value })
+                        }
+                      />
+                    </FormField>
+                  </section>
+                  <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                    <summary className="cursor-pointer text-xs font-medium">
+                      Connection & account
+                    </summary>
+                    <div className="mt-4 space-y-4">
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Optional. Leave blank to use the provider installed and signed in on the
+                        computer that runs the task. Paths refer to that computer.
+                      </p>
+                      {agent.provider === 'hermes' && (
+                        <p className="text-xs text-muted-foreground">
+                          Uses Hermes installed on this computer, including its memory and skills.
+                          Configure its provider with <code>hermes model</code>.
+                        </p>
+                      )}
+                      {agent.provider === 'cursor' && (
+                        <p className="text-xs text-muted-foreground">
+                          Use CURSOR_API_KEY on this computer or the Cursor SDK browser login.
+                          Cursor desktop login is separate.
+                        </p>
+                      )}
+                      {agent.provider !== 'cursor' && (
+                        <FormField
+                          layout="settings"
+                          label={
+                            agent.provider === 'opencode' ? 'Server URL' : 'Connection / executable'
+                          }
+                        >
+                          <Input
+                            aria-label={
+                              agent.provider === 'opencode'
+                                ? 'Server URL'
+                                : 'Connection / executable'
+                            }
+                            value={agentConnectionValue(agent)}
+                            placeholder={
+                              agent.provider === 'opencode'
+                                ? 'Automatic local OpenCode server'
+                                : 'Use provider default'
+                            }
+                            onChange={(event) =>
+                              setAgent(changeAgentConnection(agent, event.target.value))
                             }
                           />
                         </FormField>
                       )}
-                    <FormField layout="settings" label="Environment variables">
-                      <Textarea
-                        aria-label="Environment variables"
-                        value={environment}
-                        onChange={(event) => setEnvironment(event.target.value)}
-                        placeholder="EXAMPLE=value"
-                      />
-                      <p className="font-normal leading-relaxed">
-                        One NAME=value per line. Stored as readable settings, so keep secrets in the
-                        computer’s own environment.
-                      </p>
-                    </FormField>
-                    {snapshot?.secretReferencesSupported && (
-                      <SecretEnvironmentEditor
-                        value={agent.envSecrets}
-                        onChange={(envSecrets) => setAgent({ ...agent, envSecrets })}
-                        disabled={busy || !connected}
-                        onRefresh={async () => {
-                          await request('/api/agents/secrets/refresh', {}, responses.ok)
-                        }}
-                      />
-                    )}
-                  </div>
-                </details>
-              </>
-            )}
-            {error && (
-              <p role="alert" className="text-xs text-destructive">
-                {error}
-              </p>
-            )}
-          </div>
+                      {agent.provider === 'opencode' && !agent.endpoint.trim() && (
+                        <FormField layout="settings" label="OpenCode executable path (optional)">
+                          <Input
+                            value={agent.executablePath ?? ''}
+                            placeholder="opencode"
+                            onChange={(event) =>
+                              setAgent({ ...agent, executablePath: event.target.value })
+                            }
+                          />
+                        </FormField>
+                      )}
+                      {(['codex', 'claude', 'vibe', 'hermes', 'copilot'] as const).some(
+                        (provider) => provider === agent.provider,
+                      ) && (
+                        <FormField
+                          layout="settings"
+                          label={`Config directory (${
+                            agent.provider === 'vibe'
+                              ? 'VIBE_HOME'
+                              : agent.provider === 'hermes'
+                                ? 'HERMES_HOME'
+                                : agent.provider === 'copilot'
+                                  ? 'COPILOT_HOME'
+                                  : agent.provider === 'codex'
+                                    ? 'CODEX_HOME'
+                                    : 'CLAUDE_CONFIG_DIR'
+                          })`}
+                        >
+                          <Input
+                            value={agent.configDirectory ?? ''}
+                            placeholder="Provider default"
+                            onChange={(event) =>
+                              setAgent({ ...agent, configDirectory: event.target.value })
+                            }
+                          />
+                        </FormField>
+                      )}
+                      {agent.provider !== 'cursor' &&
+                        (agent.provider !== 'opencode' || !agent.endpoint.trim()) && (
+                          <FormField layout="settings" label="Executable arguments (one per line)">
+                            <Textarea
+                              value={(agent.args ?? []).join('\n')}
+                              onChange={(event) =>
+                                setAgent({
+                                  ...agent,
+                                  args: event.target.value
+                                    .split('\n')
+                                    .filter((line) => line.trim()),
+                                })
+                              }
+                            />
+                          </FormField>
+                        )}
+                      <FormField layout="settings" label="Environment variables">
+                        <Textarea
+                          aria-label="Environment variables"
+                          value={environment}
+                          onChange={(event) => setEnvironment(event.target.value)}
+                          placeholder="EXAMPLE=value"
+                        />
+                        <p className="font-normal leading-relaxed">
+                          One NAME=value per line. Stored as readable settings, so keep secrets in
+                          the computer’s own environment.
+                        </p>
+                      </FormField>
+                      {snapshot?.secretReferencesSupported && (
+                        <SecretEnvironmentEditor
+                          value={agent.envSecrets}
+                          onChange={(envSecrets) => setAgent({ ...agent, envSecrets })}
+                          disabled={busy || !connected}
+                          onRefresh={async () => {
+                            await request('/api/agents/secrets/refresh', {}, responses.ok)
+                          }}
+                        />
+                      )}
+                    </div>
+                  </details>
+                </>
+              )}
+              {error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {error}
+                </p>
+              )}
+            </div>
+          </fieldset>
+        </div>
+        <fieldset disabled={busy || !connected} className="min-w-0 shrink-0">
           {!creating ? (
             <SettingsSaveBar
               changes={settingsChanges(
@@ -535,7 +550,7 @@ export function AgentEditor({
               onSave={() => form.current?.requestSubmit()}
             />
           ) : (
-            <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 border-t bg-background py-4">
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-4">
               <div className="flex gap-2">
                 {step > 0 && (
                   <Button

@@ -653,7 +653,7 @@ try {
     window.showDestination('overview', 'enable-auto-merge')
   })
   assert.equal(await autoSubmit.isDisabled(), true)
-  await autoDialog.getByText(/also applies to later commits/).waitFor()
+  await autoDialog.getByText(/including later commits/).waitFor()
   await autoDialog.getByRole('checkbox').check()
   await page.evaluate(() => {
     window.detail = { ...window.detail, stale: true }

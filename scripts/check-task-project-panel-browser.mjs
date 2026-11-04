@@ -404,7 +404,7 @@ try {
       .boundingBox()
     assert.ok(popover && popover.width <= 376 && popover.width > 0)
     const frame = await page.locator('[data-project-panel-frame]').boundingBox()
-    const inset = !mobile && frame.width >= 700 ? 0 : 32
+    const inset = 32
     assert.ok(
       Math.abs(popover.y - frame.y - inset) < 1,
       JSON.stringify({ popover, frame, inset, mobile }),
@@ -427,7 +427,7 @@ try {
               .querySelector('[data-thread-workspace]')
               .getBoundingClientRect()
             return (
-              Math.abs(chat.right - panel.right - (chat.width >= 700 ? 0 : 32)) < 1 &&
+              Math.abs(chat.right - panel.right - 32) < 1 &&
               Math.round(workspace.width - chat.width) === width
             )
           }, width)

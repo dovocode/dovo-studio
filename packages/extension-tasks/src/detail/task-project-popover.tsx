@@ -30,11 +30,11 @@ export function TaskProjectPanelRoot({
   )
 }
 
-/** Reserve a desktop inspector column; compact layouts retain a bounded popover. */
+/** Float thread context over chat without changing the conversation layout. */
 export function TaskProjectPopover({ children, title }: { children: ReactNode; title?: string }) {
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null)
   const [maxHeight, setMaxHeight] = useState<number>()
-  const [docked, setDocked] = useState(false)
+  const [maxWidth, setMaxWidth] = useState<number>()
   const settings = useThreadInfoContext()
   useLayoutEffect(() => {
     const frame = anchor?.parentElement
@@ -42,18 +42,12 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
     const composer = frame.querySelector<HTMLElement>('.studio-composer')
     const measure = () => {
       const top = anchor.getBoundingClientRect().top
-      const desktop =
-        window.matchMedia('(min-width: 1100px)').matches &&
-        frame.getBoundingClientRect().width >= 700
-      frame.dataset.infoDocked = String(desktop)
-      setDocked(desktop)
-      const bottom = desktop
-        ? frame.getBoundingClientRect().bottom
-        : Math.min(
-            frame.getBoundingClientRect().bottom - 32,
-            composer ? composer.getBoundingClientRect().top - 12 : Infinity,
-          )
+      const bottom = Math.min(
+        frame.getBoundingClientRect().bottom - 32,
+        composer ? composer.getBoundingClientRect().top - 12 : Infinity,
+      )
       setMaxHeight(Math.max(0, bottom - top))
+      setMaxWidth(Math.max(0, frame.getBoundingClientRect().width - 64))
     }
     const observer = new ResizeObserver(measure)
     observer.observe(frame)
@@ -61,7 +55,6 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
     measure()
     return () => {
       observer.disconnect()
-      delete frame.dataset.infoDocked
     }
   }, [anchor, settings?.open])
   return (
@@ -69,7 +62,6 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
       <Popover.Anchor
         ref={setAnchor}
         aria-hidden="true"
-        data-docked={docked || undefined}
         className="studio-thread-info-anchor pointer-events-none absolute inset-x-8 top-8 h-px"
       />
       <Popover.Portal forceMount={settings ? true : undefined}>
@@ -78,7 +70,6 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
           hidden={settings ? !settings.open : undefined}
           aria-label="Thread info"
           aria-description={title}
-          data-docked={docked || undefined}
           onInteractOutside={(event) => event.preventDefault()}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => event.preventDefault()}
@@ -88,10 +79,10 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
           avoidCollisions={false}
           collisionBoundary={anchor?.parentElement ?? undefined}
           collisionPadding={32}
-          style={{ maxHeight, height: docked ? maxHeight : undefined }}
+          style={{ maxHeight, maxWidth }}
           className="studio-project-popover studio-menu-surface z-40 overflow-y-auto rounded-2xl border bg-popover text-popover-foreground outline-none"
         >
-          <header className="flex h-12 items-center justify-between gap-3 border-b px-5">
+          <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-popover px-5">
             <div className="min-w-0 space-y-1">
               <h2 className="text-sm font-semibold">Thread info</h2>
             </div>

@@ -77,7 +77,7 @@ export function TaskDefaultSettings(props: {
             setOpen(!open)
         }}
       >
-        {open ? 'Hide task defaults' : 'Task defaults'}
+        {open ? 'Hide thread defaults' : 'Thread defaults'}
       </Button>
       {open && (
         <TaskDefaultSettingsForm {...props} onDirtyChange={setEditing} onSavingChange={setSaving} />
@@ -498,7 +498,7 @@ function TaskDefaultSettingsForm({
             <div className="p-4">
               <ModelSettings
                 layout="settings"
-                agent={{ ...harness, id: 'defaults', name: 'Task defaults' }}
+                agent={{ ...harness, id: 'defaults', name: 'Thread defaults' }}
                 connected={connected}
                 loadModels={loadModels}
                 onChange={(agent) =>
@@ -830,7 +830,7 @@ function TaskDefaultSettingsForm({
         }}
       >
         <Button variant="ghost" size="sm" disabled={disabled} onClick={() => change({})}>
-          Reset task defaults to inherited settings
+          Reset thread defaults to inherited settings
         </Button>
       </SettingsSaveBar>
       {!connected && (

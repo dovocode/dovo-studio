@@ -433,7 +433,13 @@ function PullActionDialog({
           ? detail.pull.autoMergeEnabled
             ? 'Disable auto-merge'
             : 'Enable auto-merge'
-          : titles[kind]
+          : kind === 'edit'
+            ? 'Save changes'
+            : kind === 'reviewers'
+              ? operation === 'add'
+                ? 'Request review'
+                : 'Remove requests'
+              : titles[kind]
   return (
     <Dialog
       open
@@ -451,7 +457,7 @@ function PullActionDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
+          <DialogTitle>{kind === 'edit' ? 'Edit pull request' : label}</DialogTitle>
           <DialogDescription>
             {provider} · #{scope.number} · commit {scope.headSha.slice(0, 8)}
           </DialogDescription>
@@ -605,19 +611,19 @@ function PullActionDialog({
                 <span>
                   {kind === 'auto-merge' ? (
                     <>
-                      Merge when GitHub’s requirements pass. This also applies to later commits
-                      pushed to this PR.
+                      I understand this PR will merge when GitHub’s requirements pass, including
+                      later commits pushed to this PR.
                     </>
                   ) : detail.pull.provider === 'bitbucket' ? (
                     <>
-                      Merge the current source branch. Studio checks viewed revision{' '}
+                      I confirm merging the current source branch. Studio checks viewed revision{' '}
                       {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
                       merged. Repository rules still apply.
                     </>
                   ) : (
                     <>
-                      Merge the reviewed commit {scope.headSha.slice(0, 8)}. Repository rules still
-                      apply.
+                      I confirm merging reviewed commit {scope.headSha.slice(0, 8)}. Repository
+                      rules still apply.
                     </>
                   )}
                 </span>

@@ -88,9 +88,9 @@ const icons: Record<string, typeof Search> = {
 type NavigationSection = SettingsSection | 'more' | 'tasks'
 const headings: readonly [NavigationSection, string][] = [
   ['app', 'App preferences'],
-  ['tasks', 'Task defaults & behavior'],
+  ['tasks', 'Thread defaults & behavior'],
   ['agents', 'Agents & tools'],
-  ['coding', 'Tasks & projects'],
+  ['coding', 'Threads & projects'],
   ['computers', 'Computers'],
   ['archived', 'History'],
   ['more', 'More'],
@@ -103,7 +103,7 @@ const storage: Record<SettingsStorage, { icon: typeof Search; label: string }> =
   inherited: { icon: Layers, label: 'Computer & project' },
 }
 
-const mixedPages = new Set(['browser-settings', 'pull-request-monitoring-settings'])
+const mixedPages = new Set(['browser-settings', 'pull-request-monitoring-settings', 'runtime'])
 
 function pageStorage(view?: StudioView) {
   if (view?.id === 'usage') return { icon: ChartNoAxesCombined, label: 'Across computers' }
@@ -331,7 +331,7 @@ export function SettingsNav({
           <div className="relative text-[0.8125rem]">
             <Search
               aria-hidden="true"
-              className="absolute left-2 top-2 size-3.5 text-muted-foreground"
+              className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
             />
             <Input
               ref={input}

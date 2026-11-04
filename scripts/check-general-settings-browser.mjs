@@ -270,7 +270,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 })
   // Scope indicators stay available on unselected navigation entries and never navigate.
   const defaultScope = settingsSidebar.getByRole('button', {
-    name: 'Settings scope for Task defaults',
+    name: 'Settings scope for Thread defaults',
     exact: true,
   })
   await defaultScope.scrollIntoViewIfNeeded()
@@ -278,7 +278,7 @@ try {
   await defaultScope.click()
   await page
     .getByRole('dialog')
-    .getByText('Task defaults · Computer & project', { exact: true })
+    .getByText('Thread defaults · Computer & project', { exact: true })
     .waitFor()
   await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
   await page
@@ -335,13 +335,12 @@ try {
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
   await page.evaluate(() => window.changeView('general'))
   for (const [category, titles] of [
-    ['App preferences', ['General', 'Conversation', 'Browser', 'Task list & projects']],
-    ['New task defaults', ['Task defaults']],
-    ['Running task behavior', ['Running tasks', 'Task lifecycle']],
+    ['App preferences', ['General', 'Conversation', 'Browser', 'Thread list & projects']],
+    ['Thread defaults & behavior', ['Thread defaults', 'Running threads', 'Thread lifecycle']],
     ['Agents & tools', ['Agents', 'CLI commands & shell', 'Studio Tools', 'Memory']],
-    ['Tasks & projects', ['Worktrees', 'Artifacts']],
+    ['Threads & projects', ['Worktrees', 'Artifacts']],
     ['Computers', ['Devices & runtime', 'Device previews']],
-    ['History', ['Activity & message history', 'Archived tasks']],
+    ['History', ['Activity & message history', 'Archived threads']],
   ]) {
     const group = settingsSidebar
       .getByRole('heading', { name: category, exact: true })
@@ -394,7 +393,7 @@ try {
   page.once('dialog', (dialog) => dialog.dismiss())
   await search.fill('time format')
   await search.press('Enter')
-  await page.getByRole('heading', { name: 'Task defaults', level: 1, exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Thread defaults', level: 1, exact: true }).waitFor()
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
     'New worktree',
@@ -415,7 +414,9 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 })
   await search.fill('confirmation')
   await search.press('Enter')
-  await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  await page
+    .getByRole('heading', { name: 'Thread list & projects', exact: true, level: 1 })
+    .waitFor()
   await search.press('Escape')
   await search.fill('composer')
   assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 0)
@@ -424,8 +425,10 @@ try {
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
   await page.getByRole('button', { name: 'General', exact: true }).click()
   assert.equal(await page.getByLabel('Inherited settings target').count(), 0)
-  await settingsSidebar.getByRole('button', { name: 'Task list & projects', exact: true }).click()
-  await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  await settingsSidebar.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  await page
+    .getByRole('heading', { name: 'Thread list & projects', exact: true, level: 1 })
+    .waitFor()
   await page.locator('input[aria-label="Morning time"]').fill('08:30')
   await page.locator('input[aria-label="Evening time"]').fill('20:15')
   await choose('Next week starts on', 'Sunday')
@@ -472,7 +475,7 @@ try {
   )
   await choose('Project order', 'Last user message')
   await page.getByRole('textbox', { name: 'Add project starts in', exact: true }).fill('~/Code')
-  await page.getByRole('switch', { name: 'Confirm before deleting a task', exact: true }).click()
+  await page.getByRole('switch', { name: 'Confirm before deleting a thread', exact: true }).click()
   assert.equal(
     await page.evaluate(
       () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).projectOrder,
@@ -494,14 +497,12 @@ try {
   await page.getByRole('button', { name: 'General', exact: true }).click()
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).click()
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
-  await settingsSidebar.getByLabel('Inherited settings target').waitFor()
+  await page.getByLabel('Settings target', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Settings inheritance details', exact: true }).waitFor()
   assert.equal(
-    await settingsSidebar
-      .getByLabel('Inherited settings target')
-      .locator('button, a, input, select, [tabindex]')
-      .count(),
+    await settingsSidebar.getByLabel('Inherited settings target').count(),
     0,
-    'Scope summary contains no controls',
+    'Scope controls appear once in the content toolbar',
   )
   const profiles = page.getByRole('navigation', { name: 'Provider configurations' })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
@@ -517,7 +518,7 @@ try {
   await page.getByText(/Saving creates an override/).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
   await page.getByRole('button', { name: 'Open task defaults', exact: true }).click()
-  await settingsSidebar.getByRole('button', { name: 'Task lifecycle', exact: true }).click()
+  await settingsSidebar.getByRole('button', { name: 'Thread lifecycle', exact: true }).click()
   await page.getByRole('combobox', { name: 'Auto-resume limited tasks', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
   await choose('Auto-resume limited tasks', 'Off')
@@ -536,14 +537,14 @@ try {
   await choose('Settings project', 'Dovo')
   assert.equal(await page.getByRole('button', { name: 'Settings machine', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
-  await settingsSidebar
-    .getByLabel('Inherited settings target')
-    .getByText('Dovo · MacBook Pro', { exact: true })
+  await page
+    .getByLabel('Settings target', { exact: true })
+    .getByText('Dovo on MacBook Pro', { exact: true })
     .waitFor()
   await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
   if (process.env.DOVO_SETTINGS_SCREENSHOTS)
     await page
-      .getByRole('heading', { name: 'Task lifecycle', exact: true, level: 2 })
+      .getByRole('heading', { name: 'Thread lifecycle', exact: true, level: 2 })
       .evaluate((element) => {
         element.scrollIntoView({ block: 'start' })
       })
@@ -561,7 +562,7 @@ try {
   await page.waitForFunction(
     () => window.writes.at(-1).after.taskBehavior.quotaResume === undefined,
   )
-  await settingsSidebar.getByRole('button', { name: 'Task defaults', exact: true }).click()
+  await settingsSidebar.getByRole('button', { name: 'Thread defaults', exact: true }).click()
   await choose('Working directory', 'New worktree')
   page.once('dialog', (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
@@ -574,11 +575,11 @@ try {
     'New worktree',
   )
   page.once('dialog', (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: 'Task list & projects', exact: true }).click()
-  await page.getByRole('heading', { name: 'Task defaults', exact: true, level: 1 }).waitFor()
+  await page.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  await page.getByRole('heading', { name: 'Thread defaults', exact: true, level: 1 }).waitFor()
   assert.equal(
     await settingsSidebar
-      .getByRole('button', { name: 'Task defaults', exact: true })
+      .getByRole('button', { name: 'Thread defaults', exact: true })
       .getAttribute('aria-current'),
     'page',
   )
@@ -816,7 +817,7 @@ try {
   if (process.env.DOVO_SETTINGS_SCREENSHOTS) {
     for (const title of [
       'General',
-      'Task list & projects',
+      'Thread list & projects',
       'Appearance',
       'Conversation',
       'Notifications',
@@ -829,7 +830,7 @@ try {
     ]) {
       await openLocal(title)
       await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-desktop')
-      if (title === 'Task list & projects') await screenshotThemes('task-list-projects-desktop')
+      if (title === 'Thread list & projects') await screenshotThemes('task-list-projects-desktop')
     }
   }
   // Keep the medium-width sidebar compact while allowing longer page and storage labels to wrap.
@@ -840,10 +841,10 @@ try {
   })
   assert.equal((await settingsSidebar.boundingBox()).width, 208)
   for (const title of [
-    'Task list & projects',
+    'Thread list & projects',
     'Pull requests & pipelines',
     'Agents',
-    'Task defaults',
+    'Thread defaults',
   ]) {
     await openLocal(title)
     assert.deepEqual(
@@ -862,9 +863,9 @@ try {
         90,
       `${title}: selected label stays compact`,
     )
-    if (['Pull requests & pipelines', 'Task defaults'].includes(title))
+    if (['Pull requests & pipelines', 'Thread defaults'].includes(title))
       await screenshotThemes(
-        title === 'Task defaults' ? 'scope-sidebar-208px' : 'mixed-storage-sidebar-208px',
+        title === 'Thread defaults' ? 'scope-sidebar-208px' : 'mixed-storage-sidebar-208px',
       )
   }
   await page.setViewportSize({ width: 390, height: 844 })
@@ -878,9 +879,9 @@ try {
   for (const [category, title] of [
     ['App preferences', 'General'],
     ['Agents & tools', 'Agents'],
-    ['New task defaults', 'Task defaults'],
+    ['Thread defaults & behavior', 'Thread defaults'],
     ['Computers', 'Devices & runtime'],
-    ['History', 'Archived tasks'],
+    ['History', 'Archived threads'],
   ]) {
     assert.equal(
       await sectionChoices
@@ -902,7 +903,7 @@ try {
   await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
   for (const title of [
     'General',
-    'Task list & projects',
+    'Thread list & projects',
     'Appearance',
     'Conversation',
     'Notifications',
@@ -921,7 +922,7 @@ try {
       `${title} fits a narrow viewport`,
     )
     await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
-    if (['General', 'Task list & projects'].includes(title))
+    if (['General', 'Thread list & projects'].includes(title))
       await screenshotThemes(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
   }
   await choose('Settings section', 'Agents')
@@ -935,7 +936,7 @@ try {
   )
   await choose('Agent profile', 'Claude Code · Inherited')
   await page.getByLabel('Name', { exact: true }).waitFor()
-  await choose('Settings section', 'Task defaults')
+  await choose('Settings section', 'Thread defaults')
   await page.waitForFunction(
     () => !document.querySelector('[role="combobox"][aria-label="Working directory"]').disabled,
   )
@@ -943,7 +944,7 @@ try {
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     true,
-    'Task defaults fit a narrow viewport',
+    'Thread defaults fit a narrow viewport',
   )
   await choose('Settings section', 'General')
   if (process.env.DOVO_GENERAL_SCREENSHOT)

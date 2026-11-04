@@ -67,7 +67,7 @@ export function TaskProjectActions({
           >
             <Plus className="size-3.5" />
             <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
-              {actions.length ? 'Project actions' : 'Add action'}
+              Project actions
             </span>
           </Button>
         </DropdownMenu.Trigger>
@@ -170,7 +170,7 @@ function ApprovalRulesDialog({
             {!webRulesSupported
               ? 'Update Dovo on this computer to use web approval rules.'
               : snapshot?.allowWebRequests
-                ? 'Web requests are always allowed on this computer. Change that in Running tasks settings before changing the project rule.'
+                ? 'Web requests are always allowed on this computer. Change that in Running threads settings before changing the project rule.'
                 : `Web browsing and search ${repository?.approvedWebRequests ? 'are always allowed.' : 'ask for approval.'}`}
           </p>
           <Button

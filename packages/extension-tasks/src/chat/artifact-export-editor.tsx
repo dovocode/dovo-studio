@@ -1,6 +1,7 @@
+import { useResolvedTheme, offlineEditorFont } from '@dovo/studio-core'
 import { useRef } from 'react'
 import {
-  artifactExportEditorDocument,
+  themedArtifactExportEditorDocument,
   initializeArtifactExportEditor,
   type ArtifactExportEdit,
 } from '@dovo/protocol'
@@ -13,6 +14,7 @@ export function ArtifactExportEditor({
   content: string
   onAction: (edit: ArtifactExportEdit) => void
 }) {
+  const theme = useResolvedTheme()
   const onEdit = useRef(onAction)
   onEdit.current = onAction
   return (
@@ -32,7 +34,7 @@ export function ArtifactExportEditor({
           className="h-full min-h-0 w-full border-0"
           sandbox="allow-same-origin"
           referrerPolicy="no-referrer"
-          srcDoc={artifactExportEditorDocument}
+          srcDoc={themedArtifactExportEditorDocument(theme, offlineEditorFont)}
           onLoad={(event) => {
             const doc = event.currentTarget.contentDocument
             if (doc) initializeArtifactExportEditor(doc, content, (edit) => onEdit.current(edit))

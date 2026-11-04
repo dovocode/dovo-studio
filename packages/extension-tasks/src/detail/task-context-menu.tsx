@@ -693,7 +693,7 @@ export function TaskContextMenu({
                   !task.archivedAt &&
                   readAppPreferences().confirmArchive &&
                   !window.confirm(
-                    `Archive “${task.title}”? You can restore it from Settings → Archived tasks.`,
+                    `Archive “${task.title}”? You can restore it from Settings → Archived threads.`,
                   )
                 )
                   return
@@ -913,7 +913,7 @@ export function TaskContextMenu({
         }}
       >
         <DialogContent className="max-w-md">
-          <DialogTitle>Rename task</DialogTitle>
+          <DialogTitle>Rename thread</DialogTitle>
           <DialogDescription>
             {repository?.name ?? 'Task'} · {source.name}
           </DialogDescription>

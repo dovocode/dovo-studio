@@ -219,18 +219,13 @@ export default function JobsView({ entityId }: StudioViewProps) {
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
       {!selected && (
-        <PageHeader
-          title="Automations"
-          description={
-            <>
-              {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
-            </>
-          }
-        >
+        <PageHeader title="Automations">
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
             aria-label="Refresh"
+            title="Refresh"
+            className="size-8"
             disabled={busy || refreshing}
             onClick={() => {
               setRefreshing(true)
@@ -240,7 +235,6 @@ export default function JobsView({ entityId }: StudioViewProps) {
             }}
           >
             <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
-            <span className="sr-only sm:not-sr-only">Refresh</span>
           </Button>
           <Button
             size="sm"
@@ -283,6 +277,9 @@ export default function JobsView({ entityId }: StudioViewProps) {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
+              <p className="mt-2 text-xs text-muted-foreground">
+                {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
+              </p>
             </div>
             <nav
               aria-label="Automations across computers"
@@ -406,7 +403,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
         <DialogContent>
           <DialogTitle>New automation</DialogTitle>
           <DialogDescription>Choose where it runs, then connect its steps.</DialogDescription>
-          <label className="space-y-2 text-sm">
+          <label className="space-y-2 text-xs text-muted-foreground">
             <span>Name</span>
             <Input
               autoFocus
@@ -416,7 +413,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
               disabled={busy}
             />
           </label>
-          <label className="space-y-2 text-sm">
+          <label className="space-y-2 text-xs text-muted-foreground">
             <span>Run on</span>
             <ChoicePicker
               aria-label="Automation computer"
@@ -438,6 +435,9 @@ export default function JobsView({ entityId }: StudioViewProps) {
             </p>
           )}
           <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
             <Button
               disabled={
                 busy ||

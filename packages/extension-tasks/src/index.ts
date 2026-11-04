@@ -20,7 +20,7 @@ export const tasksExtension = defineStudioExtension(
     },
     {
       id: 'archived-tasks',
-      title: 'Archived tasks',
+      title: 'Archived threads',
       icon: 'tasks',
       order: 9,
       navigationGroup: 'settings',

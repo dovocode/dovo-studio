@@ -458,7 +458,7 @@ function PullDetailContent({
                       tabs[next]?.focus()
                     }}
                     onClick={() => selectTab(item.id)}
-                    className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'border-border/70 bg-muted text-foreground shadow-sm forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                    className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                   >
                     <item.icon aria-hidden className="size-3.5" />
                     {item.label}
@@ -602,7 +602,7 @@ function PullDetailContent({
                           variant="ghost"
                           className={
                             discussionFilter === filter.id
-                              ? 'bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1'
+                              ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
                               : 'text-muted-foreground'
                           }
                           aria-pressed={discussionFilter === filter.id}

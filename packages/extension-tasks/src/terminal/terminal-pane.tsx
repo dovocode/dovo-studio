@@ -287,7 +287,7 @@ export function TerminalPane({
               key={tab.id}
               className={cn(
                 'flex shrink-0 items-center rounded-md',
-                tab.id === group?.id && 'bg-accent',
+                tab.id === group?.id && 'studio-selected-surface',
               )}
             >
               <Button

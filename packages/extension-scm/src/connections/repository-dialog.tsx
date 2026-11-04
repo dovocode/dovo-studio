@@ -181,8 +181,10 @@ function RepositoryDialogContent({
               <div className="flex flex-wrap gap-2" role="group" aria-label="Repository source">
                 <Button
                   type="button"
-                  variant={source === 'dovo' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'dovo' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'dovo'}
+                  autoFocus={source === 'dovo'}
                   onClick={() => {
                     setSource('dovo')
                     setError('')
@@ -192,8 +194,10 @@ function RepositoryDialogContent({
                 </Button>
                 <Button
                   type="button"
-                  variant={source === 'local' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'local' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'local'}
+                  autoFocus={source === 'local'}
                   onClick={() => {
                     setSource('local')
                     setError('')
@@ -203,8 +207,10 @@ function RepositoryDialogContent({
                 </Button>
                 <Button
                   type="button"
-                  variant={source === 'github' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'github' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'github'}
+                  autoFocus={source === 'github'}
                   onClick={() => {
                     setSource('github')
                     setError('')
@@ -214,8 +220,10 @@ function RepositoryDialogContent({
                 </Button>
                 <Button
                   type="button"
-                  variant={source === 'forge' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'forge' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'forge'}
+                  autoFocus={source === 'forge'}
                   onClick={() => {
                     setSource('forge')
                     setError('')
@@ -331,6 +339,9 @@ function RepositoryDialogContent({
                 </p>
               )}
               <DialogFooter>
+                <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+                  Cancel
+                </Button>
                 <Button
                   type="submit"
                   disabled={
