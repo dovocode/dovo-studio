@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { runInNewContext } from 'node:vm'
-import { STUDIO_TERMINAL_SCOPE } from '@dovo/protocol'
+import { STUDIO_TERMINAL_SCOPE, terminalStatus } from '@dovo/protocol'
 import { openDatabase } from '../storage/database'
 import { Terminals } from './terminals'
 import { TerminalRecovery, recoveryCommand, validateRecoveryShell } from './recovery'
@@ -36,26 +36,36 @@ async function fixture({ symlinkRecovery = false } = {}) {
   }
   const create = () =>
     new Terminals(undefined, undefined, undefined, new TerminalRecovery(db, recoveryDirectory))
-  const hook = (id: string, provider: string, sessionId: string, ended = false) => {
+  const emit = (id: string, provider: string, event: Record<string, unknown>, remember = true) => {
     const result = spawnSync(process.execPath, [join(recoveryDirectory, 'report.cjs'), provider], {
-      env: { ...process.env, DOVO_TERMINAL_RECOVERY_DIRECTORY: join(recoveryDirectory, id) },
+      env: {
+        ...process.env,
+        DOVO_TERMINAL_STATUS_DIRECTORY: join(recoveryDirectory, id),
+        DOVO_TERMINAL_RECOVERY_DIRECTORY: remember ? join(recoveryDirectory, id) : undefined,
+      },
       input: JSON.stringify({
-        session_id: sessionId,
         cwd: directory,
-        hook_event_name: ended ? 'SessionEnd' : 'SessionStart',
+        ...event,
       }),
       encoding: 'utf8',
       timeout: 3000,
     })
     expect(result.stderr).toBe('')
+    expect(result.stdout).toBe('')
     expect(result.status).toBe(0)
   }
+  const hook = (id: string, provider: string, sessionId: string, ended = false) =>
+    emit(id, provider, {
+      session_id: sessionId,
+      hook_event_name: ended ? 'SessionEnd' : 'SessionStart',
+    })
   return {
     directory,
     db,
     recoveryDirectory,
     create,
     hook,
+    emit,
     cleanup: async () => {
       db.close()
       await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
@@ -111,6 +121,115 @@ it('preserves user hooks, is idempotent, scopes reporting to Dovo and respects s
   }
 })
 
+it.each(['codex', 'claude'])(
+  'reports %s lifecycle activity privately, isolates sessions and preserves shutdown ownership',
+  async (provider) => {
+    const f = await fixture()
+    try {
+      const recovery = new TerminalRecovery(f.db, f.recoveryDirectory)
+      const id = '12345678-1234-4234-8234-123456789abc'
+      const other = '12345678-1234-4234-8234-123456789def'
+      recovery.environment(id, '')
+      recovery.environment(other, '')
+      const emit = (hook_event_name: string, extra: Record<string, unknown> = {}) =>
+        f.emit(id, provider, { session_id: 'root-session', hook_event_name, ...extra })
+      emit('SessionStart')
+      expect(recovery.activity(id)?.activity).toEqual({ state: 'idle', app: provider })
+      for (const [event, state] of [
+        ['UserPromptSubmit', 'working'],
+        ['PermissionRequest', 'blocked'],
+        ['PostToolUse', 'working'],
+        ['Stop', 'done'],
+      ]) {
+        emit(event!)
+        expect(recovery.activity(id)?.activity?.state).toBe(state)
+      }
+      emit('PreToolUse', {
+        tool_name: provider === 'claude' ? 'AskUserQuestion' : 'request_user_input',
+      })
+      expect(recovery.activity(id)?.activity).toEqual({
+        state: 'blocked',
+        kind: 'question',
+        app: provider,
+      })
+      emit('PostToolUse')
+      const current = recovery.activity(id)
+      emit('Stop', { agent_id: 'child-agent' })
+      emit('SessionEnd', { session_id: 'older-session' })
+      f.emit(other, provider, { session_id: 'another-terminal', hook_event_name: 'SessionStart' })
+      expect(recovery.activity(id)).toEqual(current)
+      expect(recovery.activity(other)?.activity?.state).toBe('idle')
+      const providerEvents =
+        provider === 'claude'
+          ? [
+              {
+                name: 'Notification',
+                payload: { notification_type: 'permission_prompt' },
+                activity: { state: 'blocked', kind: 'permission' },
+              },
+              { name: 'StopFailure', payload: {}, activity: { state: 'error' } },
+            ]
+          : [{ name: 'Interrupt', payload: {}, activity: { state: 'idle' } }]
+      for (const event of providerEvents) {
+        emit(event.name, event.payload)
+        expect(recovery.activity(id)?.activity).toMatchObject(event.activity)
+      }
+      recovery.freeze(id)
+      const frozen = recovery.activity(id)
+      emit('SessionEnd')
+      expect(recovery.activity(id)).toEqual(frozen)
+      recovery.environment(id, '')
+      emit('SessionStart')
+      emit('SessionEnd')
+      expect(recovery.activity(id)?.activity).toBeNull()
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
+  'updates live terminal status from agent hooks even with Remember session off',
+  async () => {
+    const f = await fixture()
+    const terminals = f.create()
+    try {
+      const info = terminals.createCommand(
+        STUDIO_TERMINAL_SCOPE,
+        f.directory,
+        { command: '/bin/bash', args: ['--noprofile', '--norc', '-i'], env: {} },
+        'Agent terminal',
+      )
+      const current = () => terminals.get(info.id).info
+      const emit = (hook_event_name: string) =>
+        f.emit(info.id, 'codex', { hook_event_name, session_id: 'not-retained' }, false)
+      emit('SessionStart')
+      await waitForRuntime(() => expect(current().activity?.state).toBe('idle'))
+      for (const [event, label, section] of [
+        ['UserPromptSubmit', 'Working', 'working'],
+        ['PermissionRequest', 'Needs input', 'needs-input'],
+        ['PostToolUse', 'Working', 'working'],
+        ['Stop', 'Done', 'active'],
+      ]) {
+        emit(event!)
+        await waitForRuntime(() =>
+          expect(terminalStatus(current(), true)).toMatchObject({ label, section }),
+        )
+      }
+      expect(terminals.get(info.id).recovery).toBeUndefined()
+      expect(new TerminalRecovery(f.db, f.recoveryDirectory).event(info.id)).toBeUndefined()
+      emit('SessionEnd')
+      await waitForRuntime(() => expect(current().activity).toBeUndefined())
+      await terminals.close(info.id)
+      expect(existsSync(join(f.recoveryDirectory, info.id))).toBe(false)
+      expect(new TerminalRecovery(f.db, f.recoveryDirectory).list()).toEqual([])
+    } finally {
+      await terminals.dispose()
+      await f.cleanup()
+    }
+  },
+)
+
 for (const provider of ['codex', 'claude', 'pi', 'opencode', 'tmux', 'herdr'] as const)
   it(`builds an exact ${provider} recovery without a latest-session fallback`, () => {
     const sessionId =
@@ -161,6 +280,11 @@ it('loads Pi and OpenCode adapters and records the exact selected session, exclu
       sessionManager: { getSessionFile: () => join(f.directory, 'pi-session.jsonl') },
     }
     handlers.get('session_start')!({}, context)
+    expect(recovery.activity(id)?.activity).toEqual({ app: 'pi', state: 'idle' })
+    handlers.get('agent_start')!({}, context)
+    expect(recovery.activity(id)?.activity).toEqual({ app: 'pi', state: 'working' })
+    handlers.get('agent_end')!({}, context)
+    expect(recovery.activity(id)?.activity).toEqual({ app: 'pi', state: 'done' })
     expect(recovery.event(id)).toEqual({
       provider: 'pi',
       sessionId: context.sessionManager.getSessionFile(),
@@ -168,10 +292,18 @@ it('loads Pi and OpenCode adapters and records the exact selected session, exclu
     })
     handlers.get('session_shutdown')!({}, context)
     expect(recovery.event(id)).toBeNull()
+    expect(recovery.activity(id)?.activity).toBeNull()
     const plugin: {
       DovoTerminalRecovery: (context: { directory: string }) => Promise<{
         event: (input: {
-          event: { type: string; properties: { info: { id: string; parentID?: string } } }
+          event: {
+            type: string
+            properties: {
+              info?: { id: string; parentID?: string }
+              sessionID?: string
+              status?: { type: string }
+            }
+          }
         }) => Promise<void>
         'chat.message': (input: { sessionID: string }) => Promise<void>
       }>
@@ -183,11 +315,39 @@ it('loads Pi and OpenCode adapters and records the exact selected session, exclu
       event: { type: 'session.created', properties: { info: { id: 'child', parentID: 'root' } } },
     })
     expect(recovery.event(id)).toBeNull()
+    await hooks['chat.message']({ sessionID: 'child' })
+    expect(recovery.event(id)).toBeNull()
     await hooks['chat.message']({ sessionID: 'ses_exact_existing' })
     expect(recovery.event(id)).toMatchObject({
       provider: 'opencode',
       sessionId: 'ses_exact_existing',
     })
+    expect(recovery.activity(id)?.activity).toEqual({ app: 'opencode', state: 'working' })
+    for (const [type, state] of [
+      ['permission.asked', 'blocked'],
+      ['permission.replied', 'working'],
+      ['question.asked', 'blocked'],
+      ['question.replied', 'working'],
+      ['session.idle', 'done'],
+      ['session.error', 'error'],
+    ]) {
+      await hooks.event({ event: { type: type!, properties: { sessionID: 'ses_exact_existing' } } })
+      expect(recovery.activity(id)?.activity?.state).toBe(state)
+    }
+    await hooks.event({
+      event: {
+        type: 'session.status',
+        properties: { sessionID: 'child', status: { type: 'busy' } },
+      },
+    })
+    expect(recovery.activity(id)?.activity?.state).toBe('error')
+    await hooks.event({
+      event: {
+        type: 'session.status',
+        properties: { sessionID: 'ses_exact_existing', status: { type: 'busy' } },
+      },
+    })
+    expect(recovery.activity(id)?.activity?.state).toBe('working')
     recovery.freeze(id)
   } finally {
     await f.cleanup()
@@ -511,6 +671,10 @@ it.skipIf(process.platform === 'win32')(
       )
       f.hook(info.id, 'codex', 'exact-id')
       await waitForRuntime(() => expect(terminals.get(info.id).info.recoveryProgram).toBe('codex'))
+      terminals.input(info.id, "printf '\\033]7501;state=working:app=codex\\033\\\\'\r")
+      await waitForRuntime(() =>
+        expect(terminals.get(info.id).info.activity?.state).toBe('working'),
+      )
       save.mockImplementation(() => {
         throw new Error('disk full')
       })

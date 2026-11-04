@@ -211,7 +211,7 @@ patchedDependencies:
   '@electron/osx-sign@1.3.3': 1eb9f6087600661b34ad7125175a0098179ba31700a064b16e135015b7325e3d
   braces@3.0.3: de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea
   electron-chrome-extensions@4.10.0: b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab
-  expo-libghostty@0.8.1: 9cfbb7e79ad93c586e60bd81030dfdbde028208458e97c41a93892d08ae3f037
+  expo-libghostty@0.8.1: 6c947c90f2ce5c086a2a26d27d4b27bbacc6c1f3350a303726e56c445834bce6
   expo-modules-autolinking@58.0.16: ad6bc6b2ca4f96b5a82d1f3669da9619293b758dafa948c548249f92c7094be0
   ghostty-web@0.4.0: 5e5b87535821fd4454a1a68fed7e71c3fdf6d12c79539f331a0d5392ffa60c3a
   node-pty@1.2.0-beta.15: 37fdac163ed4da76b410333015449ae5101dd110c1cff818ae62a379e7771bfa
@@ -1233,6 +1233,9 @@ importers:
       node-pty:
         specifier: 1.2.0-beta.15
         version: 1.2.0-beta.15(patch_hash=37fdac163ed4da76b410333015449ae5101dd110c1cff818ae62a379e7771bfa)
+      onnxruntime-node:
+        specifier: 1.23.2
+        version: 1.23.2
       parse5:
         specifier: 8.0.1
         version: 8.0.1
@@ -1485,7 +1488,7 @@ importers:
         version: 58.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-webview@14.0.1(patch_hash=e5cdeb5e97bd3928a5c38709ce389696c7158cbd2bc4879bae30a1b3d226377b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1))(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
       expo-libghostty:
         specifier: 0.8.1
-        version: 0.8.1(patch_hash=9cfbb7e79ad93c586e60bd81030dfdbde028208458e97c41a93892d08ae3f037)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
+        version: 0.8.1(patch_hash=6c947c90f2ce5c086a2a26d27d4b27bbacc6c1f3350a303726e56c445834bce6)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       ghostty-web:
         specifier: 0.4.0
         version: 0.4.0(patch_hash=5e5b87535821fd4454a1a68fed7e71c3fdf6d12c79539f331a0d5392ffa60c3a)
@@ -5721,6 +5724,10 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  adm-zip@0.5.18:
+    resolution: {integrity: sha512-ufJnssQGbxzLNS1Ho9bCtX4rQKCCvoVuDLHoJyc3F9dOGDB4BkWs2Ci0kv53lqocAEQ/Cbi+I2XCsNYGqVYqng==}
+    engines: {node: '>=12.0'}
+
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
@@ -8659,6 +8666,13 @@ packages:
 
   oniguruma-to-es@4.3.6:
     resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
+
+  onnxruntime-common@1.23.2:
+    resolution: {integrity: sha512-5LFsC9Dukzp2WV6kNHYLNzp8sT6V02IubLCbzw2Xd6X5GOlr65gAX6xiJwyi2URJol/s71gaQLC5F2C25AAR2w==}
+
+  onnxruntime-node@1.23.2:
+    resolution: {integrity: sha512-OBTsG0W8ddBVOeVVVychpVBS87A9YV5sa2hJ6lc025T97Le+J4v++PwSC4XFs1C62SWyNdof0Mh4KvnZgtt4aw==}
+    os: [win32, darwin, linux]
 
   open@10.2.0:
     resolution: {integrity: sha512-YgBpdJHPyQ2UE5x+hlSXcnejzAvD0b22U2OuAP+8OnlJT+PjWPxtgmGqKKc+RgTM63U9gN0YzrYc71R2WT/hTA==}
@@ -14971,6 +14985,8 @@ snapshots:
 
   acorn@8.19.0: {}
 
+  adm-zip@0.5.18: {}
+
   agent-base@7.1.4: {}
 
   agent-cli-detector@0.1.7: {}
@@ -15367,8 +15383,7 @@ snapshots:
 
   boolbase@1.0.0: {}
 
-  boolean@3.2.0:
-    optional: true
+  boolean@3.2.0: {}
 
   bowser-ultralight@1.0.6: {}
 
@@ -15821,7 +15836,6 @@ snapshots:
       es-define-property: 1.0.1
       es-errors: 1.3.0
       gopd: 1.2.0
-    optional: true
 
   define-lazy-prop@2.0.0: {}
 
@@ -15832,7 +15846,6 @@ snapshots:
       define-data-property: 1.1.4
       has-property-descriptors: 1.0.2
       object-keys: 1.1.1
-    optional: true
 
   defu@6.1.7: {}
 
@@ -15848,8 +15861,7 @@ snapshots:
 
   detect-node-es@1.1.0: {}
 
-  detect-node@2.1.0:
-    optional: true
+  detect-node@2.1.0: {}
 
   devlop@1.1.0:
     dependencies:
@@ -16074,8 +16086,7 @@ snapshots:
 
   es-toolkit@1.53.1: {}
 
-  es6-error@4.1.1:
-    optional: true
+  es6-error@4.1.1: {}
 
   esbuild-register@3.6.0(esbuild@0.28.2)(supports-color@8.1.1):
     dependencies:
@@ -16283,7 +16294,7 @@ snapshots:
       expo: 58.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-webview@14.0.1(patch_hash=e5cdeb5e97bd3928a5c38709ce389696c7158cbd2bc4879bae30a1b3d226377b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1))(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
       react: 19.3.1
 
-  expo-libghostty@0.8.1(patch_hash=9cfbb7e79ad93c586e60bd81030dfdbde028208458e97c41a93892d08ae3f037)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+  expo-libghostty@0.8.1(patch_hash=6c947c90f2ce5c086a2a26d27d4b27bbacc6c1f3350a303726e56c445834bce6)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
     dependencies:
       expo: 58.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-webview@14.0.1(patch_hash=e5cdeb5e97bd3928a5c38709ce389696c7158cbd2bc4879bae30a1b3d226377b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1))(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@7.0.2)
       react: 19.3.1
@@ -16950,13 +16961,11 @@ snapshots:
       roarr: 2.15.4
       semver: 7.7.4
       serialize-error: 7.0.1
-    optional: true
 
   globalthis@1.0.4:
     dependencies:
       define-properties: 1.2.1
       gopd: 1.2.0
-    optional: true
 
   google-auth-library@10.5.0(supports-color@8.1.1):
     dependencies:
@@ -17074,7 +17083,6 @@ snapshots:
   has-property-descriptors@1.0.2:
     dependencies:
       es-define-property: 1.0.1
-    optional: true
 
   has-symbols@1.1.0: {}
 
@@ -17422,8 +17430,7 @@ snapshots:
 
   json-schema-typed@8.0.2: {}
 
-  json-stringify-safe@5.0.1:
-    optional: true
+  json-stringify-safe@5.0.1: {}
 
   json5@2.2.3: {}
 
@@ -17742,7 +17749,6 @@ snapshots:
   matcher@3.0.0:
     dependencies:
       escape-string-regexp: 4.0.0
-    optional: true
 
   math-intrinsics@1.1.0: {}
 
@@ -18704,8 +18710,7 @@ snapshots:
 
   object-inspect@1.13.4: {}
 
-  object-keys@1.1.1:
-    optional: true
+  object-keys@1.1.1: {}
 
   obug@3.0.0: {}
 
@@ -18734,6 +18739,14 @@ snapshots:
       oniguruma-parser: 0.12.2
       regex: 6.1.0
       regex-recursion: 6.0.2
+
+  onnxruntime-common@1.23.2: {}
+
+  onnxruntime-node@1.23.2:
+    dependencies:
+      adm-zip: 0.5.18
+      global-agent: 3.0.0
+      onnxruntime-common: 1.23.2
 
   open@10.2.0:
     dependencies:
@@ -19728,7 +19741,6 @@ snapshots:
       json-stringify-safe: 5.0.1
       semver-compare: 1.0.0
       sprintf-js: 1.1.3(patch_hash=150ae794ae4b4b0c19e0b66fe0419c3de0a8a6d60c3a0d228d269db2c3047ba9)
-    optional: true
 
   rope-sequence@1.3.4: {}
 
@@ -19777,8 +19789,7 @@ snapshots:
 
   secure-json-parse@4.1.1: {}
 
-  semver-compare@1.0.0:
-    optional: true
+  semver-compare@1.0.0: {}
 
   semver@5.7.2: {}
 
@@ -19827,7 +19838,6 @@ snapshots:
   serialize-error@7.0.1:
     dependencies:
       type-fest: 0.13.1
-    optional: true
 
   seroval-plugins@1.7.6(seroval@1.6.11):
     dependencies:
@@ -19986,8 +19996,7 @@ snapshots:
 
   space-separated-tokens@2.0.2: {}
 
-  sprintf-js@1.1.3(patch_hash=150ae794ae4b4b0c19e0b66fe0419c3de0a8a6d60c3a0d228d269db2c3047ba9):
-    optional: true
+  sprintf-js@1.1.3(patch_hash=150ae794ae4b4b0c19e0b66fe0419c3de0a8a6d60c3a0d228d269db2c3047ba9): {}
 
   sqids@0.3.0: {}
 
@@ -20352,8 +20361,7 @@ snapshots:
 
   tweetnacl@1.0.3: {}
 
-  type-fest@0.13.1:
-    optional: true
+  type-fest@0.13.1: {}
 
   type-fest@0.21.3: {}
 

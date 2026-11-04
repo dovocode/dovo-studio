@@ -10,17 +10,19 @@ export function ThreadStartModes({
   onGeneral,
   project,
   server,
+  home = false,
 }: {
   selected: boolean
   disabled: boolean
   onGeneral: () => void
   project: ReactNode
   server: ReactNode
+  home?: boolean
 }) {
   const { colors } = useTheme()
   return (
     <View
-      accessibilityLabel="Start a thread"
+      accessibilityLabel={home ? 'Start a terminal' : 'Start a thread'}
       style={{
         width: '100%',
         maxWidth: 520,
@@ -43,8 +45,8 @@ export function ThreadStartModes({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Start without a project"
-          accessibilityHint="Start without a project"
+          accessibilityLabel={home ? 'Start in home folder' : 'Start without a project'}
+          accessibilityHint={home ? 'Open a shell in your home folder' : 'Start without a project'}
           accessibilityState={{ selected, disabled }}
           disabled={disabled}
           onPress={onGeneral}
@@ -64,7 +66,11 @@ export function ThreadStartModes({
             opacity: disabled ? 0.4 : 1,
           }}
         >
-          <Icon name="noProject" size={16} color={selected ? colors.accent : colors.muted} />
+          <Icon
+            name={home ? 'home' : 'noProject'}
+            size={16}
+            color={selected ? colors.accent : colors.muted}
+          />
           <Text
             style={{
               color: selected ? colors.accent : colors.muted,
@@ -72,7 +78,7 @@ export function ThreadStartModes({
               fontWeight: selected ? '600' : '500',
             }}
           >
-            No Project
+            {home ? 'Home folder' : 'No Project'}
           </Text>
           {selected && <Icon name="check" size={14} color={colors.accent} />}
         </Pressable>

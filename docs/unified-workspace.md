@@ -70,22 +70,32 @@ keyboard focus and kept accessible on touch screens. Status sections keep all re
 Pinned items appear first, and settled or snoozed items remain available to reopen or unsnooze.
 Settling a thread follows the existing thread rules. Settling or snoozing a terminal keeps working,
 blocked and unreported jobs running. A remembered agent with an exact recovery target may release
-its PTY once the program explicitly reports **Idle** or **Done** through OSC 7501. Restoring it
-resumes that exact conversation; concurrent restores open one process. Multiplexers stay live.
-Automatic sleep checks for background jobs and helper processes; unknown or wrapped process trees
-stay live. Windows terminals currently stay live until runtime shutdown. Tools without those
-activity reports stay running until runtime shutdown. Terminal metadata is shared through its owning
-runtime for paired clients, and remembered metadata survives restarts.
+its PTY once the program explicitly reports **Idle** or **Done** through a supported lifecycle hook
+or OSC 7501. Restoring it resumes that exact conversation; concurrent restores open one process.
+Multiplexers stay live. Automatic sleep checks for background jobs and helper processes; unknown or
+wrapped process trees stay live. Windows terminals currently stay live until runtime shutdown. Tools
+without those activity reports stay running until runtime shutdown. Foreground-process detection
+alone never authorizes sleeping. Terminal metadata is shared through its owning runtime for paired
+clients, and remembered metadata survives restarts.
 
 Terminal activity follows the program-reported approach used by
 [Herdr Core](https://github.com/herdrdev/herdr-core#status-comes-from-the-program). Dovo observes
 root [OSC 7501](https://www.superlogical.com/rex/docs/build/program-status) reports for **Working**,
-**Needs input**, **Done**, **Failed** and **Idle**, including reported progress and messages.
-Unsupported programs display **Live session**; output alone never implies work. Working and Needs
-input terminals join the corresponding sections, while completion does not automatically settle a
-session. Offline computers and exited shells take precedence over activity reports. This observer
-supports root reports, clearing and prompt/exit cleanup; it does not advertise full OSC 7501
-support, answer capability queries or aggregate child records.
+**Needs input**, **Done**, **Failed** and **Idle**, including reported progress and messages. Codex
+and Claude lifecycle hooks, Pi extensions and OpenCode plugins publish the same states through a
+private per-terminal status file; hook stdout stays untouched. These integrations work with
+**Remember session** off as well. Restart an already running agent to load the updated integration;
+Codex may ask you to review its hook with `/hooks`.
+
+On macOS and Linux, native PTY foreground inspection provides **Running** for ordinary commands and
+**Idle** for an interactive shell prompt. It cannot determine command exit codes, background-job
+activity or shell builtins running inside the shell process. Explicit program activity takes
+precedence and is cleared when another foreground command takes over. Hosts without foreground
+inspection or supported activity reports display **Live session**; output alone never implies work.
+Working and Needs input terminals join the corresponding sections, while completion does not
+automatically settle a session. Offline computers and exited shells take precedence over activity
+reports. This observer supports root reports, clearing and prompt/exit cleanup; it does not
+advertise full OSC 7501 support, answer capability queries or aggregate child records.
 
 Session names follow OSC 0/2 shell titles. Click the terminal's title to rename it; **Use automatic
 title** restores shell naming. Renaming never restarts the shell. Metadata is observed on the owning
@@ -96,22 +106,41 @@ example, a program can report that it needs approval with:
 printf '\033]7501;state=blocked:kind=permission:app=my-agent\033\\'
 ```
 
-The shared input uses the configured utility/title model to suggest **Browser**, **Terminal** or
-**Thread**. Choose a lightweight utility model in **Settings → Agents → Titles & dictation**.
-Classification has no tools and returns only a destination and explanation. Review or override the
-destination, then use **Open browser**, **Run command**, or **Start/Send to thread**. Terminal
-commands use the original input in a new shell on the explicitly selected computer, with an
-installed shell picker and optional project folder. Use **New terminal** for the complete worktree
-starter. Thread requests start a new thread or continue the explicitly chosen thread. The input
-keeps its computer and destination while you switch workspace items; changing items never silently
-retargets a draft. Routing failures preserve the input and allow a manual destination. Explicit HTTP
-addresses retain HTTP for LAN and VPN use.
+The shared input uses the bundled **SupersonicLabs/Julia-1** decision model (144.3 million
+parameters) to suggest **Browser**, **Terminal** or **Thread**. Its pinned official ONNX weights and
+strict Rust/WASM tokenizer run on the owning runtime's CPU, in a separate lazy worker. No provider,
+API key, title-model setting or network download is needed for inference. Mobile uses the same
+bundled model on its paired runtime, rather than running it on the phone. Model assets add about 617
+MB to the runtime before compression, plus the native inference library. The worker unloads after a
+minute without routing requests.
+
+Julia chooses directly among the three descriptions; URL and shell rules do not override its choice.
+This model is not fine-tuned for Dovo: it can confidently misidentify common commands, addresses and
+requests. The suggestion is always reviewable and its scores are not presented as calibrated
+confidence. Missing assets, inference failures, capacity limits and inputs over 2,000 characters
+select Thread with an explicit fallback explanation, preserving the original draft. The current
+25-input workspace sample scores 14/25; this is an integration sample, not a general accuracy
+benchmark. `test:workspace-router:model` prints every mismatch to keep this visible. Classification
+has no tools and returns only a destination and explanation. Review or override the destination,
+then use **Open browser**, **Run command**, or **Start/Send to thread**. Terminal commands use the
+original input in a new shell on the explicitly selected computer, with an installed shell picker
+and optional project folder. Use **New terminal** for the complete worktree starter. Thread requests
+start a new thread or continue the explicitly chosen thread. The input keeps its computer and
+destination while you switch workspace items; changing items never silently retargets a draft.
+Routing failures preserve the input and allow a manual destination. Explicit HTTP addresses retain
+HTTP for LAN and VPN use.
 
 Verification: `pnpm test:unified-workspace:browser` covers mixed views, draft retention, owner
 selection, lifecycle actions, routing overrides, HTTP preservation, shell selection, all checkout
 options, stale computer responses, catalog retries and explicit command execution. Runtime tests in
-`workspace-terminals.test.ts` cover paired standalone shells and execution; utility-model tests
-cover bounded, tool-free classification and output validation. `pnpm test:workspace-submit:browser`
+`workspace-terminals.test.ts` cover paired standalone shells and execution;
+`workspace-router.test.ts` covers worker transport, bounded concurrency, timeouts, failures and
+output validation. Title-service tests verify routing needs no configured utility provider and
+creates no tasks. `pnpm prepare:workspace-router` fetches SHA-256-verified, revision-pinned assets
+during development; release runtime preparation includes this step automatically.
+`pnpm test:workspace-router:model` checks all 100 published PyTorch parity cases offline, reports
+workspace routing quality separately, and exercises the actual worker. Packaged runtime smoke checks
+verify native inference from the deployed dependency tree. `pnpm test:workspace-submit:browser`
 mounts the actual workspace, thread, browser and terminal components to check submissions and
 retained local/remote views through repeated swaps, preserving drafts and terminal replay.
 `pnpm test:workspace-modes:browser` exercises the actual Workbench and extension catalog through

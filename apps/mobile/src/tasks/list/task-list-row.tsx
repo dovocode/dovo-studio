@@ -91,10 +91,12 @@ function TaskListRowView({
   showDevice = true,
   density,
   hideStatusLabel = false,
+  showTypeIndicator = false,
 }: {
   /** Which computer ran a task is noise when only one computer is saved. */
   showDevice?: boolean
   hideStatusLabel?: boolean
+  showTypeIndicator?: boolean
   density: MobilePreferences['threadDensity']
   row: RuntimeTask
   /** Includes attention from spawned work without replacing the stable row projection. */
@@ -228,7 +230,7 @@ function TaskListRowView({
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
   const metadataText = { ...contextText, opacity: highContrast ? 1 : 0.94 }
-  const projectBadge =
+  const projectImage =
     displayProject?.kind === 'scratch' ? (
       <View
         style={{
@@ -261,6 +263,25 @@ function TaskListRowView({
         )}
       </View>
     )
+  const projectBadge = (
+    <View style={{ position: 'relative' }}>
+      {projectImage}
+      {showTypeIndicator && (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: -5,
+            right: -4,
+            borderRadius: 6,
+            backgroundColor: colors.background,
+            padding: 1,
+          }}
+        >
+          <Icon name="chat" size={9} color={colors.muted} />
+        </View>
+      )}
+    </View>
+  )
   const subthreadControl = childCount > 0 && (
     <Pressable
       accessibilityRole="button"

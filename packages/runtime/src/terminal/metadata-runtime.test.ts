@@ -1,11 +1,13 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
+import { existsSync } from 'node:fs'
 import { WebSocket } from 'ws'
 import {
   applySnapshotDelta,
   decode,
   syncFrameSchema,
   terminalSchema,
+  terminalStatus,
   type RuntimeSnapshot,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
@@ -13,6 +15,68 @@ import { Terminals } from './terminals.js'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration.js'
 
 vi.setConfig(runtimeIntegration)
+
+for (const shell of ['/bin/bash', '/bin/zsh'])
+  it.skipIf(!['linux', 'darwin'].includes(process.platform) || !existsSync(shell))(
+    `reports a quiet foreground command and the returning ${shell} prompt without attached clients`,
+    async () => {
+      const terminals = new Terminals()
+      try {
+        const info = terminals.createCommand(
+          'studio:terminals',
+          process.cwd(),
+          {
+            command: shell,
+            args: shell.endsWith('bash') ? ['--noprofile', '--norc', '-i'] : ['-f', '-i'],
+            env: {},
+          },
+          'Shell',
+        )
+        const current = () => terminals.get(info.id).info
+        await waitForRuntime(() => expect(current().foregroundProcess?.idle).toBe(true))
+        terminals.input(info.id, '/bin/sleep 2\r')
+        await waitForRuntime(() =>
+          expect(current().foregroundProcess).toEqual({ name: 'sleep', idle: false }),
+        )
+        expect(terminalStatus(current(), true)).toMatchObject({
+          label: 'Running',
+          section: 'working',
+        })
+        expect(current().activity).toBeUndefined()
+        await waitForRuntime(() => expect(terminalStatus(current(), true).label).toBe('Idle'))
+        expect(current().exited).toBe(false)
+        // A completed tool's report must not mask subsequent ordinary commands.
+        terminals.input(info.id, "printf '\\033]7501;state=done:app=agent\\033\\\\'\r")
+        await waitForRuntime(() => expect(current().activity?.state).toBe('done'))
+        terminals.input(info.id, '/bin/sleep 2\r')
+        await waitForRuntime(() => expect(terminalStatus(current(), true).label).toBe('Running'))
+        await waitForRuntime(() => expect(terminalStatus(current(), true).label).toBe('Idle'))
+      } finally {
+        await terminals.dispose()
+      }
+    },
+  )
+
+it.skipIf(!['linux', 'darwin'].includes(process.platform))(
+  'does not mistake an arbitrary launch executable for an idle shell',
+  async () => {
+    const terminals = new Terminals()
+    try {
+      const info = terminals.createCommand(
+        'studio:terminals',
+        process.cwd(),
+        { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], env: {} },
+        'Program',
+      )
+      await waitForRuntime(() =>
+        expect(terminals.get(info.id).info.foregroundProcess?.idle).toBe(false),
+      )
+      expect(terminalStatus(terminals.get(info.id).info, true).label).toBe('Running')
+    } finally {
+      await terminals.dispose()
+    }
+  },
+)
 
 it('publishes PTY metadata and renames through snapshot sync while preserving raw output', async () => {
   const token = 'terminal-metadata-owner-token-with-at-least-32-characters'
@@ -53,6 +117,11 @@ it('publishes PTY metadata and renames through snapshot sync while preserving ra
     socket.send(JSON.stringify({ type: 'resume' }))
     const current = () => snapshot?.terminals.find((item) => item.id === terminal.id)
     await waitForRuntime(() => expect(current()?.title).toBe('Terminal 1'))
+    await waitForRuntime(() =>
+      expect(current()?.foregroundProcess?.idle).toBe(
+        ['linux', 'darwin'].includes(process.platform) ? false : undefined,
+      ),
+    )
     expect(current()?.activity).toBeUndefined()
     const live: string[] = []
     const detach = runtime.services.terminals.attach(terminal.id, (data) => live.push(data))

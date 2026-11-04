@@ -3,11 +3,10 @@
 // app provider/preference imports: the host passes the socket loader, font and theme.
 import { requireOptionalNativeModule } from 'expo'
 import type { TerminalTheme, TerminalViewProps, TerminalViewRef } from 'expo-libghostty'
-import type { ComponentRef, ComponentType } from 'react'
+import type { ComponentType } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import {
   AppState,
-  Keyboard,
   Platform,
   Pressable,
   Text,
@@ -145,13 +144,11 @@ export function NativeTerminalSession({
   const [fontFallback, setFontFallback] = useState({ family: '', message: '' })
   const [backgrounded, setBackgrounded] = useState(AppState.currentState === 'background')
   const [readyKey, setReadyKey] = useState('')
-  const [keyboardInset, setKeyboardInset] = useState(0)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
   const ready = readyKey === viewKey
   const terminal = useRef<TerminalViewRef>(null)
   const size = useRef<{ key: string; value: TerminalGridSize } | null>(null)
   const stream = useRef<TerminalStream | null>(null)
-  const container = useRef<ComponentRef<typeof View>>(null)
   const notice = !fontFamilySupported
     ? unsupportedFontNotice(platform, font)
     : fontFamily && fontFallback.family === fontFamily
@@ -171,22 +168,6 @@ export function NativeTerminalSession({
     })
     return () => subscription.remove()
   }, [])
-
-  // Android's native view pads itself above the IME. iOS does not, so keep the cursor rows
-  // visible by shrinking the view by the keyboard overlap (Ghostty then reports a resize).
-  useEffect(() => {
-    if (platform !== 'ios') return
-    const subscriptions = [
-      Keyboard.addListener('keyboardWillChangeFrame', (event) => {
-        const top = event.endCoordinates.screenY
-        container.current?.measureInWindow((_x, y, _width, height) =>
-          setKeyboardInset(Math.max(0, Math.round(y + height - top))),
-        )
-      }),
-      Keyboard.addListener('keyboardWillHide', () => setKeyboardInset(0)),
-    ]
-    return () => subscriptions.forEach((subscription) => subscription.remove())
-  }, [platform])
 
   useEffect(() => {
     if (!ready || backgrounded || !visible) return
@@ -255,12 +236,10 @@ export function NativeTerminalSession({
 
   return (
     <View
-      ref={container}
       testID={testID}
       style={[
         { flex: 1, minHeight: 0, backgroundColor: theme.background ?? '#101113' },
         style,
-        { paddingBottom: keyboardInset },
         // Output keeps rendering, but touches (focus, keyboard, paste) wait for input readiness.
         { pointerEvents: inputReady ? 'auto' : 'none' },
       ]}

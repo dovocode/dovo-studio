@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { useBrowserWorkspace } from './browser-workspace'
+import { WorkspaceModes } from '../workspace/workspace-modes'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -61,10 +62,6 @@ import { Sheet, type SheetHandle } from '../ui/layout/sheet'
 import { useTheme } from '../ui/theme'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import {
-  BROWSER_STORAGE_KEY,
-  initialBrowserState,
-  parseBrowserState,
-  persistableBrowserState,
   promoteTab,
   moveBrowserTab,
   browserAddress,
@@ -79,12 +76,11 @@ import {
   pageKey,
   appendBrowserDraft,
   type BrowserSelection,
-  type BrowserState,
   type BrowserTab,
 } from './browser-state'
 
 /** Parent owns the experimental route/menu gate. Local WebView has one device cookie session. */
-export function BrowserScreen() {
+export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const { styles, colors } = useTheme()
   const runtime = useRuntime()
   const runtimeRef = useRef(runtime)
@@ -106,11 +102,10 @@ export function BrowserScreen() {
   const adoptedRemoteTabs = useRef(new Set<string>())
   const { navigate } = useNavigation()
   const focused = usePreviewActive()
-  const [state, setState] = useState<BrowserState>(() => initialBrowserState(randomUUID()))
-  const current = useRef(state)
-  const [loaded, setLoaded] = useState(false)
-  const [writable, setWritable] = useState(false)
-  const [error, setError] = useState('')
+  const { state, current, loaded, writable, storageError, change, resetStorage } =
+    useBrowserWorkspace()
+  const [pageError, setError] = useState('')
+  const error = pageError || storageError
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const locked = useRef(false)
@@ -146,7 +141,6 @@ export function BrowserScreen() {
     reject: (cause: Error) => void
     timer: ReturnType<typeof setTimeout>
   } | null>(null)
-  const saves = useRef(Promise.resolve())
   const active = state.tabs.find((tab) => tab.id === state.active) ?? state.tabs[0]
   const nativeOpening =
     nativeAvailable && active.kind === 'local' && nativeReady !== `${active.id}:${active.profileId}`
@@ -260,49 +254,6 @@ export function BrowserScreen() {
       else setWebsiteReload((previous) => previous + 1)
     }
   }
-  const change = (update: (previous: BrowserState) => BrowserState) => {
-    const next = update(current.current)
-    if (next === current.current) return
-    current.current = next
-    setState(next)
-  }
-  useEffect(() => {
-    let alive = true
-    void AsyncStorage.getItem(BROWSER_STORAGE_KEY).then(
-      (raw) => {
-        if (!alive) return
-        try {
-          if (raw) {
-            const restored = parseBrowserState(raw)
-            current.current = restored
-            setState(restored)
-          }
-          setWritable(true)
-        } catch {
-          setError(
-            'Saved browser data could not be restored. Reset saved browser data to save new tabs.',
-          )
-        }
-        setLoaded(true)
-      },
-      (cause) => {
-        if (alive) {
-          setError(`Could not load browser data: ${String(cause)}`)
-          setLoaded(true)
-        }
-      },
-    )
-    return () => {
-      alive = false
-    }
-  }, [])
-  useEffect(() => {
-    if (!loaded || !writable) return
-    const raw = JSON.stringify(persistableBrowserState(state, randomUUID()))
-    saves.current = saves.current
-      .then(() => AsyncStorage.setItem(BROWSER_STORAGE_KEY, raw))
-      .catch((cause) => setError(`Browser data could not be saved: ${String(cause)}`))
-  }, [state, loaded, writable])
   useEffect(() => {
     setAddress(active.url)
     setNavigation({ back: false, forward: false })
@@ -881,9 +832,10 @@ export function BrowserScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScreenHeader
-        title={active.previewOf ? 'Link preview' : 'Browser'}
+        title={active.previewOf ? 'Link preview' : unified ? active.title || 'Page' : 'Browser'}
         onBack={() => (active.previewOf ? void act(() => close(active)) : navigate('tasks'))}
       />
+      {!active.previewOf && !unified && <WorkspaceModes mode="browser" />}
       {active.previewOf && (
         <View
           style={{
@@ -923,8 +875,7 @@ export function BrowserScreen() {
             label="Reset saved browser data"
             onPress={() =>
               void act(async () => {
-                await AsyncStorage.removeItem(BROWSER_STORAGE_KEY)
-                setWritable(true)
+                await resetStorage()
               })
             }
           />

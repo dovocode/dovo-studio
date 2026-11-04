@@ -22,10 +22,10 @@ function atomicFile(path: string, source: string) {
   writeFileSync(temporary, source, { mode: 0o600 })
   renameSync(temporary, path)
 }
-function addHooks(path: string, command: string) {
+function addHooks(path: string, command: string, events: readonly string[]) {
   const config = existsSync(path) ? object(JSON.parse(readFileSync(path, 'utf8'))) : {}
   const hooks = config.hooks === undefined ? {} : object(config.hooks)
-  for (const name of ['SessionStart', 'SessionEnd']) {
+  for (const name of events) {
     const groups =
       hooks[name] === undefined ? [] : decode(Schema.Array(Schema.Unknown), hooks[name])
     // Keep the supported hook schema; identify our entry by its exact command.
@@ -68,6 +68,44 @@ exports.report = function(provider, sessionId, directory, ended = false) {
   fs.writeFileSync(temporary, JSON.stringify({target}), {mode: 0o600});
   fs.renameSync(temporary, file);
 };
+// Hook stdout is captured by agent CLIs. Publish to the owning terminal's private
+// status file instead of printing escape sequences into hook output.
+exports.status = function(provider, sessionId, activity) {
+  const root = process.env.DOVO_TERMINAL_STATUS_DIRECTORY || process.env.DOVO_TERMINAL_RECOVERY_DIRECTORY;
+  if (!root || !fs.existsSync(root) || fs.existsSync(path.join(root, 'closing'))) return;
+  if (process.env.TMUX || process.env.HC_SCOPE) return;
+  if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 4000 || /[\x00-\x1f\x7f]/.test(sessionId)) return;
+  const file = path.join(root, 'activity.json');
+  if (fs.existsSync(file)) {
+    const previous = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (previous.provider !== provider || previous.sessionId !== sessionId) {
+      if (!activity || activity.state !== 'idle') return;
+    }
+  }
+  const temporary = file + '.' + process.pid + '.' + require('node:crypto').randomUUID();
+  fs.writeFileSync(temporary, JSON.stringify({id: require('node:crypto').randomUUID(), at:Date.now(), provider, sessionId, activity: activity && {...activity, app:provider}}), {mode:0o600});
+  fs.renameSync(temporary, file);
+};
+exports.hook = function(provider, event) {
+  if (event.agent_id) return;
+  const name = event.hook_event_name;
+  if (name === 'SessionStart' || name === 'SessionEnd')
+    exports.report(provider, event.session_id, event.cwd, name === 'SessionEnd');
+  let activity;
+  if (name === 'SessionStart' || name === 'Interrupt') activity = {state:'idle'};
+  else if (name === 'SessionEnd') activity = null;
+  else if (name === 'Stop') activity = {state:'done'};
+  else if (name === 'StopFailure') activity = {state:'error'};
+  else if (name === 'PermissionRequest') activity = {state:'blocked',kind:'permission'};
+  else if (name === 'PreToolUse' && ['AskUserQuestion','request_user_input'].includes(event.tool_name)) activity = {state:'blocked',kind:'question'};
+  else if (['UserPromptSubmit','PreToolUse','PostToolUse','PostToolUseFailure'].includes(name)) activity = {state:'working'};
+  else if (name === 'Notification') {
+    if (event.notification_type === 'permission_prompt') activity = {state:'blocked',kind:'permission'};
+    if (event.notification_type === 'idle_prompt') activity = {state:'idle'};
+    if (event.notification_type === 'elicitation_dialog') activity = {state:'blocked',kind:'question'};
+  }
+  if (activity !== undefined) exports.status(provider, event.session_id, activity);
+};
 if (require.main === module) {
   let input = '';
   process.stdin.setEncoding('utf8');
@@ -77,7 +115,7 @@ if (require.main === module) {
   });
   process.stdin.on('end', () => {
     const event = JSON.parse(input);
-    exports.report(process.argv[2], event.session_id, event.cwd, event.hook_event_name === 'SessionEnd');
+    exports.hook(process.argv[2], event);
   });
 }
 `
@@ -170,8 +208,28 @@ export function installRecoveryIntegrations(
   const claude = environment.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
   const pi = environment.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
   const opencode = join(environment.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode')
-  addHooks(join(codex, 'hooks.json'), command('codex'))
-  addHooks(join(claude, 'settings.json'), command('claude'))
+  addHooks(join(codex, 'hooks.json'), command('codex'), [
+    'SessionStart',
+    'SessionEnd',
+    'UserPromptSubmit',
+    'PreToolUse',
+    'PostToolUse',
+    'PermissionRequest',
+    'Stop',
+    'Interrupt',
+  ])
+  addHooks(join(claude, 'settings.json'), command('claude'), [
+    'SessionStart',
+    'SessionEnd',
+    'UserPromptSubmit',
+    'PreToolUse',
+    'PostToolUse',
+    'PostToolUseFailure',
+    'PermissionRequest',
+    'Notification',
+    'Stop',
+    'StopFailure',
+  ])
   const module = JSON.stringify(pathToFileURL(reporter).href)
   ownedFile(
     join(pi, 'extensions', 'dovo-terminal-recovery.ts'),
@@ -180,11 +238,16 @@ import reporter from ${module};
 export default function(pi) {
   pi.on('session_start', (_event, ctx) => {
     const file = ctx.sessionManager.getSessionFile();
-    if (file) reporter.report('pi', file, ctx.cwd);
+    if (file) { reporter.report('pi', file, ctx.cwd); reporter.status('pi', file, {state:'idle'}); }
   });
+  for (const [name, state] of [['agent_start', 'working'], ['agent_end', 'done']])
+    pi.on(name, (_event, ctx) => {
+      const file = ctx.sessionManager.getSessionFile();
+      if (file) reporter.status('pi', file, {state});
+    });
   pi.on('session_shutdown', (_event, ctx) => {
     const file = ctx.sessionManager.getSessionFile();
-    if (file) reporter.report('pi', file, ctx.cwd, true);
+    if (file) { reporter.report('pi', file, ctx.cwd, true); reporter.status('pi', file, null); }
   });
 }
 `,
@@ -195,16 +258,33 @@ export default function(pi) {
 import reporter from ${module};
 export const DovoTerminalRecovery = async ({ directory }) => {
  let current;
- const remember = id => { current = id; reporter.report('opencode', id, directory); };
- process.once('exit', () => { if (current) reporter.report('opencode', current, directory, true); });
+ const children = new Set();
+ const remember = id => { current = id; reporter.report('opencode', id, directory); reporter.status('opencode', id, {state:'idle'}); };
+ process.once('exit', () => { if (current) { reporter.report('opencode', current, directory, true); reporter.status('opencode', current, null); } });
  return {
   event: async ({ event }) => {
+    if (event.type === 'session.created' && event.properties.info.parentID) {
+      children.add(event.properties.info.id); return;
+    }
     if (event.type === 'session.created' && !event.properties.info.parentID)
       remember(event.properties.info.id);
-    if (event.type === 'session.deleted')
-      reporter.report('opencode', event.properties.info.id, directory, true);
+    const id = event.properties.sessionID ?? event.properties.info?.id;
+    if (id !== current) return;
+    if (event.type === 'session.deleted') {
+      reporter.report('opencode', id, directory, true); reporter.status('opencode', id, null);
+    }
+    if (event.type === 'session.status') {
+      const state = event.properties.status?.type;
+      if (state === 'busy' || state === 'retry') reporter.status('opencode', id, {state:'working'});
+      if (state === 'idle') reporter.status('opencode', id, {state:'done'});
+    }
+    if (event.type === 'session.idle') reporter.status('opencode', id, {state:'done'});
+    if (event.type === 'session.error') reporter.status('opencode', id, {state:'error'});
+    if (event.type === 'permission.asked') reporter.status('opencode', id, {state:'blocked',kind:'permission'});
+    if (event.type === 'question.asked') reporter.status('opencode', id, {state:'blocked',kind:'question'});
+    if (['permission.replied','question.replied','question.rejected'].includes(event.type)) reporter.status('opencode', id, {state:'working'});
   },
-  'chat.message': async (input) => remember(input.sessionID),
+  'chat.message': async (input) => { if (!children.has(input.sessionID)) { remember(input.sessionID); reporter.status('opencode', input.sessionID, {state:'working'}); } },
  };
 };
 `,

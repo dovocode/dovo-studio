@@ -3,6 +3,8 @@ packages:
   - packages/*
 
 allowBuilds:
+  # CPU inference binaries are included in the package; skip optional CUDA downloads.
+  onnxruntime-node: false
   expo-libghostty: true
   '@firebase/util': true
   better-sqlite3: true

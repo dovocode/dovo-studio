@@ -1,11 +1,18 @@
 import type { AcpLaunch } from '../agents/execution/types.js'
-import { decode, updateTerminalSchema, STUDIO_TERMINAL_SCOPE } from '@dovo/protocol'
+import {
+  decode,
+  decodeResult,
+  terminalTitleSchema,
+  updateTerminalSchema,
+  STUDIO_TERMINAL_SCOPE,
+} from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { defaultShell, shellArguments } from './shell.js'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { statSync } from 'node:fs'
+import { basename } from 'node:path'
 import type * as pty from 'node-pty'
 import type { TerminalInfo, UpdateTerminal } from '@dovo/protocol'
 import { processEnvironment } from '../process.js'
@@ -87,6 +94,9 @@ type Session = {
   readonly buffer: string
   listeners: Set<(data: string) => void>
   pressures: Set<symbol>
+  activityEvent?: string
+  activityProcess?: string
+  metadataActivityAt?: number
 }
 export class Terminals {
   private pendingEnsure = new Map<string, Promise<TerminalInfo>>()
@@ -119,10 +129,8 @@ export class Terminals {
         console.error('Could not retain terminal', record.info.id, error)
       }
     }
-    if (recovery) {
-      this.recoveryTimer = setInterval(() => this.syncRecovery(), 500)
-      this.recoveryTimer.unref()
-    }
+    this.recoveryTimer = setInterval(() => this.syncRecovery(), 500)
+    this.recoveryTimer.unref()
   }
   private sessions = new Map<string, Session>()
   supportsRecovery() {
@@ -232,6 +240,8 @@ export class Terminals {
           exited: false,
         }
     delete info.activity
+    delete info.foregroundProcess
+    delete info.integrationError
     const session: Session = {
       directory: cwd,
       initialTitle: title,
@@ -326,6 +336,7 @@ export class Terminals {
   private syncRecovery(wake = true) {
     for (const session of this.sessions.values()) {
       this.readRecovery(session)
+      this.readStatus(session)
       if (
         wake &&
         !this.disposing &&
@@ -348,6 +359,49 @@ export class Terminals {
         this.persist(session)
       }
       if (wake) this.maybeSleep(session)
+    }
+  }
+  private readStatus(session: Session) {
+    if (!session.process || session.info.exited || session.info.dormant) return
+    const info = { ...session.info }
+    try {
+      // node-pty uses tcgetpgrp on Unix. Windows exposes the launch executable instead,
+      // which cannot tell us whether an interactive shell is idle.
+      const foregroundProcess = this.foreground(session)
+      if (foregroundProcess && !isDeepStrictEqual(info.foregroundProcess, foregroundProcess)) {
+        // A report belongs to the foreground job that emitted it. Returning to the
+        // shell or starting another command invalidates that job's old activity.
+        if (info.foregroundProcess && session.activityProcess !== foregroundProcess.name)
+          delete info.activity
+        info.foregroundProcess = foregroundProcess
+      }
+      if (this.recovery && info.taskId === STUDIO_TERMINAL_SCOPE) {
+        const event = this.recovery.activity(info.id)
+        if (event && event.id !== session.activityEvent) {
+          session.activityEvent = event.id
+          if (event.at > (session.metadataActivityAt ?? 0)) {
+            info.activity = event.activity ?? undefined
+            session.activityProcess = info.foregroundProcess?.name
+          }
+        }
+      }
+      if (info.integrationError?.startsWith('Could not read terminal status:'))
+        delete info.integrationError
+    } catch (error) {
+      info.integrationError = `Could not read terminal status: ${error instanceof Error ? error.message : String(error)}`
+    }
+    if (!isDeepStrictEqual(info, session.info)) {
+      session.info = info
+      this.persist(session)
+    }
+  }
+  private foreground(session: Session) {
+    if (!session.process || !['linux', 'darwin'].includes(process.platform)) return
+    const name = basename(session.process.process).replace(/^-/, '')
+    if (!decodeResult(terminalTitleSchema, name).success) return
+    return {
+      name,
+      idle: ['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'nu', 'pwsh'].includes(name),
     }
   }
   /** A checkpointed, explicitly idle agent can release its PTY. Working and unreported jobs stay live. */
@@ -391,7 +445,12 @@ export class Terminals {
       this.recovery?.freeze(id)
       session.process = undefined
       session.pressures.clear()
-      session.info = { ...session.info, dormant: true, activity: undefined }
+      session.info = {
+        ...session.info,
+        dormant: true,
+        activity: undefined,
+        foregroundProcess: undefined,
+      }
       this.persist(session)
       await stopUnixTerminal(terminal, () => exited)
     })()
@@ -416,7 +475,16 @@ export class Terminals {
       taskId = info.taskId
     const cwd = session.recovery?.target?.directory ?? session.directory
     if (!statSync(cwd).isDirectory()) throw new Error(`Terminal folder is not a directory: ${cwd}`)
-    session.info = { ...session.info, recoveryError: undefined }
+    session.info = {
+      ...session.info,
+      recoveryError: undefined,
+      activity: undefined,
+      foregroundProcess: undefined,
+      integrationError: undefined,
+    }
+    session.activityEvent = undefined
+    session.activityProcess = undefined
+    session.metadataActivityAt = undefined
     const resume = session.recovery?.target
       ? recoveryCommand(session.recovery.target, launch.command)
       : undefined
@@ -426,23 +494,31 @@ export class Terminals {
     delete env.DOVO_OWNER_TOKEN
     delete env.ELECTRON_RUN_AS_NODE
     delete env.DOVO_TERMINAL_RECOVERY_DIRECTORY
+    delete env.DOVO_TERMINAL_STATUS_DIRECTORY
     if (taskId === STUDIO_TERMINAL_SCOPE) {
       delete env.TMUX
       delete env.TMUX_PANE
       delete env.HC_SCOPE
     }
-    if (session.recovery && this.recovery) {
+    if (taskId === STUDIO_TERMINAL_SCOPE && this.recovery) {
       try {
-        Object.assign(env, this.recovery.environment(id, env.PATH ?? ''))
+        Object.assign(env, this.recovery.environment(id, env.PATH ?? '', Boolean(session.recovery)))
         session.info = {
           ...session.info,
-          recoverySetup:
-            'Codex recovery uses the Dovo hook. If prompted, review it with /hooks. Agent integrations load on their next start.',
+          ...(session.recovery
+            ? {
+                recoverySetup:
+                  'Codex status and recovery use the Dovo hook. If prompted, review it with /hooks. Agent integrations load on their next start.',
+              }
+            : {}),
         }
       } catch (error) {
         session.info = {
           ...session.info,
-          recoveryError: error instanceof Error ? error.message : String(error),
+          integrationError: `Could not install terminal integrations: ${error instanceof Error ? error.message : String(error)}`,
+          ...(session.recovery
+            ? { recoveryError: error instanceof Error ? error.message : String(error) }
+            : {}),
         }
       }
     }
@@ -456,6 +532,7 @@ export class Terminals {
     })
     session.process = terminal
     session.info = { ...session.info, dormant: false, exited: false, exitCode: undefined }
+    this.readStatus(session)
     this.persist(session)
     const metadata = new TerminalMetadata((event) => {
       const info = { ...session.info }
@@ -463,6 +540,12 @@ export class Terminals {
         if (event.title === undefined) delete info.terminalTitle
         else info.terminalTitle = event.title
       } else {
+        session.metadataActivityAt = Date.now()
+        try {
+          session.activityProcess = this.foreground(session)?.name
+        } catch (error) {
+          info.integrationError = `Could not read terminal status: ${error instanceof Error ? error.message : String(error)}`
+        }
         if (event.activity === undefined) delete info.activity
         else info.activity = event.activity
       }
@@ -499,6 +582,10 @@ export class Terminals {
       this.readRecovery(session)
       session.info = {
         ...session.info,
+        activity: ['done', 'error'].includes(session.info.activity?.state ?? '')
+          ? session.info.activity
+          : undefined,
+        foregroundProcess: undefined,
         exited: true,
         exitCode,
       }
@@ -601,13 +688,17 @@ export class Terminals {
   close(id: string) {
     const session = this.get(id)
     let shutdown = this.sleeping.get(id) ?? Promise.resolve()
+    if (session.info.taskId === STUDIO_TERMINAL_SCOPE) this.recovery?.freeze(id)
     if (!this.disposing && session.recovery) {
-      this.recovery?.freeze(id)
       this.recovery?.remove(id)
     }
     if (!session.info.exited && session.process) {
       if (process.platform === 'win32') session.process.kill()
       else shutdown = stopUnixTerminal(session.process, () => session.info.exited)
+    }
+    if (!session.recovery && session.info.taskId === STUDIO_TERMINAL_SCOPE && this.recovery) {
+      const recovery = this.recovery
+      shutdown = shutdown.finally(() => recovery.clearSession(id))
     }
     this.shutdowns.add(shutdown)
     void shutdown.then(

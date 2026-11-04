@@ -55,7 +55,6 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
           '../view': 'export default function Thread(){return <div>Thread surface</div>}',
           '../list/task-row-actions':
             'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',
-          '../list/task-collection': 'export const retainTaskOwner=(_,owner)=>owner',
           '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminalDialog=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
           './workspace-input':
             'export const WorkspaceInput=()=> <textarea aria-label="Workspace draft"/>',

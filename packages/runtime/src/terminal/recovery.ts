@@ -1,6 +1,12 @@
 import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
-import { decode, mutableStruct, terminalSchema, STUDIO_TERMINAL_SCOPE } from '@dovo/protocol'
+import {
+  decode,
+  mutableStruct,
+  terminalActivitySchema,
+  terminalSchema,
+  STUDIO_TERMINAL_SCOPE,
+} from '@dovo/protocol'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { quoteTerminalPaths } from './file-paths.js'
@@ -118,7 +124,24 @@ export class TerminalRecovery {
       throw new Error('Invalid recovery working directory')
     return event.target
   }
-  environment(id: string, searchPath: string) {
+  activity(id: string) {
+    const file = join(this.sessionDirectory(id), 'activity.json')
+    if (!existsSync(file)) return undefined
+    const bytes = readFileSync(file)
+    if (bytes.length > 16384) throw new Error('Terminal activity event is too large')
+    return decode(
+      mutableStruct({
+        id: Schema.String,
+        at: Schema.Number,
+        activity: Schema.NullOr(terminalActivitySchema),
+      }),
+      JSON.parse(bytes.toString('utf8')),
+    )
+  }
+  clearSession(id: string) {
+    rmSync(this.sessionDirectory(id), { recursive: true, force: true })
+  }
+  environment(id: string, searchPath: string, rememberSession = true) {
     if (!this.installed) {
       installRecoveryIntegrations(this.directory)
       this.installed = true
@@ -127,8 +150,10 @@ export class TerminalRecovery {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     rmSync(join(directory, 'closing'), { force: true })
     rmSync(join(directory, 'state.json'), { force: true })
+    rmSync(join(directory, 'activity.json'), { force: true })
     return {
-      DOVO_TERMINAL_RECOVERY_DIRECTORY: directory,
+      ...(rememberSession ? { DOVO_TERMINAL_RECOVERY_DIRECTORY: directory } : {}),
+      DOVO_TERMINAL_STATUS_DIRECTORY: directory,
       ...(process.platform !== 'win32'
         ? { PATH: `${join(this.directory, 'bin')}${delimiter}${searchPath}` }
         : {}),

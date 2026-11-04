@@ -5,7 +5,7 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
-  'react-native': `import React from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.appState=value=>{AppState.currentState=value;listeners.forEach(fn=>fn(value))};export const View=({children})=><div>{children}</div>;`,
+  'react-native': `import React from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.appState=value=>{AppState.currentState=value;listeners.forEach(fn=>fn(value))};export const View=({children})=><div>{children}</div>;export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};`,
   'react-native-webview': `import {forwardRef,useImperativeHandle,useEffect} from 'react';export const WebView=forwardRef((props,ref)=>{useImperativeHandle(ref,()=>({injectJavaScript:code=>window.commands.push(code)}));useEffect(()=>{window.mounts++;props.onMessage({nativeEvent:{data:JSON.stringify({type:'ready'})}})},[]);return null});`,
   '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,

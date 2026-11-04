@@ -42,6 +42,11 @@ replay status until the emulator answers a parse barrier (or its 1.5-second time
 keys share one native callback, so keys from an already-visible keyboard during reconnect replay are
 discarded rather than forwarding stale terminal responses to the shell.
 
+On iOS the native terminal is constrained to `UIKeyboardLayoutGuide`, so its grid resizes above the
+software keyboard and terminal accessory row. Keep keyboard avoidance out of the host's React Native
+layout for this renderer; a second inset would shrink the terminal twice. The WebView fallback owns
+its own keyboard avoidance.
+
 ## WASM provenance
 
 `src/browser/assets/ghostty-vt.wasm` is built from Ghostty revision

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Globe2,
   MessageSquare,
@@ -56,8 +56,10 @@ export function WorkspaceInput({
   active,
   onOpen,
   onBrowser,
+  children,
 }: {
   active?: WorkspaceTab
+  children?: ReactNode
   onOpen: (tab: WorkspaceTab) => void
   onBrowser: (url: string) => Promise<void>
 }) {
@@ -356,23 +358,6 @@ export function WorkspaceInput({
           : threadId
             ? 'Send to thread'
             : 'Start thread'
-  const Icon =
-    mode === 'terminal'
-      ? Terminal
-      : mode === 'browser'
-        ? Globe2
-        : mode === 'thread'
-          ? MessageSquare
-          : Sparkles
-  const projectName =
-    mode === 'thread' && threadId
-      ? (workspace?.repositories.find((repo) => repo.id === thread?.repositoryId)?.name ??
-        'General')
-      : repositoryId
-        ? (repository?.name ?? 'Unavailable project')
-        : mode === 'terminal'
-          ? 'Home folder'
-          : 'General'
   const target =
     mode === 'browser'
       ? 'Browser · New page'
@@ -386,72 +371,85 @@ export function WorkspaceInput({
   const idle = !!minimalComposer && !editorFocused && !text.trim()
   return (
     <div
-      className="startup-draft flex min-h-0 w-full flex-col"
+      className="startup-draft flex min-h-full w-full flex-1 shrink-0 flex-col"
       data-workspace-input
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setEditorFocused(false)
       }}
     >
       <StartupHeading>
-        {mode !== 'browser' && !(mode === 'thread' && threadId) && (
-          <div
-            role="group"
-            aria-label="Start in a project"
-            className="flex max-w-full flex-wrap items-center justify-center gap-1.5"
-          >
-            <button
-              type="button"
-              aria-pressed={!repositoryId}
-              disabled={busy || !connected}
-              onClick={() => {
-                invalidate()
-                setRepositoryId('')
-              }}
-              className={cn(
-                'startup-no-project inline-flex items-center justify-center gap-2 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
-                !repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
-              )}
-            >
-              {mode === 'terminal' ? (
-                <House className="size-4" />
-              ) : (
-                <MessageCircleDashed className="size-4" />
-              )}
-              {mode === 'terminal' ? 'Home folder' : 'No Project'}
-            </button>
+        <div className="flex min-h-9 max-w-full items-center justify-center">
+          {mode !== 'browser' && !(mode === 'thread' && threadId) && (
             <div
-              data-selected={!!repositoryId || undefined}
-              className="startup-project-selector inline-flex min-w-0 max-w-full items-stretch"
+              role="group"
+              aria-label="Start in a project"
+              className="flex max-w-full flex-wrap items-center justify-center gap-1.5"
             >
-              <ChoicePicker
-                aria-label="Workspace input project"
-                className="h-9 max-w-64 border-0 bg-transparent text-sm shadow-none"
-                icons={Object.fromEntries([
-                  ['', <Folder className="size-4" />],
-                  ...(workspace?.repositories ?? []).map((repo) => [
-                    repo.id,
-                    <ProjectIcon repository={repo} className="size-4" />,
-                  ]),
-                ])}
-                value={repositoryId}
+              <button
+                type="button"
+                aria-pressed={!repositoryId}
                 disabled={busy || !connected}
-                onValueChange={(id) => {
+                onClick={() => {
                   invalidate()
-                  setRepositoryId(id)
+                  setRepositoryId('')
                 }}
+                className={cn(
+                  'startup-no-project inline-flex items-center justify-center gap-2 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+                  !repositoryId ? 'border-primary bg-primary/5' : 'border-border bg-card',
+                )}
               >
-                <option value="">Choose project</option>
-                {workspace?.repositories
-                  .filter((repo) => repo.kind !== 'scratch')
-                  .map((repo) => (
-                    <option key={repo.id} value={repo.id}>
-                      {repo.name}
-                    </option>
-                  ))}
-              </ChoicePicker>
+                {mode === 'terminal' ? (
+                  <House className="size-4" />
+                ) : (
+                  <MessageCircleDashed className="size-4" />
+                )}
+                {mode === 'terminal' ? 'Home folder' : 'No Project'}
+              </button>
+              <div
+                data-selected={!!repositoryId || undefined}
+                className="startup-project-selector inline-flex min-w-0 max-w-full items-stretch"
+              >
+                <ChoicePicker
+                  aria-label="Workspace input project"
+                  className="h-9 max-w-64 border-0 bg-transparent text-sm shadow-none"
+                  icons={Object.fromEntries([
+                    ['', <Folder className="size-4" />],
+                    ...(workspace?.repositories ?? []).map((repo) => [
+                      repo.id,
+                      <ProjectIcon repository={repo} className="size-4" />,
+                    ]),
+                  ])}
+                  value={repositoryId}
+                  disabled={busy || !connected}
+                  onValueChange={(id) => {
+                    invalidate()
+                    setRepositoryId(id)
+                  }}
+                >
+                  <option value="">Choose project</option>
+                  {workspace?.repositories
+                    .filter((repo) => repo.kind !== 'scratch')
+                    .map((repo) => (
+                      <option key={repo.id} value={repo.id}>
+                        {repo.name}
+                      </option>
+                    ))}
+                </ChoicePicker>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+          {mode === 'browser' && (
+            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Globe2 className="size-4" />
+              New browser page
+            </span>
+          )}
+          {mode === 'thread' && threadId && (
+            <span className="max-w-lg truncate text-sm text-muted-foreground">
+              Continue: {thread?.title ?? 'Unavailable thread'}
+            </span>
+          )}
+        </div>
       </StartupHeading>
       <div className="mb-auto w-full shrink-0 pb-8">
         <div className="task-composer min-w-0">
@@ -511,7 +509,11 @@ export function WorkspaceInput({
             actions={
               <ComposerSubmit
                 aria-label={actionLabel}
-                title={actionLabel}
+                title={
+                  mode === 'auto'
+                    ? 'Suggest a destination to review before continuing'
+                    : actionLabel
+                }
                 busy={!!phase}
                 disabled={
                   !!phase ||
@@ -529,6 +531,7 @@ export function WorkspaceInput({
           >
             <ComposerTextarea
               aria-label="Workspace request"
+              autoFocus={!active}
               preview={mode === 'thread'}
               placeholder={
                 mode === 'terminal'
@@ -541,6 +544,10 @@ export function WorkspaceInput({
                         : 'What would you like to work on?'
                       : 'Search the web, run a command, or start a thread…'
               }
+              className={mode === 'terminal' ? 'font-mono' : undefined}
+              spellCheck={mode === 'thread'}
+              autoCapitalize={mode === 'thread' ? 'sentences' : 'off'}
+              autoCorrect={mode === 'thread' ? 'on' : 'off'}
               maxLength={20000}
               value={text}
               disabled={busy}
@@ -552,22 +559,9 @@ export function WorkspaceInput({
               }}
             />
           </ComposerSurface>
-          <div
-            className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs"
-            aria-label="Workspace input target"
-          >
-            <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="font-medium">{target}</span>
-            {mode !== 'browser' && (
-              <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
-                <Monitor className="size-3" aria-hidden="true" />
-                <span className="truncate">
-                  {computer} · {projectName}
-                  {connected ? '' : ' · offline'}
-                </span>
-              </span>
-            )}
-          </div>
+          <span className="sr-only" aria-label="Workspace input target">
+            {target}
+          </span>
           {mode !== 'browser' && (
             <ComposerWorkspaceBar>
               {mode === 'terminal' && (
@@ -583,6 +577,12 @@ export function WorkspaceInput({
               )}
               <ChoicePicker
                 aria-label="Workspace input computer"
+                icons={Object.fromEntries(
+                  store.runtimes.map((owner) => [
+                    owner.profile.id,
+                    <Monitor className="size-3.5" />,
+                  ]),
+                )}
                 className="h-7 max-w-44 border-transparent bg-transparent text-xs shadow-none"
                 value={runtimeId}
                 disabled={busy}
@@ -630,20 +630,16 @@ export function WorkspaceInput({
               )}
             </ComposerWorkspaceBar>
           )}
-          <p
-            role={reason ? 'status' : undefined}
-            className="mt-2 px-1 text-[11px] text-muted-foreground"
-          >
-            {reason
-              ? `Suggested ${mode}: ${reason}. Review the destination before continuing.`
-              : mode === 'auto'
-                ? 'AI suggests a destination. Review it before opening or running.'
-                : mode === 'terminal'
-                  ? 'Runs only when you choose Run command. Use the terminal starter for worktrees.'
-                  : mode === 'thread' && !threadId
-                    ? 'Starts a new thread. Choose a continuation target to use an existing thread.'
-                    : 'Destination selected. Ready when you are.'}
-          </p>
+          {(reason || phase === 'routing') && (
+            <p
+              role="status"
+              className="mx-auto mt-2 max-w-[var(--chat-max)] px-1 text-center text-xs text-muted-foreground"
+            >
+              {phase === 'routing'
+                ? 'Choosing a destination…'
+                : `Suggested ${mode}: ${reason}. Review the destination before continuing.`}
+            </p>
+          )}
           {mode === 'terminal' && catalog.ownerId === runtimeId && catalog.error && (
             <div role="alert" className="mt-1 px-1 text-xs text-destructive">
               Could not load shells: {catalog.error}{' '}
@@ -658,6 +654,7 @@ export function WorkspaceInput({
               </Button>
             </div>
           )}
+          {children}
         </div>
       </div>
     </div>

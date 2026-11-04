@@ -62,7 +62,14 @@ import {
 } from '../browser/browser-pane'
 import type { BrowserTab } from '../browser/shared-browser-tabs'
 import { taskActionClient, useTaskActionStore } from '../list/task-row-actions'
-import { retainTaskOwner, type TaskOwner } from '../list/task-collection'
+import {
+  collectTasks,
+  retainTaskOwner,
+  taskCollectionKey,
+  type TaskEntry,
+  type TaskOwner,
+} from '../list/task-collection'
+import { buildThreadTree, threadDescendants } from '../list/thread-tree'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import {
   NewWorkspaceTerminalDialog,
@@ -195,6 +202,61 @@ function WorkspaceContent() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | WorkspaceTab['kind']>('all')
   const [computer, setComputer] = useState('')
+  const threadEntries = useMemo(
+    () =>
+      collectTasks(
+        computers.flatMap((owner) =>
+          owner.snapshot
+            ? [
+                {
+                  runtimeId: owner.profile.id,
+                  name: runtimeComputerName(owner),
+                  online: owner.connected,
+                  snapshot: owner.snapshot,
+                  workspace: owner.snapshot.workspace,
+                },
+              ]
+            : [],
+        ),
+      ),
+    [computers],
+  )
+  // Use the Threads forest across computers, retaining unchanged branches while tasks stream.
+  const retainThreadTree = useMemo(() => {
+    let previous: ReturnType<typeof buildThreadTree<TaskEntry>> | undefined
+    return (
+      entries: readonly TaskEntry[],
+      computer: string,
+      runtimeIds: ReadonlyMap<string, string | null>,
+    ) => {
+      previous = buildThreadTree(
+        entries,
+        previous?.nodes,
+        (entry) => !entry.task.archivedAt && (!computer || entry.source.runtimeId === computer),
+        {
+          runtimeIds,
+          includeSnapshot: (child) => !computer || child.runtimeId === computer,
+        },
+      )
+      return previous
+    }
+  }, [])
+  const threadTree = useMemo(
+    () =>
+      retainThreadTree(
+        threadEntries,
+        computer,
+        new Map(
+          computers.flatMap((owner) =>
+            owner.snapshot?.runtimeId
+              ? [[owner.snapshot.runtimeId, owner.profile.id] as const]
+              : [],
+          ),
+        ),
+      ),
+    [retainThreadTree, threadEntries, computer, computers],
+  )
+  const threadRoots = new Map(threadTree.roots.map((entry) => [entry.key, entry]))
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [creatingTerminal, setCreatingTerminal] = useState(false)
   const [error, setError] = useState(restored.error ?? '')
@@ -580,15 +642,38 @@ function WorkspaceContent() {
     }),
   ]
   const searching = !!search.trim()
-  const matchingResources = resources
+  const threadKey = (resource: WorkspaceResource) =>
+    taskCollectionKey(resource.tab.runtimeId, resource.tab.id)
+  const listResources = resources.flatMap((resource): WorkspaceResource[] => {
+    if (resource.row.kind !== 'thread') return [resource]
+    const root = threadRoots.get(threadKey(resource))
+    if (!root) return []
+    return [
+      {
+        ...resource,
+        status: !resource.row.task.archived && root.needsInput ? 'needs-input' : resource.status,
+        row: { ...resource.row, needsInput: root.needsInput },
+      },
+    ]
+  })
+  const selectedThreadKey =
+    active?.kind === 'thread' ? taskCollectionKey(active.runtimeId, active.id) : undefined
+  const selectedRootKey = selectedThreadKey && threadTree.rootKeys.get(selectedThreadKey)
+  const matchingResources = listResources
     .filter(
       (resource) =>
         (filter === 'all' || resource.tab.kind === filter) &&
         (!computer ||
           resource.tab.runtimeId === computer ||
+          (resource.tab.kind === 'thread' && threadTree.contextKeys.has(threadKey(resource))) ||
           (resource.tab.kind === 'browser' &&
             pages.find((page) => page.id === resource.tab.id)?.runtimeId === computer)) &&
-        `${resource.title} ${resource.detail}`.toLowerCase().includes(search.toLowerCase()),
+        (`${resource.title} ${resource.detail}`.toLowerCase().includes(search.toLowerCase()) ||
+          (resource.tab.kind === 'thread' &&
+            threadDescendants(threadTree.nodes.get(threadKey(resource))?.children ?? []).some(
+              (child) =>
+                `${child.title} ${child.computerName}`.toLowerCase().includes(search.toLowerCase()),
+            ))),
     )
     .sort(
       (a, b) =>
@@ -602,7 +687,9 @@ function WorkspaceContent() {
       resource.status === 'settled' || resource.status === 'snoozed' ? resource.status : 'active'
     const shell = {
       title: resource.title,
-      selected: key === state.active,
+      selected:
+        key === state.active ||
+        (resource.tab.kind === 'thread' && threadKey(resource) === selectedRootKey),
       disabled: switching,
       status,
       onSelect: () => open(resource.tab),
@@ -622,7 +709,14 @@ function WorkspaceContent() {
     }
     const row = resource.row
     return row.kind === 'thread' ? (
-      <WorkspaceThreadRow key={key} {...shell} {...row} />
+      <WorkspaceThreadRow
+        key={key}
+        {...shell}
+        {...row}
+        thread={threadTree.nodes.get(threadKey(resource))}
+        selectedThreadKey={selectedThreadKey}
+        searching={searching}
+      />
     ) : row.kind === 'browser' ? (
       <WorkspacePageRow key={key} {...shell} {...row} pinnedPage={pinnedPage} />
     ) : (
@@ -638,10 +732,17 @@ function WorkspaceContent() {
   // Home resumes work: open tabs first, then pinned, then other active items. Still one mixed list.
   const continueWorking = [
     ...state.tabs.flatMap((tab) =>
-      resources.filter((resource) => workspaceTabKey(resource.tab) === workspaceTabKey(tab)),
+      listResources.filter((resource) =>
+        tab.kind === 'thread'
+          ? resource.tab.kind === 'thread' &&
+            threadKey(resource) ===
+              (threadTree.rootKeys.get(taskCollectionKey(tab.runtimeId, tab.id)) ??
+                taskCollectionKey(tab.runtimeId, tab.id))
+          : workspaceTabKey(resource.tab) === workspaceTabKey(tab),
+      ),
     ),
-    ...resources.filter((resource) => resource.pinned),
-    ...[...resources]
+    ...listResources.filter((resource) => resource.pinned),
+    ...listResources
       .filter((resource) => resource.status === 'active')
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })),
   ]
@@ -948,54 +1049,59 @@ function WorkspaceContent() {
             hidden={!!active}
             className={active ? 'hidden' : 'flex min-h-0 flex-1 flex-col overflow-y-auto'}
           >
-            <div className="startup-draft my-auto w-full py-8">
-              <WorkspaceInput active={active} onOpen={open} onBrowser={openBrowserLink} />
-              {!active && (
-                <div className="mx-auto grid w-full max-w-[var(--chat-max)] grid-cols-3 gap-2 px-5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
-                    disabled={switching || !store.activeRuntimeId}
-                    onClick={() =>
-                      open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
-                    }
-                  >
-                    <MessageSquare className="size-3.5" />
-                    New thread
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
-                    onClick={newBrowser}
-                  >
-                    <Globe2 className="size-3.5" />
-                    New browser
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
-                    onClick={() => setCreatingTerminal(true)}
-                  >
-                    <Terminal className="size-3.5" />
-                    New terminal
-                  </Button>
+            <WorkspaceInput active={active} onOpen={open} onBrowser={openBrowserLink}>
+              <details
+                className="mx-auto mt-3 w-full max-w-[var(--chat-max)] text-xs text-muted-foreground"
+                data-workspace-browse
+              >
+                <summary className="mx-auto w-fit cursor-pointer rounded-md px-3 py-2 text-sm outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                  Browse workspace
+                </summary>
+                <div className="pt-4">
+                  <div className="mb-3 grid grid-cols-3 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
+                      disabled={switching || !store.activeRuntimeId}
+                      onClick={() =>
+                        open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
+                      }
+                    >
+                      <MessageSquare className="size-3.5" />
+                      New thread
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
+                      onClick={newBrowser}
+                    >
+                      <Globe2 className="size-3.5" />
+                      New browser
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
+                      onClick={() => setCreatingTerminal(true)}
+                    >
+                      <Terminal className="size-3.5" />
+                      New terminal
+                    </Button>
+                  </div>
+
+                  {!!continueWorking.length && (
+                    <section aria-label="Continue working">
+                      <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
+                        Continue working
+                      </h2>
+                      {continueWorking.map((item) => renderResource(item))}
+                    </section>
+                  )}
                 </div>
-              )}
-              {!active && !!continueWorking.length && (
-                <section
-                  aria-label="Continue working"
-                  className="mx-auto mt-8 w-full max-w-[var(--chat-max)] px-5"
-                >
-                  <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
-                    Continue working
-                  </h2>
-                  {continueWorking.map((item) => renderResource(item))}
-                </section>
-              )}
-            </div>
+              </details>
+            </WorkspaceInput>
           </div>
           <div
             id="workspace-content"

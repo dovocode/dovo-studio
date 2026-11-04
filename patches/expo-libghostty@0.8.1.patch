@@ -241,7 +241,7 @@ index 2f32970ab6b560820b12b8e17842ed05471ba8ec..072c0c86cd083594e53dae2522ca8432
        AsyncFunction("write") { (view: ExpoLibghosttyView, base64: String) in
          guard let data = Data(base64Encoded: base64) else {
 diff --git a/ios/ExpoLibghosttyView.swift b/ios/ExpoLibghosttyView.swift
-index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..451b27ab5b317627611796ba0add52d9a6de2951 100644
+index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..5a786b50eb8d50e94a8dc8faf50eedafcbf962bb 100644
 --- a/ios/ExpoLibghosttyView.swift
 +++ b/ios/ExpoLibghosttyView.swift
 @@ -1,3 +1,4 @@
@@ -287,10 +287,12 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..451b27ab5b317627611796ba0add52d9
    let onInput = EventDispatcher()
    let onResize = EventDispatcher()
  
-@@ -66,9 +98,25 @@ class ExpoLibghosttyView: ExpoView {
+@@ -65,8 +97,33 @@ class ExpoLibghosttyView: ExpoView {
+     // ("surface rebuild skipped: missing controller").
      terminalView.controller = TerminalController.shared
      terminalView.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
-     terminalView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+-    terminalView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
++    terminalView.translatesAutoresizingMaskIntoConstraints = false
 +    terminalView.inputAccessoryItems = [
 +      .esc, .tab, .shift, .ctrl, .alt,
 +      .arrowLeft, .arrowUp, .arrowDown, .arrowRight,
@@ -299,8 +301,17 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..451b27ab5b317627611796ba0add52d9
 +      self?.onKeyboardVisibilityChange(["visible": visible])
 +    }
      addSubview(terminalView)
-   }
- 
++    // Resize the actual terminal grid with the keyboard, including third-party
++    // keyboards and the terminal accessory row. JS frame measurements arrive
++    // after native layout and can leave the cursor underneath the keyboard.
++    NSLayoutConstraint.activate([
++      terminalView.leadingAnchor.constraint(equalTo: leadingAnchor),
++      terminalView.trailingAnchor.constraint(equalTo: trailingAnchor),
++      terminalView.topAnchor.constraint(equalTo: topAnchor),
++      terminalView.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
++    ])
++  }
++
 +  func focusKeyboard() {
 +    terminalView.showSoftwareKeyboard()
 +  }
@@ -308,11 +319,9 @@ index 12925b541f7d4ebb98b5a9976486a561c69d6fe2..451b27ab5b317627611796ba0add52d9
 +  func blurKeyboard() {
 +    terminalView.resetStickyModifiers()
 +    terminalView.resignFirstResponder()
-+  }
-+
+   }
+ 
    /// Feed PTY output (terminal.output on the wire) into the grid.
-   func write(_ data: Data) {
-     session?.receive(data)
 diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift b/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
 index 18da09bd3b9424401a7a7cb84bb07b8c1479f471..6ddeaba8dd19f6b8920f26b816a01ce88bdf3e87 100644
 --- a/ios/vendor/GhosttyTerminal/Platform/UIKit/TerminalInputAccessoryView.swift
@@ -500,7 +509,9 @@ diff --git a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAcces
 index 809e7dd6f1887dc5c2b0267e4c786587c49aec57..ce321a2378b0561238f84fcbe0e40c997639c9b9 100644
 --- a/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAccessory.swift
 +++ b/ios/vendor/GhosttyTerminal/Platform/UIKit/UITerminalView+InputAccessory.swift
-@@ -154,4 +154,10 @@
+@@ -152,6 +152,12 @@
+             }
+ 
              let mods = stickyModifiers.consumeForNextKey()
 +            // The software keyboard delivers Return as text. Preserve sticky
 +            // modifiers through Ghostty's key encoder instead of pasting a newline.

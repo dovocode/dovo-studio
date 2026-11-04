@@ -97,8 +97,13 @@ export const terminalSchema = mutableStruct({
   /** Latest OSC 0/2 title; independent of an explicit user rename. */
   terminalTitle: Schema.optional(terminalTitleSchema),
   customTitle: Schema.optional(terminalTitleSchema),
-  /** Absent until a program explicitly reports root activity through OSC 7501. */
+  /** Explicit program activity from OSC 7501 or a supported tool lifecycle hook. */
   activity: Schema.optional(terminalActivitySchema),
+  /** Native PTY foreground process; absent on hosts without foreground inspection. */
+  foregroundProcess: Schema.optional(
+    mutableStruct({ name: terminalTitleSchema, idle: Schema.Boolean }),
+  ),
+  integrationError: Schema.optional(Schema.String),
   exited: Schema.Boolean,
   /** A retained terminal with no running process, waiting for an explicit restore. */
   dormant: Schema.optional(Schema.Boolean),

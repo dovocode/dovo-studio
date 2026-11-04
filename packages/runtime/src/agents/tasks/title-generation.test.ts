@@ -9,6 +9,7 @@ import { WorkspaceStore } from '../../storage/workspace'
 import { AgentRegistry } from '../configuration/registry'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout'
 import { TitleGeneration } from './title-generation'
+import { WorkspaceRouter } from './workspace-router'
 import { decode, taskSchema } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import type { AgentAdapter, AgentRun } from '../execution/types'
@@ -34,62 +35,32 @@ function setup(checkouts?: ConstructorParameters<typeof TitleGeneration>[3]) {
   const titles = new TitleGeneration(db, store, registry, checkouts)
   return { db, store, registry, titles }
 }
-it.each(['browser', 'terminal', 'thread'])(
-  'classifies workspace input as %s without tools or rewriting it',
+it.each(['browser', 'terminal', 'thread'] as const)(
+  'routes workspace input to %s without title settings or a provider',
   async (mode) => {
     const s = setup()
-    const runs: AgentRun[] = []
-    vi.spyOn(s.registry, 'get').mockResolvedValue({
-      probe: vi.fn<AgentAdapter['probe']>(),
-      run: async (run) => {
-        runs.push(run)
-        run.onText(JSON.stringify({ mode, reason: 'A suitable destination' }))
-      },
-    })
+    const route = vi
+      .spyOn(WorkspaceRouter.prototype, 'route')
+      .mockResolvedValue({ mode, reason: 'Julia-1 suggestion' })
+    const provider = vi.spyOn(s.registry, 'get')
     try {
-      s.titles.save({ agentId: 'harness', model: 'small-router-model' })
-      const text = 'http://computer.lan:3000/path'
-      expect(await runClientEffect(s.titles.routeWorkspaceEffect({ text }))).toEqual({
+      expect(s.titles.read().model).toBe('')
+      expect(await runClientEffect(s.titles.routeWorkspaceEffect({ text: 'pnpm test' }))).toEqual({
         mode,
-        reason: 'A suitable destination',
+        reason: 'Julia-1 suggestion',
       })
-      expect(runs).toHaveLength(1)
-      expect(runs[0]).toMatchObject({
-        ephemeral: true,
-        tools: 'none',
-        agent: { model: 'small-router-model', permission: 'read-only' },
-      })
-      expect(JSON.parse(runs[0].prompt)).toEqual({ input: text })
-      expect(await runs[0].approve('Run command', '{}')).toBe('deny')
+      expect(route).toHaveBeenCalledWith('pnpm test')
+      expect(provider).not.toHaveBeenCalled()
       expect(s.store.get().tasks).toEqual([])
     } finally {
+      route.mockRestore()
+      provider.mockRestore()
       await s.titles.dispose()
       await s.registry.dispose()
       s.db.close()
     }
   },
 )
-it.each([
-  '{"mode":"ssh","reason":"execute"}',
-  'not JSON',
-  '{"mode":"terminal","reason":"execute","command":"rm -rf project"}',
-])('rejects invalid workspace routing output %s', async (output) => {
-  const s = setup()
-  vi.spyOn(s.registry, 'get').mockResolvedValue({
-    probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (run) => run.onText(output),
-  })
-  try {
-    s.titles.save({ agentId: 'harness', model: 'small-router-model' })
-    await expect(runClientEffect(s.titles.routeWorkspaceEffect({ text: 'ls' }))).rejects.toThrow(
-      /invalid destination/,
-    )
-  } finally {
-    await s.titles.dispose()
-    await s.registry.dispose()
-    s.db.close()
-  }
-})
 it('generates a title from attachment metadata without inventing message text', async () => {
   const s = setup()
   let captured: AgentRun | undefined

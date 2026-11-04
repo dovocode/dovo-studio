@@ -612,6 +612,9 @@ function WorkbenchContent({
   useEffect(
     () =>
       onBrowserWorkspaceFocus?.(() => {
+        // The native browser is shared by Browser and Unified. Redirects, popups and
+        // page focus must stay with the workspace currently hosting that surface.
+        if (settingsNavigation.current.target.viewId === 'workspace') return
         updateAppPreferences({ browserWorkspaceEnabled: true })
         navigate({ viewId: 'browser' })
       }),

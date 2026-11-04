@@ -195,7 +195,7 @@ export default function GeneralScreen() {
       </SettingsGroup>
       <SettingsGroup
         title="Experimental"
-        footer="Browser tabs stay on this device. Remote tabs use their selected paired computer."
+        footer="Browser tabs stay on this device. Terminals run on paired computers and use their session recovery. Unified mixes threads, pages and standalone terminals."
       >
         <SettingsSwitchRow
           label="Enable experimental Browser"
@@ -204,6 +204,32 @@ export default function GeneralScreen() {
             updateMobilePreferences({ browserWorkspaceEnabled })
           }
         />
+        <SettingsSwitchRow
+          label="Enable Terminal workspace"
+          value={preferences.terminalWorkspaceEnabled}
+          onValueChange={(terminalWorkspaceEnabled) =>
+            updateMobilePreferences({ terminalWorkspaceEnabled })
+          }
+        />
+        <SettingsSwitchRow
+          label="Enable experimental Unified"
+          value={preferences.unifiedWorkspaceEnabled}
+          onValueChange={(unifiedWorkspaceEnabled) =>
+            updateMobilePreferences({
+              unifiedWorkspaceEnabled,
+              ...(unifiedWorkspaceEnabled ? {} : { unifiedWorkspaceActive: false }),
+            })
+          }
+        />
+        {preferences.unifiedWorkspaceEnabled && (
+          <SettingsSwitchRow
+            label="Hide normal modes in Unified"
+            value={preferences.hideNormalWorkspaceModes}
+            onValueChange={(hideNormalWorkspaceModes) =>
+              updateMobilePreferences({ hideNormalWorkspaceModes })
+            }
+          />
+        )}
       </SettingsGroup>
       <SettingsGroup title="Related settings">
         <SettingsRow

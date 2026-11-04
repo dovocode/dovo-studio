@@ -16,6 +16,7 @@ import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import type { RuntimeSnapshot } from '@dovo/protocol'
 import { TaskRow } from '../list/task-row'
 import type { TaskOwner } from '../list/task-collection'
+import type { NestedThread } from '../list/thread-tree'
 import { BrowserFavicon } from '../browser/browser-favicon'
 import { useBrowserProfileDetails } from '../browser/browser-profile-label'
 import type { BrowserTab } from '../browser/shared-browser-tabs'
@@ -116,11 +117,17 @@ export function WorkspaceThreadRow({
   disabled,
   onSelect,
   actions,
+  thread,
+  selectedThreadKey,
+  searching,
 }: RowShell & {
   task: Task
   owner: TaskOwner
   needsInput: boolean
   terminals: number
+  thread?: NestedThread
+  selectedThreadKey?: string
+  searching: boolean
 }) {
   const compact = task.archived || !!task.archivedAt
   return (
@@ -132,6 +139,9 @@ export function WorkspaceThreadRow({
         onSelect={onSelect}
         needsInput={needsInput}
         terminals={terminals}
+        thread={thread}
+        selectedThreadKey={selectedThreadKey}
+        searching={searching}
         editable={false}
         disabled={disabled}
       />

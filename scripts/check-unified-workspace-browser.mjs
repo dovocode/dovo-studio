@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { readdir } from 'node:fs/promises'
+import tailwindcss from '@tailwindcss/vite'
 import { createServer } from 'vite-plus'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const vite = await createServer({
   configFile: false,
+  plugins: [tailwindcss()],
   root,
   logLevel: 'error',
   server: { host: '127.0.0.1', port: 0 },
@@ -431,6 +432,28 @@ try {
     })
     await idle.waitFor()
   }
+  assert.equal(
+    await workspaceInput.evaluate((element) => element === document.activeElement),
+    true,
+    'The fresh starter focuses the editor like Start Thread',
+  )
+  const browseWorkspace = page.locator('[data-workspace-browse] > summary')
+  assert.equal(
+    await page.locator('[data-workspace-browse]').evaluate((element) => element.open),
+    false,
+  )
+  await page
+    .getByRole('region', { name: 'Continue working', exact: true })
+    .waitFor({ state: 'hidden' })
+  const starterEditor = await workspaceInput.elementHandle()
+  await browseWorkspace.click()
+  await page.getByRole('region', { name: 'Continue working', exact: true }).waitFor()
+  await browseWorkspace.click()
+  assert.equal(
+    await workspaceInput.evaluate((element, original) => element === original, starterEditor),
+    true,
+    'Browsing recent work preserves the starter editor',
+  )
   const workspaceRows = page.getByRole('complementary').locator('[data-workspace-kind]')
   const pinnedSection = page.getByRole('region', { name: 'Pinned workspace items', exact: true })
   const pinnedGrid = pinnedSection.getByRole('group', { name: 'Pinned browser tabs', exact: true })
@@ -484,16 +507,42 @@ try {
   }
   assert.equal(await pinnedSection.getByRole('button', { name: /More|ellipsis/i }).count(), 0)
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
-    const assets = root + '/apps/desktop/dist/assets'
-    const css = (await readdir(assets)).find((file) => /^index-.*\.css$/.test(file))
-    assert.ok(css, 'Build the desktop stylesheet before capturing the overview')
-    await page.addStyleTag({ path: assets + '/' + css })
+    const css = await vite.transformRequest('/packages/studio-ui/src/styles.css?direct')
+    assert.ok(css, 'Compile the current shared stylesheet for visual checks')
+    await page.addStyleTag({ content: css.code })
     await page.evaluate(() => {
       document.documentElement.classList.add('dark')
       document.documentElement.dataset.theme = 'dark'
     })
     await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
     await assertComposerDesign('Workspace input')
+    const starterGeometry = await page.locator('[data-workspace-input]').evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      const form = element.querySelector('form').getBoundingClientRect()
+      const heading = element.querySelector('h2').getBoundingClientRect()
+      return {
+        height: bounds.height,
+        viewport: element.parentElement.clientHeight,
+        formX: form.x,
+        formWidth: form.width,
+        headingCenter: heading.x + heading.width / 2,
+      }
+    })
+    assert.ok(
+      starterGeometry.height >= starterGeometry.viewport - 1,
+      'The starter fills the available thread-sized canvas',
+    )
+    assert.ok(
+      Math.abs(
+        starterGeometry.formX + starterGeometry.formWidth / 2 - starterGeometry.headingCenter,
+      ) < 2,
+      'Heading and composer share the thread start column',
+    )
+    assert.equal(
+      await page.getByRole('region', { name: 'Continue working', exact: true }).isVisible(),
+      false,
+      'Recent work does not crowd the initial composer',
+    )
     await page.evaluate(() => {
       document.documentElement.classList.remove('dark')
       document.documentElement.dataset.theme = 'light'
@@ -503,6 +552,31 @@ try {
       document.documentElement.classList.add('dark')
       document.documentElement.dataset.theme = 'dark'
     })
+    for (const size of [
+      { width: 900, height: 520 },
+      { width: 760, height: 540 },
+    ]) {
+      await page.setViewportSize(size)
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      const formBounds = await page
+        .getByRole('form', { name: 'Workspace input', exact: true })
+        .boundingBox()
+      const headingBounds = await page
+        .getByRole('heading', { name: 'What would you like to work on?' })
+        .boundingBox()
+      const browseBounds = await browseWorkspace.boundingBox()
+      assert.ok(
+        headingBounds.y >= 0 && browseBounds.y + browseBounds.height <= size.height,
+        'The complete starter fits in a short window',
+      )
+      assert.ok(
+        formBounds.x >= 280 && formBounds.x + formBounds.width <= size.width,
+        'The composer stays inside the content column at narrow widths',
+      )
+    }
+    await page.setViewportSize({ width: 1280, height: 900 })
     const action = page
       .getByRole('complementary')
       .getByRole('button', { name: 'Pin local thread', exact: true })
@@ -639,6 +713,135 @@ try {
     await snooze.evaluate((button) => button.blur())
     await page.getByRole('heading', { name: 'What would you like to work on?' }).hover()
   }
+  // Unified must use the same relationship tree as Threads, across paired computers.
+  const groupingOriginalRuntime = await page.evaluate(() => window.activeRuntimeId)
+  await page.evaluate(() => {
+    const task = (id, title, facts = {}) => ({
+      id,
+      title,
+      repositoryId: 'project',
+      status: 'draft',
+      createdAt: '2026-11-03T10:00:00Z',
+      messages: [],
+      ...facts,
+    })
+    window.computers[0].snapshot.runtimeId = 'local-identity'
+    window.computers[1].snapshot.runtimeId = 'remote-identity'
+    window.computers[0].snapshot.workspace.tasks.push(
+      task('group-parent', 'Grouping parent', {
+        subagents: [
+          {
+            id: 'native',
+            name: 'Native reviewer',
+            provider: 'codex',
+            status: 'working',
+            sessionLive: true,
+            startedAt: '2026-11-03T10:00:00Z',
+          },
+        ],
+      }),
+      task('group-local', 'Grouping local child', {
+        delegation: { parentTaskId: 'group-parent' },
+        status: 'running',
+      }),
+    )
+    window.computers[1].snapshot.workspace.tasks.push(
+      task('group-remote', 'Grouping remote child', {
+        spawnParent: { runtimeId: 'local-identity', threadId: 'group-parent' },
+        status: 'running',
+      }),
+      task('group-grandchild', 'Grouping grandchild', {
+        delegation: { parentTaskId: 'group-remote' },
+        status: 'running',
+      }),
+    )
+    window.computers[1].snapshot.questions = [{ taskId: 'group-grandchild' }]
+    window.computers = window.computers.map((computer) => ({
+      ...computer,
+      snapshot: { ...computer.snapshot },
+    }))
+    window.refresh()
+  })
+  const groupParent = page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Thread: Grouping parent', exact: true })
+  await groupParent.waitFor()
+  assert.equal(
+    await groupParent.evaluate((element) => element.closest('section').getAttribute('aria-label')),
+    'Needs input workspace items',
+    'Remote descendant attention reaches the parent section',
+  )
+  for (const title of ['Grouping local child', 'Grouping remote child', 'Grouping grandchild']) {
+    assert.equal(
+      await page.getByRole('group', { name: 'Thread: ' + title, exact: true }).count(),
+      0,
+      'Subagents have no duplicate top-level rows',
+    )
+  }
+  await groupParent
+    .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
+    .click()
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping local child', exact: true })
+    .waitFor()
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping remote child', exact: true })
+    .waitFor()
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Native reviewer', exact: true })
+    .waitFor()
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping remote child', exact: true })
+    .click()
+  await page.locator('[data-thread="group-remote"][data-owner="remote"]').waitFor()
+  assert.equal(
+    await groupParent.getAttribute('data-highlighted'),
+    'true',
+    'Selecting a child highlights its owning root',
+  )
+  await page.getByLabel('Search workspace').fill('Grouping grandchild')
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
+    .waitFor()
+  await groupParent
+    .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
+    .click()
+  await page.locator('[data-thread="group-grandchild"][data-owner="remote"]').waitFor()
+  await page.getByLabel('Search workspace').fill('')
+  await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
+  await page.getByLabel('Workspace computer filter').selectOption('remote')
+  await page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Thread: Grouping remote child', exact: true })
+    .waitFor()
+  assert.equal(
+    await groupParent.count(),
+    0,
+    'Filtering out the parent computer promotes the visible child',
+  )
+  assert.equal(
+    await page.getByRole('group', { name: 'Thread: Grouping grandchild', exact: true }).count(),
+    0,
+  )
+  await page.getByLabel('Workspace computer filter').selectOption('')
+  await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide Grouping grandchild', exact: true }).click()
+  await page.getByRole('button', { name: 'Hide Grouping remote child', exact: true }).click()
+  await returnHome()
+  await page.evaluate((originalRuntime) => {
+    window.activeRuntimeId = originalRuntime
+    for (const computer of window.computers) {
+      computer.snapshot.workspace.tasks = computer.snapshot.workspace.tasks.filter(
+        (task) => !task.id.startsWith('group-'),
+      )
+      computer.snapshot.questions = []
+    }
+    window.computers = window.computers.map((computer) => ({
+      ...computer,
+      snapshot: { ...computer.snapshot },
+    }))
+    window.refresh()
+  }, groupingOriginalRuntime)
   await page.evaluate(() => {
     window.computers[0].snapshot.workspace.tasks.push(
       {
@@ -1001,7 +1204,9 @@ try {
   const openItems = (await savedWorkspace()).tabs
   const threadDraft = await page.getByLabel('Thread draft').elementHandle()
   await returnHome()
+  await browseWorkspace.click()
   await page.getByRole('region', { name: 'Continue working', exact: true }).waitFor()
+  await browseWorkspace.click()
   assert.deepEqual(
     (await savedWorkspace()).tabs,
     openItems,

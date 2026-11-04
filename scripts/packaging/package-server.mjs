@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { archiveTool } from './archive-tool.mjs'
+import { prepareWorkspaceRouterModel } from './workspace-router-model.mjs'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 if (
   !['darwin', 'linux', 'win32'].includes(process.platform) ||
@@ -30,6 +31,7 @@ try {
   if (process.env.DOVO_PREPARED_RUNTIME) {
     await copyPreparedRuntime(root, server)
   } else {
+    await prepareWorkspaceRouterModel(join(root, 'packages/runtime/dist/models/workspace-router'))
     await stageWorkspace(root, source)
     deploy(
       [

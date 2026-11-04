@@ -7,6 +7,7 @@ import { desktopMiseArchive } from './desktop-mise-archive.mjs'
 import { verifyDesktopImports } from './desktop-imports.mjs'
 import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
+import { prepareWorkspaceRouterModel } from './workspace-router-model.mjs'
 import { windowsReleaseConfig } from './windows-signing.mjs'
 import { releaseVariant } from './release-variant.mjs'
 import { createTiming, timeMacSigning } from './release-timing.mjs'
@@ -76,6 +77,8 @@ try {
   const runtime = join(stage, 'runtime'),
     application = join(stage, 'application')
   const source = join(stage, 'source')
+  if (!process.env.DOVO_PREPARED_RUNTIME)
+    await prepareWorkspaceRouterModel(join(root, 'packages/runtime/dist/models/workspace-router'))
   const dependencies = await stageDesktopWorkspace(root, source)
   if (process.env.DOVO_PREPARED_RUNTIME) await copyPreparedRuntime(root, runtime)
   else

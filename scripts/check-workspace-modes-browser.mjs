@@ -43,10 +43,11 @@ window.fetch=async(url,init={})=>{
  if(path==='/api/previews/browser/profiles/read')return Response.json({profiles:[{id:'default',name:'Default'}]});
  throw new Error('Unexpected request '+url);
 };
-const browser=async command=>{window.calls.push({browser:command.action});if(command.action==='tabs')return {tabs:[]};return undefined};
+window.browserFocusListeners=new Set();const onBrowserWorkspaceFocus=listener=>{window.browserFocusListeners.add(listener);return()=>window.browserFocusListeners.delete(listener)};window.focusBrowserWorkspace=()=>{for(const listener of window.browserFocusListeners)listener()};
+const browser=async command=>{window.calls.push({browser:command.action});if(command.action==='tabs')return {tabs:[]};if(command.action==='status')return window.nativePage;return undefined};
 function Probe(){window.store=useWorkspace();window.host=useStudioHost();return null;}
 const extension={...tasksExtension,createRuntime:api=>{window.extensionCreations++;return tasksExtension.createRuntime(api)},views:tasksExtension.views.map(view=>({...view,load:async()=>{window.viewLoads[view.id]=(window.viewLoads[view.id]??0)+1;const module=await view.load();return {default:props=><><Probe/><module.default {...props}/></>}}}))};
-createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={[extension]} browser={browser} openBrowserWindow={async()=>{}}/></StrictMode>);
+createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={[extension]} browser={browser} onBrowserWorkspaceFocus={onBrowserWorkspaceFocus} openBrowserWindow={async()=>{}}/></StrictMode>);
 
 `,
     },
@@ -140,6 +141,37 @@ try {
       assert.deepEqual(errors, [])
     }
   }
+  await mode('Workspace').click()
+  await view(page.getByRole('region', { name: 'Unified workspace', exact: true }))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.locator('[data-browser-tab-id="saved-page"] [data-browser-tab-select]').click()
+  await view(page.getByRole('region', { name: 'Browser previews', exact: true }))
+  await page.evaluate(() => {
+    window.nativePage = {
+      url: 'http://example.lan/redirected',
+      title: 'Redirect destination',
+      canGoBack: true,
+      canGoForward: false,
+    }
+  })
+  await page.evaluate(() => window.focusBrowserWorkspace())
+  await view(page.getByRole('region', { name: 'Unified workspace', exact: true }))
+  assert.equal(
+    await mode('Workspace').getAttribute('aria-current'),
+    'page',
+    'Native browser focus keeps Unified selected',
+  )
+  await page.getByRole('button', { name: /^Redirect destination ·/ }).waitFor()
+  assert.equal(
+    await page
+      .locator('[data-browser-tab-id="saved-page"] [data-browser-tab-select]')
+      .getAttribute('aria-current'),
+    'page',
+    'The redirected page keeps its selected identity in Unified',
+  )
+  await mode('Tasks').click()
+  await page.evaluate(() => window.focusBrowserWorkspace())
+  await view(page.getByRole('region', { name: 'Browser previews', exact: true }))
   assert.deepEqual(errors, [])
   assert.equal(
     await page.evaluate(() => window.extensionCreations),

@@ -9,12 +9,36 @@ const shell: TerminalInfo = {
   exited: false,
 }
 
-it('never treats a connected ordinary shell as working', () => {
+it('does not infer work without foreground inspection or an explicit activity report', () => {
   expect(terminalStatus(shell, true)).toMatchObject({ label: 'Live session', section: 'active' })
   expect(terminalStatus({ ...shell, activity: { state: 'idle' } }, true)).toMatchObject({
     label: 'Idle',
     section: 'active',
   })
+})
+
+it('shows ordinary foreground commands as running and the shell prompt as idle', () => {
+  const running = { ...shell, foregroundProcess: { name: 'sleep', idle: false } }
+  expect(terminalStatus(running, true)).toMatchObject({
+    label: 'Running',
+    section: 'working',
+    detail: 'sleep',
+  })
+  expect(
+    terminalStatus({ ...shell, foregroundProcess: { name: 'zsh', idle: true } }, true),
+  ).toMatchObject({ label: 'Idle', section: 'active' })
+  expect(
+    terminalStatus({ ...running, activity: { state: 'blocked', kind: 'permission' } }, true),
+  ).toMatchObject({ label: 'Needs input', section: 'needs-input' })
+  expect(terminalStatus({ ...running, activity: { state: 'done' } }, true)).toMatchObject({
+    label: 'Done',
+    section: 'active',
+  })
+  expect(terminalStatus({ ...running, exited: true, exitCode: 0 }, true).label).toBe('Exited 0')
+  expect(terminalStatus(running, false).label).toBe('Offline')
+  expect(
+    terminalStatus({ ...shell, integrationError: 'Could not install hooks' }, true).detail,
+  ).toBe('Could not install hooks')
 })
 
 it('uses explicit activity reports without changing the session lifecycle', () => {
