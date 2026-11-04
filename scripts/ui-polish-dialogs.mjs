@@ -504,8 +504,36 @@ export async function captureFollowUpDialogs(page, origin, output) {
           path: resolve(output, `${name}-${mode}.png`),
           animations: 'disabled',
         })
+        if (
+          [
+            'git-actions-dense',
+            'git-actions-review-long-staged',
+            'git-actions-review-long-unstaged',
+            'git-actions-review-long-scrolled',
+          ].includes(name)
+        ) {
+          await page.setViewportSize({ width: 1100, height: 960 })
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+          await page.screenshot({
+            path: resolve(output, `${name}-compact-${mode}.png`),
+            animations: 'disabled',
+          })
+          await page.setViewportSize({ width: 1440, height: 960 })
+        }
         results.push({ name, mode, route, text: await page.locator('body').innerText() })
         console.log(`dialog ${name}-${mode}: captured`)
+        if (name === 'pr-merge' || name === 'pr-auto-merge') {
+          const sources = page
+            .getByRole('region', { name: 'Merge readiness', exact: true })
+            .locator('summary')
+            .filter({ hasText: 'Status sources' })
+          await sources.click()
+          await page.screenshot({
+            path: resolve(output, `${name}-sources-${mode}.png`),
+            animations: 'disabled',
+          })
+          await sources.click()
+        }
         if (name === 'image-editor') {
           const frame = page.frameLocator('iframe[title="Image editor"]')
           await frame.locator('#attach:enabled').waitFor()

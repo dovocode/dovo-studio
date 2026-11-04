@@ -55,8 +55,7 @@ const mocks = {
   `,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectSettings=()=> <p>Project defaults</p>;',
-  '@dovo/extension-scm/repository-actions':
-    'export const RepositoryActions=({onReviewChange})=> <div data-git-changes="true"><p>Advanced Git actions</p><button onClick={()=>onReviewChange(true)}>Review fixture file</button><button onClick={()=>onReviewChange(false)}>Back to staging fixture</button></div>;',
+  '@dovo/extension-scm/repository-actions': `import {useState} from 'react';export function RepositoryActions({onReviewChange}){const [fixture,setFixture]=useState({dirty:true,long:false});window.setGitFixture=changes=>setFixture(previous=>({...previous,...changes}));return <div data-git-changes={fixture.dirty} style={{minHeight:fixture.long?1400:undefined}}><p>Advanced Git actions</p><button onClick={()=>onReviewChange(true)}>Review fixture file</button><button onClick={()=>onReviewChange(false)}>Back to staging fixture</button></div>}`,
   '../dialogs/task-pull-link-dialog': 'export const TaskPullLinkDialog=()=>null;',
   '../dialogs/task-templates-dialog': 'export const TaskTemplatesDialog=()=>null;',
   '../dialogs/saved-prompts-dialog': 'export const SavedPromptsDialog=()=>null;',
@@ -648,10 +647,38 @@ try {
     await page.getByRole('dialog', { name: 'Git & project actions', exact: true }).waitFor()
     const gitDialog = page.getByRole('dialog', { name: 'Git & project actions', exact: true })
     const stagingBounds = await gitDialog.boundingBox()
+    const continuation = gitDialog.locator('[data-git-scroll-continuation]')
+    const gitScroll = gitDialog.locator('[data-git-actions-scroll]')
+    assert.equal(await continuation.count(), 0, 'Fitting content needs no continuation cue')
+    await page.evaluate(() => window.setGitFixture({ long: true }))
+    await continuation.waitFor()
+    await gitScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    await continuation.waitFor({ state: 'detached' })
+    await gitScroll.evaluate((element) => {
+      element.scrollTop = 0
+    })
+    await continuation.waitFor()
+    await page.evaluate(() => window.setGitFixture({ long: false, dirty: false }))
+    await continuation.waitFor({ state: 'detached' })
+    assert.ok(
+      (await gitDialog.boundingBox()).height < stagingBounds.height,
+      'Clean Git stays compact',
+    )
+    await page.evaluate(() => window.setGitFixture({ dirty: true }))
+    assert.deepEqual(await gitDialog.boundingBox(), stagingBounds)
     await gitDialog.getByRole('button', { name: 'Review fixture file', exact: true }).click()
     const reviewBounds = await gitDialog.boundingBox()
     assert.equal(reviewBounds.height, stagingBounds.height, 'Review keeps the Git workspace height')
     if (!mobile) assert.ok(reviewBounds.width > stagingBounds.width + 300)
+    await page.evaluate(() => window.setGitFixture({ long: true }))
+    assert.equal(
+      await continuation.count(),
+      0,
+      'Review uses its own scrolling without the staging cue',
+    )
+    await page.evaluate(() => window.setGitFixture({ long: false }))
     assert.ok(
       reviewBounds.x >= 0 && reviewBounds.x + reviewBounds.width <= page.viewportSize().width,
     )

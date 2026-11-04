@@ -44,7 +44,7 @@ import {
 } from 'lucide-react'
 import { PullComments } from './comments'
 import { PullChanges } from './changes'
-import { PullStatus, Signal } from './status'
+import { PullStatus, PullStatusSources, Signal } from './status'
 import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
@@ -182,6 +182,30 @@ function PullDetailContent({
           ? 'Checks failed'
           : undefined
   const ciSummary = detail ? pullChecks(detail.pull) : undefined
+  const providerReadiness = detail ? pullMergeability(detail.pull) : undefined
+  const pipelineStatus: PullSignal = pipelineRuns.runs.length
+    ? pipelineSummary
+    : {
+        label: pipelineRuns.busy ? 'Loading pipeline runs…' : 'No pipeline runs loaded',
+        tone: 'neutral',
+      }
+  const repositorySource = ciSummary
+    ? {
+        name: 'Repository CI',
+        signal: { ...ciSummary, label: ciSummary.label.replace(/^CI status: /, '') },
+      }
+    : undefined
+  const statusSources = [
+    ...(repositorySource ? [repositorySource] : []),
+    {
+      name: 'Check reports',
+      signal: { ...checkSummary, label: checkSummary.label.replace(/^Check reports: /, '') },
+    },
+    {
+      name: 'Linked pipeline runs',
+      signal: { ...pipelineStatus, label: pipelineStatus.label.replace(/^Pipeline runs: /, '') },
+    },
+  ]
   const previousChanges = useRef<typeof detail>(null)
   const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
   useEffect(() => {
@@ -345,7 +369,8 @@ function PullDetailContent({
                   readConnected: sections.checks.readConnected,
                   refresh: sections.checks.refresh,
                 },
-                providerCI: pullChecks(detail.pull),
+                providerReadiness: pullMergeability(detail.pull),
+                sources: [...statusSources, { name: 'Review status', signal: reviewSummary }],
                 signals: [
                   checkSummary,
                   pipelineRuns.runs.length
@@ -531,6 +556,7 @@ function PullDetailContent({
                         : `${item.label} (${item.count})`
                     }
                     aria-controls={`pr-panel-${item.id}`}
+                    title={item.id === 'checks' ? checkFailure : undefined}
                     aria-description={
                       item.id === 'checks'
                         ? [
@@ -571,12 +597,12 @@ function PullDetailContent({
                       className={`size-3.5 ${item.id === 'checks' && checkFailure ? 'text-status-error' : ''}`}
                     />
                     {item.label}
-                    {(item.count !== undefined || (item.id === 'checks' && checkFailure)) && (
+                    {item.count !== undefined && (
                       <span
                         aria-hidden
                         className={`rounded px-1.5 text-[0.625rem] tabular-nums ${item.id === 'checks' && checkFailure ? 'bg-status-error/10 text-status-error' : 'bg-muted text-muted-foreground'}`}
                       >
-                        {item.id === 'checks' && checkFailure ? checkFailure : item.count}
+                        {item.count}
                       </span>
                     )}
                   </button>
@@ -586,17 +612,22 @@ function PullDetailContent({
                 className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2"
                 aria-label="Pull request status"
               >
-                {ciSummary && <Signal signal={ciSummary} />}
                 <button
                   type="button"
                   aria-label="View pull request checks"
                   onClick={() => selectTab('checks')}
                   className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
                 >
-                  <Signal signal={checkSummary} />
+                  {providerReadiness && (
+                    <Signal
+                      signal={{
+                        ...providerReadiness,
+                        label: `Repository merge status: ${providerReadiness.label}`,
+                      }}
+                    />
+                  )}
                 </button>
-                {pipelineRuns.runs.length > 0 && <Signal signal={pipelineSummary} />}
-                <Signal signal={reviewSummary} />
+                <Signal signal={reviewSummary} subtle />
                 {detail.pull.autoMergeEnabled && (
                   <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
                 )}
@@ -793,12 +824,6 @@ function PullDetailContent({
                         )}
                       </dd>
                     </div>
-                    <div>
-                      <dt className="font-medium">Mergeability</dt>
-                      <dd className="mt-2">
-                        <Signal signal={pullMergeability(detail.pull)} />
-                      </dd>
-                    </div>
                   </dl>
                   <PullSectionStatus label="Stack" section={sections.stack} />
                   {!detail.stack && sections.stack.ready && stackControls}
@@ -823,6 +848,11 @@ function PullDetailContent({
                 checksReady={sections.checks.ready}
                 detail={detail}
               >
+                {repositorySource && (
+                  <div className="mb-4">
+                    <PullStatusSources sources={[repositorySource]} />
+                  </div>
+                )}
                 {checksOpened && repository && (
                   <PullPipelineRunsContent
                     state={pipelineRuns}

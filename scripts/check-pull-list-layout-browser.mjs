@@ -12,7 +12,7 @@ const mobile = root + 'apps/mobile/src/'
 const data = `
 window.sources=['mac','backup'].map(id=>({key:id,scope:id,runtimeId:id,runtimeName:id==='mac'?'Mac Studio':'MacBook',computerName:id==='mac'?'Mac Studio':'MacBook',connected:true,repository:{id:'repo',name:'Dovo Studio',path:'/repo'},profile:{id,connection:{address:'http://'+id,token:'paired'}}}));
 const base={state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-23T12:00:00Z',head:'feature',base:'main',labels:['ui'],additions:24,deletions:8,commentCount:3,viewerIsAuthor:true};
-window.pulls=[{...base,number:1,title:'Fix connection',checksState:'FAILURE'},{...base,number:2,title:'Ready to ship',checksState:'SUCCESS',reviewDecision:'APPROVED'},{...base,number:3,title:'Draft feature',draft:true},{...base,number:4,title:'Waiting for checks',checksState:'PENDING'},{...base,number:5,title:'Shipped change',state:'merged'}].map(pull=>({...pull,url:'https://github.com/team/studio/pull/'+pull.number}));
+window.pulls=[{...base,number:1,title:'Fix connection',head:'fix/runtime-reconnection-and-queued-thread-continuity-with-a-long-qualified-branch',base:'feature/preserve-active-thread-context',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerReviewRequested:true,labels:['runtime','needs-review','ui'],stack:{position:2,size:3,rootNumber:6,parentNumber:6,complete:true}},{...base,number:2,title:'Ready to ship',head:'patch/focus',checksState:'SUCCESS',reviewDecision:'APPROVED'},{...base,number:3,title:'Draft feature',draft:true,head:'feature/long-project-selection-state-when-the-runtime-reconnects'},{...base,number:4,title:'Waiting for checks',checksState:'PENDING'},{...base,number:5,title:'Shipped change',state:'merged'}].map(pull=>({...pull,url:'https://github.com/team/studio/pull/'+pull.number}));
 window.pages=()=>window.sources.map((source,index)=>({source,reader:source,error:window.sourceErrors?.[source.key],pulls:window.emptySources?.includes(source.key)?[]:index?window.pulls.slice(0,2).map(pull=>({...pull,url:pull.url+'/'})):window.pulls,runtimeId:source.runtimeId,runtimeName:source.runtimeName,sourceKey:source.key,connected:source.connected,readConnected:source.connected,repositoryId:'repo',name:source.repository.name}));
 window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>window.copied.push(value)}});
 `
@@ -208,6 +208,74 @@ try {
       )
       for (const label of ['24 lines added', '8 lines deleted', '3 comments'])
         assert.equal(await first.getByLabel(label, { exact: true }).count(), 1)
+      if (!isMobile) {
+        const readiness = first.getByLabel('PR readiness', { exact: true })
+        await readiness.getByText('Your review requested', { exact: true }).waitFor()
+        await readiness.getByText('Changes requested', { exact: true }).waitFor()
+        await first.getByText('Stack 2/3 · #6', { exact: true }).waitFor()
+        const failure = readiness.getByText('CI status: failed', { exact: true })
+        assert.notEqual(
+          await failure.evaluate((node) => getComputedStyle(node).color),
+          await failure.locator('svg').evaluate((node) => getComputedStyle(node).color),
+          'Readiness reserves semantic color for its icon',
+        )
+        assert.equal(
+          await first
+            .getByLabel('24 lines added', { exact: true })
+            .evaluate((node) => getComputedStyle(node).color),
+          await first
+            .locator('.studio-collection-context')
+            .evaluate((node) => getComputedStyle(node).color),
+          'Supporting metrics inherit neutral context color',
+        )
+        assert.equal(
+          await first.getByLabel('Labels', { exact: true }).innerText(),
+          'runtime\nneeds-review\n+1',
+        )
+        const assertReadinessBounds = async (wide) => {
+          const context = await first.locator('[data-pull-context]').boundingBox()
+          const status = await readiness.boundingBox()
+          const body = await first.locator('.studio-collection-body').boundingBox()
+          assert.ok(status.x >= body.x && status.x + status.width <= body.x + body.width + 1)
+          if (wide) {
+            assert.ok(status.x >= context.x + context.width, 'Readiness gets its own wide column')
+            const other = await rows
+              .filter({ hasText: 'Ready to ship' })
+              .getByLabel('PR readiness', { exact: true })
+              .boundingBox()
+            assert.ok(Math.abs(status.x - other.x) < 1, 'Varied branches keep readiness aligned')
+          } else {
+            assert.ok(
+              status.y >= context.y + context.height,
+              'Readiness stacks below context in a narrow pane',
+            )
+          }
+          const branch = first.locator(
+            '[title="fix/runtime-reconnection-and-queued-thread-continuity-with-a-long-qualified-branch → feature/preserve-active-thread-context"]',
+          )
+          assert.ok(
+            await branch.evaluate((node) => node.scrollWidth > node.clientWidth),
+            'Long branches truncate with complete hover context',
+          )
+        }
+        await assertReadinessBounds(width === 1280)
+        if (width === 1280) {
+          const sidebar = page.getByRole('navigation', {
+            name: 'Pull request sidebar',
+            exact: true,
+          })
+          await sidebar.evaluate((node) => {
+            node.style.width = '420px'
+            node.style.flex = '0 0 auto'
+          })
+          await assertReadinessBounds(false)
+          await sidebar.evaluate((node) => {
+            node.style.removeProperty('width')
+            node.style.removeProperty('flex')
+          })
+          await assertReadinessBounds(true)
+        }
+      }
       await page.evaluate(() => {
         window.sourceErrors = { backup: 'Forge access expired' }
         window.emptySources = ['backup']
@@ -354,6 +422,10 @@ try {
         await page.getByRole('button', { name: 'Filters', exact: true }).click()
         await page.getByRole('button', { name: 'Filters', exact: true }).click()
         assert.equal(await search.isVisible(), true)
+        await first.focus()
+        await first.press('Shift+F10')
+        await page.getByRole('menuitem', { name: 'Copy title', exact: true }).waitFor()
+        await page.keyboard.press('Escape')
         await page.getByRole('button', { name: 'Actions for PR #1', exact: true }).click()
         await page.getByRole('menuitem', { name: 'Copy PR link', exact: true }).click()
         assert.deepEqual(await page.evaluate(() => window.copied), [
@@ -392,6 +464,31 @@ try {
         )
       }
       assert.deepEqual(errors, [])
+      if (!isMobile && width === 1280) {
+        await first.click()
+        assert.equal(
+          await first.getAttribute('aria-current'),
+          'true',
+          'Opening a row preserves its selection',
+        )
+        assert.equal(
+          await first.getByLabel('Labels', { exact: true }).count(),
+          0,
+          'Compact overview preserves its label policy',
+        )
+        const context = await first.locator('[data-pull-context]').boundingBox()
+        const readiness = await first.getByLabel('PR readiness', { exact: true }).boundingBox()
+        assert.ok(
+          readiness.y >= context.y + context.height,
+          'A compact overview stacks readiness at a wide viewport',
+        )
+        for (const label of ['24 lines added', '8 lines deleted', '3 comments'])
+          assert.equal(await first.getByLabel(label, { exact: true }).count(), 1)
+        await page.screenshot({
+          path: '/tmp/dovo-pr-overhaul/desktop-compact-1280.png',
+          fullPage: true,
+        })
+      }
       await page.close()
     }
   console.log(

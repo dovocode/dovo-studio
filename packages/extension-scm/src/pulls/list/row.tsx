@@ -36,6 +36,7 @@ export function PullRow({
   const [error, setError] = useApplicationState('')
   const hasStatus =
     pull.checksState !== undefined || pull.reviewDecision !== undefined || !!pull.statusError
+  const reviewRequested = pull.state === 'open' && !pull.draft && pull.viewerReviewRequested
   const copy = async (text: string) => {
     setError('')
     try {
@@ -93,7 +94,7 @@ export function PullRow({
           ? 'text-muted-foreground'
           : 'text-status-success'
   return (
-    <div className="relative">
+    <div className="@container/pr-row relative">
       <div
         className={`group flex min-w-0 items-center rounded-xl border motion-safe:transition-colors ${selected ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
       >
@@ -118,130 +119,132 @@ export function PullRow({
               onClick={onClick ?? onSelect}
               className="studio-collection-row min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <div className="studio-collection-body">
-                <div className="studio-collection-meta">
-                  <span className={`studio-collection-status ${stateColor}`}>
-                    <Icon aria-hidden className="size-3.5" />
-                    {pullState(pull).label}
-                  </span>
-                  <span className="shrink-0 font-mono tabular-nums">#{pull.number}</span>
-                  <span className="min-w-0 flex-1 truncate" title={repository}>
-                    {repository}
-                  </span>
-                </div>
-                <p className="studio-collection-title line-clamp-2" title={pull.title}>
-                  {pull.title}
-                </p>
-                <div className="studio-collection-context">
-                  <span className="inline-flex min-w-0 items-center gap-1.5" title={pull.author}>
-                    <AuthorAvatar author={pull.author} url={pull.authorAvatarUrl} />
-                    <span className="max-w-32 truncate">{pull.author}</span>
-                  </span>
-                  <span
-                    className="min-w-0 max-w-full truncate"
-                    title={`${pull.head} → ${pull.base}`}
-                  >
-                    {pull.head} → {pull.base}
-                  </span>
-                  {pull.stack && (
-                    <span
-                      className="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-status-done/20 bg-status-done/5 px-2 py-1 text-status-done"
-                      title={
-                        pull.stack.nativeId
-                          ? 'Native GitHub stack'
-                          : pull.stack.complete
-                            ? 'Stack inferred from branch dependencies'
-                            : 'Partial stack inferred from this page; open details for the full stack'
-                      }
-                    >
-                      <Layers className="size-3" aria-hidden />
-                      <span>
-                        {pullStackLabel(pull.stack)}
-                        {pull.stack.nativeNumber
-                          ? ` · Stack #${pull.stack.nativeNumber}`
-                          : pull.stack.rootNumber
-                            ? ` · #${pull.stack.rootNumber}`
-                            : ''}
+              <div className="studio-collection-body grid gap-x-6 gap-y-2 @[64rem]/pr-row:grid-cols-[minmax(0,1fr)_14rem]">
+                <div className="min-w-0" data-pull-context>
+                  <div className="studio-collection-meta">
+                    <span className={`studio-collection-status ${stateColor}`}>
+                      <Icon aria-hidden className="size-3.5" />
+                      {pullState(pull).label}
+                    </span>
+                    <span className="shrink-0 font-mono tabular-nums">#{pull.number}</span>
+                    <span className="min-w-0 flex-1 truncate" title={repository}>
+                      {repository}
+                    </span>
+                  </div>
+                  <p className="studio-collection-title line-clamp-2" title={pull.title}>
+                    {pull.title}
+                  </p>
+                  <div className="studio-collection-context">
+                    <span className="inline-flex min-w-0 max-w-full flex-[1_1_20rem] items-center gap-3">
+                      <span
+                        className="inline-flex min-w-0 max-w-32 shrink-0 items-center gap-1.5"
+                        title={pull.author}
+                      >
+                        <AuthorAvatar author={pull.author} url={pull.authorAvatarUrl} />
+                        <span className="truncate">{pull.author}</span>
                       </span>
-                      <span className="font-mono">
-                        {pull.stack.parentNumber
-                          ? `#${pull.stack.parentNumber} → #${pull.number}`
-                          : pull.stack.position === 1
-                            ? 'Base PR'
-                            : pull.stack.baseRef
-                              ? `onto ${pull.stack.baseRef}`
+                      <span
+                        className="min-w-0 max-w-80 truncate"
+                        title={`${pull.head} → ${pull.base}`}
+                      >
+                        {pull.head} → {pull.base}
+                      </span>
+                    </span>
+                    {pull.stack && (
+                      <span
+                        className="inline-flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border px-2 py-1 [overflow-wrap:anywhere]"
+                        title={
+                          pull.stack.nativeId
+                            ? 'Native GitHub stack'
+                            : pull.stack.complete
+                              ? 'Stack inferred from branch dependencies'
+                              : 'Partial stack inferred from this page; open details for the full stack'
+                        }
+                      >
+                        <Layers className="size-3" aria-hidden />
+                        <span>
+                          {pullStackLabel(pull.stack)}
+                          {pull.stack.nativeNumber
+                            ? ` · Stack #${pull.stack.nativeNumber}`
+                            : pull.stack.rootNumber
+                              ? ` · #${pull.stack.rootNumber}`
                               : ''}
-                      </span>
-                    </span>
-                  )}
-                  {pull.state === 'open' && !pull.draft && pull.viewerReviewRequested && (
-                    <span className="text-status-done">Your review requested</span>
-                  )}
-                  <span className="inline-flex items-center gap-2 font-mono tabular-nums">
-                    {pull.additions != null && (
-                      <span
-                        className="text-status-success"
-                        aria-label={`${pull.additions} lines added`}
-                      >
-                        +{pull.additions.toLocaleString()}
+                        </span>
+                        <span className="font-mono">
+                          {pull.stack.parentNumber
+                            ? `#${pull.stack.parentNumber} → #${pull.number}`
+                            : pull.stack.position === 1
+                              ? 'Base PR'
+                              : pull.stack.baseRef
+                                ? `onto ${pull.stack.baseRef}`
+                                : ''}
+                        </span>
                       </span>
                     )}
-                    {pull.deletions != null && (
-                      <span
-                        className="text-status-error"
-                        aria-label={`${pull.deletions} lines deleted`}
-                      >
-                        −{pull.deletions.toLocaleString()}
-                      </span>
-                    )}
-                    {pull.commentCount != null && (
-                      <span
-                        className="inline-flex items-center gap-1 text-muted-foreground"
-                        title={`${pull.commentCount} comments`}
-                        aria-label={`${pull.commentCount} comments`}
-                      >
-                        <MessageSquare className="size-3" aria-hidden />
-                        {pull.commentCount.toLocaleString()}
-                      </span>
-                    )}
-                  </span>
-                  {hasStatus && (
-                    <span
-                      className="inline-flex flex-wrap items-center gap-x-3 gap-y-1"
-                      title={pullNextStep(pull).label}
-                    >
-                      {(pull.checksState !== undefined || pull.statusError) && (
-                        <Signal signal={pullChecks(pull)} />
+                    <span className="inline-flex items-center gap-2 font-mono tabular-nums">
+                      {pull.additions != null && (
+                        <span aria-label={`${pull.additions} lines added`}>
+                          +{pull.additions.toLocaleString()}
+                        </span>
                       )}
-                      {(pull.reviewDecision !== undefined || pull.statusError) && (
-                        <Signal signal={pullReview(pull)} />
+                      {pull.deletions != null && (
+                        <span aria-label={`${pull.deletions} lines deleted`}>
+                          −{pull.deletions.toLocaleString()}
+                        </span>
                       )}
-                    </span>
-                  )}
-
-                  {!compact && !!pull.labels.length && (
-                    <span className="inline-flex min-w-0 items-center gap-1" aria-label="Labels">
-                      {pull.labels.slice(0, 2).map((label) => (
-                        <Badge
-                          key={label}
-                          variant="secondary"
-                          className="studio-collection-label max-w-28 truncate"
-                          title={label}
-                        >
-                          {label}
-                        </Badge>
-                      ))}
-                      {pull.labels.length > 2 && (
+                      {pull.commentCount != null && (
                         <span
-                          className="text-[0.625rem] text-muted-foreground"
-                          title={pull.labels.slice(2).join(', ')}
+                          className="inline-flex items-center gap-1 text-muted-foreground"
+                          title={`${pull.commentCount} comments`}
+                          aria-label={`${pull.commentCount} comments`}
                         >
-                          +{pull.labels.length - 2}
+                          <MessageSquare className="size-3" aria-hidden />
+                          {pull.commentCount.toLocaleString()}
                         </span>
                       )}
                     </span>
-                  )}
+                    {!compact && !!pull.labels.length && (
+                      <span className="inline-flex min-w-0 items-center gap-1" aria-label="Labels">
+                        {pull.labels.slice(0, 2).map((label) => (
+                          <Badge
+                            key={label}
+                            variant="secondary"
+                            className="studio-collection-label max-w-28 truncate"
+                            title={label}
+                          >
+                            {label}
+                          </Badge>
+                        ))}
+                        {pull.labels.length > 2 && (
+                          <span
+                            className="text-[0.625rem] text-muted-foreground"
+                            title={pull.labels.slice(2).join(', ')}
+                          >
+                            +{pull.labels.length - 2}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {(hasStatus || reviewRequested) && (
+                  <div
+                    className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs @[64rem]/pr-row:flex-col @[64rem]/pr-row:items-start"
+                    role="group"
+                    aria-label="PR readiness"
+                    title={pullNextStep(pull).label}
+                  >
+                    {reviewRequested && (
+                      <span className="font-medium text-status-done">Your review requested</span>
+                    )}
+                    {(pull.checksState !== undefined || pull.statusError) && (
+                      <Signal signal={pullChecks(pull)} subtle />
+                    )}
+                    {(pull.reviewDecision !== undefined || pull.statusError) && (
+                      <Signal signal={pullReview(pull)} subtle />
+                    )}
+                  </div>
+                )}
               </div>
               <time
                 className="studio-collection-date"

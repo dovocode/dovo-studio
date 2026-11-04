@@ -632,6 +632,61 @@ try {
   })
   await page.getByLabel('Push status').filter({ hasText: 'Publish this branch' }).waitFor()
   assert.equal(await push.isDisabled(), false)
+
+  // Long paths keep basename and directory identity without changing row/action geometry.
+  const longPaths = [
+    'packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.ts',
+    'packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.test.ts',
+    'packages/extension-tasks/src/runtime/navigation/project-runtime-selection/runtime-targets.ts',
+  ]
+  await state(
+    {},
+    longPaths.map((path) => ({ path, gitStatus: { index: 'modified', workingTree: 'modified' } })),
+  )
+  const writesBeforeGeometry = await page.evaluate(() => window.writes.length)
+  for (const dark of [false, true]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark)
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      const staged = page.getByRole('region', { name: 'Staged', exact: true })
+      const unstaged = page.getByRole('region', { name: 'Unstaged', exact: true })
+      const stagedPath = staged.locator(`[title="${longPaths[0]}"]`)
+      const unstagedPath = unstaged.locator(`[title="${longPaths[0]}"]`)
+      assert.equal(await stagedPath.getByText('runtime-targets.ts', { exact: true }).count(), 1)
+      assert.equal(await stagedPath.locator('.sr-only').textContent(), longPaths[0])
+      assert.equal(
+        await stagedPath
+          .getByText(longPaths[0].slice(0, longPaths[0].lastIndexOf('/') + 1), { exact: true })
+          .count(),
+        1,
+      )
+      assert.equal((await stagedPath.boundingBox()).x, (await unstagedPath.boundingBox()).x)
+      const stagedReview = staged.getByRole('button', {
+        name: `Review staged ${longPaths[0]}`,
+        exact: true,
+      })
+      const unstagedReview = unstaged.getByRole('button', {
+        name: `Review unstaged ${longPaths[0]}`,
+        exact: true,
+      })
+      assert.equal((await stagedReview.boundingBox()).x, (await unstagedReview.boundingBox()).x)
+      assert.equal(
+        (await stagedReview.boundingBox()).width,
+        (await unstagedReview.boundingBox()).width,
+      )
+      assert.ok(
+        await stagedPath
+          .getByText('runtime-targets.ts', { exact: true })
+          .evaluate(
+            (element) =>
+              getComputedStyle(element).whiteSpace === 'nowrap' &&
+              getComputedStyle(element).textOverflow === 'ellipsis',
+          ),
+      )
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    }
+  }
+  assert.equal(await page.evaluate(() => window.writes.length), writesBeforeGeometry)
   assert.deepEqual(errors, [])
   console.log('Repository actions browser checks passed')
 } finally {

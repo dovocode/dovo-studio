@@ -1,16 +1,10 @@
 import { Disclosure } from '@dovo/studio-ui'
 import type { ReactNode } from 'react'
 import { CircleCheck, CircleAlert, Clock3, CircleDashed } from 'lucide-react'
-import {
-  checkSignal,
-  latestPullReviews,
-  pullMergeability,
-  type PullDetail,
-  type PullSignal,
-} from '@dovo/studio-core'
+import { checkSignal, latestPullReviews, type PullDetail, type PullSignal } from '@dovo/studio-core'
 import { ReviewBadge } from './review-badge'
 import { MessageResponse } from '@dovo/studio-ui'
-export function Signal({ signal }: { signal: PullSignal }) {
+export function Signal({ signal, subtle = false }: { signal: PullSignal; subtle?: boolean }) {
   const Icon =
     signal.tone === 'danger'
       ? CircleAlert
@@ -30,10 +24,30 @@ export function Signal({ signal }: { signal: PullSignal }) {
             ? 'text-status-done'
             : 'text-muted-foreground'
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs ${color}`}>
-      <Icon className="size-3.5 shrink-0" aria-hidden />
+    <span
+      className={`inline-flex items-center gap-1.5 text-xs ${subtle ? 'text-muted-foreground' : color}`}
+    >
+      <Icon className={`size-3.5 shrink-0 ${color}`} aria-hidden />
       {signal.label}
     </span>
+  )
+}
+export function PullStatusSources({
+  sources,
+}: {
+  sources: { name: string; signal: PullSignal }[]
+}) {
+  return (
+    <dl aria-label="Status sources" className="space-y-3 text-xs">
+      {sources.map(({ name, signal }) => (
+        <div key={name} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <dt className="text-muted-foreground">{name}</dt>
+          <dd>
+            <Signal signal={signal} subtle />
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 export function PullStatus({
@@ -162,15 +176,11 @@ export function PullStatus({
           <h3 className="mb-2 font-medium">Requested reviewers</h3>
           <p className="text-muted-foreground">{detail.pull.reviewers.join(', ') || 'None'}</p>
         </div>
-        <div>
-          <h3 className="mb-2 font-medium">Mergeability</h3>
-          <Signal signal={pullMergeability(detail.pull)} />
-          {detail.pull.autoMergeEnabled && (
-            <p className="mt-2 text-muted-foreground">
-              Auto-merge enabled · merges when GitHub’s requirements pass.
-            </p>
-          )}
-        </div>
+        {detail.pull.autoMergeEnabled && (
+          <p className="text-muted-foreground">
+            Auto-merge enabled · merges when GitHub’s requirements pass.
+          </p>
+        )}
       </aside>
     </div>
   )

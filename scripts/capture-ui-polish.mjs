@@ -489,6 +489,15 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         path: resolve(output, `${name}-${mode}.png`),
         animations: 'disabled',
       })
+      if (['pulls-dense', 'issues-dense', 'agents-dirty'].includes(name)) {
+        await page.setViewportSize({ width: 1100, height: 960 })
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        await page.screenshot({
+          path: resolve(output, `${name}-compact-${mode}.png`),
+          animations: 'disabled',
+        })
+        await page.setViewportSize({ width: 1440, height: 960 })
+      }
       if (name === 'conversation') {
         const files = page
           .getByRole('navigation', { name: 'Thread tools' })

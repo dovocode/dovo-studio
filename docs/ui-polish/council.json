@@ -557,10 +557,61 @@
       "coverage": "19 contact sheets; 35 exact full-size frames. No source inspected.",
       "verification": "Title tooltips already exist; HEAD/index/working comparisons are distinct; alleged Review selected and repeated selection strings are absent. These unsupported claims were not implemented. Dense evidence and save/source presentation subsequently improved.",
       "brief": "Fresh context; no historical findings, previous scores or target ratings supplied."
+    },
+    {
+      "round": "independent47",
+      "model": "Opus 5.5",
+      "id": "c3459600-02af-446f-bc8a-0d62c8989e8b",
+      "score": 7.5,
+      "shipVerdict": "ship; reduce repeated CI, clarify Git paths, repair embedded Agent footer and stale scope instruction",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No prior or target ratings, historical findings or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "Opus 5.5",
+      "id": "8a067021-1386-4200-a767-cdc3e8162d5c",
+      "score": 7.5,
+      "shipVerdict": "conditional ship; repair Agent footer seam, text area consistency and simplify repeated CI",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No prior or target ratings, historical findings or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent47_sol_b",
+      "score": 8.3,
+      "shipVerdict": "ship; improve merge readiness hierarchy and stale Agents scope copy",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No prior or target ratings, historical findings or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent47_sol_a",
+      "score": 8,
+      "shipVerdict": "ship; predictable PR readiness placement, scope instruction, merge hierarchy and Git scroll cue",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No prior or target ratings, historical findings or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent47_sol_c",
+      "score": 8.3,
+      "shipVerdict": "ship; clean Agent footer seam, scope instruction and dense PR metadata scanability",
+      "brief": "Fresh context; actual frozen screenshots and constraints only. No prior or target ratings, historical findings or other reviews."
+    },
+    {
+      "round": "independent47",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "fb603463-a707-4fb6-9da3-13c1322ff3f3",
+      "score": 8,
+      "shipVerdict": "ship; simplify repeated PR readiness, improve metadata comfort and scroll affordance",
+      "coverage": "44 exact full-size images across both themes;4 contact sheets used for inventory.",
+      "verification": "Original assessment recovered directly from paginated child history after source-snapshot follow-up started an acknowledgement turn. Frozen gallery47 and matching source snapshot preserved.",
+      "brief": "Fresh context; no prior/target ratings, historical findings, generated references or other reviews."
     }
   ],
   "remaining": [
-    "Verify refreshed dense screenshot gallery and obtain fresh independent reviews",
+    "Complete Agent footer/copy, PR metadata/readiness hierarchy and Git staging scanability fixes",
+    "Verify and refresh final screenshot evidence; obtain fresh independent council approval",
     "Finish PR #50 after council quality gate"
   ],
   "approvalTarget": {
@@ -570,12 +621,12 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 47,
-    "captures": 316,
-    "corePass": 47,
-    "dialogPass": 47,
-    "settingsPass": 47,
-    "note": "18 Git frames refreshed after compact clean-dialog correction; all other frames unchanged. Core122 and dialog158 manifest states report no errors/alerts."
+    "round": 48,
+    "captures": 334,
+    "corePass": 48,
+    "dialogPass": 48,
+    "settingsPass": 48,
+    "note": "167 surface pairs including 1100px dense-list, Agent draft and long Git comparison states, plus expanded merge and auto-merge status sources. Production captures use schema-checked fixtures; no manifest errors or alerts. Lossless exports verified pixel-for-pixel."
   },
   "unavailableReviews": [
     {
@@ -635,56 +686,14 @@
       "reason": "Exact model retry returned429 subscription quota exhausted after10 provider attempts; reset2026-11-04T18:51:35Z. No assessment issued."
     }
   ],
-  "pendingReviews": [
-    {
-      "round": "independent47",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent47_sol_a",
-      "status": "running",
-      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
-    },
-    {
-      "round": "independent47",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent47_sol_b",
-      "status": "running",
-      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
-    },
-    {
-      "round": "independent47",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent47_sol_c",
-      "status": "running",
-      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
-    },
-    {
-      "round": "independent47",
-      "model": "Opus 5.5",
-      "id": "c3459600-02af-446f-bc8a-0d62c8989e8b",
-      "status": "running",
-      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
-    },
-    {
-      "round": "independent47",
-      "model": "Opus 5.5",
-      "id": "8a067021-1386-4200-a767-cdc3e8162d5c",
-      "status": "running",
-      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
-    },
-    {
-      "round": "independent47",
-      "model": "Muse muse-wonder-full-1.0",
-      "id": "fb603463-a707-4fb6-9da3-13c1322ff3f3",
-      "status": "running",
-      "brief": "Fresh context; actual frozen screenshots and constraints only. No past/target scores or other reviews."
-    }
-  ],
+  "pendingReviews": [],
   "queuedReviews": [
     {
       "round": "reset30",
       "model": "Gemini 4 Argon High",
       "status": "unavailable",
-      "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued."
+      "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued.",
+      "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
     }
   ],
   "supersededReviews": [
@@ -722,6 +731,10 @@
     {
       "round": "pass47",
       "summary": "Unified Settings project/computer pickers and target heights; removed nested computer-scope padding/divider; separately saved group grammar and truthful readonly cues; one terminal numeric stepper; explicit palette selection; sticky embedded Agent Save/Discard/errors; contextual project-deletion warning and safe affected-thread navigation; source-specific CI/check-report/pipeline labels; stable taller/wider Git review. Added14-row collection fixtures, long partial-staging comparisons and embedded dirty-Agent evidence. Production builds, affected types and targeted browser suites passed."
+    },
+    {
+      "round": "pass48",
+      "summary": "Bounded opaque Agent save/error footer through Settings scroll padding; normal-flow clean scope note and current Computer guidance; readable six-line instructions and shared Input/Textarea type. PR rows reserve responsive readiness column with quiet supporting metadata; one repository merge verdict with compact named source details. Git rows align selection, basename/directory and actions, retain accessible full paths, and indicate more content only when staging actually overflows. Added compact desktop and expanded readiness evidence."
     }
   ],
   "designConsultations": [

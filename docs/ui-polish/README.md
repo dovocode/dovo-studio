@@ -46,7 +46,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 316 captures: production desktop routes/compositions in both themes,
+The refreshed gallery includes 334 captures: production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -120,6 +120,16 @@ status labels distinguish provider CI, returned check reports and linked pipelin
 matching project/computer pickers, one computer-scope divider, explicit selected palettes and a
 single terminal-size stepper. Read-only runtime states do not request saving. Known deletion
 blockers provide a safe route to the affected thread.
+
+Agent editing keeps clean scope text in the form and unsaved/error actions in a bounded opaque
+footer. Instructions has six readable lines, and single-line/multiline fields share desktop type
+sizes. PR lists reserve a readiness column, keep branch/author and supporting metadata together, and
+distinguish Open/Closed issues. Repository merge status has one prominent verdict with named source
+details in Checks and an expandable merge disclosure; all failure acknowledgements and provider
+enforcement remain. Git staging aligns filenames and actions, preserves complete paths in
+tooltips/accessible labels and indicates additional scroll content. Compact desktop captures at
+1100px supplement the wide layouts for dense lists, Agent editing and long Git comparisons. Expanded
+merge and auto-merge Status sources are captured separately.
 
 Council review is **in progress**. Fresh reviewers assess the current UI without past ratings,
 target scores or historical findings in their briefs. Earlier numeric reviews are historical
@@ -351,13 +361,25 @@ Thread info immediately before its redesign: [dark](screenshots/before-thread-in
 
 ## Dense workflow evidence
 
-| Surface                          | Dark                                                                 | Light                                                                 |
-| -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| pulls-dense                      | [Screenshot](screenshots/pulls-dense-dark.webp)                      | [Screenshot](screenshots/pulls-dense-light.webp)                      |
-| pulls-dense-row-menu             | [Screenshot](screenshots/pulls-dense-row-menu-dark.webp)             | [Screenshot](screenshots/pulls-dense-row-menu-light.webp)             |
-| issues-dense                     | [Screenshot](screenshots/issues-dense-dark.webp)                     | [Screenshot](screenshots/issues-dense-light.webp)                     |
-| agents-dirty                     | [Screenshot](screenshots/agents-dirty-dark.webp)                     | [Screenshot](screenshots/agents-dirty-light.webp)                     |
-| git-actions-dense                | [Screenshot](screenshots/git-actions-dense-dark.webp)                | [Screenshot](screenshots/git-actions-dense-light.webp)                |
-| git-actions-review-long-staged   | [Screenshot](screenshots/git-actions-review-long-staged-dark.webp)   | [Screenshot](screenshots/git-actions-review-long-staged-light.webp)   |
-| git-actions-review-long-unstaged | [Screenshot](screenshots/git-actions-review-long-unstaged-dark.webp) | [Screenshot](screenshots/git-actions-review-long-unstaged-light.webp) |
-| git-actions-review-long-scrolled | [Screenshot](screenshots/git-actions-review-long-scrolled-dark.webp) | [Screenshot](screenshots/git-actions-review-long-scrolled-light.webp) |
+| Surface                                  | Dark                                                                         | Light                                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| pulls-dense                              | [Screenshot](screenshots/pulls-dense-dark.webp)                              | [Screenshot](screenshots/pulls-dense-light.webp)                              |
+| pulls-dense-row-menu                     | [Screenshot](screenshots/pulls-dense-row-menu-dark.webp)                     | [Screenshot](screenshots/pulls-dense-row-menu-light.webp)                     |
+| issues-dense                             | [Screenshot](screenshots/issues-dense-dark.webp)                             | [Screenshot](screenshots/issues-dense-light.webp)                             |
+| agents-dirty                             | [Screenshot](screenshots/agents-dirty-dark.webp)                             | [Screenshot](screenshots/agents-dirty-light.webp)                             |
+| git-actions-dense                        | [Screenshot](screenshots/git-actions-dense-dark.webp)                        | [Screenshot](screenshots/git-actions-dense-light.webp)                        |
+| git-actions-review-long-staged           | [Screenshot](screenshots/git-actions-review-long-staged-dark.webp)           | [Screenshot](screenshots/git-actions-review-long-staged-light.webp)           |
+| git-actions-review-long-unstaged         | [Screenshot](screenshots/git-actions-review-long-unstaged-dark.webp)         | [Screenshot](screenshots/git-actions-review-long-unstaged-light.webp)         |
+| git-actions-review-long-scrolled         | [Screenshot](screenshots/git-actions-review-long-scrolled-dark.webp)         | [Screenshot](screenshots/git-actions-review-long-scrolled-light.webp)         |
+| pulls-dense-compact                      | [Screenshot](screenshots/pulls-dense-compact-dark.webp)                      | [Screenshot](screenshots/pulls-dense-compact-light.webp)                      |
+| issues-dense-compact                     | [Screenshot](screenshots/issues-dense-compact-dark.webp)                     | [Screenshot](screenshots/issues-dense-compact-light.webp)                     |
+| agents-dirty-compact                     | [Screenshot](screenshots/agents-dirty-compact-dark.webp)                     | [Screenshot](screenshots/agents-dirty-compact-light.webp)                     |
+| git-actions-dense-compact                | [Screenshot](screenshots/git-actions-dense-compact-dark.webp)                | [Screenshot](screenshots/git-actions-dense-compact-light.webp)                |
+| git-actions-review-long-staged-compact   | [Screenshot](screenshots/git-actions-review-long-staged-compact-dark.webp)   | [Screenshot](screenshots/git-actions-review-long-staged-compact-light.webp)   |
+| git-actions-review-long-unstaged-compact | [Screenshot](screenshots/git-actions-review-long-unstaged-compact-dark.webp) | [Screenshot](screenshots/git-actions-review-long-unstaged-compact-light.webp) |
+| git-actions-review-long-scrolled-compact | [Screenshot](screenshots/git-actions-review-long-scrolled-compact-dark.webp) | [Screenshot](screenshots/git-actions-review-long-scrolled-compact-light.webp) |
+
+| Expanded readiness details  | Dark                                                      | Light                                                      |
+| --------------------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
+| Merge · status sources      | [Screenshot](screenshots/pr-merge-sources-dark.webp)      | [Screenshot](screenshots/pr-merge-sources-light.webp)      |
+| Auto-merge · status sources | [Screenshot](screenshots/pr-auto-merge-sources-dark.webp) | [Screenshot](screenshots/pr-auto-merge-sources-light.webp) |

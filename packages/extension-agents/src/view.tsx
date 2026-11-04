@@ -35,7 +35,7 @@ export default function AgentsView() {
             {(scope === 'global' || scope === 'project') && (
               <LinkCard
                 title="Installations & sign-in"
-                description="Provider installs, ACP agents, titles and dictation belong to one computer. Use Edit computer overrides above, then choose a computer to manage them."
+                description="Provider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the Computer selector above to manage them."
               />
             )}
           </div>

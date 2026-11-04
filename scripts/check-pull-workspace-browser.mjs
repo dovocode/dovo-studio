@@ -16,9 +16,10 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:key==='checks'?(window.checksError??''):'',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:key==='checks'?(window.checksError??''):'',detail:window.detail,refresh:()=>{window.checkRefreshes=(window.checkRefreshes??0)+1}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
-  './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
+  './pipeline-runs': `export {PullPipelineRunsContent} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';export const usePullPipelineRuns=()=>({runs:(window.pipelineRuns??[]).map((run,index)=>({id:String(index),number:String(index+1),title:'Pipeline build',url:'https://github.com/team/project/actions/runs/'+index,updatedAt:'2026-10-04',...run})),connected:window.store.connected,busy:false,selected:null,setSelected:()=>{},load:()=>{window.pipelineRefreshes=(window.pipelineRefreshes??0)+1}});`,
+  '../../work/content': `export const WorkContent=()=>null;`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[],loading:false,error:''});`,
@@ -206,12 +207,18 @@ try {
   await page.getByText('Please add a test', { exact: true }).waitFor()
   const detail = page.locator('[aria-label="Pull request details"]')
   const content = detail.locator('[aria-label="Pull request content"]')
+  const waitForCheckFailure = (label) =>
+    page.waitForFunction(
+      (expected) => document.querySelector('#pr-tab-checks')?.title === expected,
+      label,
+    )
   const heading = detail.getByRole('heading', { level: 2, name: /Improve pull request reviews/ })
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
-    .locator('[aria-label="Pull request metadata"]')
-    .getByText('Waiting for required reviews', { exact: true })
+    .getByLabel('Pull request status', { exact: true })
+    .getByText('Repository merge status: Waiting for required reviews', { exact: true })
     .waitFor()
+  assert.equal(await detail.getByText('Mergeability', { exact: true }).count(), 0)
   assert.equal(
     (await detail.locator('.studio-pull-header').boundingBox()).y,
     (await page.locator('.studio-titlebar').boundingBox()).y,
@@ -309,10 +316,14 @@ try {
   })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
-  await detail
-    .getByRole('tab', { name: 'Checks (1)', exact: true })
-    .getByText('Pipeline failed', { exact: true })
-    .waitFor()
+  assert.equal(
+    await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).getAttribute('title'),
+    'Pipeline failed',
+  )
+  assert.equal(
+    await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).innerText(),
+    'Checks\n1',
+  )
   assert.match(
     await detail
       .getByRole('tab', { name: 'Checks (1)', exact: true })
@@ -329,18 +340,36 @@ try {
   await detail.getByRole('button', { name: 'Merge', exact: true }).click()
   const mergeDialog = page.getByRole('dialog')
   const mergeReadiness = mergeDialog.getByRole('region', { name: 'Merge readiness' })
+  await mergeReadiness
+    .getByRole('heading', { name: 'Repository merge status', exact: true })
+    .waitFor()
+  await mergeReadiness.getByText('Waiting for required reviews', { exact: true }).waitFor()
+  const statusDisclosure = mergeReadiness.locator('details').filter({ hasText: 'Status sources' })
+  assert.equal(await statusDisclosure.getAttribute('open'), null)
+  await mergeReadiness.getByRole('button', { name: 'Refresh checks', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.checkRefreshes), 1)
+  assert.equal(await statusDisclosure.getByText('1 failed', { exact: true }).isVisible(), false)
+  await statusDisclosure.locator('summary').click()
+  const sourceValue = (scope, name, value) =>
+    scope.getByText(name, { exact: true }).locator('..').getByText(value, { exact: true })
+  for (const [name, value] of [
+    ['Repository CI', 'passed'],
+    ['Check reports', '1 check passed'],
+    ['Linked pipeline runs', '1 failed'],
+    ['Review status', 'Review required'],
+  ])
+    await sourceValue(statusDisclosure, name, value).waitFor()
+  const headerStatus = detail.getByLabel('Pull request status', { exact: true })
+  await headerStatus
+    .getByText('Repository merge status: Waiting for required reviews', { exact: true })
+    .waitFor()
+  await headerStatus.getByText('Review required', { exact: true }).waitFor()
   for (const status of [
     'Pipeline runs: 1 failed',
     'Check reports: 1 check passed',
     'CI status: passed',
-    'Review required',
-  ]) {
-    await detail
-      .getByLabel('Pull request status', { exact: true })
-      .getByText(status, { exact: true })
-      .waitFor()
-    await mergeReadiness.getByText(status, { exact: true }).waitFor()
-  }
+  ])
+    assert.equal(await headerStatus.getByText(status, { exact: true }).count(), 0)
   await mergeDialog
     .getByText('I acknowledge the current failures: Pipeline runs: 1 failed.', { exact: true })
     .waitFor()
@@ -559,50 +588,103 @@ try {
     )
   })
   // Pipeline failures remain visible beside independently passed check reports.
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => {
     window.pipelineRuns = [{ status: 'failure' }]
     window.pipelineTestChecks = window.detail.checks
+    window.pipelineTestPull = window.detail.pull
+    window.detail.pull = {
+      ...window.detail.pull,
+      checksState: 'SUCCESS',
+      reviewDecision: 'APPROVED',
+      mergeStateStatus: 'CLEAN',
+    }
     window.detail.checks = [{ name: 'Tests', status: 'SUCCESS' }]
     window.showDestination('overview', 'pipeline-failure')
   })
-  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
-  await page.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
   const checksTab = page.getByRole('tab', { name: 'Checks (1)', exact: true })
-  await checksTab.getByText('Pipeline failed', { exact: true }).waitFor()
+  await waitForCheckFailure('Pipeline failed')
+  await headerStatus.getByText('Repository merge status: Ready to merge', { exact: true }).waitFor()
+  assert.equal(
+    await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
+    'outline',
+    'An independent pipeline failure still prevents primary-action promotion',
+  )
+  await checksTab.click()
+  const checkPanel = detail.locator('#pr-panel-checks')
+  const repositoryCI = checkPanel.getByLabel('Status sources', { exact: true })
+  const pipelineSection = checkPanel.getByRole('region', { name: 'Pull request pipeline runs' })
+  const reportsSection = checkPanel
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Check reports 1', exact: true }) })
+  await sourceValue(repositoryCI, 'Repository CI', 'passed').waitFor()
+  assert.equal(await repositoryCI.locator('dt').count(), 1)
+  assert.equal(
+    await checkPanel.getByRole('heading', { name: 'Status sources', exact: true }).count(),
+    0,
+  )
+  await pipelineSection
+    .getByRole('heading', { name: 'Linked pipeline runs', exact: true })
+    .waitFor()
+  await pipelineSection.getByText('Pipeline build', { exact: true }).waitFor()
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
+  await pipelineSection.getByRole('button', { name: 'Refresh runs', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.pipelineRefreshes), 1)
+  await reportsSection.getByText('Tests', { exact: true }).waitFor()
+  await reportsSection.getByText('Passed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.pipelineRuns = []
+    window.detail.pull = window.pipelineTestPull
     window.detail.checks = [{ name: 'Tests', status: 'FAILURE' }]
     window.showDestination('overview', 'report-failure')
   })
-  await checksTab.getByText('Checks failed', { exact: true }).waitFor()
-  await page.getByText('Check reports: 1 failed', { exact: true }).waitFor()
+  await waitForCheckFailure('Checks failed')
+  await checksTab.click()
+  await reportsSection.getByText('Failed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.pipelineRuns = [{ status: 'failure' }]
     window.showDestination('overview', 'both-failed')
   })
-  await checksTab.getByText('CI failed', { exact: true }).waitFor()
+  await waitForCheckFailure('CI failed')
+  await checksTab.click()
   // Saved failures retain their source, and explicitly disclose offline data.
   await page.evaluate(() => {
     window.store.connected = false
     window.showDestination('overview', 'offline-failures')
   })
-  await checksTab.getByText('CI failed', { exact: true }).waitFor()
-  await page.getByText('Check reports: 1 failed · offline', { exact: true }).waitFor()
+  await waitForCheckFailure('CI failed')
+  await checksTab.click()
+  await reportsSection.getByText('Failed', { exact: true }).waitFor()
+  assert.match(
+    await checksTab.getAttribute('aria-description'),
+    /Check reports: 1 failed · offline/,
+  )
+  await page.getByText('Offline · reconnect to refresh.', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.store.connected = true
     window.checksError = 'Reports unavailable'
     window.showDestination('overview', 'unavailable-reports')
   })
-  await page.getByText('Check reports unavailable', { exact: true }).waitFor()
+  await checksTab.click()
+  await checkPanel.getByText('Check reports: Reports unavailable', { exact: true }).waitFor()
   // A report read error cannot suppress an independently known pipeline failure.
-  await checksTab.getByText('Pipeline failed', { exact: true }).waitFor()
+  await waitForCheckFailure('Pipeline failed')
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
+  const unavailableMerge = page.getByRole('dialog')
+  await unavailableMerge.getByText('Reports unavailable', { exact: true }).waitFor()
+  assert.equal(await unavailableMerge.locator('details').getAttribute('open'), null)
+  await unavailableMerge.getByRole('button', { name: 'Retry checks', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.checkRefreshes), 2)
+  await unavailableMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.evaluate(() => {
     window.checksError = ''
     window.pipelineRuns = []
     window.detail.checks = [{ name: 'Tests', status: 'UNKNOWN' }]
     window.showDestination('overview', 'unknown-report')
   })
-  await page.getByText('Check reports: 1 check reported', { exact: true }).waitFor()
+  await checksTab.click()
+  await reportsSection.getByText('Unknown', { exact: true }).waitFor()
   assert.equal(await checksTab.getByText(/failed/i).count(), 0)
   await page.evaluate(() => {
     window.detail.checks = window.pipelineTestChecks
@@ -619,36 +701,39 @@ try {
     name: 'View pull request checks',
     exact: true,
   })
-  await checkSummary.getByText('Loading checks…', { exact: true }).waitFor()
+  await checkSummary.click()
+  await checkPanel.getByText('Loading check reports…', { exact: true }).waitFor()
+  await sourceValue(repositoryCI, 'Repository CI', 'CI status not loaded').waitFor()
   assert.equal(await checkSummary.getByText(/checks? passed/i).count(), 0)
-  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
   const unloadedMerge = page.getByRole('dialog')
+  await unloadedMerge.locator('summary').filter({ hasText: 'Status sources' }).click()
   await unloadedMerge.getByText('Loading checks…', { exact: true }).waitFor()
   assert.equal(
     await unloadedMerge.getByRole('button', { name: 'Loading…', exact: true }).isDisabled(),
     true,
   )
-  await unloadedMerge.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await sourceValue(unloadedMerge, 'Linked pipeline runs', '1 failed').waitFor()
   assert.equal(await unloadedMerge.getByText(/checks? passed/i).count(), 0)
   await unloadedMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
   await checkSummary.click()
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
   )
-  await checkSummary.getByText('Loading checks…', { exact: true }).waitFor()
-  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await checkPanel.getByText('Loading check reports…', { exact: true }).waitFor()
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.checksPending = false
     window.detail.pull.checksState = window.savedChecksState
     window.detail.checks = [{ name: 'Tests', status: 'SUCCESS', summary: 'Checks loaded' }]
     window.showDestination('checks', 'checks-loaded')
   })
-  await checkSummary.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await reportsSection.getByText('Passed', { exact: true }).waitFor()
   await page.getByText('Checks loaded', { exact: true }).waitFor()
-  assert.equal(await checkSummary.getByText('Loading checks…', { exact: true }).count(), 0)
-  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  assert.equal(await checkPanel.getByText('Loading check reports…', { exact: true }).count(), 0)
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.pipelineRuns = []
     window.detail.checks = window.pipelineTestChecks
@@ -792,13 +877,19 @@ try {
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
   const autoDialog = page.getByRole('dialog')
-  for (const status of ['Pipeline runs: 1 failed', 'Check reports: 1 failed', 'Review required'])
-    await autoDialog
-      .getByRole('region', { name: 'Merge readiness' })
-      .getByText(status, { exact: true })
-      .waitFor()
+  await autoDialog.locator('summary').filter({ hasText: 'Status sources' }).click()
+  for (const [name, value] of [
+    ['Repository CI', 'failed'],
+    ['Check reports', '1 failed'],
+    ['Linked pipeline runs', '1 failed'],
+    ['Review status', 'Review required'],
+  ])
+    await sourceValue(autoDialog, name, value).waitFor()
   await autoDialog
-    .getByText(/I acknowledge the current failures:.*Pipeline runs: 1 failed/)
+    .getByText(
+      'I acknowledge the current failures: Check reports: 1 failed; Pipeline runs: 1 failed; CI failed.',
+      { exact: true },
+    )
     .waitFor()
   const autoSubmit = autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true })
   await page.evaluate(() => {

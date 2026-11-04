@@ -124,7 +124,7 @@ export function AgentEditor({
       )}
       <form
         ref={form}
-        className={inline ? 'space-y-5' : 'flex min-h-0 flex-col overflow-y-auto'}
+        className={inline ? 'contents' : 'flex min-h-0 flex-1 flex-col'}
         onSubmit={(event) => {
           event.preventDefault()
           if (creating && step < 2) {
@@ -177,7 +177,7 @@ export function AgentEditor({
             })
         }}
       >
-        <div className={inline ? undefined : 'shrink-0 pb-5'}>
+        <div className={inline ? undefined : 'min-h-0 flex-1 overflow-y-auto pb-5'}>
           <fieldset disabled={busy || !connected} className="min-w-0 space-y-5">
             <div className="space-y-5">
               {creating && step === 0 && (
@@ -383,6 +383,8 @@ export function AgentEditor({
                     <FormField layout="settings" label="Instructions">
                       <Textarea
                         aria-label="Instructions"
+                        rows={6}
+                        className="min-h-36 font-normal leading-relaxed text-foreground max-md:text-base!"
                         value={agent.instructions}
                         placeholder="Optional. Added to every thread that uses this profile…"
                         onChange={(event) =>
@@ -516,66 +518,70 @@ export function AgentEditor({
             </div>
           </fieldset>
         </div>
-        <fieldset
-          disabled={busy || !connected}
-          className="sticky bottom-0 z-10 min-w-0 shrink-0 space-y-3 bg-background pt-3"
+        <div
+          className={`min-w-0 shrink-0 pt-3 ${inline ? 'mt-5' : ''} ${inline && (creating || dirty || busy || error) ? 'sticky bottom-[calc(-1*var(--studio-settings-scroll-padding,0px))] z-10 bg-background pb-[var(--studio-settings-scroll-padding,0px)]' : ''}`}
         >
-          {error && (
-            <p role="alert" className="break-words text-xs text-destructive">
-              {error}
-            </p>
-          )}
-          {!creating ? (
-            <SettingsSaveBar
-              changes={settingsChanges(
-                { ...initial, env: undefined, environment: formatAgentEnvironment(initial.env) },
-                { ...agent, env: undefined, environment },
-              )}
-              dirty={dirty}
-              saving={busy}
-              disabled={
-                !connected ||
-                !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
-                !supportsAccess(agent.provider, agent.permission)
-              }
-              description={`Changes apply to new turns on ${computerName}.`}
-              onDiscard={discard}
-              onSave={() => form.current?.requestSubmit()}
-            />
-          ) : (
-            <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-4">
-              <div className="flex gap-2">
-                {step > 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setError('')
-                      setStep(step - 1)
-                    }}
-                  >
-                    Back
-                  </Button>
+          <fieldset
+            disabled={busy || !connected}
+            className="min-w-0 space-y-3 [&>.studio-settings-savebar]:static [&>.studio-settings-savebar]:bg-card [&>.studio-settings-savebar]:backdrop-blur-none"
+          >
+            {error && (
+              <p role="alert" className="break-words text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            {!creating ? (
+              <SettingsSaveBar
+                changes={settingsChanges(
+                  { ...initial, env: undefined, environment: formatAgentEnvironment(initial.env) },
+                  { ...agent, env: undefined, environment },
                 )}
-                <Button
-                  type="submit"
-                  disabled={
-                    busy ||
-                    !connected ||
-                    (step === 2 &&
-                      (!!permissionPolicyUIIssue(
-                        agent,
-                        snapshot?.permissionPolicySupported === true,
-                      ) ||
-                        !supportsAccess(agent.provider, agent.permission)))
-                  }
-                >
-                  {busy ? 'Saving…' : step < 2 ? 'Next' : 'Add agent profile'}
-                </Button>
+                dirty={dirty}
+                saving={busy}
+                disabled={
+                  !connected ||
+                  !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
+                  !supportsAccess(agent.provider, agent.permission)
+                }
+                description={`Changes apply to new turns on ${computerName}.`}
+                onDiscard={discard}
+                onSave={() => form.current?.requestSubmit()}
+              />
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-4">
+                <div className="flex gap-2">
+                  {step > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setError('')
+                        setStep(step - 1)
+                      }}
+                    >
+                      Back
+                    </Button>
+                  )}
+                  <Button
+                    type="submit"
+                    disabled={
+                      busy ||
+                      !connected ||
+                      (step === 2 &&
+                        (!!permissionPolicyUIIssue(
+                          agent,
+                          snapshot?.permissionPolicySupported === true,
+                        ) ||
+                          !supportsAccess(agent.provider, agent.permission)))
+                    }
+                  >
+                    {busy ? 'Saving…' : step < 2 ? 'Next' : 'Add agent profile'}
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </fieldset>
+            )}
+          </fieldset>
+        </div>
       </form>
     </EditorShell>
   )
@@ -596,7 +602,8 @@ function EditorShell({
   onClose: () => void
   children: ReactNode
 }) {
-  if (inline) return <div className="min-w-0">{children}</div>
+  // Let the existing profile pane bound inline sticky actions, including on narrow screens.
+  if (inline) return <div className="contents">{children}</div>
   return (
     <Dialog
       open

@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import {
   ArrowLeft,
   CircleDot,
+  CircleCheck,
   GitBranch,
   Monitor,
   RefreshCw,
@@ -902,8 +903,14 @@ function WorkView({
                         {'status' in item ? (
                           <PipelineState status={item.status} plain />
                         ) : (
-                          <span className="studio-collection-status">
-                            <CircleDot className="size-3.5" />
+                          <span
+                            className={`studio-collection-status ${item.state === 'closed' ? 'text-status-done' : 'text-status-success'}`}
+                          >
+                            {item.state === 'closed' ? (
+                              <CircleCheck aria-hidden className="size-3.5" />
+                            ) : (
+                              <CircleDot aria-hidden className="size-3.5" />
+                            )}
                             {item.state.charAt(0).toUpperCase() + item.state.slice(1)}
                           </span>
                         )}

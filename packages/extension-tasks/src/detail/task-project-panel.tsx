@@ -6,7 +6,7 @@ import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
 import { NestedThreads } from '../list/nested-threads'
 import { collectTasks, taskSources, taskCollectionKey } from '../list/task-collection'
-import { useCallback, useMemo, useRef, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Schema } from 'effect'
 import {
   canChangeTaskCheckout,
@@ -68,6 +68,53 @@ import { TaskWaitingPanel } from './task-waiting-panel'
 import { TaskPullStatus } from './task-pull-status'
 import { fileStats, DiffAmounts } from '../files/presentation'
 import type { TaskSurface } from './task-header'
+
+function GitActionsScrollArea({
+  reviewing,
+  children,
+}: {
+  reviewing: boolean
+  children: ReactNode
+}) {
+  const viewport = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  const [moreBelow, setMoreBelow] = useState(false)
+  useLayoutEffect(() => {
+    const frame = viewport.current
+    const body = content.current
+    if (!frame || !body) return
+    const measure = () =>
+      setMoreBelow(!reviewing && frame.scrollHeight - frame.scrollTop - frame.clientHeight > 2)
+    const observer = new ResizeObserver(measure)
+    observer.observe(frame)
+    observer.observe(body)
+    frame.addEventListener('scroll', measure, { passive: true })
+    measure()
+    return () => {
+      observer.disconnect()
+      frame.removeEventListener('scroll', measure)
+    }
+  }, [reviewing])
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={viewport} data-git-actions-scroll className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={content} className={reviewing ? 'h-full min-h-0' : undefined}>
+          {children}
+        </div>
+      </div>
+      {moreBelow && (
+        <div
+          aria-hidden="true"
+          data-git-scroll-continuation
+          className="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-background to-transparent pb-0.5 text-muted-foreground"
+        >
+          <ChevronDown size={14} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function TaskProjectPanel({
   task,
   active = true,
@@ -821,9 +868,9 @@ export function TaskProjectPanel({
             <DialogDescription>
               Review, stage and commit changes in this thread’s working folder.
             </DialogDescription>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <GitActionsScrollArea reviewing={gitReview}>
               <RepositoryActions repo={repo} taskId={task.id} onReviewChange={setGitReview} />
-            </div>
+            </GitActionsScrollArea>
           </DialogContent>
         </Dialog>
       )}

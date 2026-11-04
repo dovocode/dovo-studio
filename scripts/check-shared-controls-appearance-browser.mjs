@@ -96,6 +96,11 @@ try {
     assert.equal(await style('[data-test="menu-override"]', 'backgroundColor'), 'rgba(0, 0, 0, 0)')
     assert.equal(await style('[aria-label="Custom"]', 'backgroundColor'), 'rgba(0, 0, 0, 0)')
     assert.notEqual(await style('[aria-label="Field"]', 'backgroundColor'), 'rgba(0, 0, 0, 0)')
+    assert.equal(
+      await style('[aria-label="Notes"]', 'fontSize'),
+      await style('[aria-label="Field"]', 'fontSize'),
+      'Desktop single-line and multiline fields share their text size',
+    )
     for (const selector of [
       '[aria-label="Field"]',
       '[aria-label="Choice"]',

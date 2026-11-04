@@ -82,6 +82,32 @@ function fileStagingDescription(file: ChangedFile) {
     .join(' · ')
 }
 
+function FileIdentity({ path, status }: { path: string; status: string }) {
+  const separator = path.lastIndexOf('/')
+  const basename = path.slice(separator + 1)
+  const directory = separator >= 0 ? path.slice(0, separator) : ''
+  return (
+    <span className="block min-w-0" title={path}>
+      {directory && <span className="sr-only">{path}</span>}
+      <span
+        aria-hidden={directory ? true : undefined}
+        className="block truncate font-mono text-[0.6875rem] font-medium"
+      >
+        {basename}
+      </span>
+      {directory && (
+        <span
+          aria-hidden="true"
+          className="block truncate font-mono text-[0.625rem] text-muted-foreground"
+        >
+          {directory}/
+        </span>
+      )}
+      <span className="mt-0.5 block text-muted-foreground">{status}</span>
+    </span>
+  )
+}
+
 export function RepositoryActions(props: {
   repo: Repository
   taskId?: string
@@ -317,20 +343,20 @@ function CheckoutActions({
               {stagedFiles.length ? (
                 <ul className="max-h-40 overflow-auto py-1">
                   {stagedFiles.map((file) => (
-                    <li key={file.path} className="flex items-start gap-3 px-3 py-1.5 text-xs">
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-all font-mono text-[0.6875rem]">
-                          {file.path}
-                        </span>
-                        <span className="mt-0.5 block text-muted-foreground">
-                          {changeLabels[file.gitStatus?.index ?? 'unknown']}
-                          {partialStagingLabel(file)}
-                        </span>
-                      </span>
+                    <li
+                      key={file.path}
+                      className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30"
+                    >
+                      <span aria-hidden="true" />
+                      <FileIdentity
+                        path={file.path}
+                        status={`${changeLabels[file.gitStatus?.index ?? 'unknown']}${partialStagingLabel(file)}`}
+                      />
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
+                        className="w-full px-0"
                         aria-label={`Review staged ${file.path}`}
                         disabled={busy || loading || !connected || !!loadError}
                         onClick={(event) => {
@@ -344,6 +370,7 @@ function CheckoutActions({
                         type="button"
                         size="sm"
                         variant="ghost"
+                        className="w-full px-0"
                         aria-label={`Unstage ${file.path}`}
                         disabled={busy || loading || !connected || !!loadError}
                         onClick={() =>
@@ -425,8 +452,8 @@ function CheckoutActions({
                       <ul className="max-h-40 overflow-auto py-1">
                         {group.files.map((file) => (
                           <li key={file.path}>
-                            <div className="flex items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
-                              <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                            <div className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30">
+                              <label className="col-span-2 grid min-w-0 cursor-pointer grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2">
                                 <Checkbox
                                   aria-label={`Select ${file.path}`}
                                   className="mt-0.5 shrink-0"
@@ -440,24 +467,23 @@ function CheckoutActions({
                                     )
                                   }
                                 />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block break-all font-mono text-[0.6875rem]">
-                                    {file.path}
-                                  </span>
-                                  <span className="mt-0.5 block text-muted-foreground">
-                                    {group.unavailable || file.gitStatus?.workingTree === 'unmerged'
+                                <FileIdentity
+                                  path={file.path}
+                                  status={
+                                    group.unavailable || file.gitStatus?.workingTree === 'unmerged'
                                       ? fileStagingDescription(file)
                                       : file.gitStatus?.workingTree === 'untracked'
                                         ? 'Untracked'
-                                        : `${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}${partialStagingLabel(file)}`}
-                                  </span>
-                                </span>
+                                        : `${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}${partialStagingLabel(file)}`
+                                  }
+                                />
                               </label>
                               {!group.unavailable && (
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="ghost"
+                                  className="w-full px-0"
                                   aria-label={`Review unstaged ${file.path}`}
                                   disabled={busy || loading || !connected || !!loadError}
                                   onClick={(event) => {

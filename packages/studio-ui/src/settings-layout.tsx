@@ -44,7 +44,7 @@ export function SettingsPage({
         role="region"
         aria-label={`${title} settings`}
         tabIndex={0}
-        className="studio-settings-scroll min-h-0 flex-1 overflow-y-auto px-4 py-7 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
+        className="studio-settings-scroll min-h-0 flex-1 overflow-y-auto px-4 py-[var(--studio-settings-scroll-padding)] outline-none [--studio-settings-scroll-padding:1.75rem] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
       >
         <div
           className={`studio-settings-content ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}

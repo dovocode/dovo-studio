@@ -1,6 +1,6 @@
 import { integrationMutationError } from '../../connections/mutation-error'
 import { PullMarkdownEditor } from '../detail/markdown-editor'
-import { Signal } from '../detail/status'
+import { PullStatusSources, Signal } from '../detail/status'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
@@ -25,6 +25,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Disclosure,
   DropdownMenu,
   FormField,
   Input,
@@ -39,7 +40,8 @@ type ActionKind = PullAction['action']
 type MergeStatus = {
   headSha: string
   signals: PullSignal[]
-  providerCI?: PullSignal
+  providerReadiness: PullSignal
+  sources: { name: string; signal: PullSignal }[]
   warnings: string[]
   checks: {
     busy: boolean
@@ -611,7 +613,7 @@ function PullActionDialog({
               </p>
               <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-medium">Current status</h3>
+                  <h3 className="text-sm font-medium">Repository merge status</h3>
                   {mergeStatus?.headSha === scope.headSha && (
                     <Button
                       type="button"
@@ -638,18 +640,12 @@ function PullActionDialog({
                 </div>
                 {mergeStatus?.headSha === scope.headSha ? (
                   <>
-                    <ul className="space-y-2">
-                      {mergeStatus.providerCI && (
-                        <li>
-                          <Signal signal={mergeStatus.providerCI} />
-                        </li>
-                      )}
-                      {mergeStatus.signals.map((signal, index) => (
-                        <li key={index}>
-                          <Signal signal={signal} />
-                        </li>
-                      ))}
-                    </ul>
+                    <Signal signal={mergeStatus.providerReadiness} />
+                    <Disclosure title="Status sources">
+                      <div className="pt-3">
+                        <PullStatusSources sources={mergeStatus.sources} />
+                      </div>
+                    </Disclosure>
                     {mergeStatus.warnings.map((warning) => (
                       <p
                         key={warning}
