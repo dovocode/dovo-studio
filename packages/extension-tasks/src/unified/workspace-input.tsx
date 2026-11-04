@@ -113,6 +113,9 @@ export function WorkspaceInput({
   navigation.current = activeKey
   const revision = useRef(0)
   const pending = useRef<object | undefined>(undefined)
+  const automaticStart = useRef<
+    { revision: number; navigationKey: string; runtimeKey: string } | undefined
+  >(undefined)
   const routing = useRef(false)
   const mounted = useRef(true)
   const draft = useRef(text)
@@ -255,6 +258,7 @@ export function WorkspaceInput({
   const busy = phase === 'submitting'
   const invalidate = (editedText = false) => {
     revision.current++
+    automaticStart.current = undefined
     if (routing.current) {
       pending.current = undefined
       routing.current = false
@@ -275,9 +279,9 @@ export function WorkspaceInput({
     setSuggested(false)
     setReason('')
   }
-  const submit = async () => {
+  const submit = async (startAfterSuggestion = false) => {
     const original = draft.current
-    if (pending.current || !original.trim()) return
+    if (pending.current || automaticStart.current || !original.trim()) return
     if ((mode !== 'browser' || runtimeId !== store.localRuntimeId) && (!entry || !connected)) {
       setError('Choose an online computer before continuing.')
       return
@@ -342,11 +346,20 @@ export function WorkspaceInput({
           if (decision.profileId) setProfileId(decision.profileId)
           if (decision.profiles)
             setProfiles({ ownerId: decision.runtimeId, items: decision.profiles })
+          if (decision.mode === 'terminal') setCatalog({ ownerId: decision.runtimeId })
           setMode(decision.mode)
           setSuggested(true)
           setReason(decision.reason)
+          if (startAfterSuggestion) {
+            const owner = store.runtimes.find((owner) => owner.profile.id === decision.runtimeId)
+            automaticStart.current = {
+              revision: version,
+              navigationKey,
+              runtimeKey: JSON.stringify([decision.runtimeId, owner?.profile.connection]),
+            }
+          }
         }
-        // A suggestion never opens a page, sends a message or runs a command.
+        // Normal submission reviews suggestions. The explicit shortcut continues after render.
         return
       }
       if (mode === 'browser') {
@@ -493,6 +506,24 @@ export function WorkspaceInput({
       }
     }
   }
+  useEffect(() => {
+    const queued = automaticStart.current
+    if (!queued || phase || pending.current) return
+    if (
+      queued.revision !== revision.current ||
+      queued.navigationKey !== activeKey ||
+      queued.runtimeKey !== runtimeKey ||
+      mode === 'auto' ||
+      (mode === 'terminal' && catalog.ownerId === runtimeId && catalog.error)
+    ) {
+      automaticStart.current = undefined
+      return
+    }
+    // Terminal catalogs load after routing to the selected computer. Never run with a stale shell.
+    if (mode === 'terminal' && !shellReady) return
+    automaticStart.current = undefined
+    void submit()
+  }, [phase, mode, runtimeKey, activeKey, shellReady, catalog])
   const actionLabel = phase
     ? 'Working…'
     : mode === 'auto'
@@ -713,7 +744,7 @@ export function WorkspaceInput({
                 aria-label={actionLabel}
                 title={
                   mode === 'auto'
-                    ? 'Suggest a destination to review before continuing'
+                    ? 'Suggest a destination to review. ⌘/Ctrl+Enter chooses and starts immediately.'
                     : actionLabel
                 }
                 busy={!!phase}
@@ -733,6 +764,7 @@ export function WorkspaceInput({
           >
             <ComposerTextarea
               aria-label="Workspace request"
+              aria-keyshortcuts="Meta+Enter Control+Enter"
               autoFocus={!active}
               preview={mode === 'thread'}
               placeholder={
@@ -753,6 +785,19 @@ export function WorkspaceInput({
               maxLength={20000}
               value={text}
               disabled={busy}
+              onKeyDown={(event) => {
+                if (
+                  event.key !== 'Enter' ||
+                  (!event.metaKey && !event.ctrlKey) ||
+                  event.shiftKey ||
+                  event.altKey ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229
+                )
+                  return
+                event.preventDefault()
+                if (!event.repeat) void submit(true)
+              }}
               onFocus={() => setEditorFocused(true)}
               onChange={(event) => {
                 invalidate(true)

@@ -120,9 +120,13 @@ client loads that computer's project and browser-profile choices. New thread sug
 the inferred project's available harnesses and cached model names. Only display labels and opaque
 choice IDs enter classification; harness configuration and credentials stay outside it. The user
 reviews and can override computer, project, thread model, browser profile, destination and terminal
-shell before explicitly opening or submitting anything. Continuing an explicitly selected thread
-keeps that thread's own model and project. Older runtimes without the picker-suggestion capability
-continue accepting destination-only requests.
+shell before explicitly opening or submitting anything. **⌘+Enter** (or **Ctrl+Enter**) opts into
+choosing and starting in one step: it applies the inferred selections, waits for the selected
+computer's shell catalog when needed, then opens the page, runs the command or sends the thread
+request. Editing the draft or selections, or navigating away while inference/catalog loading is in
+progress, cancels that automatic start. Normal submission keeps the review step. Continuing an
+explicitly selected thread keeps that thread's own model and project. Older runtimes without the
+picker-suggestion capability continue accepting destination-only requests.
 
 All routing and picker inference comes from model logits. URL/shell rules do not override its
 choice, and scores are not presented as calibrated confidence. Capability discussion such as “Could
