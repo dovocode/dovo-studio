@@ -228,6 +228,7 @@ export function TaskConversation({
         <div
           data-task-conversation={task.id}
           data-startup-draft={welcome ? '' : undefined}
+          data-conversation-pane
           className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
         >
           {temporary ? (

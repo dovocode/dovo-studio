@@ -202,7 +202,12 @@ export function PullChanges({
           review={review}
           onOrganized={() => setRelated(true)}
         />
-        <Button size="sm" variant="ghost" onClick={() => setSplit((v) => !v)}>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-pressed={split}
+          onClick={() => setSplit((v) => !v)}
+        >
           {split ? 'Split diff' : 'Unified diff'}
         </Button>
       </div>

@@ -4,7 +4,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
 import { MoreHorizontal } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import {
   forgeLabels,
   pullActionResultSchema,
@@ -26,6 +26,7 @@ import {
   DropdownMenu,
   FormField,
   Input,
+  Textarea,
 } from '@dovo/studio-ui'
 export type PullActionContext = {
   repositoryId: string
@@ -49,6 +50,7 @@ const titles: Record<ActionKind, string> = {
 export function PullActions(
   props: PullActionContext & {
     onStartTask?: () => void
+    extraMenuItems?: ReactNode
   },
 ) {
   const { connected } = useWorkspace()
@@ -82,7 +84,7 @@ export function PullActions(
         (!props.detail.pull.draft && !!props.detail.capabilities?.mergeMethods.length)) &&
       (item !== 'review' || props.detail.pull.state === 'open'),
   )
-  if (!available.length && !props.onStartTask) return null
+  if (!available.length && !props.onStartTask && !props.extraMenuItems) return null
   return (
     <>
       {available.includes('review') && (
@@ -154,6 +156,7 @@ export function PullActions(
                     : titles[item]}
               </DropdownMenu.Item>
             ))}
+            {props.extraMenuItems}
             {props.onStartTask && (
               <>
                 <DropdownMenu.Separator className="my-1 h-px bg-border" />
@@ -633,12 +636,23 @@ function PullActionDialog({
                       : 'Comment'
               }
             >
-              <PullMarkdownEditor
-                value={body}
-                onChange={setBody}
-                disabled={busy}
-                baseURL={detail.pull.url}
-              />
+              {kind === 'merge' ? (
+                <Textarea
+                  placeholder="Optional commit message…"
+                  value={body}
+                  onChange={(event) => setBody(event.target.value)}
+                  disabled={busy}
+                  rows={4}
+                />
+              ) : (
+                <PullMarkdownEditor
+                  placeholder={kind === 'edit' ? 'Describe this pull request…' : undefined}
+                  value={body}
+                  onChange={setBody}
+                  disabled={busy}
+                  baseURL={detail.pull.url}
+                />
+              )}
             </FormField>
           )}
           {kind === 'close' && (

@@ -133,7 +133,7 @@ export function SettingRow({
     <div
       data-setting-label={label}
       tabIndex={-1}
-      className="flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
+      className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">
@@ -155,7 +155,7 @@ export function SettingRow({
         role="group"
         aria-labelledby={`${id}-label`}
         aria-describedby={description ? `${id}-description` : undefined}
-        className="flex w-full max-w-full items-center justify-end sm:w-auto sm:min-w-36 sm:max-w-[50%] sm:shrink-0"
+        className="studio-setting-control flex w-full max-w-full items-center justify-end sm:w-auto sm:min-w-36 sm:max-w-[50%] sm:shrink-0"
       >
         {children}
       </div>

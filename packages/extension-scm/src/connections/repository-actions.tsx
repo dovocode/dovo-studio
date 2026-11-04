@@ -43,196 +43,214 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
       })
   }
   return (
-    <div className="mt-4 space-y-3">
-      <CreateGithub path={repo.path} disabled={busy} />
-      <div className="flex flex-wrap gap-2">
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <Button size="sm" variant="ghost" disabled={!connected || busy}>
-              Open…
-            </Button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              sideOffset={4}
-              className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-            >
-              <RepositoryOpenItems
-                itemClass="flex items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent"
-                disabled={busy}
-                onSelect={(target) =>
-                  act(async () => {
-                    await openRepository(input, target)
-                    setStatus('Opened on your computer.')
-                  })
-                }
-              />
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!connected || busy}
-          onClick={() =>
-            act(async () => {
-              await request('/api/scm/push', input, responses.ok)
-              setStatus('Branch pushed.')
-            })
-          }
-        >
-          Push branch
-        </Button>
-      </div>
-      <BranchPicker
-        current={taskId ? undefined : repo.branch}
-        disabled={!connected || busy}
-        load={() => request('/api/scm/branches', input, branchesSchema)}
-        change={async (value) => {
-          const result = await request(
-            '/api/scm/branch',
-            {
-              ...input,
-              ...value,
-            },
-            branchesSchema,
-          )
-          setCheckout(result.current)
-          setFiles([])
-          return result
-        }}
-      />
-      {checkout && <p className="break-all font-mono text-xs text-muted-foreground">{checkout}</p>}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!connected || busy}
-          onClick={() =>
-            act(async () => {
-              const inspected = await request('/api/scm/inspect', input, responses.inspected)
-              setCheckout(`${inspected.path} · ${inspected.branch}`)
-              const { files } = await request('/api/scm/changes', input, responses.files)
-              setFiles(files)
-              setStatus(
-                `${files.length} text files changed (binary and files over 2 MB are omitted).`,
-              )
-            })
-          }
-        >
-          Refresh Git
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!connected || busy}
-          onClick={() =>
-            host.navigate({
-              viewId: 'pulls',
-              entityId: repo.id,
-            })
-          }
-        >
-          Pull requests
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() =>
-            host.navigate({
-              viewId: 'issues',
-              entityId: encodeWorkTarget({
-                repositoryId: repo.id,
-              }),
-            })
-          }
-        >
-          Issues
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!connected || busy || !files.length}
-          onClick={() =>
-            act(async () => {
-              await request(
-                '/api/scm/stage',
-                {
-                  ...input,
-                  paths: files.map((file) => file.path),
-                },
-                responses.ok,
-              )
-              setStatus('Listed changes staged.')
-            })
-          }
-        >
-          Stage listed changes
-        </Button>
-      </div>
-      {files.length > 0 && (
-        <ul className="max-h-40 overflow-auto font-mono text-[0.6875rem] text-muted-foreground">
-          {files.map((file) => (
-            <li key={file.path}>{file.path}</li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="flex flex-wrap gap-2"
-        onSubmit={(event) => {
-          event.preventDefault()
-          act(async () => {
-            const result = await request(
-              '/api/scm/commit',
-              {
-                ...input,
-                message,
-              },
-              responses.commit,
-            )
-            setStatus(`Committed ${result.commit.slice(0, 8)}`)
-            setMessage('')
-          })
-        }}
-      >
-        <Input
-          aria-label="Commit message"
-          placeholder="Commit message for staged changes"
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          required
-        />
-        <Button size="sm" variant="outline" disabled={!connected || busy || !message.trim()}>
-          Commit staged
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={!connected || busy || !message.trim()}
-          onClick={() =>
+    <div className="mt-1 space-y-6">
+      <section className="space-y-3">
+        <h3 className="text-xs font-medium text-muted-foreground">Changes</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || busy}
+            onClick={() =>
+              act(async () => {
+                const inspected = await request('/api/scm/inspect', input, responses.inspected)
+                setCheckout(`${inspected.path} · ${inspected.branch}`)
+                const { files } = await request('/api/scm/changes', input, responses.files)
+                setFiles(files)
+                setStatus(
+                  `${files.length} text files changed (binary and files over 2 MB are omitted).`,
+                )
+              })
+            }
+          >
+            Refresh Git
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || busy || !files.length}
+            onClick={() =>
+              act(async () => {
+                await request(
+                  '/api/scm/stage',
+                  {
+                    ...input,
+                    paths: files.map((file) => file.path),
+                  },
+                  responses.ok,
+                )
+                setStatus('Listed changes staged.')
+              })
+            }
+          >
+            Stage listed changes
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Refresh to inspect changes, then stage the files you want to commit.
+        </p>
+        {files.length > 0 && (
+          <ul className="max-h-40 overflow-auto font-mono text-[0.6875rem] text-muted-foreground">
+            {files.map((file) => (
+              <li key={file.path}>{file.path}</li>
+            ))}
+          </ul>
+        )}
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
             act(async () => {
               const result = await request(
                 '/api/scm/commit',
-                { ...input, message },
+                {
+                  ...input,
+                  message,
+                },
                 responses.commit,
               )
+              setStatus(`Committed ${result.commit.slice(0, 8)}`)
               setMessage('')
-              setFiles([])
-              try {
-                await request('/api/scm/push', input, responses.ok)
-                setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
-              } catch (error) {
-                setStatus(
-                  `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
-                )
-              }
             })
-          }
+          }}
         >
-          Commit &amp; push
-        </Button>
-      </form>
+          <Input
+            aria-label="Commit message"
+            placeholder="Commit message for staged changes"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            required
+          />
+          <Button size="sm" variant="outline" disabled={!connected || busy || !message.trim()}>
+            Commit staged
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!connected || busy || !message.trim()}
+            onClick={() =>
+              act(async () => {
+                const result = await request(
+                  '/api/scm/commit',
+                  { ...input, message },
+                  responses.commit,
+                )
+                setMessage('')
+                setFiles([])
+                try {
+                  await request('/api/scm/push', input, responses.ok)
+                  setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
+                } catch (error) {
+                  setStatus(
+                    `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
+                  )
+                }
+              })
+            }
+          >
+            Commit &amp; push
+          </Button>
+        </form>
+      </section>
+      <section className="space-y-3">
+        <h3 className="text-xs font-medium text-muted-foreground">Branch</h3>
+        <BranchPicker
+          current={taskId ? undefined : repo.branch}
+          disabled={!connected || busy}
+          load={() => request('/api/scm/branches', input, branchesSchema)}
+          change={async (value) => {
+            const result = await request(
+              '/api/scm/branch',
+              {
+                ...input,
+                ...value,
+              },
+              branchesSchema,
+            )
+            setCheckout(result.current)
+            setFiles([])
+            return result
+          }}
+        />
+        {checkout && (
+          <p className="break-all font-mono text-xs text-muted-foreground">{checkout}</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {' '}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || busy}
+            onClick={() =>
+              act(async () => {
+                await request('/api/scm/push', input, responses.ok)
+                setStatus('Branch pushed.')
+              })
+            }
+          >
+            Push branch
+          </Button>
+        </div>
+      </section>
+      <section className="space-y-3">
+        <h3 className="text-xs font-medium text-muted-foreground">Open</h3>
+        <div className="flex flex-wrap gap-2">
+          {' '}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="outline" disabled={!connected || busy}>
+                Open…
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                sideOffset={4}
+                className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                <RepositoryOpenItems
+                  itemClass="flex items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent"
+                  disabled={busy}
+                  onSelect={(target) =>
+                    act(async () => {
+                      await openRepository(input, target)
+                      setStatus('Opened on your computer.')
+                    })
+                  }
+                />
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>{' '}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || busy}
+            onClick={() =>
+              host.navigate({
+                viewId: 'pulls',
+                entityId: repo.id,
+              })
+            }
+          >
+            Pull requests
+          </Button>{' '}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              host.navigate({
+                viewId: 'issues',
+                entityId: encodeWorkTarget({
+                  repositoryId: repo.id,
+                }),
+              })
+            }
+          >
+            Issues
+          </Button>
+        </div>
+        <CreateGithub path={repo.path} disabled={busy} />
+      </section>
       {status && (
         <p role="status" className="text-xs text-muted-foreground">
           {status}

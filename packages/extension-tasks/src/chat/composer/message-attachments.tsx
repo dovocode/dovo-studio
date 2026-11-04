@@ -11,7 +11,14 @@ import {
   type Attachment,
 } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
-import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@dovo/studio-ui'
 export function MessageAttachments({
   taskId,
   files = [],
@@ -205,24 +212,26 @@ export function MessageAttachments({
               onEdit={() => setPreview(null)}
             />
           )}
-          <Button
-            type="button"
-            onClick={() => {
-              if (!preview) return
-              const url = URL.createObjectURL(
-                new Blob([Uint8Array.from(atob(preview.data), (c) => c.charCodeAt(0))], {
-                  type: 'application/octet-stream',
-                }),
-              )
-              const link = document.createElement('a')
-              link.href = url
-              link.download = preview.attachment.name
-              link.click()
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
-            }}
-          >
-            Download file
-          </Button>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!preview) return
+                const url = URL.createObjectURL(
+                  new Blob([Uint8Array.from(atob(preview.data), (c) => c.charCodeAt(0))], {
+                    type: 'application/octet-stream',
+                  }),
+                )
+                const link = document.createElement('a')
+                link.href = url
+                link.download = preview.attachment.name
+                link.click()
+                setTimeout(() => URL.revokeObjectURL(url), 1000)
+              }}
+            >
+              Download file
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

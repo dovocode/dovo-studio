@@ -1,4 +1,4 @@
-import { imageEditorScript } from './image-editor-script.js'
+import { imageEditorScript, imageEditorFont } from './image-editor-script.js'
 /** The same offline canvas editor runs in a sandboxed desktop frame and a mobile WebView. */
 export type ImageEditorResult = { type: 'cancel' | 'original' } | { type: 'edited'; data: string }
 export function parseImageEditorResult(value: unknown): ImageEditorResult | null {
@@ -41,11 +41,12 @@ export function imageEditorDocument(source: string, theme: 'dark' | 'light' = 'd
     attributes: string,
   ) =>
     `<button class="icon-button" aria-label="${label}" title="${label}${shortcut ? ` (${shortcut})` : ''}" ${attributes}><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[icon]}</svg></button>`
-  return `<!doctype html><html data-theme="${theme === 'light' ? 'light' : 'dark'}"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
+  return `<!doctype html><html data-theme="${theme === 'light' ? 'light' : 'dark'}"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
+@font-face{font-family:Inter;src:url("${imageEditorFont}") format("woff2");font-weight:100 900;font-display:swap}
 *{box-sizing:border-box}
-:root{color-scheme:dark;--canvas:#080808;--surface:#171717;--field:#222;--hover:#2b2b2b;--edge:#383838;--text:#ededed;--muted:#aaa;--selected:#24333b;--focus:#8bc1df;--action:#e5e5e5;--action-text:#171717;--error:#fca5a5;--checker-a:#272727;--checker-b:#202020}
-:root[data-theme=light]{color-scheme:light;--canvas:#f1f2f4;--surface:#fff;--field:#f5f5f6;--hover:#e9e9ec;--edge:#d3d4d8;--text:#202126;--muted:#666970;--selected:#e5eef5;--focus:#376e91;--action:#25262c;--action-text:#fff;--error:#b42330;--checker-a:#e8e8eb;--checker-b:#f6f6f7}
-html,body{margin:0;height:100%;background:var(--surface);color:var(--text);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+:root{color-scheme:dark;--canvas:#080808;--surface:#181818;--field:#141414;--hover:#222;--edge:#282828;--text:#e6e6e6;--muted:#a3a3a3;--selected:#142432;--focus:#7cc9ff;--action:#e6e6e6;--action-text:#080808;--error:#fca5a5;--checker-a:#272727;--checker-b:#202020}
+:root[data-theme=light]{color-scheme:light;--canvas:#fafbfc;--surface:#fff;--field:#f5f5f6;--hover:#e9e9ec;--edge:#dfe2e7;--text:#242933;--muted:#5d6674;--selected:#e8eff9;--focus:#3565a1;--action:#242933;--action-text:#fff;--error:#b42330;--checker-a:#e8e8eb;--checker-b:#f6f6f7}
+html,body{margin:0;height:100%;background:var(--surface);color:var(--text);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 body{display:flex;flex-direction:column;overflow-x:hidden;overflow-y:auto}
 body>header,body>.tools,body>details,body>p,body>footer{flex-shrink:0}
 header,footer,.tools,.brush{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:16px 20px}
@@ -54,14 +55,15 @@ h1{font-size:16px;font-weight:600;letter-spacing:-.02em;margin:0}
 button,input{font:inherit}button{border:1px solid transparent;background:var(--field);color:inherit;border-radius:8px;min-height:36px;padding:8px 12px;cursor:pointer}
 button:hover:not(:disabled){background:var(--hover)}button[aria-pressed=true]{background:var(--selected);border-color:var(--focus);color:var(--text)}
 button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,summary:focus-visible,canvas:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.tools{gap:4px;padding-block:8px}.icon-button{width:36px;height:36px;min-height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}.icon-button svg{width:18px;height:18px;pointer-events:none}
+.tools{gap:4px;padding-block:8px}.icon-button{background:transparent;width:36px;height:36px;min-height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}.icon-button svg{width:18px;height:18px;pointer-events:none}
 .tool-divider{width:1px;height:20px;background:var(--edge);margin:0 8px}
+body:has([data-tool=crop][aria-pressed=true]) .brush{display:none}
 .brush{padding:0;margin-left:auto;gap:16px;color:var(--muted)}.brush input{width:84px;accent-color:var(--focus)}.brush input[type=color]{width:32px;height:28px;border:1px solid var(--edge);border-radius:6px;background:var(--field);padding:3px}
 #stage{flex:1 1 80px;min-width:0;min-height:80px;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:10px;background:var(--canvas);border-block:1px solid var(--edge)}
 canvas{touch-action:none;background:repeating-conic-gradient(var(--checker-a) 0% 25%,var(--checker-b) 0% 50%) 50%/16px 16px;cursor:crosshair}
 #shortcuts{padding:0 20px;font-size:12px;color:var(--muted)}#shortcuts summary{cursor:pointer;min-height:28px;display:flex;align-items:center;gap:6px}#shortcuts summary::before{content:'›';font-size:16px;transform:rotate(0deg)}#shortcuts[open] summary::before{transform:rotate(90deg)}#shortcuts p{margin:4px 0 8px;line-height:1.6}
 #hint{margin:0;padding:4px 20px 8px;color:var(--muted);font-size:12px;line-height:1.5}
-footer{justify-content:flex-end}#attach{background:var(--action);color:var(--action-text);border-color:var(--action)}#attach:hover:not(:disabled){filter:brightness(.94);background:var(--action)}
+footer{justify-content:flex-end;border-top:1px solid var(--edge)}#cancel{background:transparent}#original{background:transparent;border-color:var(--edge)}#attach{background:var(--action);color:var(--action-text);border-color:var(--action)}#attach:hover:not(:disabled){filter:brightness(.94);background:var(--action)}
 #error{color:var(--error);margin:0;padding:0 20px}#error:empty{display:none}label{display:flex;align-items:center;gap:8px}
 @media(pointer:coarse){button,.icon-button{min-height:44px}.icon-button{width:44px;height:44px}}
 @media(max-width:600px){header,footer,.tools{padding:10px 12px}.brush{margin-left:0;width:100%;padding-top:8px}#hint,#shortcuts{padding-inline:12px}button{padding:7px 10px}.tool-divider{margin-inline:4px}}

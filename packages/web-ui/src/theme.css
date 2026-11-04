@@ -129,9 +129,9 @@
   --studio-selected-fill: color-mix(in srgb, var(--foreground) 6%, var(--sidebar));
   --studio-selected-gradient: linear-gradient(
     140deg,
-    color-mix(in srgb, var(--primary) 14%, var(--sidebar)),
-    color-mix(in srgb, var(--primary) 12%, var(--sidebar)) 68%,
-    color-mix(in srgb, var(--primary) 13%, var(--sidebar))
+    color-mix(in srgb, var(--foreground) 6%, var(--sidebar)),
+    color-mix(in srgb, var(--foreground) 4%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--foreground) 5%, var(--sidebar))
   );
   --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
     color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
@@ -313,4 +313,8 @@
       color: HighlightText;
     }
   }
+}
+
+.is-user .dovo-message-content {
+  background-color: color-mix(in srgb, var(--foreground) 5%, var(--background));
 }

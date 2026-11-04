@@ -369,7 +369,7 @@ function TaskRowView({
                     compact && editable && 'pr-24',
                   )}
                 >
-                  <span className="line-clamp-2 min-w-0 flex-1 break-words" data-thread-title>
+                  <span className="min-w-0 flex-1 truncate" data-thread-title>
                     {task.title}
                   </span>
                   {(general || (compact && !!childCount)) && executionIcons}
@@ -389,8 +389,10 @@ function TaskRowView({
                     <GitBranch className="size-3 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
                     {pullIndicators}
-                    {executionIcons}
-                    {terminalIndicator}
+                    <span className="flex items-center gap-1">
+                      {executionIcons}
+                      {terminalIndicator}
+                    </span>
                   </span>
                 )}
               </span>

@@ -156,7 +156,9 @@ try {
     assert.equal(await environments.inputValue(), 'linux')
     assert.equal(await projects.inputValue(), '')
     await page.getByText('Linux defaults', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+    if (mobile) await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+    else
+      assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /overridden at/ }).count(), 0)
     await environments.selectOption('')
     if (!mobile)

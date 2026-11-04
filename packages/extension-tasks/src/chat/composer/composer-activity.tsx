@@ -13,6 +13,7 @@ export function ComposerActivity({
   task: Task
   pending?: readonly PendingMessage[]
 }) {
+  const section = useRef<HTMLElement>(null)
   const [selected, setSelected] = useState('queue')
   const [collapsed, setCollapsed] = useState(false)
   const previousInputs = useRef(new Set<string>())
@@ -37,9 +38,24 @@ export function ComposerActivity({
   const hasQueue = !!task.queue?.length
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
+  useEffect(() => {
+    const pane = section.current?.closest('[data-conversation-pane]')
+    if (!pane) return
+    let compact = false
+    const measure = () => {
+      const next = pane.getBoundingClientRect().height < 620
+      if (next && !compact) setCollapsed(true)
+      compact = next
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(pane)
+    measure()
+    return () => observer.disconnect()
+  }, [task.id, hasQueue, !!summary])
   if (!hasQueue && !summary) return null
   return (
     <section
+      ref={section}
       aria-label="Composer activity"
       className="relative mx-auto mb-0 w-full max-w-[var(--chat-max)] overflow-hidden rounded-t-xl border border-b-0 border-border/70 bg-card text-[0.8125rem]"
     >

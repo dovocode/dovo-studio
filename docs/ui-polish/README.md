@@ -23,6 +23,8 @@ and restrained separators instead of nested panel frames.
 | ------------------------------------------------------ | -------------------------------------------------------- |
 | ![Thread info dark](screenshots/thread-info-dark.webp) | ![Thread info light](screenshots/thread-info-light.webp) |
 
+- Thread rows retain project and status above a single-line ellipsized title, with visible machine,
+  harness, PR and terminal indicators.
 - The queue and composer align with conversation content; long previews keep attachment counts
   visible. Narrow desktop panes put the input above its controls.
 - Selected and disabled actions have distinct treatment. Stop remains visible without an animated
@@ -38,11 +40,11 @@ and restrained separators instead of nested panel frames.
 
 The current gallery includes 260 captures: 49 production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
-comparison images are retained. Core screenshots use the latest focused capture; the remaining
-gallery comes from the preceding full capture and will be refreshed before final approval. The
-checked-in WebP files are lossless conversions of the reviewed PNGs. All captures use production
-components with schema-checked synthetic workspace data; account/runtime mutations are blocked.
-Empty collections are intentional empty states.
+comparison images are retained. The gallery uses the latest complete pass, with focused replacements
+for the dialogs and PR overview changed afterward. A single-state full pass remains required before
+final approval. The checked-in WebP files are lossless conversions of the reviewed PNGs. All
+captures use production components with schema-checked synthetic workspace data; account/runtime
+mutations are blocked. Empty collections are intentional empty states.
 
 Browser uses the production BrowserPane with a synthetic native bridge. Terminal uses the production
 worker, renderer and WASM with a local WebSocket replay. Captures wait for rendered terminal output;
@@ -50,10 +52,13 @@ its `git status` text is sample data. These previews do not verify live Electron
 integrations or real provider/account connections.
 
 Council review is **in progress**. Dominic rejected the earlier direction as 7/10; those earlier
-approvals do not count. The structural reset has intermediate scores of 7.6–8/10 and has not earned
-unanimous approval. The latest review record is in [council.json](council.json). Final review
-requires three GPT-6.1 Sol and two Opus 5.5 reviewers on the same final screenshots. Scores are
-subjective; interaction and accessibility checks are separate.
+approvals do not count. Round 9 scored 8/10 from each of the three Sol reviewers and 6/10 from both
+Opus reviewers. Those reviews prompted consolidated dialog primitives, persistent agent-setup
+actions, grouped Git actions, a plain merge commit field, shared image-editor typography and a
+corrected rail offset. A fresh five-member review is underway; unanimous approval has not been
+earned. The latest review record is in [council.json](council.json). Final review requires three
+GPT-6.1 Sol and two Opus 5.5 reviewers on the same final screenshots. Scores are subjective;
+interaction and accessibility checks are separate.
 
 ## Verification
 
@@ -83,7 +88,9 @@ To reproduce the full PNG set:
 ```sh
 pnpm exec playwright install chromium
 pnpm --filter @dovo/protocol build
-node scripts/capture-ui-polish.mjs /tmp/dovo-ui-review --all --controls
+pnpm --filter @dovo/web-ui build
+pnpm --filter @dovo/client-runtime build
+node scripts/capture-ui-polish.mjs /tmp/dovo-ui-review --all --controls --dialogs
 ```
 
 Use `--only=conversation,pulls,appearance,browser,thread-info` for a quick focused pass. Screenshot

@@ -625,7 +625,7 @@ textarea {
   padding-left: var(--studio-brand-inset);
 }
 .studio-header-layout[data-inline-header='true'] .studio-navigation[aria-label='Main navigation'] {
-  margin-top: calc(var(--studio-header-height, 52px) + 8px);
+  margin-top: var(--studio-header-height, 52px);
 }
 /* Inline headers begin beside the activity rail. Continue their divider across it. */
 .studio-header-layout[data-inline-header='true'] .studio {
@@ -637,7 +637,7 @@ textarea {
   position: absolute;
   top: calc(var(--studio-header-height) - 1px);
   left: 0;
-  width: calc(var(--studio-navigation-width) - 4px);
+  width: var(--studio-navigation-width);
   height: 1px;
   background: var(--border);
   pointer-events: none;
@@ -981,7 +981,7 @@ textarea {
   color: color-mix(in srgb, var(--foreground) 70%, var(--primary));
   border-color: color-mix(in srgb, var(--primary) 30%, transparent);
   background-color: var(--studio-selected-fill);
-  background-image: none;
+  background-image: var(--studio-selected-gradient);
   box-shadow:
     inset 1.5px 0 var(--primary),
     inset 0 1px 0 color-mix(in srgb, var(--primary) 18%, transparent),
@@ -1222,9 +1222,9 @@ textarea {
   border-radius: 6px;
   border-color: transparent;
   background-color: var(--studio-selected-fill);
-  background-image: none;
+  background-image: var(--studio-selected-gradient);
   color: var(--foreground);
-  box-shadow: none;
+  box-shadow: var(--studio-glow);
 }
 .studio-browser-sidebar .studio-browser-tab-title {
   font-size: 12px;
@@ -1359,8 +1359,8 @@ textarea {
   padding: 7px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, var(--foreground) 5%);
   background-color: var(--card);
-  background-image: linear-gradient(145deg, var(--card), var(--sidebar));
-  box-shadow: inset 0 1px color-mix(in srgb, var(--foreground) 4%, transparent);
+  background-image: none;
+  box-shadow: none;
 }
 .studio-browser-header {
   min-width: 0;
@@ -1685,8 +1685,8 @@ textarea {
   color: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
   background-color: var(--studio-selected-fill);
-  background-image: none;
-  box-shadow: none;
+  background-image: var(--studio-selected-gradient);
+  box-shadow: var(--studio-glow);
 }
 @media (pointer: coarse) {
   .studio-browser-sidebar .studio-browser-library > button,
@@ -2204,8 +2204,8 @@ select:focus-visible,
 .dark .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card {
   border-color: transparent;
   background-color: var(--studio-selected-fill);
-  background-image: none;
-  box-shadow: none;
+  background-image: var(--studio-selected-gradient);
+  box-shadow: var(--studio-glow);
 }
 .studio-task-sidebar .studio-list-section-header,
 .studio-browser-sidebar .studio-list-section-header {
@@ -2520,8 +2520,8 @@ a.studio-project-row:hover {
   color: var(--muted-foreground);
   font-size: 0.6875rem;
   font-weight: 500;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 .studio-list-section-header::-webkit-details-marker {
   display: none;
@@ -2884,4 +2884,34 @@ a.studio-project-row:hover {
   > :is([data-thread-info-section='scripts'], [data-thread-info-section='openIn'])
   .studio-project-section {
   padding-inline: 0;
+}
+
+.studio-settings-page {
+  container: settings / inline-size;
+}
+@container settings (max-width: 36rem) {
+  .studio-setting-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .studio-setting-row .studio-setting-control {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+.studio-thread-info-content
+  > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts']) {
+  border-bottom: 0;
+}
+.studio-thread-info-content
+  > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts'])
+  .studio-project-section {
+  padding-block: 4px;
+}
+.studio-thread-info-links
+  > [data-thread-info-section]:not(:empty)
+  ~ [data-thread-info-section]:not(:empty) {
+  border-top: 0;
 }

@@ -277,7 +277,7 @@ try {
     )
     assert.equal(
       await actualFrame.locator('#stage').evaluate((el) => getComputedStyle(el).backgroundColor),
-      theme === 'dark' ? 'rgb(8, 8, 8)' : 'rgb(241, 242, 244)',
+      theme === 'dark' ? 'rgb(8, 8, 8)' : 'rgb(250, 251, 252)',
       'The image canvas uses the theme surface',
     )
     assert.ok(

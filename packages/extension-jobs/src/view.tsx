@@ -16,6 +16,7 @@ import {
   cn,
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogDescription,
   DialogTitle,
   EmptyState,
@@ -436,16 +437,18 @@ export default function JobsView({ entityId }: StudioViewProps) {
               {error}
             </p>
           )}
-          <Button
-            disabled={
-              busy ||
-              !name.trim() ||
-              !entries.find((entry) => entry.profile.id === owner)?.connected
-            }
-            onClick={() => void startCreation()}
-          >
-            {busy ? 'Creating…' : 'Create automation'}
-          </Button>
+          <DialogFooter>
+            <Button
+              disabled={
+                busy ||
+                !name.trim() ||
+                !entries.find((entry) => entry.profile.id === owner)?.connected
+              }
+              onClick={() => void startCreation()}
+            >
+              {busy ? 'Creating…' : 'Create automation'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </section>

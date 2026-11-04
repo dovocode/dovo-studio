@@ -23,6 +23,8 @@ import {
 } from '@dovo/studio-ui'
 import {
   Archive,
+  Activity,
+  Timer,
   Brain,
   Shapes,
   Bell,
@@ -67,8 +69,8 @@ const icons: Record<string, typeof Search> = {
   'source-control': GitBranch,
   'pull-request-settings': GitPullRequest,
   'pull-request-monitoring-settings': GitPullRequest,
-  'task-defaults': ListTodo,
-  'task-behavior': ListTodo,
+  'task-defaults': Settings2,
+  'task-behavior': Timer,
   commands: Terminal,
   worktrees: HardDrive,
   memory: Brain,
@@ -78,16 +80,15 @@ const icons: Record<string, typeof Search> = {
   'device-previews': Smartphone,
   'studio-tools-settings': Wrench,
   runtime: MonitorSmartphone,
-  'running-tasks': ListTodo,
+  'running-tasks': Activity,
   activity: Command,
   'archived-tasks': Archive,
 }
 
-type NavigationSection = SettingsSection | 'more' | 'new-tasks' | 'running-tasks'
+type NavigationSection = SettingsSection | 'more' | 'tasks'
 const headings: readonly [NavigationSection, string][] = [
   ['app', 'App preferences'],
-  ['new-tasks', 'New task defaults'],
-  ['running-tasks', 'Running task behavior'],
+  ['tasks', 'Task defaults & behavior'],
   ['agents', 'Agents & tools'],
   ['coding', 'Tasks & projects'],
   ['computers', 'Computers'],
@@ -206,13 +207,13 @@ export function SettingsNav({
   }
   const needle = query.trim().toLowerCase()
   const sectionFor = (view: StudioView): NavigationSection => {
-    if (view.id === 'task-defaults') return 'new-tasks'
+    if (view.id === 'task-defaults') return 'tasks'
     if (
       view.id === 'task-behavior' ||
       view.id === 'running-tasks' ||
       view.id === 'pull-request-monitoring-settings'
     )
-      return 'running-tasks'
+      return 'tasks'
     if (view.settingsScope === 'device') return 'app'
     return view.settingsSection ?? 'more'
   }
@@ -294,7 +295,7 @@ export function SettingsNav({
       }}
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-72"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-[280px]"
     >
       <SidebarHeader />
       <div className="studio-overview-pane flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sidebar px-4 py-3 md:px-3 md:py-4">
@@ -499,19 +500,14 @@ export function SettingsNav({
             {searchStatus}
           </p>
         )}
-        <aside
-          aria-label={inherited ? 'Inherited settings target' : 'Settings storage'}
-          className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
-        >
-          <p className="font-medium">
-            {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : `Scope: ${scopeLabel}`}
-          </p>
-          {inherited && (
-            <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
-              {project} · {computer}
-            </p>
-          )}
-        </aside>
+        {!inherited && (
+          <aside
+            aria-label="Settings storage"
+            className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
+          >
+            <p className="font-medium">Scope: {scopeLabel}</p>
+          </aside>
+        )}
       </div>
     </nav>
   )

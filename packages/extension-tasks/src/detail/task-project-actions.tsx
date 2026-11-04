@@ -67,7 +67,7 @@ export function TaskProjectActions({
           >
             <Plus className="size-3.5" />
             <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
-              {actions.length ? 'Project scripts' : 'Add script'}
+              {actions.length ? 'Project actions' : 'Add action'}
             </span>
           </Button>
         </DropdownMenu.Trigger>

@@ -23,16 +23,21 @@ import {
   forgeLabels,
   formatDateTime,
 } from '@dovo/studio-core'
-import { HeaderContent, Button, Badge, MessageResponse, ProjectIcon } from '@dovo/studio-ui'
+import {
+  HeaderContent,
+  Button,
+  Badge,
+  MessageResponse,
+  ProjectIcon,
+  DropdownMenu,
+} from '@dovo/studio-ui'
 import {
   ArrowLeft,
   ArrowUpRight,
-  Bot,
   FileDiff,
   GitBranch,
   ListChecks,
   MessageSquare,
-  MessageSquareShare,
   RefreshCw,
 } from 'lucide-react'
 import { PullComments } from './comments'
@@ -246,31 +251,6 @@ function PullDetailContent({
           >
             <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
           </Button>
-          {detail && thread && (
-            <Button
-              size="sm"
-              variant="outline"
-              title={`Add this PR’s review context to the “${thread.title}” draft`}
-              aria-label={`Ask in linked thread ${thread.title}`}
-              onClick={() => thread.onAsk(buildPullReviewObjective(detail))}
-            >
-              <MessageSquareShare className="size-3.5" />
-              <span className="hidden @lg/pr-detail:inline">Ask in thread</span>
-            </Button>
-          )}
-          {detail && repository && !thread && (
-            <Button
-              size="sm"
-              variant="outline"
-              title="Ask an agent in a linked thread’s side chat or a new review task"
-              aria-label="Ask agent about this PR"
-              disabled={!connected}
-              onClick={() => setAsking({})}
-            >
-              <Bot className="size-3.5" />
-              <span className="hidden @lg/pr-detail:inline">Ask agent</span>
-            </Button>
-          )}
           {detail && repository && (
             <StartPullTask
               repositoryId={repositoryId}
@@ -299,6 +279,21 @@ function PullDetailContent({
               repositoryId={repositoryId}
               detail={detail}
               onDone={changed}
+              extraMenuItems={
+                <>
+                  {(thread || repository) && (
+                    <DropdownMenu.Item
+                      className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                      disabled={!thread && !connected}
+                      onSelect={() =>
+                        thread ? thread.onAsk(buildPullReviewObjective(detail)) : setAsking({})
+                      }
+                    >
+                      {thread ? `Ask in linked thread ${thread.title}` : 'Ask agent about this PR'}
+                    </DropdownMenu.Item>
+                  )}
+                </>
+              }
               onStartTask={
                 repository
                   ? () => {

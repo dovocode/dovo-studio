@@ -53,7 +53,12 @@ export function imageEditorRuntime(source: string) {
     context.lineJoin = 'round'
     if (step.tool === 'crop') {
       const r = rect(step)
-      context.strokeStyle = '#67e8f9'
+      context.fillStyle = '#0009'
+      context.beginPath()
+      context.rect(0, 0, context.canvas.width, context.canvas.height)
+      context.rect(r.x, r.y, r.width, r.height)
+      context.fill('evenodd')
+      context.strokeStyle = '#fff'
       context.lineWidth = 2
       context.setLineDash([8, 5])
       context.strokeRect(r.x, r.y, r.width, r.height)
@@ -169,7 +174,7 @@ export function imageEditorRuntime(source: string) {
         other.setAttribute('aria-pressed', String(other === button))
       element('hint').textContent =
         tool === 'crop'
-          ? 'Drag a rectangle to crop. Undo restores the previous image.'
+          ? 'Drag to select the area to keep. Release to crop; Undo restores the previous image.'
           : 'Draw on the image. Changes stay here until you attach it.'
     }
   undo.onclick = () => {
@@ -254,7 +259,10 @@ export function imageEditorRuntime(source: string) {
     loaded = true
     render()
     element<HTMLButtonElement>('attach').disabled = false
-    canvas.focus()
+    // Enter the frame for shortcuts without painting a keyboard ring around the image.
+    // Tab still reaches the toolbar and canvas in document order.
+    document.body.tabIndex = -1
+    document.body.focus()
   }
   image.onerror = () => {
     element('error').textContent =

@@ -709,6 +709,9 @@ export function TaskProjectPanel({
         {groups.map((ids) =>
           compactSections.has(ids[0]) ? (
             <div key={ids[0]} className="studio-thread-info-links">
+              <h3 className="pb-1 pt-4 text-xs font-medium text-muted-foreground">
+                Activity &amp; links
+              </h3>
               {ids.map((id) => (
                 <div key={id} data-thread-info-section={id}>
                   {sections[id]}

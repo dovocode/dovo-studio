@@ -175,14 +175,18 @@ export function TaskBehaviorSettings({
   return (
     <div className="space-y-3">
       {!supported && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Update this computer’s runtime to configure scoped lifecycle settings.
+        <p
+          role="status"
+          className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+        >
+          Lifecycle settings require a newer runtime. Update this computer in Devices & runtime to
+          edit them.
         </p>
       )}
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
           title="Task lifecycle"
-          description="Applies to existing tasks as well as new ones. Choose Inherit to follow the earlier settings level."
+          description="Applies to existing and new tasks. Inherit uses the parent scope."
         >
           {fields.map(([key, label, description]) => (
             <SettingRow

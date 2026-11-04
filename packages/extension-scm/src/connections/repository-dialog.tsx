@@ -19,6 +19,7 @@ import {
   Button,
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -329,26 +330,28 @@ function RepositoryDialogContent({
                   Connect to a runtime to create or clone a project.
                 </p>
               )}
-              <Button
-                type="submit"
-                disabled={
-                  busy ||
-                  ((source !== 'local' || !!connection) && !connected) ||
-                  (source === 'forge' && (!forge.connectionId || !forge.repository.trim()))
-                }
-              >
-                {busy
-                  ? 'Working…'
-                  : source === 'dovo'
-                    ? 'Create project'
-                    : source !== 'local'
-                      ? projectLabels
-                        ? 'Clone and add project'
-                        : 'Clone and add repository'
-                      : projectLabels
-                        ? 'Add project'
-                        : 'Add repository'}
-              </Button>
+              <DialogFooter>
+                <Button
+                  type="submit"
+                  disabled={
+                    busy ||
+                    ((source !== 'local' || !!connection) && !connected) ||
+                    (source === 'forge' && (!forge.connectionId || !forge.repository.trim()))
+                  }
+                >
+                  {busy
+                    ? 'Working…'
+                    : source === 'dovo'
+                      ? 'Create project'
+                      : source !== 'local'
+                        ? projectLabels
+                          ? 'Clone and add project'
+                          : 'Clone and add repository'
+                        : projectLabels
+                          ? 'Add project'
+                          : 'Add repository'}
+                </Button>
+              </DialogFooter>
             </fieldset>
             {error && (
               <p role="alert" className="text-sm text-destructive break-words">

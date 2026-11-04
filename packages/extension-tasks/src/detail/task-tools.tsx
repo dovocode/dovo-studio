@@ -4,7 +4,7 @@ import { useWorkspace } from '@dovo/studio-core'
 import { startLiveRefresh } from './live-refresh'
 import {
   Bot,
-  MessageCircleQuestion,
+  MessagesSquare,
   Files,
   FileCode2,
   GitPullRequest,
@@ -91,7 +91,7 @@ export function TaskTools({
               ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
               ...(hasLinkedPulls ? [['linked-pulls', 'Linked PRs', GitPullRequest] as const] : []),
               ...(hasAgents ? [['agents', 'Agents', Bot] as const] : []),
-              ['side-chats', 'Side chats', MessageCircleQuestion],
+              ['side-chats', 'Side chats', MessagesSquare],
             ],
           },
           {

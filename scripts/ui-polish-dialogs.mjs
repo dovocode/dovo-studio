@@ -284,7 +284,9 @@ export async function captureFollowUpDialogs(page, origin, output) {
         if (route === 'tasks')
           await page.getByRole('textbox', { name: 'Message task', exact: true }).waitFor()
         await open()
-        await page.waitForFunction(() => !document.body.innerText.includes('Loading provider models…'))
+        await page.waitForFunction(
+          () => !document.body.innerText.includes('Loading provider models…'),
+        )
         await page.evaluate(() => document.fonts.ready)
         await page.waitForFunction(() =>
           document
@@ -342,7 +344,19 @@ export async function captureFollowUpDialogs(page, origin, output) {
           await dialog.getByRole('button', { name: 'Next', exact: true }).click()
           await page.screenshot({ path: resolve(output, `add-agent-profile-${mode}.png`) })
           await dialog.getByRole('button', { name: 'Next', exact: true }).click()
-          await page.waitForFunction(() => !document.body.innerText.includes('Loading provider models…'))
+          await page.waitForFunction(
+            () => !document.body.innerText.includes('Loading provider models…'),
+          )
+          const completion = dialog.getByRole('button', { name: 'Add configuration', exact: true })
+          const completionBox = await completion.boundingBox()
+          const dialogBox = await dialog.boundingBox()
+          assert.ok(
+            completionBox &&
+              dialogBox &&
+              completionBox.y >= dialogBox.y &&
+              completionBox.y + completionBox.height <= dialogBox.y + dialogBox.height,
+            'Agent setup completion stays inside the dialog viewport',
+          )
           await page.screenshot({ path: resolve(output, `add-agent-model-${mode}.png`) })
           await page.keyboard.press('Escape')
         } else await page.keyboard.press('Escape')

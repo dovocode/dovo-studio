@@ -28,7 +28,8 @@ import {
   MessageSquare,
   MessageCircleQuestion,
   Smartphone,
-  PanelRight,
+  Maximize2,
+  Minimize2,
   PanelBottom,
   Terminal,
   FolderSymlink,
@@ -286,7 +287,7 @@ export function TaskHeader({
                 className="size-7"
                 onClick={onTools}
               >
-                <PanelRight size={15} />
+                {toolsExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </IconButton>
             </div>
           </header>

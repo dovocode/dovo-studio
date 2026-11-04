@@ -224,6 +224,19 @@ try {
     0,
   )
   assert.equal(await page.locator('.studio-titlebar-name').textContent(), 'Dovo Studio')
+  const glow = page.getByRole('slider', { name: 'Glow intensity', exact: true })
+  const gradients = page.getByRole('switch', { name: 'Gradients', exact: true })
+  const setGlow = async (value) => {
+    await glow.fill(String(value))
+    await page.waitForFunction(
+      (value) => document.documentElement.dataset.themeGlow === String(value),
+      value,
+    )
+  }
+  assert.equal(await glow.inputValue(), '0', 'New workspaces default to quiet surfaces')
+  assert.equal(await gradients.isChecked(), false)
+  await setGlow(0.5)
+  await gradients.click()
   const ids = await page.evaluate(() => window.paletteIds)
   for (const id of ids) {
     const palette = await page.evaluate((id) => window.palettes[id], id)
@@ -337,7 +350,7 @@ try {
           return c
         }
         const root = getComputedStyle(document.documentElement)
-        const user = document.querySelector('.is-user > div')
+        const user = document.querySelector('.is-user .dovo-message-content')
         const terminal = window.terminals[0]
         return {
           background: root.getPropertyValue('--background').trim(),
@@ -349,6 +362,7 @@ try {
             (el) => getComputedStyle(el).color,
           ),
           user: color(getComputedStyle(user).backgroundColor),
+          neutralUser: color('color-mix(in srgb, var(--foreground) 5%, var(--background))'),
           userText: color(getComputedStyle(user).color),
           terminal: terminal.options.theme,
           buffer: terminal.viewport.lines.map((line) => line.text).join('\n'),
@@ -379,9 +393,13 @@ try {
           .evaluate((button) => getComputedStyle(button).color),
         rgb(expected['action-foreground']),
       )
-      assert.equal(actual.user, rgb(expected.secondary))
+      assert.equal(actual.user, actual.neutralUser, 'User messages use a neutral raised surface')
       assert.equal(actual.userText, rgb(expected.foreground))
-      assert.equal(actual.terminal.background, expected.background, 'Terminal uses the workspace canvas')
+      assert.equal(
+        actual.terminal.background,
+        expected.background,
+        'Terminal uses the workspace canvas',
+      )
       assert.equal(actual.terminal.foreground, expected.foreground)
       assert.equal(actual.sessions, 1, 'Changing themes must not reconnect the terminal')
       assert.ok(actual.buffer.includes('theme session preserved'))
@@ -451,15 +469,6 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark')
   await page.emulateMedia({ colorScheme: 'light' })
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
-  const glow = page.getByRole('slider', { name: 'Glow intensity', exact: true })
-  const gradients = page.getByRole('switch', { name: 'Gradients', exact: true })
-  const setGlow = async (value) => {
-    await glow.fill(String(value))
-    await page.waitForFunction(
-      (value) => document.documentElement.dataset.themeGlow === String(value),
-      value,
-    )
-  }
   await mode('Dark')
   await setGlow(0.5)
   await page.waitForFunction(() =>
@@ -679,7 +688,17 @@ try {
           const label = control.parentElement.previousElementSibling.getBoundingClientRect()
           return buttons.left >= label.right || buttons.top >= label.bottom
         }),
-      'Color scheme buttons must not overlap their description',
+      'Color scheme buttons must not overlap their description at ' +
+        width +
+        ': ' +
+        JSON.stringify(
+          await page
+            .getByRole('combobox', { name: 'Color scheme', exact: true })
+            .evaluate((control) => ({
+              control: control.getBoundingClientRect().toJSON(),
+              label: control.parentElement.previousElementSibling.getBoundingClientRect().toJSON(),
+            })),
+        ),
     )
   }
   await page.setViewportSize({ width: 390, height: 844 })

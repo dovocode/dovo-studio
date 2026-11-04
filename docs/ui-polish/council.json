@@ -38,12 +38,42 @@
       "model": "Opus 5.5",
       "score": 7.6,
       "id": "e4806b4a-7821-4472-8788-4cb298e39cdc"
+    },
+    {
+      "round": "reset9",
+      "model": "GPT-6.1 Sol",
+      "score": 8,
+      "id": "62a84198-ddf2-440c-9010-d272bd68a09c"
+    },
+    {
+      "round": "reset9",
+      "model": "GPT-6.1 Sol",
+      "score": 8,
+      "id": "77164efb-b93d-4282-8a3e-a65014d9fa81"
+    },
+    {
+      "round": "reset9",
+      "model": "GPT-6.1 Sol",
+      "score": 8,
+      "id": "f38db083-cae8-42c5-9739-986673648c73"
+    },
+    {
+      "round": "reset9",
+      "model": "Opus 5.5",
+      "score": 6,
+      "id": "86ce3c22-ac4d-4a79-a1fe-ba181c9c05c8"
+    },
+    {
+      "round": "reset9",
+      "model": "Opus 5.5",
+      "score": 6,
+      "id": "21d45e1b-731f-4fe6-83b7-1b0eb814207b"
     }
   ],
   "remaining": [
-    "Navigation identity and clarity",
-    "Conversation hierarchy and split-pane allocation",
-    "Inspector consistency",
-    "Final full capture and five-member review"
+    "Verify consolidated dialog patterns and visible completion controls",
+    "Review refreshed complete captures after frame, Git dialog and image editor changes",
+    "Obtain five honest final approvals",
+    "Complete checks and PR"
   ]
 }

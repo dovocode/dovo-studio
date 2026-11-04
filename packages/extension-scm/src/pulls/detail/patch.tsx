@@ -209,15 +209,15 @@ export function PullPatch({
   return (
     <div
       className="min-w-0 overflow-auto"
+      title={
+        onComment
+          ? 'Drag line numbers or Shift-click for a range. Click + for a single line.'
+          : undefined
+      }
       style={{
         fontSize: 12,
       }}
     >
-      {onComment && (
-        <p className="py-2 text-[0.625rem] text-muted-foreground">
-          Drag line numbers or Shift-click for a range. Click + for a single line.
-        </p>
-      )}
       {reviewContext && (
         <p className="py-2 text-[0.625rem] text-muted-foreground">
           Review excerpt · original line numbers; surrounding changes may be omitted.
