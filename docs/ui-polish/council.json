@@ -198,10 +198,10 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 30,
+    "round": 31,
     "captures": 264,
-    "corePass": 29,
-    "dialogPass": "29 with refreshed representative30 dialogs"
+    "corePass": 31,
+    "dialogPass": 31
   },
   "unavailableReviews": [
     {
@@ -226,7 +226,23 @@
       "reason": "Muse saved API key rejected; requires muse login; no review issued"
     }
   ],
-  "pendingReviews": [],
+  "pendingReviews": [
+    {
+      "round": "reset31",
+      "model": "Opus 5.5",
+      "id": "3b532f9f-9fa0-44b2-8ed2-be3a9e367355"
+    },
+    {
+      "round": "reset31",
+      "model": "Opus 5.5",
+      "id": "082f4120-728a-48f2-8187-9e47b8d0cac8"
+    },
+    {
+      "round": "reset31",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "a3da728d-a11e-4855-8e19-0694f27bf56f"
+    }
+  ],
   "queuedReviews": [
     {
       "round": "reset30",

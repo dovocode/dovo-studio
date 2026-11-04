@@ -43,7 +43,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The checked-in round 30 gallery includes 264 captures: 49 production desktop routes/compositions in
+The checked-in round 31 gallery includes 264 captures: 49 production desktop routes/compositions in
 both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
 Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
 zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
@@ -72,9 +72,10 @@ compact search controls. Both round 30 Opus reviewers scored 7.5/10. Muse review
 the corrected `muse-wonder-full-1.0` model and also scored 7.5/10. Gemini Argon exists in AGY as
 `gemini-4-argon-high`; its ACP adapter rejected read-only mode, and a direct sandboxed review failed
 with provider `503 auth_not_found`. It has not issued a score. Four GPT-6.1 Sol high helpers
-completed the following refinement pass; a fresh full gallery is being captured. The 9/10 target has
-not yet been earned. See [council.json](council.json) for the review record. Scores are subjective;
-interaction and accessibility checks are separate.
+completed the following refinement pass; the complete frozen 264-image round 31 gallery is now under
+fresh review by two Opus reviewers and Muse. The 9/10 target has not yet been earned. See
+[council.json](council.json) for the review record. Scores are subjective; interaction and
+accessibility checks are separate.
 
 ## Verification
 
