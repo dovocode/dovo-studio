@@ -21,6 +21,7 @@ export function SettingsScopePage({
   children,
   wide = false,
   saveInfo,
+  supportsEditing,
   offlineRecovery = false,
   localChildren,
 }: {
@@ -28,13 +29,15 @@ export function SettingsScopePage({
   title: string
   wide?: boolean
   saveInfo?: string | ((snapshot?: RuntimeSnapshot | null) => string | undefined)
+  supportsEditing?: (snapshot?: RuntimeSnapshot | null) => boolean
   offlineRecovery?: boolean
   description: string
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
   const host = useStudioHost()
   const { target, setTarget, sources, source, scope, repository } = useSettingsTarget()
-  const saveHint = source?.connected
+  const editable = source?.connected === true && (supportsEditing?.(source.snapshot) ?? true)
+  const saveHint = editable
     ? typeof saveInfo === 'function'
       ? saveInfo(source.snapshot)
       : saveInfo
@@ -71,7 +74,7 @@ export function SettingsScopePage({
         >
           <div className="mb-3 flex min-h-7 flex-wrap items-center gap-x-4 gap-y-1">
             <p className="studio-settings-target-context text-xs font-medium">
-              {source && !source.connected ? 'Viewing' : 'Editing'} {projectName} on {computerName}
+              {editable ? 'Editing' : 'Viewing'} {projectName} on {computerName}
             </p>
             {saveHint && (
               <p className="text-[0.8125rem] leading-normal text-foreground/80">{saveHint}</p>
@@ -114,7 +117,9 @@ export function SettingsScopePage({
                       sideOffset={8}
                       className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
                     >
-                      <p className="font-semibold">Editing {summary.title}</p>
+                      <p className="font-semibold">
+                        {editable ? 'Editing' : 'Viewing'} {summary.title}
+                      </p>
                       <p>{summary.description}</p>
                       <p className="text-muted-foreground">{summary.storage}</p>
                     </Popover.Content>

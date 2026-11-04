@@ -145,9 +145,9 @@ function ChangedFiles({ children }: { children: ReactNode }) {
         aria-label="Changed files"
         aria-describedby={continuation !== 'none' ? descriptionId : undefined}
         tabIndex={0}
-        className="max-h-[min(26dvh,16rem)] overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="max-h-[min(34dvh,20.5rem)] overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <div ref={content} className="space-y-3">
+        <div ref={content} className="space-y-2">
           {children}
         </div>
       </div>
@@ -397,12 +397,12 @@ function CheckoutActions({
           <div className="space-y-3">
             <ChangedFiles>
               <section aria-label="Staged" className="overflow-hidden rounded-lg border">
-                <h4 className="border-b bg-muted/30 px-3 py-2 text-xs font-medium">
+                <h4 className="border-b bg-muted/30 px-3 py-1.5 text-xs font-medium">
                   Staged · {stagedCount}
                   {!stagingKnown && ' known'}
                 </h4>
                 {stagedFiles.length ? (
-                  <ul className="py-1">
+                  <ul className="py-0.5">
                     {stagedFiles.map((file) => (
                       <li
                         key={file.path}
@@ -470,7 +470,7 @@ function CheckoutActions({
                       aria-label={group.name}
                       className="overflow-hidden rounded-lg border"
                     >
-                      <div className="border-b bg-muted/30 px-3 py-2">
+                      <div className="border-b bg-muted/30 px-3 py-1.5">
                         <label className="flex items-center gap-2 text-xs font-medium">
                           <Checkbox
                             aria-label={
@@ -512,7 +512,7 @@ function CheckoutActions({
                         </p>
                       )}
                       {group.files.length ? (
-                        <ul className="py-1">
+                        <ul className="py-0.5">
                           {group.files.map((file) => (
                             <li key={file.path}>
                               <div className="grid grid-cols-[1rem_minmax(0,1fr)_3.5rem_4.25rem] items-start gap-x-2 px-3 py-1.5 text-xs hover:bg-muted/30">
@@ -633,34 +633,39 @@ function CheckoutActions({
               })
             }}
           >
-            <h3 className="text-xs font-medium">Commit</h3>
-            {!loading && !loadError && connected && (
-              <>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h3 className="text-xs font-medium">Commit</h3>
+              {!loading && !loadError && connected && (
                 <p className="text-xs text-muted-foreground" aria-label="Staging summary">
                   {stagingKnown
                     ? `${stagedCount} staged ${stagedCount === 1 ? 'file' : 'files'} · ${unstagedKnown ? `${unstagedCount} with unstaged changes` : 'working tree status unavailable'}`
                     : 'Staged contents unavailable. Update this runtime to see commit membership.'}
                   {hasConflicts && ' Resolve conflicts before committing.'}
                 </p>
-                <div
-                  role="group"
-                  aria-label="Commit target"
-                  className="min-w-0 text-xs text-muted-foreground"
+              )}
+            </div>
+            {!loading && !loadError && connected && (
+              <div
+                role="group"
+                aria-label="Commit target"
+                className="flex min-w-0 flex-col text-xs text-muted-foreground sm:flex-row sm:items-baseline sm:gap-3"
+              >
+                <p className="flex min-w-0 max-w-full items-baseline gap-2 sm:max-w-1/2">
+                  <span className="shrink-0">Commit to</span>
+                  <span
+                    title={branch || undefined}
+                    className="min-w-0 truncate font-mono text-foreground"
+                  >
+                    {branch || 'Branch unavailable'}
+                  </span>
+                </p>
+                <p
+                  title={checkout || undefined}
+                  className="w-full min-w-0 truncate font-mono sm:w-auto sm:flex-1"
                 >
-                  <p className="flex min-w-0 items-baseline gap-2">
-                    <span className="shrink-0">Commit to</span>
-                    <span
-                      title={branch || undefined}
-                      className="min-w-0 truncate font-mono text-foreground"
-                    >
-                      {branch || 'Branch unavailable'}
-                    </span>
-                  </p>
-                  <p title={checkout || undefined} className="truncate font-mono">
-                    {checkout || 'Checkout path unavailable'}
-                  </p>
-                </div>
-              </>
+                  {checkout || 'Checkout path unavailable'}
+                </p>
+              </div>
             )}
             <label htmlFor={messageId} className="block text-xs font-medium">
               Commit message

@@ -310,7 +310,7 @@ export function SettingsSaveBar({
             status
           )}
         </div>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-foreground/80">{description}</p>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {children && (

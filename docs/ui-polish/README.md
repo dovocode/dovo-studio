@@ -27,25 +27,28 @@ control styles make the workspace and its secondary surfaces feel consistent.
   project/computer targets pinned during scoped editing. Controls respond to the actual content
   width; Agent profiles switch between flat master/detail and a searchable compact picker. Automatic
   and explicit saves remain clearly distinguished, including an initial save cue on scoped forms.
-  Agent draft actions stay reachable in an opaque footer that identifies the profile and target.
+  Agent draft actions stay reachable in an opaque footer with readable profile and target identity.
   Instructions spans the form with six readable lines; substantial help uses full-width rows.
   Appearance retains all palettes and font previews, with a bounded terminal size stepper. Search,
-  legacy notices, explicit-save groups and unsaved-navigation guards remain. Save cues follow the
-  selected computer’s capabilities; offline targets show one reconnect instruction. Mixed-save pages
-  name their explicit-save exceptions, and computer forms explain automatic-save timing. Save
-  guidance has a readable text size and emphasis; offline defaults and lifecycle offer a direct
-  route to Devices & runtime without changing the selected target.
+  legacy notices, explicit-save groups and unsaved-navigation guards remain. Save cues and
+  Editing/Viewing context follow the selected computer’s capabilities; offline targets show one
+  reconnect instruction. Mixed-save pages name their explicit-save exceptions, and computer forms
+  explain automatic-save timing. Save guidance has a readable text size and emphasis; offline
+  defaults and lifecycle offer a direct route to Devices & runtime without changing the selected
+  target.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
-  desktop sizes; its own continuation cue explains hidden files. Commit controls show the inspected
-  branch/checkout; readable filenames retain full-path tooltips. Per-file comparisons are read-only,
-  offer Previous/Next within their comparison group, and preserve Back/draft/selection context. Push
-  reflects branch tracking. PR lists reserve a responsive readiness column and keep the target
-  branch visible. Issues keep stable Open/Closed filters. Merge readiness separates repository
-  status, check reports and linked pipelines; failure consent is visible, accessible and invalidated
-  by status changes. CI and review signals keep the same order down the PR list. Merge dialogs keep
-  action buttons outside the scrolling form body, including when status-source details are expanded.
-  Work-list separators remain visible alongside the shared collection-row border treatment.
+  desktop sizes; modest three/four-entry change sets fit at the captured normal and compact desktop
+  widths, while its continuation cue explains overflow in dense lists. Commit controls show the
+  inspected branch/checkout; readable filenames retain full-path tooltips. Per-file comparisons are
+  read-only, offer Previous/Next within their comparison group, and preserve Back/draft/selection
+  context. Push reflects branch tracking. PR lists reserve a responsive readiness column and keep
+  the target branch visible. Issues keep stable Open/Closed filters. Merge readiness separates
+  repository status, check reports and linked pipelines; failure consent is visible, accessible and
+  invalidated by status changes. CI and review signals keep the same order down the PR list. Merge
+  dialogs keep action buttons outside the scrolling form body, including when status-source details
+  are expanded. Work-list separators remain visible alongside the shared collection-row border
+  treatment.
 - **Dialogs and images:** shared themed confirmations preserve Cancel/return focus, drafts and
   queued decisions, and reject stale runtime/caller/target decisions. MCP details scroll without
   losing consent. Project-deletion blockers provide a safe route to active work. Image
@@ -57,9 +60,9 @@ control styles make the workspace and its secondary surfaces feel consistent.
 The gallery contains **340 actual app captures across 170 surfaces**, each in dark and light,
 including 1100px compact layouts, dense lists, edited Agent forms, long Git comparisons, open
 controls and follow-up/image dialogs. Checked-in WebPs are lossless conversions, verified
-pixel-for-pixel against the PNGs. The latest pass recaptures every state, with a focused PR and
-work-list refresh after the final status-order and separator changes. The frozen manifest records
-this provenance. Six earlier comparisons remain below.
+pixel-for-pixel against the PNGs. The latest pass recaptures every state after the final Settings
+and Git refinements, against matching frozen source. The frozen manifest records this provenance.
+Six earlier comparisons remain below.
 
 Captures use production components with schema-checked synthetic data and blocked account/runtime
 writes. Dense lists contain 14 rows; some other collections intentionally show empty states. The
@@ -69,9 +72,10 @@ not evidence of live Electron, provider, account or terminal execution behavior.
 
 Independent council review is **in progress**, and the design approval target has not been met.
 Briefs omit past and target scores; reviewers receive frozen screenshots and matching source.
-[council.json](council.json) records assessments, coverage and provider limitations. Muse has
-resumed on `muse-wonder-full-1.0`. AGY lists `gemini-4-argon-high`, but its latest direct sandboxed
-review returned `503 auth_not_found`; no Gemini assessment is claimed.
+[council.json](council.json) records assessments, coverage and provider limitations. The latest
+exact `muse-wonder-full-1.0` attempt failed on provider quota, with a reported reset at 2026-11-04
+23:52 UTC; no assessment is claimed for that attempt. AGY lists `gemini-4-argon-high`, but its
+latest direct sandboxed review returned `503 auth_not_found`; no Gemini assessment is claimed.
 
 A [generated Settings reference](../../output/imagegen/README.md) informed hierarchy and field
 alignment, responsive composition and quieter navigation. The [Opus direction](design-direction.md)

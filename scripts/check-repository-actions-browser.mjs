@@ -849,16 +849,26 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 })
   await scrollCue.waitFor({ state: 'detached' })
   assert.equal(await changedFiles.getAttribute('aria-describedby'), null)
-  // Both modest and dense change lists leave the entire commit form in view when the dialog
-  // opens. Scrolling the shared file list never moves its message, target or submit actions.
-  for (const count of [2, 40]) {
-    await state(
-      {},
-      Array.from({ length: count }, (_, index) => ({
+  // Three or four displayed entries fit at the ordinary desktop heights, including a partially
+  // staged path appearing in both groups. Dense lists and shorter windows retain bounded scrolling
+  // without moving the commit target, message, staging action or submit actions.
+  for (const fixture of [
+    {
+      entries: 3,
+      files: [
+        { path: 'src/changed-0.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
+        { path: 'src/changed-1.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
+      ],
+    },
+    ...[2, 40].map((count) => ({
+      entries: count * 2,
+      files: Array.from({ length: count }, (_, index) => ({
         path: `src/changed-${index}.ts`,
         gitStatus: { index: 'modified', workingTree: 'modified' },
       })),
-    )
+    })),
+  ]) {
+    await state({}, fixture.files)
     for (const dark of [false, true]) {
       await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark)
       for (const viewportSize of [
@@ -873,37 +883,64 @@ try {
         await changedFiles.evaluate((element) => {
           element.scrollTop = 0
         })
-        await scrollCue.waitFor()
-        const cueBox = await scrollCue.boundingBox()
+        const overflows =
+          fixture.entries > 4 || (fixture.entries === 4 && viewportSize.height < 960)
+        await page.waitForFunction((overflows) => {
+          const region = document.querySelector('[aria-label="Changed files"]')
+          return (
+            region.scrollHeight > region.clientHeight === overflows &&
+            region.hasAttribute('aria-describedby') === overflows
+          )
+        }, overflows)
         const viewport = await page.locator('[data-repository-actions-viewport]').boundingBox()
         const form = message.locator('xpath=ancestor::form')
         const formBox = await form.boundingBox()
         assert.ok(formBox.y >= viewport.y, 'The complete commit form starts inside the viewport')
         assert.ok(
           formBox.y + formBox.height <= viewport.y + viewport.height,
-          'Commit target, message and both commit actions fit without scrolling the dialog',
+          `Commit target, message and both commit actions fit without scrolling the dialog: ${JSON.stringify({ fixture: fixture.entries, viewportSize, viewport, formBox })}`,
         )
+        const stageBox = await stage.boundingBox()
         assert.ok(
-          await changedFiles.evaluate((element) => element.scrollHeight > element.clientHeight),
-          'The combined change list provides its own scrolling area',
+          stageBox.y >= viewport.y && stageBox.y + stageBox.height <= formBox.y,
+          'Stage selected remains fully visible above the commit form',
         )
-        await changedFiles.evaluate((element) => {
-          element.scrollTop = element.scrollHeight
-        })
-        await endCue.waitFor()
-        assert.deepEqual(
-          await endCue.boundingBox(),
-          cueBox,
-          'The continuation cue keeps a fixed footprint',
-        )
-        assert.deepEqual(await form.boundingBox(), formBox)
-        await changedFiles.evaluate((element) => {
-          element.scrollTop = 0
-        })
-        await scrollCue.waitFor()
-        assert.deepEqual(await form.boundingBox(), formBox)
+        if (overflows) {
+          await scrollCue.waitFor()
+          const cueBox = await scrollCue.boundingBox()
+          await changedFiles.evaluate((element) => {
+            element.scrollTop = element.scrollHeight
+          })
+          await endCue.waitFor()
+          assert.deepEqual(
+            await endCue.boundingBox(),
+            cueBox,
+            'The continuation cue keeps a fixed footprint',
+          )
+          assert.deepEqual(await form.boundingBox(), formBox)
+          assert.deepEqual(await stage.boundingBox(), stageBox)
+          await changedFiles.evaluate((element) => {
+            element.scrollTop = 0
+          })
+          await scrollCue.waitFor()
+          assert.deepEqual(await form.boundingBox(), formBox)
+        } else {
+          assert.equal(await scrollCue.count(), 0)
+          assert.equal(await endCue.count(), 0)
+          assert.equal(await changedFiles.locator('li').count(), fixture.entries)
+          assert.ok(
+            await changedFiles.evaluate((element) => {
+              const viewport = element.getBoundingClientRect()
+              return Array.from(element.querySelectorAll('li')).every((row) => {
+                const box = row.getBoundingClientRect()
+                return box.top >= viewport.top && box.bottom <= viewport.bottom
+              })
+            }),
+            'Every modest-set entry fits fully inside the changed-file region',
+          )
+        }
         await page
-          .getByRole('checkbox', { name: `Select src/changed-${count - 1}.ts`, exact: true })
+          .getByRole('checkbox', { name: `Select ${fixture.files.at(-1).path}`, exact: true })
           .check()
         assert.equal(await stage.isEnabled(), true)
       }

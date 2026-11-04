@@ -877,11 +877,56 @@
       "verdict": "ship; merge footer and status presentation refinements",
       "coverage": "62 full-size frames;32 dark/30 light;five contacts triaged",
       "summary": "Confirms save/recovery/Git overflow/source naming fixes; verifies merge-footer clipping and inconsistent CI row position. Several claimed missing affordances conflict with exact evidence or KEEP; see triage."
+    },
+    {
+      "round": "independent54",
+      "id": "/root/independent54_sol_a",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.7,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "59 full-size frames;29 dark/30 light;five compact",
+      "summary": "Prior fixes confirmed; legacy Viewing wording, Git density and repeated merge prose are minor refinements."
+    },
+    {
+      "round": "independent54",
+      "id": "/root/independent54_sol_b",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.7,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "56 full-size frames;28 per theme;five compact",
+      "summary": "Prior fixes confirmed; legacy Viewing wording, Git density and curved Issues dividers identified."
+    },
+    {
+      "round": "independent54",
+      "id": "/root/independent54_sol_c",
+      "model": "GPT-6.1 Sol high",
+      "score": 8.5,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "62 full-size frames;30 dark/32 light;seven compact",
+      "summary": "Prior fixes confirmed; small Git set visibility, save-target text size and merge-status repetition are refinements."
+    },
+    {
+      "round": "independent54",
+      "id": "f58f8fcf-35f1-4f64-b73b-4a208872f2a9",
+      "model": "Opus 5.5",
+      "score": 8.3,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "56 full-size frames;28 per theme;four compact;two contacts triaged",
+      "summary": "Prior fixes confirmed; legacy Viewing wording, footer gutter alignment and short Git list identified."
+    },
+    {
+      "round": "independent54",
+      "id": "cffb8e67-3d8f-4e04-a62f-0aa120a7e31a",
+      "model": "Opus 5.5",
+      "score": 8.5,
+      "verdict": "ship; nonblocking refinements",
+      "coverage": "52 full-size frames;25 dark/27 light;five compact",
+      "summary": "Prior fixes confirmed; legacy Viewing wording, inheritance copy and repeated merge prose remain minor."
     }
   ],
   "remaining": [
-    "Obtain independent gallery54 approval",
-    "Finish PR #50 after council quality gate"
+    "Complete refreshed gallery55 review without prior or target scores; retry exact Muse after its provider reset",
+    "Finish PR #50 after the independent design approval gate"
   ],
   "approvalTarget": {
     "reviewers": [
@@ -899,12 +944,12 @@
     "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
   },
   "gallery": {
-    "round": 54,
+    "round": 55,
     "captures": 340,
-    "corePass": 54,
-    "dialogPass": 54,
-    "settingsPass": 54,
-    "note": "170 paired surfaces fully recaptured;58 PR/work-list states refreshed after final source changes. No errors/alerts; lossless exports, exact #080808 canvas and image-editor source parity verified. Matching source54 frozen."
+    "corePass": 55,
+    "dialogPass": 55,
+    "settingsPass": 55,
+    "note": "170 paired surfaces fully recaptured after final production edits;128 main manifest entries and158 dialog entries, no errors/alerts.22 contact sheets are separate. All3582 frozen tracked source files byte-match current apps/packages/scripts. Lossless pixel equality, #080808 canvas and image-editor source parity verified."
   },
   "unavailableReviews": [
     {
@@ -962,50 +1007,50 @@
       "id": "29714ab5-9d01-4bbe-aea5-796b1db56875",
       "status": "failed",
       "reason": "Exact model retry returned429 subscription quota exhausted after10 provider attempts; reset2026-11-04T18:51:35Z. No assessment issued."
-    }
-  ],
-  "pendingReviews": [
-    {
-      "round": "independent54",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent54_sol_a",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
-    },
-    {
-      "round": "independent54",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent54_sol_b",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
-    },
-    {
-      "round": "independent54",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent54_sol_c",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
-    },
-    {
-      "round": "independent54",
-      "model": "Opus 5.5",
-      "id": "f58f8fcf-35f1-4f64-b73b-4a208872f2a9",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
-    },
-    {
-      "round": "independent54",
-      "model": "Opus 5.5",
-      "id": "cffb8e67-3d8f-4e04-a62f-0aa120a7e31a",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     },
     {
       "round": "independent54",
       "model": "Muse muse-wonder-full-1.0",
       "id": "c1926aa5-cdcf-49c4-9184-a33421161850",
+      "status": "failed",
+      "reason": "Provider429 subscription quota exhausted after10 provider attempts; reset2026-11-04T23:52:05Z. No assessment issued."
+    }
+  ],
+  "pendingReviews": [
+    {
+      "round": "independent55",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent55_sol_a",
       "status": "running",
-      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
+      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+    },
+    {
+      "round": "independent55",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent55_sol_b",
+      "status": "running",
+      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+    },
+    {
+      "round": "independent55",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent55_sol_c",
+      "status": "running",
+      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+    },
+    {
+      "round": "independent55",
+      "model": "Opus 5.5",
+      "id": "85d05299-a99f-48d6-867d-90f4e76a5af8",
+      "status": "running",
+      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
+    },
+    {
+      "round": "independent55",
+      "model": "Opus 5.5",
+      "id": "5c5c46f1-29b0-4125-b49e-c1f54882bbca",
+      "status": "running",
+      "brief": "Fresh context; frozen gallery55/matching source55 and findings, no previous or target scores."
     }
   ],
   "queuedReviews": [
@@ -1015,6 +1060,13 @@
       "status": "unavailable",
       "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued.",
       "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
+    },
+    {
+      "round": "independent55",
+      "model": "Muse muse-wonder-full-1.0",
+      "status": "waiting-provider-reset",
+      "retryAfter": "2026-11-04T23:52:05Z",
+      "reason": "Latest exact-model attempt failed on provider quota. Avoid an immediate retry while the reported cooldown is active; no substitute assessment."
     }
   ],
   "supersededReviews": [
@@ -1085,6 +1137,11 @@
       "round": "pass54",
       "summary": "PR action dialogs retain header and errors/actions outside a scrolling form body. Readable rem-based save guidance, offline Viewing context and opt-in recovery for Thread defaults/lifecycle preserve usable scope pickers and Agents recovery. Computer use differentiates executable/new-process and agent-access/new-turn effects. PR status columns consistently order repository CI, review decision and review request. Work-list separators use an explicit row border rule instead of overridden Tailwind divide styling.",
       "verification": "Production web/desktop builds, affected types, scoped lint/format/diff passed. Managed Chromium; merge/auto-merge geometry and existing guard/payload regressions across1440x960/1100x960/1440x720, PR list desktop/mobile alignment, Settings target desktop/mobile navigation/save/draft guards, General/titles/Device Hub/runtime-Memory/Computer use and Pipeline lists passed. All340 captures refreshed;58 PR/work-list states superseded by final focused capture. Lossless pixel equality, #080808 and image source parity passed."
+    },
+    {
+      "round": "pass55",
+      "summary": "Capability-aware Editing/Viewing and inheritance-popover context on legacy Agents/lifecycle, with matching save hints and unchanged legacy Thread defaults editing. Readable profile/target/effect context in dirty Settings footers. Higher bounded Git file region and tighter group/Commit composition keep three/four displayed entries fully visible at1440x960 and1100x960; all filenames, statuses, partial staging, drafts, guards, read-only reviews and mobile target rows retained. Straight work-list divider ends. Opus concrete guidance and corrected continuation/gutter findings recorded.",
+      "verification": "Final-source production web/desktop builds, affected package types, scoped lint/format/diff passed. Managed Chromium; Settings target desktop/mobile, scoped Agents1600/1100/390 both-theme scrolled footer/save failure-retry/discard/drafts, General Settings and Pipeline lists passed. Repository actions tests check real3/4-entry rectangles, visible staging/commit controls, dense80-entry bounds/accurate cues and stationary controls; task-project-panel suite passed. Four entries intentionally still scroll at1280x900. Full340-frame capture and lossless export verified against matching frozen source."
     }
   ],
   "designConsultations": [
@@ -1129,6 +1186,13 @@
       "id": "9aabda9c-7c93-4117-b8f0-f69e56944ff5",
       "status": "completed",
       "summary": "Requested focused implementation brief without another rating. Recommends capability-aware save cues, one truthful offline message, mixed-save timing, explicit clean service-URL wording/reset naming, distinct navigation icons/group labels. Withdrew missing Runtime Save-button allegation after inspecting intentional clean-state SaveBar. Root retains editable Thread defaults legacy path rather than treating all legacy capabilities as whole-page read-only."
+    },
+    {
+      "round": "design55",
+      "model": "Opus 5.5",
+      "id": "f58f8fcf-35f1-4f64-b73b-4a208872f2a9",
+      "status": "completed",
+      "summary": "Concrete Git composition guidance without a rating. Adopted a higher bounded file region, tighter group spacing and shared Commit summary/target rows, preserving three-line file identity and separate staging controls. Geometry checks show three/four entries fully visible at1440x960 and1100x960. Larger single-list/sticky-header changes were unnecessary for that verified result. Opus corrected its chevron finding: this is the existing dialog continuation indicator. Footer/body7px offset downgraded to optical, with no clipping, hit-target, reading-order or shift issue; no compensating margin applied."
     }
   ],
   "findingTriage": [
@@ -1176,6 +1240,11 @@
       "round": "independent54",
       "finding": "Issues row separators absent despite divide-y",
       "result": "Root confirmed actual cause: unlayered studio-collection-row border:1px solid transparent overrides the utility divider. Work-list-specific sibling top-border color restores real separators while preserving row height, hover and focus styles; production captures now show them."
+    },
+    {
+      "round": "independent54",
+      "finding": "Misplaced Branch chevron and7px dialog body/footer offset",
+      "result": "Opus source-backed consultation corrected the chevron allegation: it belongs to GitActionsScrollArea and correctly indicates continuation. The7px scrollbar-gutter offset is cosmetic; no clipping, target-size, reading-order or shift defect. Keep existing scroll indicator and stable gutter."
     }
   ],
   "previousApprovalTarget": {
