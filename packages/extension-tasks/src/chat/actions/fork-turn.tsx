@@ -16,7 +16,7 @@ export function ForkTurn({ taskId, turnId }: { taskId: string; turnId: string })
   return (
     <>
       <MessageAction
-        label="Fork from here: a new task with this conversation and this turn’s files"
+        label="Fork from here: a new thread with this conversation and this turn’s files"
         className="size-6 text-muted-foreground"
         disabled={!connected || busy}
         onClick={() => {

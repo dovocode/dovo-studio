@@ -47,7 +47,8 @@ import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
 import { PullAskAgent } from './ask-agent'
-import { PullPipelineRuns } from './pipeline-runs'
+import { PullPipelineRunsContent, usePullPipelineRuns } from './pipeline-runs'
+import { pipelineSignal } from '@dovo/protocol'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 type PullTab = 'overview' | 'changes' | 'checks'
 const tabCache = createPullStateCache<PullTab>(50)
@@ -124,6 +125,22 @@ function PullDetailContent({
     connectionId,
     { tab, discussionInOverview: true },
   )
+  const pipelineRuns = usePullPipelineRuns({
+    repositoryId,
+    sha: detail?.pull.headSha ?? '',
+    active: !!detail,
+  })
+  const failedRuns = pipelineRuns.runs.filter(
+    (run) => pipelineSignal(run.status).tone === 'danger',
+  ).length
+  const activeRuns = pipelineRuns.runs.filter(
+    (run) => pipelineSignal(run.status).phase === 'active',
+  ).length
+  const pipelineSummary = failedRuns
+    ? { label: `Pipeline runs: ${failedRuns} failed`, tone: 'danger' as const }
+    : activeRuns
+      ? { label: `Pipeline runs: ${activeRuns} running`, tone: 'warning' as const }
+      : { label: `Pipeline runs: ${pipelineRuns.runs.length} loaded`, tone: 'neutral' as const }
   const previousChanges = useRef<typeof detail>(null)
   const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
   useEffect(() => {
@@ -493,6 +510,7 @@ function PullDetailContent({
                     }
                   />
                 </button>
+                {pipelineRuns.runs.length > 0 && <Signal signal={pipelineSummary} />}
                 <Signal
                   signal={
                     sections.status.ready || sections.discussion.ready
@@ -725,9 +743,8 @@ function PullDetailContent({
               hidden={tab !== 'checks'}
             >
               {checksOpened && repository && (
-                <PullPipelineRuns
-                  key={detail.pull.headSha}
-                  repositoryId={repositoryId}
+                <PullPipelineRunsContent
+                  state={pipelineRuns}
                   sha={detail.pull.headSha}
                   active={tab === 'checks'}
                 />

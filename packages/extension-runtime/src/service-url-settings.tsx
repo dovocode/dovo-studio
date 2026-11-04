@@ -14,7 +14,7 @@ export function ServiceUrlSettings() {
     fields.connectOrigin !== saved.connectOrigin || fields.artifactsOrigin !== saved.artifactsOrigin
   return (
     <form
-      className="space-y-3 rounded-md border p-4"
+      className="space-y-3 border-b border-border/50 pb-6"
       aria-label="Dovo service URLs"
       onSubmit={(event) => {
         event.preventDefault()
@@ -33,8 +33,8 @@ export function ServiceUrlSettings() {
         }
       }}
     >
-      <h2 className="text-sm font-medium">Dovo services</h2>
-      <p className="text-xs text-muted-foreground">
+      <h2 className="text-sm font-semibold tracking-tight">Dovo services</h2>
+      <p className="text-xs leading-relaxed text-muted-foreground">
         Saved on this device. Account sessions stay separate for each Connect server. New computer
         setups use this URL; existing Connect connections keep their current server until disabled
         and enabled again through LAN / VPN pairing.

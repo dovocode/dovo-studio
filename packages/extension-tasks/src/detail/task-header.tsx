@@ -417,7 +417,7 @@ export function TaskHeader({
           {compact && !projectPanelOpen && (
             <div
               role="group"
-              aria-label="Task workspace"
+              aria-label="Thread workspace"
               className="flex min-w-0 items-center overflow-x-auto rounded-md border border-border/70 bg-muted/20 p-0.5"
             >
               {surfaces

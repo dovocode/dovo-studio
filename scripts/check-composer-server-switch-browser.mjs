@@ -173,7 +173,7 @@ try {
       ['failDestination', 'Destination refresh failed', '/api/tasks/draft-moved'],
       [
         'offline',
-        mobile ? 'This machine or project is unavailable.' : 'This machine is offline.',
+        mobile ? 'This computer or project is unavailable.' : 'This computer is offline.',
         null,
       ],
     ]) {

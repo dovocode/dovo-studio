@@ -166,12 +166,30 @@
       "model": "Opus 5.5",
       "score": 7,
       "id": "0cefa964-e2bf-43cb-9eb5-c3003837e08f"
+    },
+    {
+      "round": "reset30",
+      "model": "Opus 5.5",
+      "score": 7.5,
+      "id": "8e9ab794-684e-456f-95cd-2335334246ac"
+    },
+    {
+      "round": "reset30",
+      "model": "Opus 5.5",
+      "score": 7.5,
+      "id": "353e5678-6465-416a-a02e-f2fcf49533c4"
+    },
+    {
+      "round": "reset30",
+      "model": "Muse muse-wonder-full-1.0",
+      "score": 7.5,
+      "id": "28503ce6-85e9-473b-8bfc-06768a6448ab"
     }
   ],
   "remaining": [
-    "Review latest rounded-sidebars / flat-main-surfaces gallery with both Opus reviewers",
-    "Address verified findings until both Opus reviewers award at least 9/10",
-    "Refresh evidence, complete final checks and finish PR #50"
+    "Refresh complete round31 gallery after four Sol helpers completed",
+    "Obtain at least 9/10 from both Opus reviewers",
+    "Finish PR #50"
   ],
   "approvalTarget": {
     "model": "Opus 5.5",
@@ -208,24 +226,13 @@
       "reason": "Muse saved API key rejected; requires muse login; no review issued"
     }
   ],
-  "pendingReviews": [
-    {
-      "round": "reset30",
-      "model": "Opus 5.5",
-      "id": "8e9ab794-684e-456f-95cd-2335334246ac"
-    },
-    {
-      "round": "reset30",
-      "model": "Opus 5.5",
-      "id": "353e5678-6465-416a-a02e-f2fcf49533c4"
-    }
-  ],
+  "pendingReviews": [],
   "queuedReviews": [
     {
       "round": "reset30",
-      "model": "Gemini 4.0 Argon",
+      "model": "Gemini 4 Argon High",
       "status": "unavailable",
-      "reason": "Configured Google agent catalog only provides Gemini 3.8 Flash high/medium/low; requested model unavailable"
+      "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued."
     }
   ]
 }

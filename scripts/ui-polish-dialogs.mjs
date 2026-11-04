@@ -288,8 +288,15 @@ export async function captureFollowUpDialogs(page, origin, output) {
         await page.locator('.studio').waitFor()
         await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
         if (route === 'tasks')
-          await page.getByRole('textbox', { name: 'Message task', exact: true }).waitFor()
+          await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
         await open()
+        if (name === 'thread-delete') {
+          const cancel = page
+            .getByRole('dialog')
+            .getByRole('button', { name: 'Cancel', exact: true })
+          if (!(await cancel.evaluate((button) => button === document.activeElement)))
+            throw new Error('Delete thread must initially focus Cancel')
+        }
         await page.waitForFunction(
           () => !document.body.innerText.includes('Loading provider models…'),
         )

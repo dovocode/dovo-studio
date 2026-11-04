@@ -258,7 +258,7 @@ export function TaskActivity({
   return (
     <section
       className="min-w-0 border-l border-border/60 pl-3 text-xs"
-      aria-label="Task tool activity"
+      aria-label="Thread tool activity"
     >
       {tools.length ? (
         <div className="min-w-0">

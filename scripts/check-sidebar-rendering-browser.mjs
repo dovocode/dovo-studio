@@ -151,7 +151,7 @@ try {
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByText('Running thread', { exact: true }).waitFor()
-  const scroller = page.locator('[aria-label="Task sidebar"] [aria-busy]')
+  const scroller = page.locator('[aria-label="Thread sidebar"] [aria-busy]')
   const mountedRows = () => page.locator('[data-row-icon]').count()
 
   // A large open section mounts rows near the viewport; collapsed sections build no rows.
@@ -446,7 +446,7 @@ try {
   })
   const waitForVisibleRows = () =>
     page.waitForFunction(() => {
-      const element = document.querySelector('[aria-label="Task sidebar"] [aria-busy]')
+      const element = document.querySelector('[aria-label="Thread sidebar"] [aria-busy]')
       const bounds = element.getBoundingClientRect()
       return [...element.querySelectorAll('[data-row-icon]')].some((icon) => {
         const row = icon.closest('button').getBoundingClientRect()

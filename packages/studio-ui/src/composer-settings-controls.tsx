@@ -78,7 +78,7 @@ export function ComposerSettingsControls({
             variant="ghost"
             className="h-6 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal text-muted-foreground"
             disabled={locked}
-            aria-label="Configure task permissions"
+            aria-label="Configure thread permissions"
             title="Agent access"
           >
             <AccessIcon className="size-3.5" />

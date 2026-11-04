@@ -134,7 +134,7 @@ export function AcpRegistry({
           <h3 className="text-sm font-medium">ACP agents</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             {management
-              ? 'Install agents from the ACP registry on this computer. To use one in tasks, add an agent profile for it.'
+              ? 'Install agents from the ACP registry on this computer. To use one in threads, add an agent profile for it.'
               : 'Choose an agent installed on this computer, or run your own ACP command.'}
           </p>
         </div>

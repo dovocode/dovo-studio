@@ -348,7 +348,7 @@ export function PullRequestPreferences() {
       </SettingsGroup>
       <SettingsGroup
         title="Shared GitHub and Jira retrieval"
-        description="Paired computers share provider traffic. PRs use this machine's configured accounts unless you choose a preferred retrieval computer. Provider credentials stay on their computer."
+        description="Paired computers share provider traffic. PRs use this computer's configured accounts unless you choose a preferred retrieval computer. Provider credentials stay on their computer."
       >
         <SettingRow label="Share retrieval with paired computers">
           <Toggle
@@ -750,7 +750,7 @@ export function StudioToolsPreferences() {
     <>
       <SettingsGroup
         title="Studio Tools (experimental)"
-        description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this machine only (localhost)."
+        description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this computer only (localhost)."
       >
         {studioToolSettings.map(({ key, label, description }) => (
           <SettingRow key={key} label={label} description={description}>

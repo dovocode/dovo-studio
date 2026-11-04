@@ -34,7 +34,7 @@ export default function AppearanceSettings() {
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
       <SettingsGroup
         title="Accessibility"
-        description="Saved on this device. Status icons and labels remain visible in every color mode."
+        description="Status icons and labels remain visible in every color mode."
       >
         <SettingRow
           label="Status colors"

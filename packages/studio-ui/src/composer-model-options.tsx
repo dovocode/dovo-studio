@@ -1,5 +1,6 @@
 import {
   automaticDifficultyChoices,
+  modelDisplayName,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
@@ -39,6 +40,7 @@ export function ComposerEffortColumn({
   modes?: boolean
 }) {
   const selected = selectedCatalogModel(catalog, value.model)
+  const modelName = modelDisplayName(value.model, selected?.name) || 'Provider default'
   const efforts = selected?.reasoning ?? catalog?.reasoning ?? []
   const current = automatic
     ? difficulty || 'auto'
@@ -57,8 +59,8 @@ export function ComposerEffortColumn({
     <>
       <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
         <span>{automatic ? 'Difficulty' : 'Effort'}</span>
-        <span className="ml-auto min-w-0 truncate" title={selected?.name || value.model}>
-          {automatic ? 'Automatic' : selected?.name || value.model}
+        <span className="ml-auto min-w-0 truncate" title={automatic ? 'Automatic' : modelName}>
+          {automatic ? 'Automatic' : modelName}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
@@ -96,7 +98,10 @@ export function ComposerEffortColumn({
                   ? effort.description
                   : undefined
               }
-              className="flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
+              className={cn(
+                'flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40',
+                effort.id === current && 'bg-accent text-foreground',
+              )}
               onClick={() =>
                 void (automatic
                   ? onSelectDifficulty?.(effort.id)
@@ -240,6 +245,8 @@ export function ComposerPickerSpeed({
 }) {
   if (value.provider !== 'codex') return null
   const selected = selectedCatalogModel(catalog, value.model)
+  const tiers = modelServiceTiers(catalog, value.model, value.serviceTier)
+  if (tiers.length < 2) return null
   return (
     <div
       role="radiogroup"
@@ -247,7 +254,7 @@ export function ComposerPickerSpeed({
       className="flex flex-wrap rounded-lg bg-accent/40 p-0.5"
     >
       <span className="self-center px-2 text-xs text-muted-foreground">Speed</span>
-      {modelServiceTiers(catalog, value.model, value.serviceTier).map((tier) => {
+      {tiers.map((tier) => {
         const checked = serviceTierValue(value.serviceTier) === tier.id
         return (
           <button

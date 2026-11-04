@@ -536,7 +536,10 @@ try {
   assert.equal(writes.at(-1).after.taskBehavior.archiveAfterSettledDays, 12)
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
-  assert.equal(await page.getByRole('button', { name: 'Settings machine', exact: true }).count(), 0)
+  assert.equal(
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).count(),
+    0,
+  )
   await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
   await page
     .getByLabel('Settings target', { exact: true })
@@ -632,7 +635,7 @@ try {
   const preference = (key) =>
     page.evaluate((key) => JSON.parse(localStorage.getItem('dovo.app-preferences.v1'))[key], key)
   await openLocal('General')
-  await choose('Global new task shortcut', 'Disabled')
+  await choose('Global new thread shortcut', 'Disabled')
   assert.equal(await preference('taskLauncherShortcut'), '')
   await choose('Time format', '24-hour')
   assert.equal(await preference('timeFormat'), '24h')
@@ -711,7 +714,7 @@ try {
     Object.defineProperty(window, 'Notification', { configurable: true, value: MockNotification })
   })
   const inputNotice = page.getByRole('switch', {
-    name: 'Notify when a task needs your input',
+    name: 'Notify when a thread needs your input',
     exact: true,
   })
   await inputNotice.click()

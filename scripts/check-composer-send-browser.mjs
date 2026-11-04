@@ -359,7 +359,7 @@ try {
   // The queued choice survives a failed send; only its draft override clears after acknowledgement.
   assert.equal(await page.getByText('Next turn', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Next turn model and reasoning' }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Configure task permissions' }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Configure thread permissions' }).count(), 0)
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Custom configurations' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Agent configuration' }).count(), 0)
@@ -957,7 +957,7 @@ try {
   await page.locator('[role=option][data-value=large-model]').click()
   await page.getByRole('radio', { name: 'High', exact: true }).click()
   await page.getByRole('radio', { name: /Fast/, exact: false }).click()
-  await page.getByRole('button', { name: 'Configure task permissions', exact: true }).click()
+  await page.getByRole('button', { name: 'Configure thread permissions', exact: true }).click()
   await page.locator('[role=menuitemradio][data-value=full-access]').click()
   assert.equal(await input.inputValue(), 'Use the full composer')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()

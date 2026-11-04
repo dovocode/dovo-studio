@@ -188,7 +188,7 @@ export function MessageAttachments({
         <DialogContent className="max-h-[85dvh] max-w-[var(--chat-max)] overflow-auto">
           <DialogTitle>{preview?.attachment.name}</DialogTitle>
           <DialogDescription>
-            {preview?.attachment.mime} · {preview?.attachment.size} bytes
+            {preview?.attachment.mime} · {preview && fileSizeLabel(preview.attachment.size)}
           </DialogDescription>
           {preview && isImageAttachment(preview.attachment) ? (
             <ImageViewer

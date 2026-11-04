@@ -71,12 +71,13 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
-    await page.getByText('All projects on all machines', { exact: true }).waitFor()
+    if (mobile) await page.getByText('All projects on all computers', { exact: true }).waitFor()
+    else await page.getByText('Applies to', { exact: true }).waitFor()
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
-    if (!mobile) await page.getByText('Shared across paired machines', { exact: true }).waitFor()
+    if (!mobile) await page.getByText('Shared across paired computers', { exact: true }).waitFor()
     if (!mobile) await page.keyboard.press('Escape')
     const projects = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environments = page.getByLabel(mobile ? 'Computer' : 'Settings machine', {
+    const environments = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,
     })
     await projects.waitFor()
@@ -87,7 +88,11 @@ try {
     assert.equal(await page.getByLabel('Settings scope', { exact: true }).count(), 0)
     await projects.selectOption('git:github.com/team/repo')
     await environments.selectOption('linux')
-    await page.getByText('Shared project on Linux', { exact: true }).waitFor()
+    if (mobile) await page.getByText('Shared project on Linux', { exact: true }).waitFor()
+    else {
+      assert.equal(await projects.inputValue(), 'git:github.com/team/repo')
+      assert.equal(await environments.inputValue(), 'linux')
+    }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Saved on Linux', { exact: true }).waitFor()
     if (!mobile) {
@@ -150,12 +155,15 @@ try {
       exact: true,
     })
     await overridden.click()
-    await page.getByText('Machine · Linux', { exact: true }).waitFor()
+    await page.getByText('Computer · Linux', { exact: true }).waitFor()
     await page.getByText('linux setup', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Open Machine settings for Linux', exact: true }).click()
+    await page
+      .getByRole('button', { name: 'Open Computer settings for Linux', exact: true })
+      .click()
     assert.equal(await environments.inputValue(), 'linux')
     assert.equal(await projects.inputValue(), '')
-    await page.getByText('Linux defaults', { exact: true }).waitFor()
+    if (mobile) await page.getByText('Linux defaults', { exact: true }).waitFor()
+    else assert.equal(await environments.inputValue(), 'linux')
     if (mobile) await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
     else
       assert.equal(await page.getByRole('button', { name: 'Save changes', exact: true }).count(), 0)
@@ -179,7 +187,8 @@ try {
     await page.evaluate(() => window.configureSources(1))
     await environments.waitFor({ state: 'detached' })
     await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
-    await page.getByText('Mac defaults', { exact: true }).waitFor()
+    if (mobile) await page.getByText('Mac defaults', { exact: true }).waitFor()
+    else await page.getByText('on Mac', { exact: true }).waitFor()
     assert.equal(await page.getByTestId('target').textContent(), 'environment:')
     await projects.selectOption('git:github.com/team/repo')
     assert.equal(await page.getByTestId('target').textContent(), 'environment-project:mac-repo')

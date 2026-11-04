@@ -390,7 +390,7 @@ export function ComposerWorkspace({
               )}
               {choosingBase && branches && !branches.branches.length && (
                 <p className="px-2 py-1 text-xs text-muted-foreground">
-                  No commits yet. An empty starting commit will be created only on the new task
+                  No commits yet. An empty starting commit will be created only on the new thread
                   branch.
                 </p>
               )}
@@ -465,8 +465,8 @@ export function ComposerWorkspace({
         <DialogContent className="max-w-lg">
           <DialogTitle>Use an existing worktree</DialogTitle>
           <p className="text-xs text-muted-foreground">
-            The new task works in this checkout, including its uncommitted files. Only one task can
-            run there at a time.
+            The new thread works in this checkout, including its uncommitted files. Only one thread
+            can run there at a time.
           </p>
           {worktreeError && (
             <p role="alert" className="text-xs text-destructive">

@@ -74,7 +74,7 @@ const built = await build({
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
       function Thread({task,workspaceControls,temporary,onSelectRemote,onStartBackground}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
@@ -187,7 +187,7 @@ try {
           ),
     )
   const checkIdle = async (screenshot) => {
-    const input = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await page
       .locator('header')
       .first()
@@ -285,7 +285,7 @@ try {
     await settleComposer()
   }
   const checkFullComposer = async () => {
-    const input = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await input.evaluate((element) => element.blur())
     await settleComposer()
     const compact = await page.locator('.studio-composer').boundingBox()
@@ -327,7 +327,7 @@ try {
   }
   // The composer machine selector and header share transfer state, including recovery.
   await page.evaluate(() => window.setMultiple(true))
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.getByRole('button', { name: 'Linux workstation', exact: true }).click()
   await page.waitForFunction(() => typeof window.cancelSwitch === 'function')
   assert.equal(
@@ -339,18 +339,20 @@ try {
     true,
   )
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task', exact: true }).isDisabled(),
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).isDisabled(),
     true,
   )
   await page.evaluate(() => window.cancelSwitch())
   await page.getByRole('alert').filter({ hasText: 'Transfer fixture failed' }).waitFor()
-  await page.waitForFunction(() => !document.querySelector('[aria-label="Message task"]').disabled)
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Message thread"]').disabled,
+  )
   assert.equal(
     await page.getByRole('button', { name: 'Start without a project', exact: true }).isDisabled(),
     false,
   )
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.keyboard.press('Escape')
   await closeInfo()
   await page.evaluate(() => window.setMultiple(false))
@@ -397,15 +399,24 @@ try {
       assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 1)
       const workspaceBar = page.getByRole('group', { name: 'Project and checkout', exact: true })
       const deviceBounds = await workspaceBar
-        .getByRole('button', { name: 'Task server', exact: true })
+        .getByRole('button', { name: 'Thread server', exact: true })
         .boundingBox()
       assert.ok(projectBounds && dropdownBounds && deviceBounds)
       assert.ok(Math.abs(projectBounds.x + projectBounds.width - dropdownBounds.x) < 1)
       assert.equal(projectBounds.y, dropdownBounds.y)
-      assert.equal(await start.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await start.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        0,
+      )
       assert.ok(deviceBounds.y >= (await page.locator('.studio-composer').boundingBox()).y)
-      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread project', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        1,
+      )
       const modelGroup = page.getByRole('group', { name: 'Model and reasoning', exact: true })
       assert.equal(
         await modelGroup
@@ -419,17 +430,17 @@ try {
       )
       assert.equal(
         await modelGroup
-          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
           .count(),
         0,
       )
       assert.equal(
         await workspaceBar
-          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
           .count(),
         0,
       )
-      await page.getByRole('textbox', { name: 'Message task' }).focus()
+      await page.getByRole('textbox', { name: 'Message thread' }).focus()
       await settleComposer()
       const before = await geometry()
       // The reference layout must apply through StartupDraft's production conversation path.
@@ -454,7 +465,7 @@ try {
       assert.ok(send.x + send.width <= surface.x + surface.width)
       assert.ok(Math.abs(add.y + add.height / 2 - (send.y + send.height / 2)) < 1)
       assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
-      const input = page.getByRole('textbox', { name: 'Message task' })
+      const input = page.getByRole('textbox', { name: 'Message thread' })
       assert.equal(await input.getAttribute('placeholder'), 'Ask anything, build or fix...')
       const emptyEditor = await input.evaluate((el) => ({
         height: el.getBoundingClientRect().height,
@@ -625,8 +636,14 @@ try {
         await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
         0,
       )
-      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread project', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        0,
+      )
       assert.equal(
         await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
         0,
@@ -639,7 +656,9 @@ try {
       assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 0)
       await openInfo()
       assert.equal(
-        await page.getByRole('button', { name: 'Configure task permissions', exact: true }).count(),
+        await page
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
+          .count(),
         0,
       )
       if (project === 'dovo-studio')
@@ -668,14 +687,14 @@ try {
           window.setTask({})
         })
         await page
-          .locator('.studio-composer [contenteditable][aria-label="Message task"]')
+          .locator('.studio-composer [contenteditable][aria-label="Message thread"]')
           .waitFor()
         await checkIdle(device.name + '-idle-thread-rich.png')
         await page.evaluate(() => {
           window.setRichText(false)
           window.setTask({})
         })
-        await page.locator('.studio-composer textarea[aria-label="Message task"]').waitFor()
+        await page.locator('.studio-composer textarea[aria-label="Message thread"]').waitFor()
         await checkFullComposer()
       }
       const startedSurface = await page.locator('.studio-composer').boundingBox()
@@ -707,7 +726,7 @@ try {
     }
   }
   // /sidechat uses the real command menu and never submits a main-thread message.
-  const input = page.getByRole('textbox', { name: 'Message task' })
+  const input = page.getByRole('textbox', { name: 'Message thread' })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page
     .locator('header')
@@ -975,7 +994,7 @@ try {
     .waitFor({ state: 'hidden' })
   // Alt previews and submits the alternative for either saved default, without
   // changing the preference or inverting Alt+Enter a second time.
-  const followUpInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const followUpInput = page.getByRole('textbox', { name: 'Message thread', exact: true })
   for (const defaultMode of ['queue', 'steer']) {
     await page.evaluate((mode) => {
       window.setFollowUp(mode)
@@ -1054,7 +1073,7 @@ try {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
     0,
   )
-  assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Thread project', exact: true }).count(), 0)
   if (screenshots) {
     for (const device of [
       { name: 'desktop', width: 1440, height: 900 },
@@ -1068,7 +1087,10 @@ try {
       await page.locator('[data-saved="false"]').waitFor()
       await page.getByRole('button', { name: 'Choose project', exact: true }).click()
       await page.getByRole('textbox', { name: 'Search projects' }).waitFor()
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        1,
+      )
       await page.screenshot({
         path: screenshots + '/' + device.name + '-single-server-projects.png',
       })
@@ -1092,7 +1114,7 @@ try {
       )
       await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })
       await page.keyboard.press('Escape')
-      await page.getByRole('button', { name: 'Task server', exact: true }).click()
+      await page.getByRole('button', { name: 'Thread server', exact: true }).click()
       await page.getByRole('dialog', { name: 'Choose a server' }).waitFor()
       await page.screenshot({ path: screenshots + '/' + device.name + '-server-choice.png' })
       await page.keyboard.press('Escape')
@@ -1137,7 +1159,7 @@ try {
         ?.textContent.includes('6.1 Sol'),
     )
     await page.screenshot({ path: screenshots + '/sidebar-startup.png', scale: 'css' })
-    const draft = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const draft = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await draft.fill('Refine the project start experience')
     await page.locator('[data-saved="true"]').waitFor()
     await page.screenshot({ path: screenshots + '/sidebar-startup-ready.png', scale: 'css' })
@@ -1227,7 +1249,7 @@ try {
   const sentBefore = await page.evaluate(
     () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
   )
-  const draftInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const draftInput = page.getByRole('textbox', { name: 'Message thread', exact: true })
   await draftInput.fill('Help me build ')
   await page.locator('[data-saved="true"]').waitFor()
   assert(await draftInput.evaluate((node) => document.activeElement === node))

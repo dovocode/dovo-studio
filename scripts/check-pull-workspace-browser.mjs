@@ -9,7 +9,7 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog', 'tooltip']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export {IconButton} from '${uiDir}/components/icon-button.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
+  `export {Disclosure} from '${uiDir}/disclosure.tsx';export {IconButton} from '${uiDir}/components/icon-button.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
@@ -18,7 +18,7 @@ const mocks = {
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
-  './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
+  './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[],loading:false,error:''});`,
@@ -510,6 +510,19 @@ try {
       content &&
       target.getBoundingClientRect().top < content.getBoundingClientRect().bottom
     )
+  })
+  // Pipeline failures remain visible beside independently passed check reports.
+  await page.evaluate(() => {
+    window.pipelineRuns = [{ status: 'failure' }]
+    window.pipelineTestChecks = window.detail.checks
+    window.detail.checks = [{ name: 'Tests', status: 'SUCCESS' }]
+    window.showDestination('overview', 'pipeline-failure')
+  })
+  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await page.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.pipelineRuns = []
+    window.detail.checks = window.pipelineTestChecks
   })
   // A ready overview/status response without check data must not imply a passed/empty check result.
   await page.evaluate(() => {

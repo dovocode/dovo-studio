@@ -461,7 +461,7 @@ export function TaskProjectPanel({
                       preferredRepositoryOpenTarget ? 'Choose editor or file manager' : undefined
                     }
                     disabled={!connected || openBusy}
-                    title={openError || 'Open this task checkout on its machine'}
+                    title={openError || 'Open this thread checkout on its computer'}
                   >
                     {!preferredRepositoryOpenTarget && (
                       <>
@@ -613,8 +613,8 @@ export function TaskProjectPanel({
               className="studio-project-row studio-project-changes w-full justify-between"
               onClick={() => onSurface('changes')}
             >
-              <span className="flex items-center gap-3">
-                <FileDiff size={18} /> Changes
+              <span className="flex items-center gap-2.5">
+                <FileDiff className="size-4 shrink-0" /> Changes
                 {task.files.length > 0 &&
                   ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
               </span>

@@ -79,6 +79,25 @@ try {
     assert.equal(await style('[data-test="menu-override"]', 'backgroundColor'), 'rgba(0, 0, 0, 0)')
     assert.equal(await style('[aria-label="Custom"]', 'backgroundColor'), 'rgba(0, 0, 0, 0)')
     assert.notEqual(await style('[aria-label="Field"]', 'backgroundColor'), 'rgba(0, 0, 0, 0)')
+    const fieldContrast = await page.getByLabel('Field', { exact: true }).evaluate((element) => {
+      const context = document.createElement('canvas').getContext('2d')
+      const luminance = (color) => {
+        context.fillStyle = color
+        context.fillRect(0, 0, 1, 1)
+        const rgb = Array.from(context.getImageData(0, 0, 1, 1).data)
+          .slice(0, 3)
+          .map((value) => {
+            const channel = value / 255
+            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+          })
+        return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+      }
+      const css = getComputedStyle(element)
+      const border = luminance(css.borderColor)
+      const fill = luminance(css.backgroundColor)
+      return (Math.max(border, fill) + 0.05) / (Math.min(border, fill) + 0.05)
+    })
+    assert.ok(fieldContrast >= 3, `${palette} ${mode}: field boundary contrast ${fieldContrast}`)
     assert.equal(await style('[data-variant="ghost"]', 'backgroundImage'), 'none')
     assert.equal(await style('[data-size="icon"]', 'backgroundImage'), 'none')
     assert.equal((await style('[data-variant="default"]', 'backgroundImage')) === 'none', !effects)

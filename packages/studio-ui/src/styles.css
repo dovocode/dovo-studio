@@ -625,7 +625,7 @@ textarea {
   padding-left: var(--studio-brand-inset);
 }
 .studio-header-layout[data-inline-header='true'] .studio-navigation[aria-label='Main navigation'] {
-  margin-top: var(--studio-header-height, 52px);
+  margin-top: calc(var(--studio-header-height, 52px) + 6px);
 }
 /* Inline headers begin beside the activity rail. Continue their divider across it. */
 .studio-header-layout[data-inline-header='true'] .studio {
@@ -2726,7 +2726,7 @@ a.studio-project-row:hover {
 /* Settings controls share a field surface and leave room for the disclosure. */
 .studio-settings-page :is([data-choice-picker], [data-slot='select-trigger'], [data-slot='input']) {
   min-height: 36px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-edge, var(--border));
   border-radius: 8px;
   background: var(--card);
 }

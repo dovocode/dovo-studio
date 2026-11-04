@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useCallback, useEffect, useState } from 'react'
 import {
   runtimeBackupResponseSchema,
@@ -135,15 +136,12 @@ export function RuntimeDiagnosticsPanel() {
             </p>
           ))}
           <p>
-            Last task scheduler tick: {status.schedulers.tasks.lastSuccess ?? 'None'} · Automation
+            Last thread scheduler tick: {status.schedulers.tasks.lastSuccess ?? 'None'} · Automation
             tick: {status.schedulers.jobs.lastSuccess ?? 'None'}
           </p>
           {status.memory && <RuntimeMemory memory={status.memory} />}
           {status.internet && (
-            <details className="space-y-2">
-              <summary className="cursor-pointer font-medium">
-                Internet connection diagnostics
-              </summary>
+            <Disclosure className="space-y-2" title={<>Internet connection diagnostics</>}>
               <p>
                 Signaling: {status.internet.signaling.online} /{' '}
                 {status.internet.signaling.configured} online
@@ -196,7 +194,7 @@ export function RuntimeDiagnosticsPanel() {
                 Keeps the latest 20 connection attempts in memory. Includes no ICE passwords, relay
                 credentials, candidate addresses or raw SDP.
               </p>
-            </details>
+            </Disclosure>
           )}
           <h3 className="font-medium">Database backups</h3>
           <p className="text-muted-foreground">
@@ -234,8 +232,7 @@ export function RuntimeDiagnosticsPanel() {
 const megabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`
 function RuntimeMemory({ memory }: { memory: RuntimeMemoryDiagnostics }) {
   return (
-    <details className="space-y-2">
-      <summary className="cursor-pointer font-medium">Runtime memory</summary>
+    <Disclosure className="space-y-2" title={<>Runtime memory</>}>
       <p>
         Runtime: {megabytes(memory.rssBytes)} resident · JavaScript heap{' '}
         {megabytes(memory.heapUsedBytes)} of {megabytes(memory.heapLimitBytes)}
@@ -297,6 +294,6 @@ function RuntimeMemory({ memory }: { memory: RuntimeMemoryDiagnostics }) {
         Heap growth includes concurrent work and garbage collection, so suspects are leads, not
         proof. Keeps the latest 32 operations and 5 spikes in memory.
       </p>
-    </details>
+    </Disclosure>
   )
 }

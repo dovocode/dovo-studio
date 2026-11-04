@@ -232,7 +232,7 @@ export function HarnessFields({
               />
             </FormField>
           )}
-          <FormField label="Task instructions">
+          <FormField label="Thread instructions">
             <Textarea
               aria-label="Harness instructions"
               value={value.instructions}
@@ -242,7 +242,7 @@ export function HarnessFields({
                   instructions: e.target.value,
                 })
               }
-              placeholder="Optional instructions for this task"
+              placeholder="Optional instructions for this thread"
             />
           </FormField>
         </div>

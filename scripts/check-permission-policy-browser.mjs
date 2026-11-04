@@ -253,7 +253,7 @@ async function openComposerPicker(page) {
 }
 async function composerChoice(page, label, name) {
   await openComposerPicker(page)
-  await page.getByRole('button', { name: 'Configure task permissions' }).click()
+  await page.getByRole('button', { name: 'Configure thread permissions' }).click()
   const trigger = page.getByRole('menuitem', { name: label, exact: true })
   await trigger.focus()
   await page.keyboard.press('ArrowRight')
@@ -266,7 +266,7 @@ try {
   await composerChoice(composer, 'Sandbox', 'Workspace write')
   await composer.waitForFunction(() => window.value.sandboxMode === 'workspace-write')
   await openComposerPicker(composer)
-  await composer.getByRole('button', { name: 'Configure task permissions' }).click()
+  await composer.getByRole('button', { name: 'Configure thread permissions' }).click()
   await composer.screenshot({ path: `${screenshotDir}/composer-permissions.png` })
   await composer.keyboard.press('Escape')
   assert.equal(
@@ -275,7 +275,7 @@ try {
   )
   // Repeat selection of Full access must reset controls even when it is the underlying preset.
   await openComposerPicker(composer)
-  await composer.getByRole('button', { name: 'Configure task permissions' }).click()
+  await composer.getByRole('button', { name: 'Configure thread permissions' }).click()
   await composer.getByRole('menuitemradio', { name: /^Full access/ }).click()
   assert.deepEqual(
     await composer.evaluate(() => [window.value.approvalPolicy, window.value.sandboxMode]),
@@ -284,14 +284,14 @@ try {
   await composerChoice(composer, 'Approval policy', 'On request')
   await composerChoice(composer, 'Sandbox', 'Workspace write')
   await openComposerPicker(composer)
-  await composer.getByRole('button', { name: 'Configure task permissions' }).click()
+  await composer.getByRole('button', { name: 'Configure thread permissions' }).click()
   await composer.getByRole('menuitemradio', { name: /Supervised/ }).click()
   assert.deepEqual(
     await composer.evaluate(() => [window.value.approvalPolicy, window.value.sandboxMode]),
     [undefined, undefined],
   )
   assert.equal(
-    await composer.getByRole('button', { name: 'Configure task permissions' }).textContent(),
+    await composer.getByRole('button', { name: 'Configure thread permissions' }).textContent(),
     'Supervised',
   )
   await composerChoice(composer, 'Approval policy', 'Inherit from access mode')
@@ -346,7 +346,7 @@ try {
     policy: { sandboxMode: 'read-only' },
   })
   await openComposerPicker(oldComposerHarness)
-  await oldComposerHarness.getByRole('button', { name: 'Configure task permissions' }).click()
+  await oldComposerHarness.getByRole('button', { name: 'Configure thread permissions' }).click()
   await oldComposerHarness.getByRole('menuitemradio', { name: /Supervised/ }).click()
   await oldComposerHarness.waitForFunction(() => window.task.harness.permission === 'ask')
   assert.deepEqual(
@@ -513,7 +513,7 @@ try {
     })
     if (kind === 'composer') {
       await openComposerPicker(page)
-      await page.getByRole('button', { name: 'Configure task permissions' }).click()
+      await page.getByRole('button', { name: 'Configure thread permissions' }).click()
     }
     const role = kind === 'composer' ? 'menuitem' : 'button'
     assert.equal(

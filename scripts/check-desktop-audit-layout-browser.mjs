@@ -124,7 +124,7 @@ try {
       await show('header', { long })
       const header = page.locator('#fixture > header')
       const title = page.getByRole('button', { name: 'Thread actions', exact: true })
-      const tools = page.getByRole('group', { name: 'Task workspace' })
+      const tools = page.getByRole('group', { name: 'Thread workspace' })
       await contained(title, header)
       await contained(tools, header)
       const titleBox = await title.boundingBox(),
@@ -150,7 +150,7 @@ try {
   const title = await page
     .getByRole('button', { name: 'Thread actions', exact: true })
     .boundingBox()
-  const tools = await page.getByRole('group', { name: 'Task workspace' }).boundingBox()
+  const tools = await page.getByRole('group', { name: 'Thread workspace' }).boundingBox()
   assert.ok(title.y + title.height <= tools.y)
   await page.screenshot({ path: '/tmp/dovo-desktop-audit-task-pane-320.png' })
   for (const width of [240, 320, 390, 976]) {

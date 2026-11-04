@@ -173,7 +173,7 @@ try {
       true,
     )
     assert.equal(await page.getByText('New worktree', { exact: true }).count(), 0)
-    assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Thread server', exact: true }).count(), 0)
   }
   assert.deepEqual(errors, [])
   console.log(

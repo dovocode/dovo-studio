@@ -31,7 +31,7 @@ window.store={connected:true,request:async(path,input)=>{window.calls.push({path
 const before='export function greeting(name: string) {\\n  return "Hello " + name;\\n}\\n';
 const after='export function greeting(name: string) {\\n  return \\x60Hello, \\x24{name}!\\x60;\\n}\\n';
 const turn={id:'turn',status:'completed',checkpoint:{before:'a'.repeat(40),after:'b'.repeat(40),files:[{path:'src/greeting.ts',before,after,viewed:false},{path:'src/added.ts',before:'',after:'export const added = true;\\n',viewed:false},{path:'src/removed.ts',before:'export const old = true;\\n',after:'',viewed:false},{path:'src/mode.ts',before:'same\\n',after:'same\\n',viewed:false}],omitted:[]}};
-function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message task" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
+function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message thread" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -151,7 +151,7 @@ try {
   await attachment.getByRole('img', { name }).waitFor()
   await attachment.getByRole('button', { name: 'Close', exact: true }).click()
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task' }).inputValue(),
+    await page.getByRole('textbox', { name: 'Message thread' }).inputValue(),
     'Review these changes',
   )
   await draft.getByRole('button', { name: 'Remove notes.txt', exact: true }).click()
@@ -241,7 +241,7 @@ try {
   await page.screenshot({ path: '/tmp/dovo-turn-checkpoint-narrow.png' })
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task' }).inputValue(),
+    await page.getByRole('textbox', { name: 'Message thread' }).inputValue(),
     'Review these changes',
   )
   await page.evaluate(() =>

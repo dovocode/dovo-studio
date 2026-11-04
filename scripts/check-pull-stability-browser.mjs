@@ -10,7 +10,7 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog', 'tooltip']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export {IconButton} from '${uiDir}/components/icon-button.tsx';export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
+  `export {Disclosure} from '${uiDir}/disclosure.tsx';export {IconButton} from '${uiDir}/components/icon-button.tsx';export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{preferredHighlighter:'highlights',theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
@@ -18,7 +18,7 @@ const mocks = {
     'export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});',
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
+  './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[]});`,
@@ -1018,9 +1018,9 @@ try {
   await ask.waitFor()
   const choices = await ask.locator('label').allTextContents()
   assert.equal(choices.length, 2, choices.join(' | '))
-  assert.match(choices[0], /^New review task/)
+  assert.match(choices[0], /^New review thread/)
   assert.match(choices[1], /^Linked review thread/)
-  assert.equal(await ask.getByRole('radio', { name: /New review task/ }).isChecked(), true)
+  assert.equal(await ask.getByRole('radio', { name: /New review thread/ }).isChecked(), true)
   await ask.getByRole('radio', { name: /Linked review thread/ }).check()
   await ask.getByRole('textbox', { name: 'Question for the agent' }).fill('Is this safe to merge?')
   await ask.getByRole('button', { name: 'Create side chat draft', exact: true }).click()
@@ -1060,7 +1060,7 @@ try {
     'Why is this exported?',
   )
   await ask.getByText(/src\/linked\.ts:2/).waitFor()
-  await ask.getByRole('button', { name: 'Create review task', exact: true }).click()
+  await ask.getByRole('button', { name: 'Create review thread', exact: true }).click()
   await ask.waitFor({ state: 'detached' })
   const review = await page.evaluate(() =>
     window.writes.findLast((write) => write.path === '/api/scm/pulls/task'),
@@ -1096,7 +1096,7 @@ try {
   }
   const question = ask.getByRole('textbox', { name: 'Question for the agent' })
   const latest = ask.getByRole('button', { name: 'Use latest revision', exact: true })
-  const createReview = ask.getByRole('button', { name: 'Create review task', exact: true })
+  const createReview = ask.getByRole('button', { name: 'Create review thread', exact: true })
   // A newer push of the same PR keeps the question; the revision only changes on request, and a
   // line selection whose file changed falls back to the whole file.
   await standaloneLine

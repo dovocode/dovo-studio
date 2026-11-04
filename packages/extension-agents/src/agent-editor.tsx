@@ -285,7 +285,6 @@ export function AgentEditor({
               {step === 2 && (
                 <>
                   <section className="space-y-4 border-t pt-5">
-                    <h3 className="text-sm font-semibold">Model & behavior</h3>
                     {agent.provider === 'acp' && (
                       <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
                     )}
@@ -385,7 +384,7 @@ export function AgentEditor({
                       <Textarea
                         aria-label="Instructions"
                         value={agent.instructions}
-                        placeholder="Optional. Added to every task that uses this profile…"
+                        placeholder="Optional. Added to every thread that uses this profile…"
                         onChange={(event) =>
                           setAgent({ ...agent, instructions: event.target.value })
                         }

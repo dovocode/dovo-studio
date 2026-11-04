@@ -25,7 +25,7 @@ const savedRunsSchema = mutableStruct({
     ),
   ),
 })
-export function PullPipelineRuns({
+export function usePullPipelineRuns({
   repositoryId,
   sha,
   active = true,
@@ -198,6 +198,50 @@ export function PullPipelineRuns({
       document.removeEventListener('visibilitychange', refresh)
     }
   }, [active, connected, cacheKey])
+  return {
+    selected,
+    setSelected,
+    repositoryId,
+    repository,
+    connected,
+    request,
+    runs,
+    next,
+    busy,
+    error,
+    notice,
+    load,
+  }
+}
+
+export function PullPipelineRuns(props: { repositoryId: string; sha: string; active?: boolean }) {
+  const state = usePullPipelineRuns(props)
+  return <PullPipelineRunsContent state={state} sha={props.sha} active={props.active} />
+}
+
+export function PullPipelineRunsContent({
+  state,
+  sha,
+  active = true,
+}: {
+  state: ReturnType<typeof usePullPipelineRuns>
+  sha: string
+  active?: boolean
+}) {
+  const {
+    selected,
+    setSelected,
+    repositoryId,
+    repository,
+    connected,
+    request,
+    runs,
+    next,
+    busy,
+    error,
+    notice,
+    load,
+  } = state
   if (selected)
     return (
       <div className="mb-5 min-w-0 rounded-xl border">
@@ -268,7 +312,8 @@ export function PullPipelineRuns({
                 </div>
                 <p className="mt-1 truncate text-sm font-medium">{run.title}</p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {run.workflow || run.ref} · {formatDateTime(run.updatedAt)}
+                  {run.workflow ? `Workflow: ${run.workflow}` : `Branch: ${run.ref}`} ·{' '}
+                  {formatDateTime(run.updatedAt)}
                 </p>
               </div>
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

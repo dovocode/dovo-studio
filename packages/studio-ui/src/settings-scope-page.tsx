@@ -39,7 +39,7 @@ export function SettingsScopePage({
       wide={wide}
       toolbar={
         <div
-          className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-6"
+          className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-10"
           aria-label="Settings target"
         >
           <div className={`${width} flex flex-wrap items-center gap-2 text-xs`}>
@@ -94,7 +94,7 @@ export function SettingsScopePage({
               <>
                 <span className="text-muted-foreground">on</span>
                 <ChoicePicker
-                  aria-label="Settings machine"
+                  aria-label="Settings computer"
                   className="h-8 w-auto min-w-40 max-w-full bg-background/60"
                   value={target.environmentId}
                   onValueChange={(environmentId) => setTarget({ ...target, environmentId })}
@@ -120,7 +120,7 @@ export function SettingsScopePage({
             )}
             {sources.length === 1 && (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => {
                   const environmentId = target.environmentId ? '' : sources[0].profile.id

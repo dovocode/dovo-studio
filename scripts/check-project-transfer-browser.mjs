@@ -380,7 +380,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       window.setSource({ id: 'main-copy', repositoryId: 'project', execution: 'main' })
     })
     await page
-      .getByRole('dialog', mobile ? { name: 'Copy project checkout to another machine' } : {})
+      .getByRole('dialog', mobile ? { name: 'Copy project checkout to another computer' } : {})
       .waitFor()
     const copyThread = page.getByRole('button', { name: 'Copy and create thread', exact: true })
     await page.waitForFunction(() =>
@@ -413,7 +413,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       await page.waitForFunction(() => window.calls.some((call) => call.path.endsWith('/inspect')))
       await page
         .getByRole('dialog')
-        .getByText('Copy project checkout to another machine', { exact: true })
+        .getByText('Copy project checkout to another computer', { exact: true })
         .waitFor()
       await page.getByRole('button', { name: 'Copy and create thread', exact: true }).waitFor()
       await page.getByLabel('Project copy connection').selectOption('ssh')
@@ -439,7 +439,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         window.truncated = false
         window.previewTransfer()
       })
-      await page.getByRole('dialog', { name: 'Add to another machine' }).waitFor()
+      await page.getByRole('dialog', { name: 'Add to another computer' }).waitFor()
       await page
         .getByRole('button', { name: 'Copy project', exact: true })
         .waitFor({ state: 'visible' })

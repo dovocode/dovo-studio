@@ -137,14 +137,14 @@ export function TaskContextMenu({
   const canEdit = source.online && !blocked
   const turn = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
-  const run = async (action: () => Promise<void>) => {
+  const run = async <T,>(action: () => Promise<T>) => {
     if (pendingRef.current || busy) return
     pendingRef.current = true
     setPending(true)
     setError('')
     onError('')
     try {
-      await action()
+      return await action()
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : String(failure)
       setError(message)
@@ -398,7 +398,7 @@ export function TaskContextMenu({
                 onSelect={() => setDialog('transfer')}
               >
                 <Copy /> {task.execution === 'worktree' ? 'Copy worktree' : 'Copy project checkout'}{' '}
-                to another machine…
+                to another computer…
               </Menu.Item>
             )}
             <Menu.Sub>
@@ -720,12 +720,10 @@ export function TaskContextMenu({
               onSelect={() => {
                 setError('')
                 if (readAppPreferences().confirmDelete)
-                  void run(async () => {
-                    const preferences = await client.request(
-                      '/api/runtime/preferences/read',
-                      {},
-                      runtimePreferencesSchema,
-                    )
+                  void run(() =>
+                    client.request('/api/runtime/preferences/read', {}, runtimePreferencesSchema),
+                  ).then((preferences) => {
+                    if (!preferences) return
                     setRemoveWorktrees(preferences.removeWorktreesOnThreadDelete)
                     setDialog('delete')
                   })
@@ -749,7 +747,7 @@ export function TaskContextMenu({
       </Menu.Root>
       {pending && !dialog && (
         <p role="status" className="px-2.5 pb-2 text-[0.6875rem] text-muted-foreground">
-          Updating task…
+          Updating thread…
         </p>
       )}
       <Dialog
@@ -915,7 +913,7 @@ export function TaskContextMenu({
         <DialogContent className="max-w-md">
           <DialogTitle>Rename thread</DialogTitle>
           <DialogDescription>
-            {repository?.name ?? 'Task'} · {source.name}
+            {repository?.name ?? 'Thread'} · {source.name}
           </DialogDescription>
           <form
             className="grid gap-4"
@@ -993,7 +991,12 @@ export function TaskContextMenu({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button autoFocus variant="outline" disabled={pending} onClick={() => setDialog(null)}>
+            <Button
+              data-dialog-cancel
+              variant="outline"
+              disabled={pending}
+              onClick={() => setDialog(null)}
+            >
               Cancel
             </Button>
             <Button

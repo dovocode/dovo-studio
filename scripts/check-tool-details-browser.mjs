@@ -148,7 +148,7 @@ try {
   await absent()
   await page.getByText('echo command-visible', { exact: true }).last().waitFor()
   await page.evaluate(() => window.hideWork())
-  await page.getByRole('region', { name: 'Task tool activity' }).waitFor({ state: 'hidden' })
+  await page.getByRole('region', { name: 'Thread tool activity' }).waitFor({ state: 'hidden' })
   await page.evaluate(() => window.failTool())
   await page.getByText(/1 failed/).waitFor()
   await page.evaluate(() => window.interruptTool())

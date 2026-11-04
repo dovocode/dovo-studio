@@ -456,7 +456,7 @@ export function TerminalPane({
           <p>
             {connected
               ? shellReady
-                ? 'No terminal open. Open a shell in this task’s checkout.'
+                ? 'No terminal open. Open a shell in this thread’s checkout.'
                 : 'Send the first message to create this worktree before opening a shell.'
               : 'Connect a runtime to use terminals.'}
           </p>

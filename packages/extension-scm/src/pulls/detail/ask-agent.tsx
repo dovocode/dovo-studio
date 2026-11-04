@@ -228,7 +228,11 @@ export function PullAskAgent({
           <fieldset className="space-y-1">
             <legend className="mb-1 text-xs font-medium">Conversation</legend>
             {[
-              { id: '', title: 'New review task', detail: 'A new task on a branch from this PR' },
+              {
+                id: '',
+                title: 'New review thread',
+                detail: 'A new thread on a branch from this PR',
+              },
               ...parents.map((task) => ({
                 id: task.id,
                 title: task.title,
@@ -293,7 +297,7 @@ export function PullAskAgent({
               Cancel
             </Button>
             <Button type="submit" disabled={!connected || busy || sourceChanged || newerRevision}>
-              {busy ? 'Creating…' : parentId ? 'Create side chat draft' : 'Create review task'}
+              {busy ? 'Creating…' : parentId ? 'Create side chat draft' : 'Create review thread'}
             </Button>
           </DialogFooter>
         </form>

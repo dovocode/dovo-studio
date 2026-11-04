@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useState } from 'react'
 import {
   customTurnSchema,
@@ -124,8 +125,7 @@ function RelaySettingsContent() {
           Use a separately paired device with an updated runtime to change relay settings.
         </p>
       ) : (
-        <details className="space-y-2">
-          <summary className="cursor-pointer text-xs font-medium">Custom TURN server</summary>
+        <Disclosure className="space-y-2" title={<>Custom TURN server</>}>
           <label className="block text-xs">
             TURN URLs (one per line or comma separated)
             <Textarea
@@ -190,7 +190,7 @@ function RelaySettingsContent() {
               )}
             </>
           )}
-        </details>
+        </Disclosure>
       )}
       {!!error && (
         <p role="alert" className="text-xs text-destructive">

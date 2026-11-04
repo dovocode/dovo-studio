@@ -206,7 +206,7 @@
 }
 .dovo-dialog-content
   :where(input, textarea, select, button[role='combobox']):not([aria-invalid='true']) {
-  border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
+  border-color: var(--control-edge);
 }
 .dovo-dialog-content textarea {
   font-size: 0.8125rem;
@@ -252,7 +252,7 @@
 
 /* Shared controls use palette-derived layers; caller utilities can still override them. */
 .dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) + [data-slot='dialog-description'] {
-  margin-top: -10px;
+  margin-top: 0;
 }
 .dovo-dialog-content :is([data-choice-picker], [data-slot='select-trigger']) {
   background-color: var(--dialog-field);
@@ -332,7 +332,7 @@
 
 .dovo-dialog-content
   :is([data-choice-picker], [data-slot='select-trigger']):not([aria-invalid='true']) {
-  border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
+  border-color: var(--control-edge);
 }
 
 /* Share the title's grid cell so a sticky close control adds no row or gap. */
@@ -346,4 +346,33 @@
   grid-area: 1 / 1;
   inset-inline: 0;
   align-self: start;
+}
+.dovo-dialog-content > [data-slot='dialog-header'] > [data-slot='dialog-title']:not(.sr-only) {
+  min-height: 2rem;
+}
+@media (width < 640px) {
+  /* Leave room for the 44px close target and its keyboard outline. */
+  .dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) {
+    min-height: 2.25rem;
+  }
+  .dovo-dialog-content > [data-slot='dialog-header'] > [data-slot='dialog-title']:not(.sr-only) {
+    min-height: 2.75rem;
+  }
+}
+
+/* Control edges carry interaction; pane separators keep the softer border token. */
+:root {
+  --control-edge: color-mix(in srgb, var(--foreground) 56%, var(--card));
+}
+.dark,
+[data-theme='dark'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 40%, var(--card));
+}
+:is(
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-choice-picker],
+  [data-slot='select-trigger']
+):not([aria-invalid='true']) {
+  border-color: var(--control-edge);
 }

@@ -96,7 +96,7 @@ export function RunControls({ task }: { task: Task }) {
               disabled={busy || !connected}
               onClick={() => act('/api/tasks/run', { id: task.id })}
             >
-              {task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'}
+              {task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume thread'}
             </Button>
           </div>
         )}

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { SettingsScopePage, Button } from '@dovo/studio-ui'
+import { SettingsScopePage, Button, Disclosure } from '@dovo/studio-ui'
 import { ScopedAgents } from './scoped-agents'
 import { HarnessUpdates } from './harness-updates'
 import { AcpRegistrySettings } from './acp-registry'
@@ -68,13 +68,7 @@ function EnvironmentTools() {
   const { connected, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   return (
-    <details className="rounded-xl border border-border/60 bg-muted/20 p-3">
-      <summary
-        data-setting-label="Installations & sign-in"
-        className="cursor-pointer text-sm font-medium"
-      >
-        Installations & sign-in · this computer
-      </summary>
+    <Disclosure title="Installations & sign-in" data-setting-label="Installations & sign-in">
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
         Update provider tools and install agents from the ACP registry on this computer. Profiles
         above use these installations.
@@ -102,6 +96,6 @@ function EnvironmentTools() {
           </Button>
         </div>
       </fieldset>
-    </details>
+    </Disclosure>
   )
 }

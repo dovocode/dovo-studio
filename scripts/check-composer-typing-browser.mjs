@@ -63,7 +63,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const input = page.getByRole('textbox', { name: 'Message task' })
+  const input = page.getByRole('textbox', { name: 'Message thread' })
   await input.click()
   const text =
     'Smooth typing keeps the surrounding controls stable while the draft is edited. '.repeat(3)

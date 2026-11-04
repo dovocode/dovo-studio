@@ -596,7 +596,7 @@ export default function TasksView({
         return
       }
       if (!target.source.online) {
-        setError('This device is offline. Reconnect it before starting a task.')
+        setError('This device is offline. Reconnect it before starting a thread.')
         return
       }
       const runtimeId = target.source.runtimeId
@@ -723,7 +723,7 @@ export default function TasksView({
       host.registerCommand({
         id: 'tasks.new',
         title: 'New thread',
-        aliases: ['new task', 'new chat', 'start conversation'],
+        aliases: ['new thread', 'new chat', 'start conversation'],
         run: newThread,
       }),
     [host, newThread],
@@ -732,8 +732,8 @@ export default function TasksView({
     const disposers = [
       host.registerCommand({
         id: 'tasks.switch',
-        title: 'Go to task…',
-        aliases: ['go to thread', 'find thread', 'find task', 'switch thread', 'switch task'],
+        title: 'Go to thread…',
+        aliases: ['go to thread', 'find thread', 'find thread', 'switch thread', 'switch thread'],
         run: () => setSearching('tasks'),
       }),
       host.registerCommand({
@@ -1747,7 +1747,7 @@ export default function TasksView({
                       Swap
                     </Button>
                     <IconButton
-                      label="Close side-by-side task (⌘/Ctrl+\)"
+                      label="Close side-by-side thread (⌘/Ctrl+\)"
                       className="size-6"
                       onClick={() => closeSplit()}
                     >
@@ -1822,8 +1822,8 @@ export default function TasksView({
               event.preventDefault()
           }}
         >
-          <DialogTitle className="px-4 pt-4">Tasks</DialogTitle>
-          <DialogDescription className="sr-only">Select or create a task.</DialogDescription>
+          <DialogTitle className="px-4 pt-4">Threads</DialogTitle>
+          <DialogDescription className="sr-only">Select or create a thread.</DialogDescription>
           <TaskList
             projectId={projectId}
             onProjectChange={setProjectId}

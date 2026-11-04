@@ -427,7 +427,9 @@ function WorkView({
         className={`${selected && (compact || !sidebarVisible) ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col bg-background ${selected ? 'w-80 shrink-0' : 'flex-1'}`}
       >
         <SidebarHeader enabled={!!selected} />
-        <div className="studio-overview-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${selected ? 'studio-overview-pane bg-sidebar' : 'bg-background'}`}
+        >
           <div className="contents">
             <PageHeader
               embedded={!!selected}

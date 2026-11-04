@@ -29,11 +29,22 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onOpenAutoFocus, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onOpenAutoFocus={(event) => {
+        onOpenAutoFocus?.(event)
+        if (event.defaultPrevented || !(event.target instanceof HTMLElement)) return
+        const cancel = event.target.querySelector<HTMLButtonElement>(
+          '[data-dialog-cancel]:not(:disabled)',
+        )
+        if (cancel) {
+          cancel.focus({ preventScroll: true })
+          if (cancel.ownerDocument.activeElement === cancel) event.preventDefault()
+        }
+      }}
       className={cn(
         'dovo-dialog-content dovo-dialog-fade fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border bg-background p-6 shadow-lg transition-none',
         className,
@@ -56,7 +67,11 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)} {...props} />
+  <div
+    data-slot="dialog-header"
+    className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)}
+    {...props}
+  />
 )
 DialogHeader.displayName = 'DialogHeader'
 
@@ -76,7 +91,7 @@ const DialogTitle = React.forwardRef<
     ref={ref}
     data-slot="dialog-title"
     className={cn(
-      'pr-8 text-base font-semibold leading-snug tracking-tight max-sm:pr-12',
+      'pr-12 text-base font-semibold leading-snug tracking-tight max-sm:pr-12',
       className,
     )}
     {...props}

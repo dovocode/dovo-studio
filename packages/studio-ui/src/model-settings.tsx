@@ -116,10 +116,10 @@ export function ModelSettings({
   return (
     <div className="grid gap-3">
       <FormField label="Model" layout={layout}>
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="relative flex min-w-0 items-center">
           <ChoicePicker
             aria-label="Model"
-            className="h-9 flex-1 rounded-md border bg-background px-2 text-xs"
+            className="h-9 w-full rounded-md border bg-background pl-2 pr-12! text-xs"
             value={custom ? '__custom__' : agent.model}
             onValueChange={(selection) => {
               const value = selection
@@ -142,13 +142,13 @@ export function ModelSettings({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-9"
+            className="absolute right-0.5 top-0.5 size-8"
             aria-label="Refresh models"
             title="Refresh models"
             disabled={!connected || loading}
             onClick={() => setRefresh((value) => value + 1)}
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className={loading ? 'size-3.5 animate-spin' : 'size-3.5'} />
           </Button>
         </div>
       </FormField>

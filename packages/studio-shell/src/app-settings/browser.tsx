@@ -477,7 +477,7 @@ export default function BrowserSettings() {
         </SettingRow>
         <SettingRow
           label="Default viewport"
-          description="Saved on this device. You can change the viewport in each preview."
+          description="You can change the viewport in each preview."
         >
           <SettingsSelect
             label="Default viewport"

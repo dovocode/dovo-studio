@@ -148,7 +148,7 @@ const built = await build({
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
-          if(path==='/api/tasks/title')return {title:'New task'};
+          if(path==='/api/tasks/title')return {title:'New thread'};
           if(path==='/api/tasks/side-thread/create'){const create=()=>{const child={...createTask({title:'Side chat '+input.childId.slice(0,4),objective:input.objective,agentId:'',repositoryId:'scratch'}),id:'side-'+input.childId,draft:input.objective,sideThread:{parentTaskId:input.id,objective:input.objective,contextMessageCount:0,source:'head',permissionCeiling:{permission:'workspace-write'}}};setWorkspace(current=>({...current,tasks:[...current.tasks,child]}));return {id:child.id}};if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve(create())});return create()};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
@@ -197,7 +197,7 @@ try {
   })
   await page.setContent('<style>.hidden{display:none}</style><div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const editor = page.getByLabel('Message task', { exact: true })
+  const editor = page.getByLabel('Message thread', { exact: true })
   await editor.waitFor()
   assert.equal(
     await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
@@ -396,7 +396,7 @@ try {
   assert.equal(await besideParent.getByText('Side chat ·', { exact: true }).count(), 1)
   // Its own composer holds the question for review; the parent composer is cleared.
   assert.equal(
-    await besideParent.getByLabel('Message task', { exact: true }).inputValue(),
+    await besideParent.getByLabel('Message thread', { exact: true }).inputValue(),
     'Shortcut from the current thread',
   )
   assert.equal(await page.locator(`textarea[data-task-id="${sideTask}"]`).inputValue(), '')
@@ -436,7 +436,7 @@ try {
   const count = await page.evaluate(() => window.saved.length)
   await page.getByRole('button', { name: 'Existing · draft', exact: true }).click()
   await page.waitForFunction(
-    () => !document.querySelector('[aria-current=true]')?.textContent.includes('New task'),
+    () => !document.querySelector('[aria-current=true]')?.textContent.includes('New thread'),
   )
   assert.equal(await page.evaluate(() => window.saved.length), count)
   // Exercise both reference producers through the actual TasksView → conversation → composer.

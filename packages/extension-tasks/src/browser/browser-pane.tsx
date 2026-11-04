@@ -3290,7 +3290,7 @@ function BrowserContent({
                 {!browser && (
                   <iframe
                     key={reload}
-                    title="Task browser"
+                    title="Thread browser"
                     src={url}
                     className="h-full w-full border-0"
                     sandbox="allow-scripts allow-forms allow-same-origin"

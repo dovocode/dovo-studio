@@ -41,11 +41,11 @@ export function TaskLauncher({ bridge }: { bridge: TaskLauncherBridge }) {
     () =>
       registerCommand({
         id: 'studio.task-launcher',
-        title: 'Start task · global launcher',
+        title: 'Start thread · global launcher',
         run: () => {
           void bridge
             .open()
-            .catch((error: unknown) => console.error('Could not open quick task:', error))
+            .catch((error: unknown) => console.error('Could not open quick thread:', error))
         },
       }),
     [registerCommand, bridge],
@@ -53,7 +53,7 @@ export function TaskLauncher({ bridge }: { bridge: TaskLauncherBridge }) {
   useEffect(() => {
     void bridge
       .sync(runtimeRegistry)
-      .catch((error: unknown) => console.error('Could not update quick task computers:', error))
+      .catch((error: unknown) => console.error('Could not update quick thread computers:', error))
   }, [bridge, runtimeRegistry])
   useEffect(() => {
     void bridge
@@ -61,7 +61,7 @@ export function TaskLauncher({ bridge }: { bridge: TaskLauncherBridge }) {
       .then((result) => {
         if (result.error) console.error(result.error)
       })
-      .catch((error: unknown) => console.error('Could not configure quick task:', error))
+      .catch((error: unknown) => console.error('Could not configure quick thread:', error))
   }, [bridge, taskLauncherShortcut])
   return null
 }
@@ -245,7 +245,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
         }}
       >
         <DialogHeader className="input-preview-drag">
-          <DialogTitle>Start a task</DialogTitle>
+          <DialogTitle>Start a thread</DialogTitle>
           <DialogDescription>
             Choose an agent and model, then send an idea to any of your computers.
           </DialogDescription>
@@ -282,8 +282,8 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
             actions={
               <ComposerSubmit
                 busy={busy}
-                aria-label={attempt.current ? 'Retry dispatch' : 'Start task'}
-                title={busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
+                aria-label={attempt.current ? 'Retry dispatch' : 'Start thread'}
+                title={busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start thread'}
                 disabled={
                   busy ||
                   !!selectionIssue ||
@@ -302,7 +302,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
             <ComposerTextarea
               ref={input}
               autoFocus
-              aria-label="Task prompt"
+              aria-label="Thread prompt"
               placeholder="What would you like to build or fix?"
               value={text}
               maxLength={120000}

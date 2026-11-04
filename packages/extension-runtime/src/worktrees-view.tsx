@@ -20,7 +20,7 @@ export default function WorktreesView({ entityId }: { entityId?: string }) {
     <HostPage
       initialRuntimeId={entityId}
       title="Worktrees"
-      description="Manage task checkouts, branch names and cleanup on this computer."
+      description="Manage thread checkouts, branch names and cleanup on this computer."
     >
       <div className="space-y-5">
         <WorktreePreferences onSaved={() => setRevision((value) => value + 1)} />
@@ -32,7 +32,7 @@ export default function WorktreesView({ entityId }: { entityId?: string }) {
 
 const stateLabels = {
   active: 'In use',
-  archived: 'Task archived',
+  archived: 'Thread archived',
   missing: 'Orphaned',
 } as const
 
@@ -89,9 +89,9 @@ function WorktreeList({ revision }: { revision: number }) {
     ['In use or changed', visible.filter((item) => !removable.includes(item))],
   ] as const
   return (
-    <section className="space-y-5" aria-label="Task worktrees">
+    <section className="space-y-5" aria-label="Thread worktrees">
       <div>
-        <h2 className="text-sm font-semibold">Task worktrees</h2>
+        <h2 className="text-sm font-semibold">Thread worktrees</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Only unused, clean Dovo checkouts can be removed. Branches are kept; ignored local files
           are deleted.
@@ -165,7 +165,7 @@ function WorktreeList({ revision }: { revision: number }) {
         <p className="text-sm text-muted-foreground">
           {orphanedOnly
             ? 'No orphaned worktrees on this computer.'
-            : 'No task worktrees on this computer.'}
+            : 'No thread worktrees on this computer.'}
         </p>
       )}
       {groups.map(([title, items]) =>

@@ -57,7 +57,7 @@ const built = await build({
         const mocks = {
           '@dovo/studio-core': `export * from '../protocol/src/index';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const WorkspaceScope=({profile,children})=><div data-runtime-scope={profile.id}>{children}</div>;`,
           '@dovo/studio-ui': `export {ProjectIcon} from '../studio-ui/src/project-icon';export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
-          '@dovo/extension-scm/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another machine"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
+          '@dovo/extension-scm/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another computer"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
           '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Cancel adding</button></div>;`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -90,9 +90,9 @@ try {
       'svg{width:16px;height:16px}button{font:14px system-ui} [role=dialog]{max-width:calc(100vw - 24px)}',
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const trigger = page.getByRole('button', { name: 'Task project', exact: true })
+  const trigger = page.getByRole('button', { name: 'Thread project', exact: true })
   const search = page.getByRole('textbox', { name: 'Search projects', exact: true })
-  const server = page.getByRole('button', { name: 'Task server', exact: true })
+  const server = page.getByRole('button', { name: 'Thread server', exact: true })
   const panel = page.getByRole('dialog', { name: 'Choose a project', exact: true })
   const serverPanel = page.getByRole('dialog', { name: 'Choose a server', exact: true })
 
@@ -147,8 +147,8 @@ try {
   // All projects are visible without choosing a server; matching copies appear once.
   await page.evaluate(() => window.configure({ multiple: true }))
   await server.click()
-  await page.getByRole('button', { name: 'Add to another machine', exact: true }).click()
-  const transfer = page.getByRole('dialog', { name: 'Add to another machine', exact: true })
+  await page.getByRole('button', { name: 'Add to another computer', exact: true }).click()
+  const transfer = page.getByRole('dialog', { name: 'Add to another computer', exact: true })
   await transfer.waitFor()
   assert.equal(await transfer.locator('output').textContent(), 'other')
   assert.equal(await page.getByLabel('Choose a server', { exact: true }).count(), 0)
@@ -305,7 +305,7 @@ try {
   )
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.configure({ disabled: true }))
-  await page.waitForFunction(() => document.querySelector('[aria-label="Task project"]').disabled)
+  await page.waitForFunction(() => document.querySelector('[aria-label="Thread project"]').disabled)
   assert.equal(await trigger.isDisabled(), true)
   // The start screen reuses selection/transfer logic with a joined Scope/project trigger.
   await page.evaluate(() =>

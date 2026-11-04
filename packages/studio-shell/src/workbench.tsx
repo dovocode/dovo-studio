@@ -1014,7 +1014,7 @@ function WorkbenchContent({
                 target.viewId !== 'agents' && (
                   <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 border-t bg-card px-4 py-2">
                     <p className="text-xs text-muted-foreground">
-                      Make this workspace yours: choose default models for tasks and titles.
+                      Make this workspace yours: choose default models for threads and titles.
                     </p>
                     <Button size="sm" onClick={() => navigate({ viewId: 'agents' })}>
                       Set up defaults

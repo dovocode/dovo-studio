@@ -237,7 +237,7 @@ try {
     await page.getByRole('option', { name: 'Dovo Studio', exact: true }).click()
     await page.getByText('Dovo Studio project defaults', { exact: true }).waitFor()
     assert.equal(
-      await page.getByRole('button', { name: 'Settings machine', exact: true }).count(),
+      await page.getByRole('button', { name: 'Settings computer', exact: true }).count(),
       0,
     )
     await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).waitFor()
@@ -526,7 +526,7 @@ try {
     await openStory('dovo-patterns-task-conversation--editable-queued-follow-ups')
     await page.getByRole('button', { name: 'Confirmed', exact: true }).click()
     await page.locator('summary').filter({ hasText: '2 queued' }).click()
-    const queueComposer = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const queueComposer = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await queueComposer.fill('Keep my ordinary draft')
     await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
@@ -560,9 +560,9 @@ try {
       .waitFor()
 
     await openStory('dovo-composers-production-task-composer--full-production-composer')
-    await page.getByRole('button', { name: 'New task', exact: true }).click()
+    await page.getByRole('button', { name: 'New thread', exact: true }).click()
     // A toolbar click from the empty focused editor must survive focus leaving the editor.
-    await page.getByRole('textbox', { name: 'Message task', exact: true }).focus()
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).focus()
     await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
     await page.getByRole('combobox').waitFor()
     await page.keyboard.press('Escape')
@@ -570,13 +570,13 @@ try {
     await page
       .getByRole('button', { name: 'Remove preview.png', exact: true })
       .waitFor({ state: 'hidden' })
-    const mentionField = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const mentionField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await mentionField.fill('@src')
     await page.getByRole('listbox', { name: 'Files and MCP servers', exact: true }).waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
     assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
     await page.getByRole('button', { name: 'Idle task', exact: true }).click()
-    const composerField = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const composerField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await composerField.fill('Verify a full production composer')
     await page.getByRole('button', { name: 'Fail next send', exact: true }).click()
     await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
@@ -588,7 +588,7 @@ try {
     )
     await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
     await page.waitForFunction(() => {
-      const field = document.querySelector('[aria-label="Message task"]')
+      const field = document.querySelector('[aria-label="Message thread"]')
       if (!field) return false
       return field instanceof HTMLTextAreaElement
         ? field.value === ''
@@ -596,7 +596,7 @@ try {
     })
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
     assert.ok(
-      await page.getByRole('button', { name: 'Save message to task', exact: true }).isDisabled(),
+      await page.getByRole('button', { name: 'Save message to thread', exact: true }).isDisabled(),
     )
     await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
     await page.getByRole('button', { name: 'Long draft', exact: true }).click()

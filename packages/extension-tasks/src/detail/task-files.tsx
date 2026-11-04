@@ -578,7 +578,7 @@ export function TaskFiles({
                   Recover draft: {path}
                 </Button>
               ) : (
-                <span>Draft from another task or checkout: {path}</span>
+                <span>Draft from another thread or checkout: {path}</span>
               )}
               {draft.saving && <span>Saving…</span>}
               {draft.error && <span role="alert">{draft.error}</span>}

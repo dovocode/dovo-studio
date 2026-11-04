@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { CircleCheck, CircleAlert, Clock3, CircleDashed } from 'lucide-react'
 import {
   checkSignal,
@@ -85,13 +86,17 @@ export function PullStatus({
                 </MessageResponse>
               )}
               {(check.details || check.annotations?.length) && (
-                <details className="min-w-0">
-                  <summary className="cursor-pointer py-1 text-muted-foreground">
-                    Check output
-                    {check.annotations?.length
-                      ? ` · ${check.annotations.length} annotation${check.annotations.length === 1 ? '' : 's'}`
-                      : ''}
-                  </summary>
+                <Disclosure
+                  className="min-w-0"
+                  title={
+                    <>
+                      Check output
+                      {check.annotations?.length
+                        ? ` · ${check.annotations.length} annotation${check.annotations.length === 1 ? '' : 's'}`
+                        : ''}
+                    </>
+                  }
+                >
                   <div className="min-w-0 space-y-3 pt-2">
                     {check.details && (
                       <MessageResponse
@@ -121,7 +126,7 @@ export function PullStatus({
                       </article>
                     ))}
                   </div>
-                </details>
+                </Disclosure>
               )}
             </div>
           ))}

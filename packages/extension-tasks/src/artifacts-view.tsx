@@ -284,7 +284,12 @@ export default function ArtifactsView() {
           )}
         >
           <SidebarHeader enabled={!!selection} />
-          <div className="studio-overview-pane min-h-0 flex-1 overflow-auto bg-sidebar">
+          <div
+            className={cn(
+              'min-h-0 flex-1 overflow-auto',
+              selection ? 'studio-overview-pane bg-sidebar' : 'bg-background',
+            )}
+          >
             <div
               className={cn(
                 'flex flex-col',

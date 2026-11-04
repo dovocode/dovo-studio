@@ -41,19 +41,19 @@ export default function GeneralSettings() {
       <SettingsGroup title="Navigation & shortcuts">
         {taskLauncher && (
           <SettingRow
-            label="Global new task shortcut"
+            label="Global new thread shortcut"
             description={
               shortcutError ? (
                 <span role="alert" className="text-destructive">
                   {shortcutError}
                 </span>
               ) : (
-                'Open the task launcher from any app.'
+                'Open the thread launcher from any app.'
               )
             }
           >
             <SettingsSelect
-              label="Global new task shortcut"
+              label="Global new thread shortcut"
               value={preferences.taskLauncherShortcut || 'disabled'}
               options={[
                 ['CommandOrControl+Shift+Space', `${mod} + Shift + Space`],

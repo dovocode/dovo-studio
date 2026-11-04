@@ -178,7 +178,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
       if (route === 'tasks') {
         await page
-          .getByRole('textbox', { name: 'Message task', exact: true })
+          .getByRole('textbox', { name: 'Message thread', exact: true })
           .waitFor({ state: 'visible' })
       }
       if (action && !action.startsWith('pull-')) {
@@ -270,7 +270,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         )
       if (route === 'tasks') {
         const placeholder = await page
-          .getByRole('textbox', { name: 'Message task', exact: true })
+          .getByRole('textbox', { name: 'Message thread', exact: true })
           .evaluate((el) => getComputedStyle(el, '::before').content)
         assert.ok(placeholder.length > 2 && placeholder !== 'none', 'Writing prompt is visible')
       }

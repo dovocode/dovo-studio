@@ -168,7 +168,7 @@ ${editorButton('remove', 'Delete element', '<path d="M3 6h18M9 6V4h6v2M5 6l1 14h
 ${editorButton('exclude', 'Exclude from export', '<path d="m3 3 18 18M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>', true)}
 <span class="divider" aria-hidden="true"></span>
 ${editorButton('undo', 'Undo removal / exclusion', '<path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 0 12"/>', true)}
-</div><p>Undo restores removed or excluded elements.</p><div class="row"><p id="status" role="status">Preparing editor…</p>
+</div><div class="row"><p id="status" role="status">Preparing editor…</p>
 </div></header><iframe id="canvas" title="Editable export content" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe><footer><button id="cancel" type="button">Cancel</button><button id="apply" type="button" disabled>Use edited copy</button></footer></body></html>`
 
 /** Theme only the editor chrome; exported document content keeps its original styles. */

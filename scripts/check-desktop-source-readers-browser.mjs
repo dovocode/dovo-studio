@@ -402,7 +402,7 @@ try {
       'A newly opened row retains its original runtime scope',
     )
     const action = mode === 'issues' ? 'Issue actions' : 'Pipeline actions'
-    const task = mode === 'issues' ? 'Start task from issue' : 'Investigate run'
+    const task = mode === 'issues' ? 'Start thread from issue' : 'Investigate run'
     assert.equal(await rows.getByRole('button', { name: action, exact: true }).isDisabled(), true)
     assert.equal(await rows.getByRole('button', { name: task, exact: true }).isDisabled(), true)
     if (mode === 'issues')

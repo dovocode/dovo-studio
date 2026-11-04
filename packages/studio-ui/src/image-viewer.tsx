@@ -126,11 +126,19 @@ function ImageCanvas({ src, alt, className, onError }: Parameters<typeof ImageVi
           variant="ghost"
           size="sm"
           disabled={!ready}
+          aria-pressed={view.scale === 1}
           onClick={() => setView({ scale: 1, x: 0, y: 0 })}
         >
-          100%
+          Actual size
         </Button>
-        <Button type="button" variant="ghost" size="sm" disabled={!ready} onClick={reset}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!ready}
+          aria-pressed={view.scale === null}
+          onClick={reset}
+        >
           <Maximize className="size-4" /> Fit
         </Button>
       </div>

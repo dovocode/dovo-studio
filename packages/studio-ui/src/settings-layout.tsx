@@ -1,3 +1,4 @@
+import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown } from 'lucide-react'
 import type { SettingsChange } from '@dovo/protocol'
 import { Card } from '@dovo/web-ui/card'
@@ -221,13 +222,9 @@ export function SettingsSaveBar({
       <div className="space-y-3 text-xs text-muted-foreground">
         {saved && <p role="status">Changes saved.</p>}
         {children && (
-          <details>
-            <summary className="cursor-pointer py-2">
-              <ChevronDown className="mr-1 inline size-3" aria-hidden="true" />
-              More settings actions
-            </summary>
+          <Disclosure title="More settings actions">
             <div className="flex flex-wrap gap-2 pt-2">{children}</div>
-          </details>
+          </Disclosure>
         )}
       </div>
     )
@@ -268,17 +265,23 @@ export function SettingsSaveBar({
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {children && (
-          <details className="relative">
-            <summary
-              className="cursor-pointer rounded-md px-2 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="More settings actions"
-            >
-              <ChevronDown className="mr-1 inline size-3" aria-hidden="true" /> More
-            </summary>
-            <div className="studio-menu-surface absolute bottom-full right-0 mb-2 w-64 rounded-lg border bg-popover p-2 text-popover-foreground">
-              {children}
-            </div>
-          </details>
+          <Popover.Root>
+            <Popover.Trigger asChild>
+              <Button variant="ghost" size="sm" aria-label="More settings actions">
+                More <ChevronDown className="size-3" aria-hidden="true" />
+              </Button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                side="top"
+                align="end"
+                sideOffset={8}
+                className="studio-menu-surface z-50 w-64 rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg"
+              >
+                {children}
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         )}
         <Button
           type="button"

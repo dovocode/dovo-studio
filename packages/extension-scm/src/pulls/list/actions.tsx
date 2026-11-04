@@ -164,7 +164,7 @@ export function PullActions(
                   className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent"
                   onSelect={props.onStartTask}
                 >
-                  Start task from PR
+                  Start thread from PR
                 </DropdownMenu.Item>
               </>
             )}

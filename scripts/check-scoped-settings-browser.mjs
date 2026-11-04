@@ -90,17 +90,17 @@ try {
       }
     }
     const scopeNames = {
-      global: 'All machines & projects',
-      environment: 'Machine',
+      global: 'All computers & projects',
+      environment: 'Computer',
       project: 'Project',
-      'environment-project': 'Project on machine',
+      'environment-project': 'Project on computer',
     }
     const chooseScope = (value) => choose(scopes, value, scopeNames[value])
     if (mobile) {
       assert.equal(await scopes.locator('option').count(), 4)
       assert.equal(await scopes.inputValue(), 'environment-project')
     } else {
-      assert.equal(await scopes.textContent(), 'Project on machine')
+      assert.equal(await scopes.textContent(), 'Project on computer')
       await scopes.click()
       assert.equal(await page.getByRole('option').count(), 4)
       await page.keyboard.press('Escape')
@@ -181,7 +181,12 @@ try {
     await page.getByLabel('Prompt text', { exact: true }).fill('Local override')
     if (!mobile) await page.getByText('More', { exact: true }).click()
     await page
-      .getByRole('button', { name: 'Reset task defaults to inherited settings', exact: true })
+      .getByRole('button', {
+        name: mobile
+          ? 'Reset task defaults to inherited settings'
+          : 'Reset thread defaults to inherited settings',
+        exact: true,
+      })
       .click()
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page
@@ -246,7 +251,7 @@ try {
     await page.evaluate(() => window.releaseProject())
     assert.equal(
       mobile ? await scopes.inputValue() : await scopes.textContent(),
-      mobile ? 'global' : 'All machines & projects',
+      mobile ? 'global' : 'All computers & projects',
     )
     assert.equal(
       await page.getByLabel('Setup command', { exact: true }).inputValue(),
@@ -314,7 +319,10 @@ try {
       window.delayProject = false
       window.openLifecycle()
     })
-    const resume = page.getByRole('combobox', { name: 'Auto-resume limited tasks', exact: true })
+    const resume = page.getByRole('combobox', {
+      name: mobile ? 'Auto-resume limited tasks' : 'Auto-resume limited threads',
+      exact: true,
+    })
     await resume.waitFor()
     await choose(resume, 'on', 'On')
     await page.evaluate(() => window.setConnection(false))
@@ -357,11 +365,11 @@ try {
       .click()
     if (mobile) await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
     await page.waitForFunction(
-      () =>
-        document
-          .querySelector('[aria-label="Auto-resume limited tasks"]')
-          ?.textContent?.includes('Off') ||
-        document.querySelector('[aria-label="Auto-resume limited tasks"]')?.value === 'off',
+      (label) => {
+        const control = document.querySelector(`[aria-label="${label}"]`)
+        return control?.textContent?.includes('Off') || control?.value === 'off'
+      },
+      mobile ? 'Auto-resume limited tasks' : 'Auto-resume limited threads',
     )
     assert.deepEqual(errors, [])
     await page.evaluate(() => (window.failSave = false))
@@ -390,7 +398,10 @@ try {
       (await page.evaluate(() => window.writes.at(-1))).after.taskBehavior.inactiveDays,
       5,
     )
-    const archive = page.getByRole('combobox', { name: 'Auto-archive settled tasks', exact: true })
+    const archive = page.getByRole('combobox', {
+      name: mobile ? 'Auto-archive settled tasks' : 'Auto-archive settled threads',
+      exact: true,
+    })
     if (!mobile) {
       await archive.click()
       await page

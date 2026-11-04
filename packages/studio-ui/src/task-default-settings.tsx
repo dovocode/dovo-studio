@@ -384,7 +384,7 @@ function TaskDefaultSettingsForm({
           </SettingRow>
           <SettingRow
             label="Access mode"
-            description={`Access for new tasks, whichever agent you choose. ${permissionPolicyLabel(defaultPolicy)}`}
+            description={`Access for new threads, whichever agent you choose. ${permissionPolicyLabel(defaultPolicy)}`}
             source={source('permission')}
           >
             <Select
@@ -518,7 +518,7 @@ function TaskDefaultSettingsForm({
                 id="default-agent-instructions"
                 aria-label="Instructions"
                 value={harness.instructions}
-                placeholder="Additional instructions for new tasks…"
+                placeholder="Additional instructions for new threads…"
                 onChange={(event) =>
                   change({ ...draft, harness: { ...harness, instructions: event.target.value } })
                 }
@@ -556,11 +556,11 @@ function TaskDefaultSettingsForm({
           <>
             <SettingsGroup
               title="Workspace & setup"
-              description="How a new task checks out your code and prepares its workspace."
+              description="How a new thread checks out your code and prepares its workspace."
             >
               <SettingRow
                 label="Working directory"
-                description="Use your checkout or give each task an isolated worktree."
+                description="Use your checkout or give each thread an isolated worktree."
                 source={source('execution')}
               >
                 <Select
@@ -586,7 +586,7 @@ function TaskDefaultSettingsForm({
               </SettingRow>
               <SettingRow
                 label="Start from origin"
-                description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a task."
+                description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a thread."
                 source={source('worktreeFromOrigin')}
               >
                 <Toggle
@@ -603,7 +603,7 @@ function TaskDefaultSettingsForm({
             <SettingsGroup
               advanced
               title="Advanced workspace setup"
-              description="Submodules and commands to run before starting a task."
+              description="Submodules and commands to run before starting a thread."
             >
               <SettingRow
                 label="Submodules"
@@ -817,7 +817,7 @@ function TaskDefaultSettingsForm({
         saving={busy}
         disabled={!!policyIssue || disabled}
         saved={saved}
-        description="Changes apply to new tasks. Save to apply."
+        description="Changes apply to new threads. Save to apply."
         onSave={() => void save()}
         onDiscard={() => {
           setDraft(settings?.value.taskDefaults ?? {})

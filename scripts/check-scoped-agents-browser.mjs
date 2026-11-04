@@ -100,7 +100,7 @@ try {
       }
     }
     const project = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environment = page.getByLabel(mobile ? 'Computer' : 'Settings machine', {
+    const environment = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,
     })
     await (

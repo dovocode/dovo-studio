@@ -50,7 +50,7 @@ try {
   )
   await button('Zoom in').click()
   assert.equal(Math.round((await image.boundingBox()).width), 625)
-  await button('100%').click()
+  await button('Actual size').click()
   assert.equal(Math.round((await image.boundingBox()).width), 1600)
   const area = await canvas.boundingBox()
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2)
@@ -80,7 +80,7 @@ try {
   )
   await canvas.press('0')
   assert.equal(Math.round((await image.boundingBox()).width), 500)
-  await button('100%').click()
+  await button('Actual size').click()
   const cdp = await page.context().newCDPSession(page)
   const touch = (type, points) =>
     cdp.send('Input.dispatchTouchEvent', {

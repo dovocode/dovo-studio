@@ -25,7 +25,7 @@ const built = await build({
         if(window.counts.publishes<40)window.publish?.();
       });
       sync.bind({address:'http://projectless.lan:51464',token:'fixture-token'});
-      const task=createTask({title:'New task',objective:'',agentId:'',repositoryId:'scratch'});
+      const task=createTask({title:'New thread',objective:'',agentId:'',repositoryId:'scratch'});
       const flush=async()=>{window.counts.flushes++;await sync.flush()};
       const request=async(path)=>{
         await sync.flush();

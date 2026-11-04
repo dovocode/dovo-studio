@@ -86,7 +86,7 @@ export function TaskSearchDialog({
     <Dialog open={!!mode} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="top-[20%] max-w-xl translate-y-0 gap-2 p-2 [&_[data-dialog-close]]:-right-4 [&_[data-dialog-close]]:-top-4">
         <DialogTitle className="sr-only">
-          {mode === 'messages' ? 'Search conversations' : 'Go to task'}
+          {mode === 'messages' ? 'Search conversations' : 'Go to thread'}
         </DialogTitle>
         <DialogDescription className="sr-only">
           Type to search, use the arrow keys to choose, and Enter to open.
@@ -103,8 +103,8 @@ export function TaskSearchDialog({
             aria-expanded
             aria-controls={listId}
             aria-activedescendant={results[active] ? `${listId}-${active}` : undefined}
-            aria-label={mode === 'messages' ? 'Search conversations' : 'Go to task'}
-            placeholder={mode === 'messages' ? 'Search all conversations…' : 'Go to task…'}
+            aria-label={mode === 'messages' ? 'Search conversations' : 'Go to thread'}
+            placeholder={mode === 'messages' ? 'Search all conversations…' : 'Go to thread…'}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -134,7 +134,7 @@ export function TaskSearchDialog({
               )}
               onClick={() => onModeChange(scope)}
             >
-              {scope === 'tasks' ? 'Tasks' : 'Messages'}
+              {scope === 'tasks' ? 'Threads' : 'Messages'}
             </button>
           ))}
         </div>

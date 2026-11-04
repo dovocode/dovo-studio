@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { LinuxSetupGuide } from './linux-setup-guide'
 import {
   connectionProgress,
@@ -191,7 +192,7 @@ export function PairingClient({
         <div>
           <h2 className="text-sm font-medium">Your computers</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Tasks and projects from these computers appear in your workspace.
+            Threads and projects from these computers appear in your workspace.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -431,7 +432,7 @@ export function PairingClient({
           <DialogTitle>Discard unsent edits?</DialogTitle>
           <DialogDescription>
             This replaces this device’s unsent workspace edits with the current host version. A
-            local backup is saved first. Files and running tasks on the host are unchanged.
+            local backup is saved first. Files and running threads on the host are unchanged.
           </DialogDescription>
           {error && (
             <p role="alert" className="text-xs text-destructive">
@@ -628,14 +629,18 @@ export function PairingClient({
           <div className="max-h-96 overflow-auto space-y-3">
             {recoveries?.length === 0 && <p>No recovered edits.</p>}
             {recoveries?.map((edit) => (
-              <details key={edit.id}>
-                <summary>
-                  {edit.createdAt} · {edit.patch.collection}/{edit.patch.id}
-                </summary>
+              <Disclosure
+                key={edit.id}
+                title={
+                  <>
+                    {edit.createdAt} · {edit.patch.collection}/{edit.patch.id}
+                  </>
+                }
+              >
                 <pre className="whitespace-pre-wrap break-all text-xs select-text">
                   {JSON.stringify(edit, null, 2)}
                 </pre>
-              </details>
+              </Disclosure>
             ))}
           </div>
           {recoveryCursor && recoveryOwner && (

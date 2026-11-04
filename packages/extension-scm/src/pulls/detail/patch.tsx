@@ -258,7 +258,7 @@ export function PullPatch({
                 submitLabel={
                   destination === 'github'
                     ? `Post to ${forgeLabels[provider]}`
-                    : (agentAction?.submit ?? 'Start agent task')
+                    : (agentAction?.submit ?? 'Start agent thread')
                 }
                 onCancel={() => setSelection(null)}
                 onSubmit={async (body) => {
@@ -298,7 +298,7 @@ export function PullPatch({
                   }
                 >
                   {allowAgent && (
-                    <option value="agent">{agentAction?.option ?? 'Agent task'}</option>
+                    <option value="agent">{agentAction?.option ?? 'Agent thread'}</option>
                   )}
                   {allowInlineComment && <option value="github">{forgeLabels[provider]} PR</option>}
                 </ChoicePicker>

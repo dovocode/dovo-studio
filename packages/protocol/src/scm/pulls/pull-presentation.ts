@@ -133,7 +133,13 @@ export function matchesPull(pull: PullSummary, repository: string, query: string
 }
 export function checkSignal(status: string): PullSignal {
   status = status.toUpperCase()
-  const label = status.toLowerCase().replaceAll('_', ' ')
+  const readable = status.toLowerCase().replaceAll('_', ' ')
+  const label =
+    status === 'SUCCESS'
+      ? 'Passed'
+      : status === 'FAILURE'
+        ? 'Failed'
+        : readable.charAt(0).toUpperCase() + readable.slice(1)
   return {
     label,
     tone: ['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STALE'].includes(

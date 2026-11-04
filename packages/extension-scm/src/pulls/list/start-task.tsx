@@ -93,7 +93,7 @@ export function StartPullTask({
             variant="outline"
             className="@max-sm/pr-detail:hidden"
             aria-label="New thread"
-            title="Start a task from this PR"
+            title="Start a thread from this PR"
             disabled={!connected || busy}
           >
             <Plus className="size-3.5" />
@@ -134,7 +134,7 @@ export function StartPullTask({
             })
           }
         >
-          Open created task
+          Open created thread
         </Button>
       )}
       {error && (

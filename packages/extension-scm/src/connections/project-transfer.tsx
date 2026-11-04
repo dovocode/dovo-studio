@@ -734,9 +734,9 @@ export function ProjectTransferDialog({
         <DialogTitle>
           {sourceTask
             ? sourceTask.execution === 'worktree'
-              ? 'Copy worktree to another machine'
-              : 'Copy project checkout to another machine'
-            : 'Add to another machine'}
+              ? 'Copy worktree to another computer'
+              : 'Copy project checkout to another computer'
+            : 'Add to another computer'}
         </DialogTitle>
         <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />
       </DialogContent>

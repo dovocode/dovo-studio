@@ -72,7 +72,7 @@ export function ProjectDeletion({
       <div>
         <h3 className="text-sm font-medium">Delete project</h3>
         <p className="text-xs text-muted-foreground">
-          Remove this project and its task and conversation history from Dovo. Repository and
+          Remove this project and its thread and conversation history from Dovo. Repository and
           worktree files stay on disk.
         </p>
       </div>
@@ -102,7 +102,7 @@ export function ProjectDeletion({
           <DialogHeader>
             <DialogTitle>Delete “{repository.name}”?</DialogTitle>
             <DialogDescription>
-              This removes the project and its task and conversation history from Dovo. The
+              This removes the project and its thread and conversation history from Dovo. The
               repository and worktree files remain on disk. Active work must finish before you can
               delete this project.
             </DialogDescription>

@@ -149,7 +149,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     if (!mobile) {
       await page.evaluate(() => window.fold())
       await page.waitForFunction(() => document.querySelectorAll('img').length === 3)
-      await page.getByRole('region', { name: 'Task tool activity' }).waitFor({ state: 'hidden' })
+      await page.getByRole('region', { name: 'Thread tool activity' }).waitFor({ state: 'hidden' })
       await page.waitForFunction(() => document.querySelectorAll('img').length === 3)
     }
     assert.equal(await page.locator('img').count(), 3)

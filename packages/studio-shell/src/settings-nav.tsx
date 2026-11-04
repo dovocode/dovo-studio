@@ -116,7 +116,7 @@ function storageDescription(view?: StudioView) {
   if (view?.id === 'usage')
     return 'Usage and account limits come from paired computers. Choose a computer on this page to filter them.'
   if (!view?.settingsScope)
-    return 'Browse archived tasks from paired computers and restore them when needed.'
+    return 'Browse archived threads from paired computers and restore them when needed.'
   if (view.settingsScope === 'inherited')
     return 'Choose where defaults apply at the top of the page.'
   if (mixedPages.has(view.id))

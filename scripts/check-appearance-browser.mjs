@@ -47,7 +47,7 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <TitleBar online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>
 <main className="flex min-h-0 flex-1"><Appearance/>
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
-<Button>Start task</Button>
+<Button>Start thread</Button>
 <div data-testid="effects" className="flex flex-col gap-2">
 <nav className="studio-navigation" aria-label="Main navigation"><button className="studio-navigation-item" aria-current="page">T</button></nav>
 <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button className="studio-navigation-item" aria-pressed="true">F</button></nav>
@@ -389,7 +389,7 @@ try {
       )
       assert.equal(
         await page
-          .getByRole('button', { name: 'Start task', exact: true })
+          .getByRole('button', { name: 'Start thread', exact: true })
           .evaluate((button) => getComputedStyle(button).color),
         rgb(expected['action-foreground']),
       )

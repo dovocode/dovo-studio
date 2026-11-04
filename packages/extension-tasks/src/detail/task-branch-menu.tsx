@@ -170,8 +170,8 @@ export function TaskBranchMenu({
           </DialogTitle>
           <DialogDescription className="text-xs">
             {inWorktree
-              ? `The project folder switches to ${branch ?? 'this task’s branch'} and the worktree is removed. The task’s uncommitted changes come along. The project folder must have no uncommitted changes.`
-              : 'A new worktree and branch are created from the project folder’s current branch. All uncommitted changes in the project folder move with this task, so the folder is clean afterwards.'}{' '}
+              ? `The project folder switches to ${branch ?? 'this thread’s branch'} and the worktree is removed. The thread’s uncommitted changes come along. The project folder must have no uncommitted changes.`
+              : 'A new worktree and branch are created from the project folder’s current branch. All uncommitted changes in the project folder move with this thread, so the folder is clean afterwards.'}{' '}
             The agent continues in a new session with this conversation.
           </DialogDescription>
           {moveError && (
@@ -184,7 +184,7 @@ export function TaskBranchMenu({
               Cancel
             </Button>
             <Button disabled={moveBusy || !connected} onClick={move}>
-              {moveBusy ? 'Moving…' : 'Move task'}
+              {moveBusy ? 'Moving…' : 'Move thread'}
             </Button>
           </div>
         </DialogContent>

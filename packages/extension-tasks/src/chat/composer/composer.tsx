@@ -559,7 +559,7 @@ export function Composer({
   const planIssue = !plan
     ? undefined
     : !planSupported
-      ? 'Update the task computer to use plan mode.'
+      ? 'Update the thread computer to use plan mode.'
       : planModeIssue(agent)
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
   const preferences = useAppPreferences()
@@ -666,7 +666,7 @@ export function Composer({
     )
       return
     if (editing.settings?.harness && !snapshot?.fullTurnSettingsSupported) {
-      setError('Update the task computer to use all settings for this turn.')
+      setError('Update the thread computer to use all settings for this turn.')
       return
     }
     if (policyIssue || planIssue) {
@@ -717,11 +717,11 @@ export function Composer({
     if (mode === 'stage' && (!connected || snapshot?.promptQueueStagingSupported !== true)) return
     if (mode === 'direct' && (!connected || snapshot?.directMessageSupported !== true)) return
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
-      setError('Update the task computer to choose a model for this turn.')
+      setError('Update the thread computer to choose a model for this turn.')
       return
     }
     if (turnSettings?.harness && !snapshot?.fullTurnSettingsSupported) {
-      setError('Update the task computer to use all settings for this turn.')
+      setError('Update the thread computer to use all settings for this turn.')
       return
     }
     if (turnSettings && mode === 'steer') {
@@ -1342,7 +1342,7 @@ export function Composer({
                               ? 'Queue follow-up'
                               : connected
                                 ? 'Send to agent'
-                                : 'Save message to task'
+                                : 'Save message to thread'
                   }
                   disabled={
                     (!!editing &&

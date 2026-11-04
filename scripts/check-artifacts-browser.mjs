@@ -1965,7 +1965,10 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await recovered.waitFor()
     assert.equal(await recovery.evaluate(() => window.recoveryReads), 2)
     await recovery.evaluate(() => window.changeRecovery({ connected: false, error: 'Offline' }))
-    await recovery.getByText(/Recovery host is offline/).waitFor()
+    await recovery
+      .getByText(/Recovery host is offline/)
+      .first()
+      .waitFor()
     assert.equal(await recovered.count(), 1, 'Disconnecting keeps the recovered artifacts')
     if (!native) {
       await recovery.evaluate(() => window.changeRecovery({ error: null }))
@@ -1982,7 +1985,10 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       )
       await recovery.getByRole('button', { name: 'Back to artifacts', exact: true }).first().click()
       await recovery.evaluate(() => window.changeRecovery({ error: 'Offline' }))
-      await recovery.getByText(/Recovery host is offline/).waitFor()
+      await recovery
+        .getByText(/Recovery host is offline/)
+        .first()
+        .waitFor()
     }
     await recovery.getByLabel('Search artifacts').fill('not in saved results')
     await recovery

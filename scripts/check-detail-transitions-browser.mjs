@@ -141,7 +141,7 @@ try {
   await mkdir(root + 'work/detail-transitions', { recursive: true })
   for (const mode of ['light', 'dark']) {
     for (const platform of ['linux', 'darwin']) {
-      for (const collection of ['Task sidebar', 'Pull request sidebar']) {
+      for (const collection of ['Thread sidebar', 'Pull request sidebar']) {
         await page.setContent(
           `<html class="${mode === 'dark' ? 'dark' : ''}" data-theme="${mode}"><body style="margin:0"><div class="studio-header-layout" data-inline-header="true" data-compact="false"><div class="studio" data-platform="${platform}"><div class="studio-body"><nav class="studio-navigation" aria-label="Main navigation"><button class="studio-navigation-item">T</button></nav><main class="studio-main"><div style="display:flex;flex:1;min-height:0"><aside class="studio-task-sidebar" aria-label="${collection}" style="display:flex;flex-direction:column;width:320px"><header class="studio-titlebar" data-sidebar-brand="true"><span id="brand">Dovo Studio</span></header><div class="studio-overview-pane" style="flex:1">${collection}</div></aside><div style="display:flex;flex:1;flex-direction:column"><header class="studio-titlebar">Thread</header><div style="display:flex;flex:1"><section style="flex:1">Conversation</section><aside class="studio-thread-tools-panel" style="width:240px">Project</aside><nav class="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button class="studio-navigation-item">F</button></nav></div></div></div></main></div></div></div></body></html>`,
         )
@@ -174,7 +174,7 @@ try {
         assert.equal(layout.pointerEvents, 'none')
         assert.equal(layout.leftGap, 4)
         assert.equal(layout.leftGap, layout.rightGap, 'Floating panes must use matching rail gaps')
-        if (platform === 'linux' && collection === 'Task sidebar')
+        if (platform === 'linux' && collection === 'Thread sidebar')
           await page.screenshot({ path: root + 'work/detail-transitions/' + mode + '.png' })
         // The fallback header retains the same brand origin with the sidebar hidden.
         const fallbackBrand = await page.evaluate(() => {

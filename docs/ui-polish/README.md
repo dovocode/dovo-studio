@@ -59,7 +59,7 @@ integrations or real provider/account connections.
 
 Council review is **in progress**. Dominic changed the approval target to at least 9/10 from both
 Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 7.5 and
-7.0; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
+7.5; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
 
 Round 30 incorporates the complete round 29 refresh of all workspace/control screens and dialogs,
 including shared settings disclosures, white enabled fields in light theme, explicit scope controls,
@@ -68,12 +68,13 @@ check-report/pipeline scope. It includes rounded sidebars, flat borderless main 
 surfaces, shared disclosures, matching Thread info labels, one home for PR linking, quieter field
 borders, consistent scope chips, visible context search, focused field validation and aligned dialog
 headers. It also keeps Close visible in long dialogs without adding title spacing, and clears
-compact search controls. Two fresh Opus reviewers are assessing this frozen gallery after
-authentication was restored. Muse wonder-full-1.0 could not start because its saved API key was
-rejected. Gemini 4.0 Argon is unavailable in the configured Google catalog, which currently only
-lists Gemini 3.8 Flash. Neither issued a score. The 9/10 target has not yet been earned. See
-[council.json](council.json) for the review record. Scores are subjective; interaction and
-accessibility checks are separate.
+compact search controls. Both round 30 Opus reviewers scored 7.5/10. Muse reviewed successfully with
+the corrected `muse-wonder-full-1.0` model and also scored 7.5/10. Gemini Argon exists in AGY as
+`gemini-4-argon-high`; its ACP adapter rejected read-only mode, and a direct sandboxed review failed
+with provider `503 auth_not_found`. It has not issued a score. Four GPT-6.1 Sol high helpers
+completed the following refinement pass; a fresh full gallery is being captured. The 9/10 target has
+not yet been earned. See [council.json](council.json) for the review record. Scores are subjective;
+interaction and accessibility checks are separate.
 
 ## Verification
 

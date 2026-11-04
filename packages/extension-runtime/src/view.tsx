@@ -100,8 +100,8 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
           <div className="min-w-0">
             <h2 className="text-sm font-medium">Connect your phone</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Follow and answer tasks from the Dovo iPhone or Android app. Scan a QR code or type an
-              eight-digit code.
+              Follow and answer threads from the Dovo iPhone or Android app. Scan a QR code or type
+              an eight-digit code.
             </p>
           </div>
           <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
@@ -111,7 +111,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
       <AccountPanel onPair={(address) => setDiscovered({ address })} />
       <PairingClient onManage={setManaging} discovered={discovered} />
       <p className="text-xs leading-6 text-muted-foreground">
-        Tasks and projects appear together; each runs on its own computer. Use a reachable LAN,
+        Threads and projects appear together; each runs on its own computer. Use a reachable LAN,
         Tailscale or NetBird address. HTTP and optional HTTPS are supported.
       </p>
       {pairingPhone && (
@@ -206,7 +206,7 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-medium">{source.name} restarted after an unexpected error</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          {new Date(crash.at).toLocaleString()} · tasks that were running were interrupted and
+          {new Date(crash.at).toLocaleString()} · threads that were running were interrupted and
           continued or stopped according to the restart policy.
         </p>
         <pre className="mt-2 whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]">

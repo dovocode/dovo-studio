@@ -647,8 +647,8 @@ export function ComposerModelPicker({
                   </Button>
                 )}
               </div>
-              <div className="flex min-w-0 flex-1 flex-col p-2">
-                <div className="flex items-center gap-2 border-b pb-2">
+              <div className="flex min-w-0 flex-1 flex-col p-3">
+                <div className="flex shrink-0 items-center gap-2 border-b pb-2">
                   <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
                     <Input
@@ -668,7 +668,7 @@ export function ComposerModelPicker({
                         setQuery(event.target.value)
                         setActive(0)
                       }}
-                      className="h-9 rounded-lg bg-transparent pl-8 shadow-none"
+                      className="h-9 rounded-lg bg-transparent pl-8 shadow-none focus-visible:outline-1! focus-visible:outline-offset-2! focus-visible:ring-0"
                       onKeyDown={(event) => {
                         if (event.nativeEvent.isComposing || event.keyCode === 229) return
                         if (
@@ -903,8 +903,8 @@ export function ComposerModelPicker({
                     {(mode === 'models' && error) || storageError}
                   </p>
                 )}
-                <div className="flex items-center justify-end pt-1">
-                  {mode === 'models' && (
+                {mode === 'models' && (
+                  <div className="mt-auto flex shrink-0 items-center justify-start border-t pt-2">
                     <Button
                       type="button"
                       size="sm"
@@ -918,8 +918,8 @@ export function ComposerModelPicker({
                       <Eye className="size-3.5" />
                       Model visibility
                     </Button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
             {settings && (

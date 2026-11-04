@@ -825,7 +825,7 @@ export function TaskList({
   return (
     <aside
       className="studio-task-sidebar flex h-full w-full min-w-0 flex-col bg-background"
-      aria-label="Task sidebar"
+      aria-label="Thread sidebar"
     >
       <SidebarHeader />
       <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
@@ -1051,7 +1051,7 @@ export function TaskList({
             <div className="space-y-2 px-3 py-6 text-xs">
               <p className="font-medium">
                 {query || projectId || environment
-                  ? 'No matching tasks'
+                  ? 'No matching threads'
                   : 'Ready for your next idea'}
               </p>
               <p className="leading-5 text-muted-foreground">

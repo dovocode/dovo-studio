@@ -15,8 +15,8 @@ import {CommandPalette} from '../studio-shell/src/command-palette';
 window.executed=[];
 const definitions=[
   {id:'workspace',title:'Open workspace',aliases:['thread','thread']},
-  {id:'new',title:'New thread',aliases:['new task','new chat','thread']},
-  {id:'switch',title:'Go to task…',aliases:['go to thread','switch thread']},
+  {id:'new',title:'New thread',aliases:['new thread','new chat','thread']},
+  {id:'switch',title:'Go to thread…',aliases:['go to thread','switch thread']},
   {id:'search',title:'Search conversations…',aliases:['search messages','find message','thread']},
   {id:'history',title:'Thread history',aliases:['thread']},
   {id:'terminal',title:'Toggle terminal',aliases:['shell','console']},
@@ -112,7 +112,7 @@ try {
     'New thread',
     'Thread history',
     'Open workspace',
-    'Go to task…',
+    'Go to thread…',
     'Search conversations…',
   ])
   assert.equal(await options.filter({ hasText: /^New thread$/ }).count(), 1)

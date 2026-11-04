@@ -106,7 +106,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           {selection
             ? 'Choose the utility model that selects projects, harnesses and coding models. By default it inherits the explicit title model.'
-            : 'Choose an explicit harness and model for task titles and dictation cleanup.'}
+            : 'Choose an explicit harness and model for thread titles and dictation cleanup.'}
         </p>
       </header>
       <div className="p-4">
