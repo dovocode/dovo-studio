@@ -333,6 +333,18 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .waitFor({ state: 'visible' })
         await page.mouse.move(0, 0)
       }
+      if (name.startsWith('busy-')) {
+        const turnTargets = page
+          .getByRole('navigation', { name: 'Conversation turns', exact: true })
+          .getByRole('button')
+        for (const target of await turnTargets.all()) {
+          const bounds = await target.boundingBox()
+          assert.ok(
+            bounds && bounds.height >= 24 && bounds.width >= 24,
+            'Turn navigation has accessible pointer targets',
+          )
+        }
+      }
       const controls = await page
         .locator('button, input, textarea, select, [role="switch"], [role="tab"]')
         .evaluateAll((elements) =>

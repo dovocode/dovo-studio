@@ -2803,7 +2803,7 @@ a.studio-project-row:hover {
 }
 [data-thread-info-branch] {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 .studio-panel-empty {
   display: flex;

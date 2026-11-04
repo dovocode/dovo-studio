@@ -1,6 +1,5 @@
 import {
   automaticDifficultyChoices,
-  modelDisplayName,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
@@ -40,7 +39,6 @@ export function ComposerEffortColumn({
   modes?: boolean
 }) {
   const selected = selectedCatalogModel(catalog, value.model)
-  const modelName = modelDisplayName(value.model, selected?.name) || 'Provider default'
   const efforts = selected?.reasoning ?? catalog?.reasoning ?? []
   const current = automatic
     ? difficulty || 'auto'
@@ -58,10 +56,7 @@ export function ComposerEffortColumn({
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5 text-[0.6875rem] font-medium text-muted-foreground">
-        <span>{automatic ? 'Difficulty' : 'Effort'}</span>
-        <span className="ml-auto min-w-0 truncate" title={automatic ? 'Automatic' : modelName}>
-          {automatic ? 'Automatic' : modelName}
-        </span>
+        <span>{automatic ? 'Task difficulty' : 'Reasoning effort'}</span>
       </div>
       <div className="px-3 pb-2.5 pt-2">
         {choices.length > 6 ? (
@@ -133,42 +128,6 @@ export function ComposerEffortColumn({
               </button>
             ))}
           </div>
-        )}
-        {modes && !automatic && value.provider === 'codex' && (
-          <label className="mt-2 flex items-center gap-3 border-t pt-2 text-xs text-muted-foreground">
-            Daybreak
-            <ChoicePicker
-              aria-label="Daybreak mode"
-              className="ml-auto h-8 w-44"
-              value={value.cyberAccessProgram ?? ''}
-              disabled={disabled}
-              onValueChange={(program) =>
-                void onChange({
-                  ...value,
-                  cyberAccessProgram: program
-                    ? decode(
-                        Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema),
-                        program,
-                      )
-                    : undefined,
-                })
-              }
-            >
-              {daybreakChoices(catalog, value.cyberAccessProgram).map((choice) => (
-                <option
-                  key={choice.id}
-                  value={choice.id}
-                  disabled={
-                    choice.id !== '' &&
-                    choice.id !== 'standard' &&
-                    !catalog?.codex?.daybreakPrograms.some((program) => program === choice.id)
-                  }
-                >
-                  {choice.name}
-                </option>
-              ))}
-            </ChoicePicker>
-          </label>
         )}
         {modes && !automatic && value.provider === 'acp' && catalog?.acp && (
           <div className="mt-2 grid gap-2 border-t px-2 pt-2 text-xs text-muted-foreground">
@@ -250,6 +209,53 @@ export function ComposerEffortColumn({
   )
 }
 
+export function ComposerPickerDaybreak({
+  value,
+  catalog,
+  onChange,
+  disabled,
+}: {
+  value: TaskHarness
+  catalog: ModelCatalog | null
+  onChange: (value: TaskHarness) => Promise<boolean>
+  disabled: boolean
+}) {
+  if (value.provider !== 'codex') return null
+  return (
+    <label className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
+      <span>Daybreak</span>
+      <ChoicePicker
+        aria-label="Daybreak mode"
+        className="h-7 w-44 max-w-[65%]"
+        value={value.cyberAccessProgram ?? ''}
+        disabled={disabled}
+        onValueChange={(program) =>
+          void onChange({
+            ...value,
+            cyberAccessProgram: program
+              ? decode(Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema), program)
+              : undefined,
+          })
+        }
+      >
+        {daybreakChoices(catalog, value.cyberAccessProgram).map((choice) => (
+          <option
+            key={choice.id}
+            value={choice.id}
+            disabled={
+              choice.id !== '' &&
+              choice.id !== 'standard' &&
+              !catalog?.codex?.daybreakPrograms.some((program) => program === choice.id)
+            }
+          >
+            {choice.name}
+          </option>
+        ))}
+      </ChoicePicker>
+    </label>
+  )
+}
+
 export function ComposerPickerSpeed({
   value,
   catalog,
@@ -269,36 +275,38 @@ export function ComposerPickerSpeed({
     <div
       role="radiogroup"
       aria-label="Service tier"
-      className="flex flex-wrap rounded-lg bg-accent/40 p-0.5"
+      className="flex min-h-7 flex-wrap items-center justify-between gap-1"
     >
-      <span className="self-center px-2 text-xs text-muted-foreground">Speed</span>
-      {tiers.map((tier) => {
-        const checked = serviceTierValue(value.serviceTier) === tier.id
-        return (
-          <button
-            type="button"
-            key={tier.id}
-            role="radio"
-            aria-checked={checked}
-            title={tier.description}
-            data-value={tier.id}
-            disabled={
-              disabled ||
-              (tier.id !== 'default' &&
-                (!selected?.serviceTiers?.some((item) => item.id === tier.id) ||
-                  catalog?.codex?.fastModeBlocked === true))
-            }
-            className={cn(
-              'flex min-h-7 items-center gap-1 rounded-md px-2 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
-              checked ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-            onClick={() => void onChange({ ...value, serviceTier: tier.id })}
-          >
-            {['priority', 'fast'].includes(tier.id) && <Zap className="size-3" />}
-            {tier.name}
-          </button>
-        )
-      })}
+      <span className="text-xs text-muted-foreground">Speed</span>
+      <div className="flex flex-wrap rounded-lg bg-accent/40 p-0.5">
+        {tiers.map((tier) => {
+          const checked = serviceTierValue(value.serviceTier) === tier.id
+          return (
+            <button
+              type="button"
+              key={tier.id}
+              role="radio"
+              aria-checked={checked}
+              title={tier.description}
+              data-value={tier.id}
+              disabled={
+                disabled ||
+                (tier.id !== 'default' &&
+                  (!selected?.serviceTiers?.some((item) => item.id === tier.id) ||
+                    catalog?.codex?.fastModeBlocked === true))
+              }
+              className={cn(
+                'flex min-h-7 items-center gap-1 rounded-md px-2 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+                checked ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
+              )}
+              onClick={() => void onChange({ ...value, serviceTier: tier.id })}
+            >
+              {['priority', 'fast'].includes(tier.id) && <Zap className="size-3" />}
+              {tier.name}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

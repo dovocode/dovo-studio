@@ -399,7 +399,19 @@ try {
       await info.getByRole('meter', { name: 'Agent context used' }).getAttribute('aria-valuenow'),
       '85',
     )
+    const infoBounds = await info.boundingBox()
     await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    const customization = page.getByRole('menu', { name: 'Customize thread info', exact: true })
+    await customization.waitFor()
+    const customizationBounds = await customization.boundingBox()
+    assert.ok(infoBounds && customizationBounds)
+    for (const dimension of ['x', 'y', 'width'])
+      assert.ok(
+        Math.abs(infoBounds[dimension] - customizationBounds[dimension]) <= 1,
+        JSON.stringify({ dimension, infoBounds, customizationBounds, mobile }),
+      )
+    assert.ok(customizationBounds.height >= infoBounds.height - 1)
+    assert.equal(await customization.getByRole('menuitemcheckbox').count(), 13)
     await page.getByRole('menuitem', { name: 'Move Context usage up', exact: true }).click()
     await page.waitForFunction(() => {
       const nodes = Array.from(document.querySelectorAll('[data-thread-info-section]')).map(
@@ -426,6 +438,12 @@ try {
     await contextChoice.click()
     assert.equal(await contextChoice.getAttribute('aria-checked'), 'false')
     await page.keyboard.press('Escape')
+    assert.equal(
+      await info
+        .getByRole('button', { name: 'Customize thread info', exact: true })
+        .evaluate((button) => button === document.activeElement),
+      true,
+    )
     await info
       .getByRole('region', { name: 'Context usage', exact: true })
       .waitFor({ state: 'hidden' })
@@ -448,6 +466,30 @@ try {
     assert.equal(await info.getByRole('region', { name: 'Context usage', exact: true }).count(), 0)
     await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Reset to default', exact: true }).click()
+    const customizeTrigger = info.getByRole('button', {
+      name: 'Customize thread info',
+      exact: true,
+    })
+    await customizeTrigger.focus()
+    await page.keyboard.press('Enter')
+    await customization.waitFor()
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'Done customizing thread info',
+    )
+    await page.keyboard.press('ArrowDown')
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('role') === 'menuitemcheckbox',
+    )
+    await page.keyboard.press('Escape')
+    await customization.waitFor({ state: 'hidden' })
+    await customizeTrigger.click()
+    await page.getByRole('menuitem', { name: 'Done customizing thread info', exact: true }).click()
+    await customization.waitFor({ state: 'hidden' })
+    await customizeTrigger.click()
+    const threadBounds = await page.locator('[data-thread-content]').boundingBox()
+    await page.mouse.click(threadBounds.x + 10, threadBounds.y + 100)
+    await customization.waitFor({ state: 'hidden' })
+    await info.waitFor()
     await page.evaluate(() => window.setLineage(true))
     const lineage = page.getByRole('region', { name: 'Agent lineage', exact: true })
     await lineage.getByText('Check page menus', { exact: true }).waitFor()

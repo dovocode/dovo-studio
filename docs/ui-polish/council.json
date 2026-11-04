@@ -214,10 +214,35 @@
       "model": "Opus 5.5",
       "score": 8.6,
       "id": "fbaaa045-cdb9-48ad-8cb9-0f01bb3ec8a3"
+    },
+    {
+      "round": "independent35",
+      "model": "Opus 5.5",
+      "id": "eb9d39ff-04e1-4f99-9f17-284669b33576",
+      "score": 8,
+      "shipVerdict": "ready to ship, workflow and clarity issues identified",
+      "brief": "No past ratings, target score or historical findings supplied."
+    },
+    {
+      "round": "independent35",
+      "model": "Opus 5.5",
+      "id": "d3e494a7-de4c-4512-bd62-cf3b51a32934",
+      "score": 8,
+      "shipVerdict": "ready to ship, workflow and clarity issues identified",
+      "brief": "No past ratings, target score or historical findings supplied."
+    },
+    {
+      "round": "independent35",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "a46eda6b-23ac-4c4d-a0bd-c5651e7d942b",
+      "score": 8,
+      "shipVerdict": "ready to ship for power users; undo recovery and picker comprehension called out",
+      "brief": "No past ratings, target score or historical findings supplied.",
+      "verification": "Muse reopened exact full-size images and withdrew erroneous three-column picker and normal Thread info customization findings. Corrected assessment8/10, ready to ship; undo recovery was its only fix-first item."
     }
   ],
   "remaining": [
-    "Complete independent assessment of frozen gallery35",
+    "Complete independent assessment of frozen gallery36",
     "Address verified material findings and finish PR #50"
   ],
   "approvalTarget": {
@@ -227,10 +252,10 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 35,
+    "round": 36,
     "captures": 272,
-    "corePass": 35,
-    "dialogPass": 35
+    "corePass": 36,
+    "dialogPass": 36
   },
   "unavailableReviews": [
     {
@@ -257,21 +282,21 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent35",
+      "round": "independent36",
       "model": "Opus 5.5",
-      "id": "eb9d39ff-04e1-4f99-9f17-284669b33576",
+      "id": "0ee88a22-086d-491b-bbac-73dd482a850f",
       "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
     },
     {
-      "round": "independent35",
+      "round": "independent36",
       "model": "Opus 5.5",
-      "id": "d3e494a7-de4c-4512-bd62-cf3b51a32934",
+      "id": "7f8ff51e-fc42-41d5-b517-374566974929",
       "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
     },
     {
-      "round": "independent35",
+      "round": "independent36",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "a46eda6b-23ac-4c4d-a0bd-c5651e7d942b",
+      "id": "8ea75852-88ee-426d-9f64-5c2106e57156",
       "brief": "Current frozen screenshots and product constraints only; no past ratings, target score or review history."
     }
   ],

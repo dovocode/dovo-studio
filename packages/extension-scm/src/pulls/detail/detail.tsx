@@ -120,11 +120,12 @@ function PullDetailContent({
   const [starting, setStarting] = useApplicationState(false)
   const stateKey = usePullStateKey(repositoryId, number, connectionId)
   const [tab, setTab] = useRetainedPullState(tabCache, stateKey, initialTab ?? 'overview')
+  const [mergeReadinessOpen, setMergeReadinessOpen] = useApplicationState(false)
   const { detail, error, busy, readConnected, refresh, invalidate, sections } = usePullDetail(
     repositoryId,
     number,
     connectionId,
-    { tab, discussionInOverview: true },
+    { tab, discussionInOverview: true, mergeReadinessOpen },
   )
   const pipelineRuns = usePullPipelineRuns({
     repositoryId,
@@ -144,16 +145,19 @@ function PullDetailContent({
       : { label: `Pipeline runs: ${pipelineRuns.runs.length} loaded`, tone: 'neutral' as const }
   const checksReady =
     sections.checks.ready || (sections.status.ready && detail?.pull.checksState !== undefined)
-  const checkSummary: PullSignal =
-    detail && checksReady
-      ? {
-          ...pullDetailChecks(detail),
-          label: `Check reports: ${pullDetailChecks(detail).label}`,
-        }
-      : {
-          label: sections.checks.busy ? 'Loading checks…' : 'Check reports not loaded',
-          tone: 'neutral',
-        }
+  const checkSummary: PullSignal = sections.checks.error
+    ? { label: 'Check reports unavailable', tone: 'warning' }
+    : sections.checks.busy && !sections.checks.ready
+      ? { label: 'Loading checks…', tone: 'neutral' }
+      : detail && checksReady
+        ? {
+            ...pullDetailChecks(detail),
+            label: `Check reports: ${pullDetailChecks(detail).label}`,
+          }
+        : {
+            label: sections.checks.busy ? 'Loading checks…' : 'Check reports not loaded',
+            tone: 'neutral',
+          }
   const reviewSummary: PullSignal =
     detail && (sections.status.ready || sections.discussion.ready)
       ? pullDetailReviews(detail)
@@ -314,6 +318,13 @@ function PullDetailContent({
               detail={detail}
               mergeStatus={{
                 headSha: detail.pull.headSha,
+                checks: {
+                  busy: sections.checks.busy,
+                  ready: sections.checks.ready,
+                  error: sections.checks.error,
+                  readConnected: sections.checks.readConnected,
+                  refresh: sections.checks.refresh,
+                },
                 signals: [
                   checkSummary,
                   pipelineRuns.runs.length
@@ -341,6 +352,7 @@ function PullDetailContent({
                   ),
                 ],
               }}
+              onMergeReadinessOpenChange={setMergeReadinessOpen}
               onDone={changed}
               extraMenuItems={
                 <>

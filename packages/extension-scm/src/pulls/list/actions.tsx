@@ -4,7 +4,7 @@ import { Signal } from '../detail/status'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, type ReactNode } from 'react'
 import {
   forgeLabels,
@@ -40,6 +40,13 @@ type MergeStatus = {
   headSha: string
   signals: PullSignal[]
   warnings: string[]
+  checks: {
+    busy: boolean
+    ready: boolean
+    error: string
+    readConnected: boolean
+    refresh: () => void
+  }
 }
 const titles: Record<ActionKind, string> = {
   comment: 'Comment on PR',
@@ -57,6 +64,7 @@ const titles: Record<ActionKind, string> = {
 export function PullActions(
   props: PullActionContext & {
     mergeStatus: MergeStatus
+    onMergeReadinessOpenChange: (open: boolean) => void
     onStartTask?: () => void
     extraMenuItems?: ReactNode
   },
@@ -248,12 +256,14 @@ function PullActionDialog({
   detail: initialDetail,
   kind,
   mergeStatus,
+  onMergeReadinessOpenChange,
   comment,
   onClose,
   onCompleted,
 }: PullActionContext & {
   kind: ActionKind
   mergeStatus?: MergeStatus
+  onMergeReadinessOpenChange?: (open: boolean) => void
   comment?: PullComment
   onClose: () => void
   onCompleted: (message: string) => void
@@ -261,6 +271,13 @@ function PullActionDialog({
   // A background refresh must not reverse the operation being confirmed.
   // The server still validates this captured head and account before writing.
   const detail = useRef(initialDetail).current
+  const mergeReadinessOpen =
+    kind === 'merge' || (kind === 'auto-merge' && !detail.pull.autoMergeEnabled)
+  useEffect(() => {
+    if (!mergeReadinessOpen) return
+    onMergeReadinessOpenChange?.(true)
+    return () => onMergeReadinessOpenChange?.(false)
+  }, [mergeReadinessOpen, onMergeReadinessOpenChange])
   const { request, connected } = useWorkspace()
   const [body, setBody] = useApplicationState(kind === 'edit' ? detail.pull.body : '')
   const [title, setTitle] = useApplicationState(detail.pull.title)
@@ -587,7 +604,32 @@ function PullActionDialog({
                 <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
               </p>
               <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
-                <h3 className="text-sm font-medium">Current status</h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium">Current status</h3>
+                  {mergeStatus?.headSha === scope.headSha && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={
+                        busy || mergeStatus.checks.busy || !mergeStatus.checks.readConnected
+                      }
+                      onClick={mergeStatus.checks.refresh}
+                    >
+                      <RefreshCw
+                        aria-hidden
+                        className={`size-3.5 ${mergeStatus.checks.busy ? 'animate-spin' : ''}`}
+                      />
+                      {mergeStatus.checks.busy
+                        ? 'Loading…'
+                        : mergeStatus.checks.error
+                          ? 'Retry checks'
+                          : mergeStatus.checks.ready
+                            ? 'Refresh checks'
+                            : 'Load checks'}
+                    </Button>
+                  )}
+                </div>
                 {mergeStatus?.headSha === scope.headSha ? (
                   <>
                     <ul className="space-y-2">

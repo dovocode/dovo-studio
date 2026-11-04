@@ -53,7 +53,37 @@
 }
 .studio-markdown input[type='checkbox'] {
   margin-right: 0.45em;
-  accent-color: var(--primary);
+  appearance: none;
+  display: inline-grid;
+  width: 0.875rem;
+  height: 0.875rem;
+  vertical-align: -0.125em;
+  place-content: center;
+  border: 1px solid var(--muted-foreground);
+  border-radius: 3px;
+  background: var(--background);
+  opacity: 1;
+}
+.studio-markdown input[type='checkbox']:checked {
+  background: var(--action);
+  border-color: var(--action);
+  color: var(--action-foreground);
+}
+.studio-markdown input[type='checkbox']:checked::after {
+  content: '';
+  width: 0.45rem;
+  height: 0.25rem;
+  border: solid currentColor;
+  border-width: 0 0 2px 2px;
+  transform: translateY(-1px) rotate(-45deg);
+}
+@media (forced-colors: active) {
+  .studio-markdown input[type='checkbox'] {
+    appearance: auto;
+  }
+  .studio-markdown input[type='checkbox']::after {
+    content: none;
+  }
 }
 .studio-markdown :is(a, [data-streamdown='link']) {
   color: var(--primary);

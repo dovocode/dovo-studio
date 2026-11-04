@@ -270,7 +270,7 @@ export function TaskHeader({
           <span
             data-thread-info-state
             data-tone={presentation.tone}
-            className="studio-thread-status whitespace-nowrap text-[0.6875rem]"
+            className="studio-thread-status whitespace-nowrap text-xs"
           >
             {presentation.state}
           </span>

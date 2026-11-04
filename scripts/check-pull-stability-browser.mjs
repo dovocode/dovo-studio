@@ -225,7 +225,77 @@ try {
     window.detail.pull.headSha = 'a'.repeat(40)
     window.savedReads.clear()
   })
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+
+  // Merge readiness must load its own reports without requiring a visit to Checks.
+  await page.evaluate(() => {
+    window.savedReads.clear()
+    window.detail.capabilities = {
+      actions: ['comment', 'review', 'merge', 'auto-merge'],
+      reviewDecisions: ['comment', 'approve', 'request-changes'],
+      mergeMethods: ['squash'],
+    }
+    window.blockedSections = ['checks']
+    window.showStandalone()
+  })
+  await detail.getByRole('button', { name: 'Merge', exact: true }).waitFor()
+  const beforeMergeChecks = await page.evaluate(
+    () => window.sectionReads.filter((section) => section === 'checks').length,
+  )
+  await detail.getByRole('button', { name: 'Merge', exact: true }).click()
+  const merge = page.getByRole('dialog')
+  await merge.getByText('Loading checks…', { exact: true }).waitFor()
+  await page.waitForFunction(
+    (count) => window.sectionReads.filter((section) => section === 'checks').length > count,
+    beforeMergeChecks,
+  )
+  assert.equal(await detail.locator('#pr-tab-overview').getAttribute('aria-selected'), 'true')
+  await page.evaluate(() => {
+    window.failedSection = 'checks'
+    window.releaseSection('checks')
+  })
+  await merge.getByText('Check reports unavailable', { exact: true }).waitFor()
+  await merge.getByText('Checks temporarily unavailable', { exact: true }).waitFor()
+  assert.equal(await merge.getByText(/check reports:.*passed/i).count(), 0)
+  await page.evaluate(() => {
+    window.failedSection = undefined
+  })
+  await merge.getByRole('button', { name: 'Retry checks', exact: true }).click()
+  await merge.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await merge.getByRole('button', { name: 'Refresh checks', exact: true }).waitFor()
+  // A pushed revision must not retarget the confirmation or its status reports.
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'f'.repeat(40)
+  })
+  await page.clock.fastForward(6000)
+  await merge.getByText(/Status for reviewed commit aaaaaaaa is not loaded/).waitFor()
+  await merge.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
+  await merge.getByRole('button', { name: 'Merge pull request', exact: true }).click()
+  await merge.waitFor({ state: 'detached' })
+  const mergeWrite = await page.evaluate(() => window.writes.at(-1).input)
+  assert.equal(mergeWrite.headSha, 'a'.repeat(40))
+  assert.equal(mergeWrite.expectedDestination, 'verified-project-account')
+  // Enabling auto-merge uses the same readiness loading and recovery flow.
+  await page.evaluate(() => {
+    window.savedReads.clear()
+    window.blockedSections = ['checks']
+    window.showStandalone()
+  })
+  await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
+  const autoMerge = page.getByRole('dialog')
+  await autoMerge.getByText('Loading checks…', { exact: true }).waitFor()
+  await page.evaluate(() => window.releaseSection('checks'))
+  await autoMerge.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await autoMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'a'.repeat(40)
+    window.detail.capabilities.actions = ['comment', 'review']
+    window.detail.capabilities.mergeMethods = []
+    window.savedReads.clear()
+    window.showProbe()
+  })
 
   await page.evaluate(() => {
     window.detail.files = Array.from({ length: 30 }, (_, i) => ({

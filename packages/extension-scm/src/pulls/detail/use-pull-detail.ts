@@ -297,7 +297,7 @@ export function usePullDetail(
   repositoryId: string,
   number: number,
   connectionId?: string,
-  options: { tab?: string; discussionInOverview?: boolean } = {},
+  options: { tab?: string; discussionInOverview?: boolean; mergeReadinessOpen?: boolean } = {},
 ) {
   const { activeRuntimeId } = useWorkspace()
   const sources = useRepositorySources()
@@ -353,7 +353,7 @@ export function usePullDetail(
     number,
     connectionId,
     'checks',
-    available && tab === 'checks',
+    available && (tab === 'checks' || !!options.mergeReadinessOpen),
     revision,
   )
   const stack = usePullSection(

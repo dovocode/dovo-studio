@@ -16,7 +16,7 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending&&options.tab==='checks',enabled:key!=='checks'||options.tab==='checks',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending&&(options.tab==='checks'||options.mergeReadinessOpen),enabled:key!=='checks'||options.tab==='checks'||options.mergeReadinessOpen,readConnected:window.store.connected,error:'',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
@@ -568,7 +568,11 @@ try {
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
   const unloadedMerge = page.getByRole('dialog')
-  await unloadedMerge.getByText('Check reports not loaded', { exact: true }).waitFor()
+  await unloadedMerge.getByText('Loading checks…', { exact: true }).waitFor()
+  assert.equal(
+    await unloadedMerge.getByRole('button', { name: 'Loading…', exact: true }).isDisabled(),
+    true,
+  )
   await unloadedMerge.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
   assert.equal(await unloadedMerge.getByText(/checks? passed/i).count(), 0)
   await unloadedMerge.getByRole('button', { name: 'Cancel', exact: true }).click()

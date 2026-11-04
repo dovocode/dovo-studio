@@ -3,24 +3,31 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@
 export function ComposerCommandDialog({
   command,
   commandBusy,
+  refreshing,
+  needsRefresh,
   canUndo,
   connected,
   running,
   error,
   onClose,
   onConfirm,
+  onRefresh,
 }: {
   command: 'undo' | 'new-session' | null
   commandBusy: boolean
+  refreshing: boolean
+  needsRefresh: boolean
   canUndo: boolean
   connected: boolean
   running: boolean
   error: string
   onClose: () => void
   onConfirm: () => void
+  onRefresh: () => void
 }) {
+  const busy = commandBusy || refreshing
   return (
-    <Dialog open={!!command} onOpenChange={(open) => !open && !commandBusy && onClose()}>
+    <Dialog open={!!command} onOpenChange={(open) => !open && !busy && onClose()}>
       <DialogContent className="max-w-md">
         <DialogTitle className="text-sm">
           {command === 'undo' ? 'Undo the last turn’s changes?' : 'Start a new agent session?'}
@@ -28,8 +35,8 @@ export function ComposerCommandDialog({
         <DialogDescription className="text-xs">
           {command === 'undo'
             ? canUndo
-              ? 'The files that turn changed go back to how they were before it. Your current files are saved first, so you can redo this from the turn.'
-              : 'No turn has file changes left to undo.'
+              ? 'The files changed by this turn return to their earlier contents. A backup of your current files is saved first.'
+              : 'This turn is no longer available to undo. Close this dialog to review the latest changes.'
             : 'The next message starts the agent fresh, with this conversation as context. The current session is not deleted.'}
         </DialogDescription>
         {error && (
@@ -37,15 +44,42 @@ export function ComposerCommandDialog({
             {error}
           </p>
         )}
+        {command === 'undo' && needsRefresh && (
+          <p className="text-xs text-muted-foreground">
+            Refresh the thread before trying again. Refreshing keeps your draft and queued messages.
+          </p>
+        )}
+        {!connected ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Connect to this thread’s computer to continue.
+          </p>
+        ) : running ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Wait for the agent to finish or stop it before continuing.
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" disabled={commandBusy} onClick={() => onClose()}>
+          <Button variant="outline" disabled={busy} onClick={() => onClose()}>
             Cancel
           </Button>
+          {command === 'undo' && needsRefresh && (
+            <Button variant="outline" disabled={busy || !connected} onClick={onRefresh}>
+              {refreshing ? 'Refreshing…' : 'Refresh thread'}
+            </Button>
+          )}
           <Button
-            disabled={commandBusy || !connected || running || (command === 'undo' && !canUndo)}
+            disabled={
+              busy || !connected || running || (command === 'undo' && (!canUndo || needsRefresh))
+            }
             onClick={onConfirm}
           >
-            {command === 'undo' ? 'Undo changes' : 'Start fresh'}
+            {command === 'undo'
+              ? commandBusy
+                ? 'Undoing…'
+                : 'Undo changes'
+              : commandBusy
+                ? 'Starting…'
+                : 'Start fresh'}
           </Button>
         </div>
       </DialogContent>

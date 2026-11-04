@@ -306,7 +306,8 @@ export function ConversationRail({
         onKeyDown={(event) => {
           if (event.key === 'Escape') setHovered(null)
         }}
-        className="absolute bottom-6 left-0 top-6 hidden w-12 flex-col items-start justify-center overflow-visible py-1 md:flex"
+        style={{ justifyContent: 'safe center' }}
+        className="absolute bottom-6 left-0 top-6 hidden w-12 flex-col items-start overflow-y-auto overflow-x-visible py-1 md:flex"
       >
         {items.map((item, index) => (
           <Tooltip key={item.id} open={hovered === item.id} disableHoverableContent>
@@ -321,7 +322,7 @@ export function ConversationRail({
                 onBlur={() => setHovered((current) => (current === item.id ? null : current))}
                 aria-label={`Jump to turn ${index + 1}: ${item.label}`}
                 aria-current={visible.has(item.id) ? 'location' : undefined}
-                className="group flex min-h-0 max-h-2 w-12 flex-1 items-center justify-start pl-3 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="group flex min-h-6 max-h-6 w-12 shrink-0 items-center justify-start pl-3 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
                   setHovered(null)
                   const root = scrollRef.current

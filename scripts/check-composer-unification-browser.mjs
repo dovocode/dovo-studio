@@ -216,6 +216,15 @@ try {
       .getByRole('group', { name: 'Speed and access', exact: true })
       .getByText('Access', { exact: true })
       .waitFor()
+    const footer = popup.getByRole('group', { name: 'Speed and access', exact: true })
+    await footer.getByRole('button', { name: 'Daybreak mode', exact: true }).waitFor()
+    const daybreakLabel = await footer.getByText('Daybreak', { exact: true }).boundingBox()
+    const speedLabel = await footer.getByText('Speed', { exact: true }).boundingBox()
+    const accessLabel = await footer.getByText('Access', { exact: true }).boundingBox()
+    assert(
+      Math.abs(daybreakLabel.x - speedLabel.x) <= 1 && Math.abs(speedLabel.x - accessLabel.x) <= 1,
+      'Provider settings use aligned label rows in the pinned footer',
+    )
     assert(
       await popup.evaluate((element) => {
         const bounds = element.getBoundingClientRect()

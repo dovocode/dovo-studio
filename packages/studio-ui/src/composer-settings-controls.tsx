@@ -29,7 +29,11 @@ import { Button } from './components/ui/button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ComposerModelPicker } from './composer-model-picker'
 import { useHarnessCatalog } from './harness-catalog'
-import { ComposerEffortColumn, ComposerPickerSpeed } from './composer-model-options'
+import {
+  ComposerEffortColumn,
+  ComposerPickerDaybreak,
+  ComposerPickerSpeed,
+} from './composer-model-options'
 const accessIcon = {
   ask: LockKeyhole,
   'workspace-write': Pencil,
@@ -312,17 +316,30 @@ export function ComposerSettingsControls({
           />
         }
         footer={
-          <>
-            {!modelOnly && !automatic && (
-              <ComposerPickerSpeed
-                value={value}
-                catalog={catalog}
-                onChange={onChange}
-                disabled={disabled}
-              />
-            )}
-            <div className="ml-auto">{access}</div>
-          </>
+          !modelOnly && (
+            <>
+              {!automatic && (
+                <ComposerPickerDaybreak
+                  value={value}
+                  catalog={catalog}
+                  onChange={onChange}
+                  disabled={disabled}
+                />
+              )}
+              {!automatic && (
+                <ComposerPickerSpeed
+                  value={value}
+                  catalog={catalog}
+                  onChange={onChange}
+                  disabled={disabled}
+                />
+              )}
+              <div className="flex min-h-7 items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">Access</span>
+                {access}
+              </div>
+            </>
+          )
         }
         effortLabel={
           automatic

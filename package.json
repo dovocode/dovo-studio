@@ -63,6 +63,7 @@
     "test:mobile-fork:browser": "node scripts/check-mobile-fork-browser.mjs",
     "test:mobile-queue-restore:browser": "node scripts/check-mobile-queue-restore-browser.mjs",
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-settled-send-browser.mjs",
+    "test:composer-command-recovery:browser": "node scripts/check-composer-command-recovery-browser.mjs",
     "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",
     "test:mobile-metro-modules": "node scripts/check-mobile-metro-modules.mjs",
     "test:studio-tools:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-studio-tools-browser.mjs",

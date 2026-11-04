@@ -487,9 +487,7 @@ export function ComposerModelPicker({
                         mode === 'models' &&
                           p === activeProvider &&
                           !activeInstallationId &&
-                          (modelSelection
-                            ? 'bg-accent'
-                            : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
+                          (modelSelection ? 'bg-accent' : 'bg-accent text-foreground'),
                       )}
                       onClick={() => {
                         setProvider(p)
@@ -540,9 +538,7 @@ export function ComposerModelPicker({
                         mode === 'models' &&
                           activeProvider === 'acp' &&
                           activeInstallationId === installation.id &&
-                          (modelSelection
-                            ? 'bg-accent'
-                            : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
+                          (modelSelection ? 'bg-accent' : 'bg-accent text-foreground'),
                       )}
                       onClick={() => {
                         setProvider('acp')
@@ -556,47 +552,75 @@ export function ComposerModelPicker({
                     </Button>
                   ))}
                 </div>
+                {onSelectMode && (
+                  <div
+                    role="group"
+                    aria-label="Automatic model selection"
+                    className="flex flex-wrap items-center gap-1"
+                  >
+                    <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
+                      Selection
+                    </span>
+                    {onSelectMode &&
+                      (
+                        [
+                          'inherit',
+                          ...(automaticModesEnabled ? (['auto', 'smart'] as const) : []),
+                        ] as const
+                      ).map((mode) => {
+                        const Icon = modelModeIcons[mode]
+                        return (
+                          <Button
+                            key={mode}
+                            aria-label={
+                              { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]
+                            }
+                            title={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                            disabled={disabled || choosing}
+                            type="button"
+                            variant="ghost"
+                            className={cn(
+                              'h-7 gap-1.5 px-2 text-xs',
+                              modelSelection === mode && 'bg-accent text-foreground',
+                            )}
+                            aria-pressed={modelSelection === mode}
+                            onClick={async () => {
+                              await onSelectMode(mode)
+                            }}
+                          >
+                            <Icon className="size-4 shrink-0" aria-hidden="true" />
+                            <span className="truncate">
+                              {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                            </span>
+                          </Button>
+                        )
+                      })}
+                  </div>
+                )}
+              </div>
+              <div className="flex min-w-0 shrink-0 flex-col px-3 py-2">
                 <div
                   role="group"
                   aria-label="Model selection"
-                  className="flex flex-wrap items-center gap-1"
+                  className="mb-2 flex w-fit max-w-full items-center gap-0.5 rounded-lg bg-muted/50 p-0.5"
                 >
-                  <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
-                    Selection
-                  </span>
-                  {onSelectMode &&
-                    (
-                      [
-                        'inherit',
-                        ...(automaticModesEnabled ? (['auto', 'smart'] as const) : []),
-                      ] as const
-                    ).map((mode) => {
-                      const Icon = modelModeIcons[mode]
-                      return (
-                        <Button
-                          key={mode}
-                          aria-label={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                          title={{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                          disabled={disabled || choosing}
-                          type="button"
-                          variant="ghost"
-                          className={cn(
-                            'h-7 gap-1.5 px-2 text-xs',
-                            modelSelection === mode &&
-                              'bg-accent text-primary ring-1 ring-inset ring-primary/50',
-                          )}
-                          aria-pressed={modelSelection === mode}
-                          onClick={async () => {
-                            await onSelectMode(mode)
-                          }}
-                        >
-                          <Icon className="size-4 shrink-0" aria-hidden="true" />
-                          <span className="truncate">
-                            {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
-                          </span>
-                        </Button>
-                      )
-                    })}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label="All models"
+                    aria-pressed={mode === 'models'}
+                    className={cn(
+                      'h-7 gap-1.5 px-2 text-xs',
+                      mode === 'models' && 'bg-background shadow-sm',
+                    )}
+                    onClick={() => {
+                      setMode('models')
+                      setQuery('')
+                      setActive(0)
+                    }}
+                  >
+                    Models
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -608,7 +632,10 @@ export function ComposerModelPicker({
                       setQuery('')
                       setActive(0)
                     }}
-                    className={cn('h-7 gap-1.5 px-2 text-xs', mode === 'favorites' && 'bg-accent')}
+                    className={cn(
+                      'h-7 gap-1.5 px-2 text-xs',
+                      mode === 'favorites' && 'bg-background shadow-sm',
+                    )}
                   >
                     <Star className="size-3.5 shrink-0" aria-hidden="true" />
                     <span className="truncate">Favorites</span>
@@ -620,7 +647,10 @@ export function ComposerModelPicker({
                       aria-label="Custom configurations"
                       title="Custom configurations"
                       aria-pressed={mode === 'agents'}
-                      className={cn('h-7 gap-1.5 px-2 text-xs', mode === 'agents' && 'bg-accent')}
+                      className={cn(
+                        'h-7 gap-1.5 px-2 text-xs',
+                        mode === 'agents' && 'bg-background shadow-sm',
+                      )}
                       onClick={() => {
                         setMode('agents')
                         setQuery('')
@@ -628,29 +658,10 @@ export function ComposerModelPicker({
                       }}
                     >
                       <Bot className="size-3.5 shrink-0" aria-hidden="true" />
-                      <span className="truncate">Custom</span>
-                    </Button>
-                  )}
-                  {!modelsOnly && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      aria-label="Agent configuration"
-                      title="Agent configuration"
-                      disabled={disabled || choosing}
-                      className="ml-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-                      onClick={() => {
-                        setOpen(false)
-                        onConfigure()
-                      }}
-                    >
-                      <Settings2 className="size-3.5" />
-                      Agent settings
+                      <span className="truncate">Custom agents</span>
                     </Button>
                   )}
                 </div>
-              </div>
-              <div className="flex min-w-0 shrink-0 flex-col px-3 py-2">
                 <div className="flex shrink-0 items-center gap-2 border-b pb-2">
                   <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
@@ -671,7 +682,7 @@ export function ComposerModelPicker({
                         setQuery(event.target.value)
                         setActive(0)
                       }}
-                      className="h-9 rounded-lg bg-transparent pl-8 shadow-none focus-visible:outline-1! focus-visible:outline-offset-2! focus-visible:ring-0"
+                      className="h-9 rounded-lg bg-transparent pl-8 shadow-none focus-visible:border-ring focus-visible:outline-1! focus-visible:outline-offset-0! focus-visible:ring-0"
                       onKeyDown={(event) => {
                         if (event.nativeEvent.isComposing || event.keyCode === 229) return
                         if (
@@ -906,21 +917,40 @@ export function ComposerModelPicker({
                     {(mode === 'models' && error) || storageError}
                   </p>
                 )}
-                {mode === 'models' && (
-                  <div className="mt-auto flex shrink-0 items-center justify-start border-t pt-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 gap-2 text-xs"
-                      title="Manage model visibility"
-                      aria-label="Manage model visibility"
-                      aria-pressed={manageModels}
-                      onClick={() => setManageModels(!manageModels)}
-                    >
-                      <Eye className="size-3.5" />
-                      Model visibility
-                    </Button>
+                {(mode === 'models' || !modelsOnly) && (
+                  <div className="mt-auto flex shrink-0 flex-wrap items-center justify-between gap-1 border-t pt-2">
+                    {mode === 'models' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-2 text-xs"
+                        title="Manage model visibility"
+                        aria-label="Manage model visibility"
+                        aria-pressed={manageModels}
+                        onClick={() => setManageModels(!manageModels)}
+                      >
+                        <Eye className="size-3.5" />
+                        Model visibility
+                      </Button>
+                    )}
+                    {!modelsOnly && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label="Agent configuration"
+                        title="Agent configuration"
+                        disabled={disabled || choosing}
+                        className="ml-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                        onClick={() => {
+                          setOpen(false)
+                          onConfigure()
+                        }}
+                      >
+                        <Settings2 className="size-3.5" />
+                        Agent settings
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -944,15 +974,10 @@ export function ComposerModelPicker({
           </div>
           {footer && (
             <div
-              className="flex shrink-0 flex-wrap items-center gap-2 border-t px-3 py-2"
+              className="grid shrink-0 gap-2 border-t px-3 py-2"
               role="group"
               aria-label="Speed and access"
             >
-              {!modelsOnly && (
-                <span className="w-full text-[0.6875rem] font-medium text-muted-foreground">
-                  Access
-                </span>
-              )}
               {footer}
             </div>
           )}

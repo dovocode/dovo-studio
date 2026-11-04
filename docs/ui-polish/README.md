@@ -32,6 +32,9 @@ restrained separators keep the composition calm.
   action footer.
 - The queue and composer align with conversation content; long previews keep attachment counts
   visible. Narrow desktop panes put the input above its controls.
+- Merge and auto-merge confirmations load current check reports and offer refresh/retry without
+  changing tabs. Undo failures offer an explicit scoped refresh before retry, preserving drafts,
+  queued messages and the captured turn.
 - Selected and disabled actions have distinct treatment. Stop remains visible without an animated
   halo. Toggle boundaries and keyboard focus remain legible.
 - Settings share one title, description and content-column pattern. PR diffs start sooner, retain
@@ -79,7 +82,7 @@ Static design reviews do not replace interaction and accessibility checks.
 - Preferences, themes and accessibility unit tests.
 - Shared control checks: keyboard activation/focus, touch targets, selected/disabled states,
   constrained selects, searchable pickers, toggle contrast and forced colors.
-- Composer and rich editor: drafts, checkout locking, queue geometry, attachment counts,
+- Composer and rich editor: undo-refresh recovery and stale-runtime guards, drafts, checkout locking, queue geometry, attachment counts,
   placeholder, narrow panes and stop-button contrast.
 - PR workspace/list: tabs, filters, row menus, comments, review/merge confirmations, retained
   drafts, offline and compact layouts.
