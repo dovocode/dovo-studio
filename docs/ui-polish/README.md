@@ -46,7 +46,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 278 captures: production desktop routes/compositions in both themes,
+The refreshed gallery includes 284 captures: production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -60,7 +60,7 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-Frozen gallery39 includes the automation spacing correction, consistent collection rows and stable
+Frozen gallery40 includes the automation spacing correction, consistent collection rows and stable
 PR check summaries across tabs. Merge receives primary emphasis only when readiness is positive.
 Undo recovery emphasizes Refresh, access values remain readable, and conversation navigation has a
 grouped gutter and a latest-message action beside the reading column. Artifact empty states offer a

@@ -312,10 +312,58 @@
       "shipVerdict": "conditional ship; numeric assessment withdrawn pending corrected evidence",
       "correction": "Reviewer retracted two-column/truncated model-picker and obsolete Settings terminology findings after exact full-size verification; instructed not to quote initial numeric assessment without correction.",
       "brief": "No past ratings or target scores supplied."
+    },
+    {
+      "round": "independent39",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent39_sol_a",
+      "score": 8.7,
+      "shipVerdict": "ship; specific control and consistency refinements remain",
+      "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
+    },
+    {
+      "round": "independent39",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent39_sol_b",
+      "score": 8.5,
+      "shipVerdict": "ship; specific control and consistency refinements remain",
+      "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
+    },
+    {
+      "round": "independent39",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent39_sol_c",
+      "score": 8.6,
+      "shipVerdict": "ship; specific control and consistency refinements remain",
+      "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
+    },
+    {
+      "round": "independent39",
+      "model": "Opus 5.5",
+      "id": "4cef9d13-1808-4322-8ae4-ab43e7c4ee9c",
+      "score": 7.5,
+      "shipVerdict": "ship; specific control and consistency refinements remain",
+      "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
+    },
+    {
+      "round": "independent39",
+      "model": "Opus 5.5",
+      "id": "7a53a2e5-5bf6-4a09-8847-4713c08de974",
+      "score": 7.5,
+      "shipVerdict": "ship; specific control and consistency refinements remain",
+      "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
+    },
+    {
+      "round": "independent39",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "b4211687-88cc-41eb-856a-89113113a156",
+      "score": 7.5,
+      "shipVerdict": "conditional ship",
+      "brief": "Fresh context; no previous scores, target ratings or historical findings supplied."
     }
   ],
   "remaining": [
-    "Complete independent gallery39 council assessment and verified follow-up",
+    "Complete independent gallery40 council assessment and verified follow-up",
     "Finish PR #50 after quality gate"
   ],
   "approvalTarget": {
@@ -355,40 +403,40 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent39",
+      "round": "independent40",
       "model": "Opus 5.5",
-      "id": "4cef9d13-1808-4322-8ae4-ab43e7c4ee9c",
-      "brief": "Fresh context; current screenshots and constraints only, no previous or target scores or historical findings."
+      "id": "dcb4eb5b-52fa-40e3-9f00-8606a2ff1113",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     },
     {
-      "round": "independent39",
+      "round": "independent40",
       "model": "Opus 5.5",
-      "id": "7a53a2e5-5bf6-4a09-8847-4713c08de974",
-      "brief": "Fresh context; current screenshots and constraints only, no previous or target scores or historical findings."
+      "id": "621dc65f-5714-4826-afea-8e6773341cf1",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     },
     {
-      "round": "independent39",
+      "round": "independent40",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "b4211687-88cc-41eb-856a-89113113a156",
-      "brief": "Fresh context; current screenshots and constraints only, no previous or target scores or historical findings."
+      "id": "bec488f5-b13c-4c9f-bf39-0fb6bcb7e6f7",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     },
     {
-      "round": "independent39",
+      "round": "independent40",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent39_sol_a",
-      "brief": "Fresh context; current screenshots and constraints only, no previous or target scores or historical findings."
+      "id": "/root/independent40_sol_a",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     },
     {
-      "round": "independent39",
+      "round": "independent40",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent39_sol_b",
-      "brief": "Fresh context; current screenshots and constraints only, no previous or target scores or historical findings."
+      "id": "/root/independent40_sol_b",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     },
     {
-      "round": "independent39",
+      "round": "independent40",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent39_sol_c",
-      "brief": "Fresh context; current screenshots and constraints only, no previous or target scores or historical findings."
+      "id": "/root/independent40_sol_c",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
     }
   ],
   "queuedReviews": [

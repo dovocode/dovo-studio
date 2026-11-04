@@ -373,8 +373,13 @@ function TaskRowView({
                 {!compact && !general && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
-                    <span className={cn('min-w-0 flex-1 truncate', branch && 'font-mono')}>
-                      {branch || 'Local checkout'}
+                    <span
+                      className={cn('min-w-0 flex-1 truncate text-left', branch && 'font-mono')}
+                      dir={branch ? 'rtl' : undefined}
+                      data-thread-branch
+                    >
+                      {/* Keep the branch tail visible without reversing its text or metadata. */}
+                      <bdi dir="ltr">{branch || 'Local checkout'}</bdi>
                     </span>
                     {pullIndicators}
                     <span className="flex items-center gap-1">

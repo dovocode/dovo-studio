@@ -26,7 +26,7 @@ import {
   Shapes,
   GitPullRequest,
   MessageSquare,
-  MessageCircleQuestion,
+  MessagesSquare,
   Smartphone,
   Terminal,
   FolderSymlink,
@@ -178,7 +178,7 @@ export function TaskHeader({
     [
       'side-chats',
       'Side chats',
-      MessageCircleQuestion,
+      MessagesSquare,
       (task.sideChats?.length ?? 0) + sideThreadsOf(workspace.tasks, task.id).length,
     ],
   ] as const

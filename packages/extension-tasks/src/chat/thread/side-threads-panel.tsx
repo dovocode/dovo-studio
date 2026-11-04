@@ -10,7 +10,7 @@ import {
   GitBranchPlus,
   PanelRight,
   Trash2,
-  MessageCircleQuestion,
+  MessagesSquare,
   X,
 } from 'lucide-react'
 import {
@@ -462,11 +462,7 @@ export function SideThreadsPanel({
           onClose && 'pr-12',
         )}
       >
-        <MessageCircleQuestion
-          size={16}
-          className="shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
+        <MessagesSquare size={16} className="shrink-0 text-muted-foreground" aria-hidden="true" />
         <h2 className="min-w-16 flex-1 truncate text-xs font-medium">Side chats</h2>
         {view === 'threads' && (children.length > 0 || nested) && (
           <Button
@@ -543,7 +539,7 @@ export function SideThreadsPanel({
           )}
           {!children.length && (
             <div className="studio-panel-empty">
-              <MessageCircleQuestion className="studio-panel-empty-icon" aria-hidden="true" />
+              <MessagesSquare className="studio-panel-empty-icon" aria-hidden="true" />
               <h3 className="text-sm font-medium">No agent side chats yet.</h3>
               {!nested && (
                 <p className="mx-auto max-w-sm text-xs leading-relaxed text-muted-foreground">

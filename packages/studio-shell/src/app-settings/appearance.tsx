@@ -9,7 +9,7 @@ import {
   type StudioThemeColors,
 } from '@dovo/studio-core'
 import { Check, CircleCheck, CircleX, TriangleAlert } from 'lucide-react'
-import { ChoicePicker, Input } from '@dovo/studio-ui'
+import { Input } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
 import { CodeThemeSettings } from './code-theme'
@@ -264,17 +264,15 @@ export default function AppearanceSettings() {
           />
         </SettingRow>
         <SettingRow label="Terminal font size" description="In pixels, from 8 to 32.">
-          <ChoicePicker
-            aria-label="Terminal font size"
+          <SettingsSelect
+            label="Terminal font size"
             value={String(terminalFontSize)}
-            onValueChange={(value) => updateAppPreferences({ terminalFontSize: Number(value) })}
-          >
-            {Array.from({ length: 25 }, (_, index) => (
-              <option key={index + 8} value={String(index + 8)}>
-                {index + 8} px
-              </option>
-            ))}
-          </ChoicePicker>
+            options={Array.from({ length: 25 }, (_, index) => [
+              String(index + 8),
+              `${index + 8} px`,
+            ])}
+            onChange={(value) => updateAppPreferences({ terminalFontSize: Number(value) })}
+          />
         </SettingRow>
         <div
           className="overflow-x-auto bg-muted/30 px-4 py-4 text-sm"

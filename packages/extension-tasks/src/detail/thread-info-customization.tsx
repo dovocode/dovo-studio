@@ -98,11 +98,16 @@ export function ThreadInfoCustomization() {
                       },
                     })
                   }
-                  className="relative flex flex-1 cursor-default items-center rounded-lg py-2 pr-2 pl-7 outline-none data-[highlighted]:bg-accent"
+                  className="group relative flex flex-1 cursor-default items-center rounded-lg py-2 pr-2 pl-7 outline-none data-[highlighted]:bg-accent"
                 >
-                  <DropdownMenu.ItemIndicator className="absolute left-2">
-                    <Check size={12} />
-                  </DropdownMenu.ItemIndicator>
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-2 grid size-3.5 place-items-center rounded-[3px] border border-muted-foreground/60 group-data-[state=checked]:border-action group-data-[state=checked]:bg-action group-data-[state=checked]:text-action-foreground"
+                  >
+                    <DropdownMenu.ItemIndicator>
+                      <Check size={10} />
+                    </DropdownMenu.ItemIndicator>
+                  </span>
                   {label}
                 </DropdownMenu.CheckboxItem>
                 {([-1, 1] as const).map((direction) => (

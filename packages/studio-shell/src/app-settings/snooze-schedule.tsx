@@ -25,7 +25,7 @@ export function SnoozeSchedule({ schedule }: { schedule: TaskSnoozeSchedule }) {
   ]
   return (
     <>
-      <SettingRow label="Morning time" description="24-hour local time for morning shortcuts.">
+      <SettingRow label="Morning time" description="Local time for morning shortcuts.">
         <Input
           aria-label="Morning time"
           type="time"
@@ -35,7 +35,7 @@ export function SnoozeSchedule({ schedule }: { schedule: TaskSnoozeSchedule }) {
       </SettingRow>
       <SettingRow
         label="Evening time"
-        description="24-hour local time for Later today and evening shortcuts."
+        description="Local time for Later today and evening shortcuts."
       >
         <Input
           aria-label="Evening time"

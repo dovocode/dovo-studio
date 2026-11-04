@@ -232,8 +232,16 @@
     inset 0 1px 0 #ffffff40,
     var(--studio-glow-strong);
 }
-.dovo-dialog-content [data-slot='button'][data-variant='default']:disabled {
+:is(
+  [data-slot='button'][data-variant='default']:disabled,
+  .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
+) {
+  border: 1px solid var(--control-edge);
+  background-color: var(--card);
+  background-image: none;
+  color: var(--muted-foreground);
   box-shadow: none;
+  opacity: 1;
 }
 :root[data-theme-gradients='false']
   :is(.dovo-dialog-content, .dovo-dialog-content [data-slot='button'][data-variant='default']) {
@@ -247,6 +255,14 @@
     background: Canvas;
     color: CanvasText;
     box-shadow: none;
+  }
+  :is(
+    [data-slot='button'][data-variant='default']:disabled,
+    .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
+  ) {
+    border-color: GrayText;
+    background: Canvas;
+    color: GrayText;
   }
 }
 
@@ -278,6 +294,11 @@
     color: var(--foreground);
     box-shadow:
       0 12px 32px #0003,
+      var(--studio-glow-wide);
+  }
+  :root[data-theme='light'] :where(.studio-menu-surface) {
+    box-shadow:
+      0 8px 24px #00000014,
       var(--studio-glow-wide);
   }
   :where(

@@ -122,6 +122,23 @@ export async function captureFollowUpDialogs(page, origin, output) {
         await menu('Advanced Git actions…').click()
       },
     ],
+    [
+      'git-actions-selection',
+      'tasks&thread=preview-task&changes=1',
+      async () => {
+        await info()
+        await button('Git actions').click()
+        await menu('Advanced Git actions…').click()
+        await page.getByRole('checkbox', { name: 'Select src/navigation.tsx', exact: true }).check()
+        assert.equal(
+          await page
+            .getByRole('checkbox', { name: 'Select all changed files', exact: true })
+            .getAttribute('aria-checked'),
+          'mixed',
+        )
+        assert.equal(await button('Stage selected').isDisabled(), false)
+      },
+    ],
     ['thread-rename', 'tasks', threadAction('Rename…')],
     ['thread-delete', 'tasks', threadAction('Delete thread…')],
     [

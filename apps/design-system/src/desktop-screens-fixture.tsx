@@ -44,6 +44,7 @@ const readCache: RuntimeReadCache = {
 }
 
 export type DesktopScreenState =
+  | 'git-changes'
   | 'legacy'
   | 'populated'
   | 'busy'
@@ -185,7 +186,25 @@ function ScreenWorkspace({
         '/api/snapshot': snapshot,
         '/api/artifacts/list': { artifacts: [], links: [] },
         '/api/tasks/files/list': { files: ['src/navigation.tsx', 'README.md'] },
-        '/api/scm/changes': { files: [] },
+        '/api/scm/changes': {
+          files:
+            state === 'git-changes'
+              ? [
+                  {
+                    path: 'src/navigation.tsx',
+                    before: 'export const label = "Tasks"\n',
+                    after: 'export const label = "Threads"\n',
+                    viewed: false,
+                  },
+                  {
+                    path: 'README.md',
+                    before: '# Workspace\n',
+                    after: '# Dovo workspace\n',
+                    viewed: false,
+                  },
+                ]
+              : [],
+        },
         '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'feature/navigation' },
         '/api/terminals/ticket': { ticket: 'catalog-preview' },
         '/api/review/read': { files: [], groups: [] },

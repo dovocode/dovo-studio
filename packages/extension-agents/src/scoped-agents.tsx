@@ -328,10 +328,19 @@ export function ScopedAgents({
                 </div>
               </div>
               <div className="mb-5 space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
-                <SettingSource
-                  label={selected.name}
-                  origin={{ source: local ? scope : origin, overridden: !!local }}
-                />
+                <div className="flex items-center gap-2 text-xs font-medium">
+                  <SettingSource
+                    label={selected.name}
+                    origin={{ source: local ? scope : origin, overridden: !!local }}
+                  />
+                  <span>
+                    {local
+                      ? `Set at ${settingsScopeLabels[scope]}`
+                      : origin === 'built-in'
+                        ? 'Built-in profile'
+                        : `Inherited from ${settingsScopeLabels[origin]}`}
+                  </span>
+                </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   {local
                     ? `Customized at ${settingsScopeLabels[scope]}. ${inheritedSelected ? 'Reset removes this override and restores the inherited configuration.' : 'This profile was created here; more specific levels can still override it.'}`

@@ -218,6 +218,21 @@ try {
       .waitFor()
     const footer = popup.getByRole('group', { name: 'Speed and access', exact: true })
     await footer.getByRole('button', { name: 'Daybreak mode', exact: true }).waitFor()
+    const daybreakHelp = footer.getByRole('button', { name: 'About Daybreak', exact: true })
+    await daybreakHelp.focus()
+    await page.keyboard.press('Enter')
+    const daybreakExplanation = page.getByRole('dialog', { name: 'About Daybreak', exact: true })
+    await daybreakExplanation
+      .getByText('Optional Codex access program. Automatic uses the provider default.', {
+        exact: true,
+      })
+      .waitFor()
+    await page.keyboard.press('Escape')
+    await daybreakExplanation.waitFor({ state: 'hidden' })
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'About Daybreak',
+    )
+    await popup.waitFor()
     const daybreakLabel = await footer.getByText('Daybreak', { exact: true }).boundingBox()
     const speedLabel = await footer.getByText('Speed', { exact: true }).boundingBox()
     const accessLabel = await footer.getByText('Access', { exact: true }).boundingBox()

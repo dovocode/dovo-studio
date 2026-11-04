@@ -9,11 +9,12 @@ import {
   type ModelCatalog,
   type TaskHarness,
 } from '@dovo/protocol'
-import { Check, Zap } from 'lucide-react'
+import { Check, CircleHelp, Zap } from 'lucide-react'
 import { cn } from './lib/utils'
 import { Schema } from 'effect'
 import { ChoicePicker } from './choice-picker'
 import { Input } from './components/ui/input'
+import * as Popover from '@radix-ui/react-popover'
 
 export function ComposerEffortColumn({
   value,
@@ -222,9 +223,30 @@ export function ComposerPickerDaybreak({
 }) {
   if (value.provider !== 'codex') return null
   return (
-    <label className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
-      <span title="Optional Codex Daybreak access program. Automatic uses the provider default.">
-        Daybreak
+    <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1">
+        <span>Daybreak</span>
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              aria-label="About Daybreak"
+              className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <CircleHelp className="size-3" aria-hidden="true" />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              aria-label="About Daybreak"
+              side="top"
+              sideOffset={8}
+              className="studio-menu-surface z-50 max-w-64 rounded-lg border bg-popover p-3 text-xs text-popover-foreground outline-none"
+            >
+              Optional Codex access program. Automatic uses the provider default.
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
       </span>
       <ChoicePicker
         aria-label="Daybreak mode"
@@ -255,7 +277,7 @@ export function ComposerPickerDaybreak({
           </option>
         ))}
       </ChoicePicker>
-    </label>
+    </div>
   )
 }
 

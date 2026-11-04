@@ -66,7 +66,7 @@ import {updateAppPreferences} from '@dovo/studio-core';
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
 updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
-function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
+function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("changes")?"git-changes":query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     plugins: [
@@ -436,6 +436,15 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         await page.keyboard.press('Escape')
         await page.mouse.move(0, 0)
         await page.waitForFunction(() => !document.querySelector('[role="tooltip"]'))
+        const browserNavigation = page
+          .getByRole('navigation', { name: 'Main navigation', exact: true })
+          .getByRole('button', { name: 'Browser', exact: true })
+        await browserNavigation.hover()
+        await page.getByRole('tooltip', { name: 'Browser', exact: true }).waitFor()
+        await page.screenshot({ path: resolve(output, `navigation-tooltip-${mode}.png`) })
+        await page.mouse.move(0, 0)
+        await page.keyboard.press('Escape')
+        await page.getByRole('tooltip').waitFor({ state: 'hidden' })
       }
       if (name === 'welcome' || name === 'conversation') {
         await page.setViewportSize({ width: 1100, height: 960 })
@@ -450,7 +459,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
             : name === 'pulls'
               ? page.getByRole('button', { name: 'Actions for PR #42', exact: true })
               : name === 'appearance'
-                ? page.getByRole('button', { name: 'Terminal font size', exact: true })
+                ? page.getByRole('combobox', { name: 'Terminal font size', exact: true })
                 : name === 'browser'
                   ? page.getByRole('button', { name: 'Browser options', exact: true })
                   : name === 'thread-info'
@@ -466,6 +475,15 @@ createRoot(document.getElementById('app')).render(<App/>);`,
             path: resolve(output, `${name}-controls-${mode}.png`),
             animations: 'disabled',
           })
+          if (name === 'conversation') {
+            await page.getByRole('button', { name: 'About Daybreak', exact: true }).click()
+            await page.getByRole('dialog', { name: 'About Daybreak', exact: true }).waitFor()
+            await page.screenshot({
+              path: resolve(output, `conversation-daybreak-help-${mode}.png`),
+              animations: 'disabled',
+            })
+            await page.keyboard.press('Escape')
+          }
           await page.keyboard.press('Escape')
         }
       }
