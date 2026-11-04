@@ -2059,7 +2059,7 @@ function BrowserContent({
                   title="Location stays with this tab. Open another tab to use a different computer."
                 >
                   {mode === 'web'
-                    ? 'Local · this device'
+                    ? 'Local · this computer'
                     : `Remote · ${selectedRuntime ? runtimeComputerName(selectedRuntime) : 'Unavailable computer'}`}
                 </p>
               </div>

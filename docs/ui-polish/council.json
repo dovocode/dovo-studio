@@ -184,11 +184,23 @@
       "model": "Muse muse-wonder-full-1.0",
       "score": 7.5,
       "id": "28503ce6-85e9-473b-8bfc-06768a6448ab"
+    },
+    {
+      "round": "reset31",
+      "model": "Opus 5.5",
+      "score": 8.5,
+      "id": "3b532f9f-9fa0-44b2-8ed2-be3a9e367355"
+    },
+    {
+      "round": "reset31",
+      "model": "Opus 5.5",
+      "score": 8.5,
+      "id": "082f4120-728a-48f2-8187-9e47b8d0cac8"
     }
   ],
   "remaining": [
-    "Refresh complete round31 gallery after four Sol helpers completed",
-    "Obtain at least 9/10 from both Opus reviewers",
+    "Resolve remaining round31 list/copy/lazy-check/update-navigation findings",
+    "Refresh frozen gallery and obtain at least 9 from both Opus reviewers",
     "Finish PR #50"
   ],
   "approvalTarget": {
@@ -227,16 +239,6 @@
     }
   ],
   "pendingReviews": [
-    {
-      "round": "reset31",
-      "model": "Opus 5.5",
-      "id": "3b532f9f-9fa0-44b2-8ed2-be3a9e367355"
-    },
-    {
-      "round": "reset31",
-      "model": "Opus 5.5",
-      "id": "082f4120-728a-48f2-8187-9e47b8d0cac8"
-    },
     {
       "round": "reset31",
       "model": "Muse muse-wonder-full-1.0",

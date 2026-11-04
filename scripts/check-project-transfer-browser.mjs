@@ -235,6 +235,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page
       .getByText('Update this computer to copy projects to another computer.', { exact: true })
       .waitFor()
+    if (!mobile) {
+      await page.getByRole('button', { name: 'Open Devices & runtime', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.opened), { viewId: 'runtime' })
+    }
     assert.deepEqual(errors, [])
     await page.evaluate(() => {
       window.setSupported(true)
@@ -380,7 +384,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       window.setSource({ id: 'main-copy', repositoryId: 'project', execution: 'main' })
     })
     await page
-      .getByRole('dialog', mobile ? { name: 'Copy project checkout to another computer' } : {})
+      .getByRole('dialog', mobile ? { name: 'Copy project checkout to another machine' } : {})
       .waitFor()
     const copyThread = page.getByRole('button', { name: 'Copy and create thread', exact: true })
     await page.waitForFunction(() =>

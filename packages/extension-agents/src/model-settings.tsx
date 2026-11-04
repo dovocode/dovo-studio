@@ -1,4 +1,3 @@
-import { Disclosure } from '@dovo/studio-ui'
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
 import {
   Button,
@@ -75,60 +74,60 @@ export function ModelSettings({
           await request('/api/agents/models/preference', { key, ...change }, runtimeDefaultsSchema)
           await refreshRuntimes()
         }}
-      />
-      <Disclosure title={<> Where model favorites are saved </>}>
-        <div className="mt-3 grid gap-3 rounded-md border p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-sm leading-relaxed">
-              Favorites and hidden models apply to every profile. Save them for this computer only,
-              or share them across all your computers.
-            </p>
-            <Select
-              value={scope}
-              onValueChange={(value) => {
-                const next = preferenceScopes.find((entry) => entry.id === value)
-                if (next) setScope(next.id)
-              }}
-            >
-              <SelectTrigger aria-label="Model preference scope" className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {preferenceScopes.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+        preferenceScopeControls={
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="max-w-sm leading-relaxed">
-                Replace this computer’s favorites and hidden models with the shared list.
+                Favorites and hidden models apply to every profile. Save them for this computer
+                only, or share them across all your computers.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!connected || resetting}
-                onClick={() => {
-                  setResetting(true)
-                  setError('')
-                  void request('/api/agents/models/reset', {}, runtimeDefaultsSchema)
-                    .then(refreshRuntimes)
-                    .catch((error: unknown) =>
-                      setError(error instanceof Error ? error.message : String(error)),
-                    )
-                    .finally(() => setResetting(false))
+              <Select
+                value={scope}
+                onValueChange={(value) => {
+                  const next = preferenceScopes.find((entry) => entry.id === value)
+                  if (next) setScope(next.id)
                 }}
               >
-                {resetting ? 'Switching…' : 'Use shared list here'}
-              </Button>
+                <SelectTrigger aria-label="Model preference scope" className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {preferenceScopes.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          )}
-        </div>
-      </Disclosure>
+            {scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                <p className="max-w-sm leading-relaxed">
+                  Replace this computer’s favorites and hidden models with the shared list.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!connected || resetting}
+                  onClick={() => {
+                    setResetting(true)
+                    setError('')
+                    void request('/api/agents/models/reset', {}, runtimeDefaultsSchema)
+                      .then(refreshRuntimes)
+                      .catch((error: unknown) =>
+                        setError(error instanceof Error ? error.message : String(error)),
+                      )
+                      .finally(() => setResetting(false))
+                  }}
+                >
+                  {resetting ? 'Switching…' : 'Use shared list here'}
+                </Button>
+              </div>
+            )}
+          </div>
+        }
+      />
       {!!error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

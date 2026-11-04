@@ -320,7 +320,7 @@ export function AgentEditor({
                             Use apps already connected to your{' '}
                             {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
                             Google Drive or Slack. Requires account sign-in on the computer running
-                            the task. Provider restrictions and tool approvals still apply.
+                            the thread. Provider restrictions and tool approvals still apply.
                           </p>
                         </div>
                       </FormField>
@@ -395,7 +395,7 @@ export function AgentEditor({
                     <div className="mt-4 space-y-4">
                       <p className="text-xs leading-relaxed text-muted-foreground">
                         Optional. Leave blank to use the provider installed and signed in on the
-                        computer that runs the task. Paths refer to that computer.
+                        computer that runs the thread. Paths refer to that computer.
                       </p>
                       {agent.provider === 'hermes' && (
                         <p className="text-xs text-muted-foreground">

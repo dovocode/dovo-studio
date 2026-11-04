@@ -107,7 +107,7 @@ export function TaskLauncherControls({
       <Dialog open={configure} onOpenChange={setConfigure}>
         <DialogContent>
           <DialogTitle>Agent configuration</DialogTitle>
-          <DialogDescription>Configure the agent for this task.</DialogDescription>
+          <DialogDescription>Configure the agent for this thread.</DialogDescription>
           {configure && (
             <ModelSettings
               agent={{ ...value, id: selectedAgent?.id ?? 'launcher', name: selection.name }}

@@ -30,6 +30,7 @@ export function ModelSettings({
   modes = true,
   preferences = {},
   onPreference,
+  preferenceScopeControls,
   layout,
 }: {
   agent: Agent
@@ -38,6 +39,7 @@ export function ModelSettings({
   connected: boolean
   preferences?: RuntimeDefaults['modelPreferences']
   onPreference?: (key: string, change: { favorite?: boolean; disabled?: boolean }) => Promise<void>
+  preferenceScopeControls?: ReactNode
   modes?: boolean
   layout?: 'settings'
 }) {
@@ -113,6 +115,15 @@ export function ModelSettings({
       serviceTier: model === agent.model ? agent.serviceTier : undefined,
       cyberAccessProgram: model === agent.model ? agent.cyberAccessProgram : undefined,
     })
+  const discoveryStatus = loading
+    ? 'Loading provider models…'
+    : !connected
+      ? 'Connect to discover models and reasoning levels.'
+      : agent.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim()
+        ? 'Install or select an ACP agent, or enter a custom command to discover its models.'
+        : !efforts.length
+          ? 'Select a model that advertises reasoning options.'
+          : selected?.description
   return (
     <div className="grid gap-3">
       <FormField label="Model" layout={layout}>
@@ -186,6 +197,7 @@ export function ModelSettings({
           ))}
         </ChoicePicker>
       </FormField>
+      {discoveryStatus && <p className="text-xs text-muted-foreground">{discoveryStatus}</p>}
       {modes && agent.provider === 'acp' && catalog?.acp && (
         <ProviderOptions collapsed={layout === 'settings'}>
           {!!catalog.acp.modes.length && (
@@ -328,51 +340,41 @@ export function ModelSettings({
           </p>
         </ProviderOptions>
       )}
-      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          {loading
-            ? 'Loading provider models…'
-            : !connected
-              ? 'Connect to discover models and reasoning levels.'
-              : agent.provider === 'acp' && !agent.acpInstallationId && !agent.endpoint.trim()
-                ? 'Install or select an ACP agent, or enter a custom command to discover its models.'
-                : !efforts.length
-                  ? 'Select a model that advertises reasoning options.'
-                  : selected?.description}
-        </span>
-      </div>
       {onPreference && (
         <Disclosure title={<> Model visibility & favorites </>}>
-          <div className="mt-2 max-h-60 overflow-y-auto">
-            {allModels.map((model) => {
-              const key = preferenceKey(model.id)
-              const preference = preferences[key]
-              const save = (change: { favorite?: boolean; disabled?: boolean }) =>
-                void onPreference(key, change).catch((error: unknown) =>
-                  setError(error instanceof Error ? error.message : String(error)),
+          <div className="mt-3 grid gap-3">
+            {preferenceScopeControls}
+            <div className="max-h-60 overflow-y-auto">
+              {allModels.map((model) => {
+                const key = preferenceKey(model.id)
+                const preference = preferences[key]
+                const save = (change: { favorite?: boolean; disabled?: boolean }) =>
+                  void onPreference(key, change).catch((error: unknown) =>
+                    setError(error instanceof Error ? error.message : String(error)),
+                  )
+                return (
+                  <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
+                    <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={!!preference?.favorite}
+                      onClick={() => save({ favorite: !preference?.favorite })}
+                    >
+                      {preference?.favorite ? '★' : '☆'} Favorite
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={!preference?.disabled}
+                      onClick={() => save({ disabled: !preference?.disabled })}
+                    >
+                      {preference?.disabled ? 'Enable' : 'Disable'}
+                    </Button>
+                  </div>
                 )
-              return (
-                <div key={model.id} className="flex items-center gap-2 py-1 text-xs">
-                  <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-pressed={!!preference?.favorite}
-                    onClick={() => save({ favorite: !preference?.favorite })}
-                  >
-                    {preference?.favorite ? '★' : '☆'} Favorite
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-pressed={!preference?.disabled}
-                    onClick={() => save({ disabled: !preference?.disabled })}
-                  >
-                    {preference?.disabled ? 'Enable' : 'Disable'}
-                  </Button>
-                </div>
-              )
-            })}
+              })}
+            </div>
           </div>
         </Disclosure>
       )}

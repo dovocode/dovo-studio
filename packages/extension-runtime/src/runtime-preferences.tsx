@@ -360,7 +360,7 @@ export function PullRequestPreferences() {
         </SettingRow>
         <SettingRow
           label="Preferred retrieval computer"
-          description="Automatic keeps PRs on this machine. An explicitly selected computer must have the same account and repository access. If it is offline, saved PRs remain visible and actions wait for reconnection."
+          description="Automatic keeps PRs on this computer. An explicitly selected computer must have the same account and repository access. If it is offline, saved PRs remain visible and actions wait for reconnection."
         >
           <Select
             value={value?.preferredRetrievalHost || 'auto'}

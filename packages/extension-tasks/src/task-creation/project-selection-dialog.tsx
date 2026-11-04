@@ -245,7 +245,7 @@ export function ProjectSelectionDialog({
               source.workspace.repositories.some((repository) => repository.kind !== 'scratch'),
             ) && (
               <p className="py-4 text-sm text-muted-foreground">
-                Add a project from the Projects menu to start a task.
+                Add a project from the Projects menu to start a thread.
               </p>
             )}
         </div>

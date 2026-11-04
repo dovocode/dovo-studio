@@ -257,12 +257,9 @@ export default function ArtifactsView() {
     </IconButton>
   )
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col" aria-label="All artifacts">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col" aria-label="All artifacts">
       {!selection && (
-        <PageHeader
-          title="Your artifacts"
-          description="A home for the things you create with your agents."
-        >
+        <PageHeader title="Your artifacts">
           <Button
             variant="ghost"
             size="sm"
@@ -290,24 +287,60 @@ export default function ArtifactsView() {
               selection ? 'studio-overview-pane bg-sidebar' : 'bg-background',
             )}
           >
-            <div
-              className={cn(
-                'flex flex-col',
-                selection ? 'p-3' : 'mx-auto min-h-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10',
-              )}
-            >
-              <div className={cn('flex flex-wrap items-center gap-3', selection ? 'mb-3' : 'mb-5')}>
+            <div className={cn('flex flex-col', selection ? 'p-3' : 'min-h-full pb-3')}>
+              <div
+                className={cn(
+                  'shrink-0',
+                  selection ? 'mb-3' : 'border-b border-border/70 px-3 py-2',
+                )}
+              >
                 <SearchField
-                  containerClassName="min-w-0 flex-1 basis-48"
+                  containerClassName="w-full min-w-0"
                   aria-label="Search artifacts"
                   placeholder="Search artifacts, threads or computers…"
                   value={search}
                   onValueChange={setSearch}
                   className="bg-card"
                 />
+              </div>
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-1.5',
+                  selection ? 'mb-3' : 'mb-3 shrink-0 border-b border-border/70 px-3 py-1',
+                )}
+                aria-label="Artifact filters"
+              >
+                <div
+                  className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+                  aria-label="Artifact formats"
+                >
+                  {formats.map((value) => (
+                    <Button
+                      key={value}
+                      aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={format === value}
+                      onClick={() => setFormat(value)}
+                      className={cn(
+                        'studio-filter-chip h-8 shrink-0',
+                        format === value ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      {value === 'all' ? 'All' : artifactFormatLabels[value]}
+                      <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
+                        {
+                          matching.filter(
+                            ({ artifact }) => value === 'all' || artifact.format === value,
+                          ).length
+                        }
+                      </span>
+                    </Button>
+                  ))}
+                </div>
                 <ChoicePicker
                   aria-label="Artifact thread state"
-                  className="w-auto max-w-full bg-card"
+                  className="h-8 w-auto max-w-full text-xs"
                   value={state}
                   onValueChange={(value) =>
                     setState(threadStates.find((item) => item.value === value)?.value ?? 'all')
@@ -320,39 +353,14 @@ export default function ArtifactsView() {
                   ))}
                 </ChoicePicker>
               </div>
-              <div
-                className={cn('flex flex-wrap items-center gap-1.5', selection ? 'mb-3' : 'mb-6')}
-                aria-label="Artifact formats"
-              >
-                {formats.map((value) => (
-                  <Button
-                    key={value}
-                    aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={format === value}
-                    onClick={() => setFormat(value)}
-                    className={cn(
-                      'studio-filter-chip',
-                      format === value ? 'text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {value === 'all' ? 'All' : artifactFormatLabels[value]}
-                    <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
-                      {
-                        matching.filter(
-                          ({ artifact }) => value === 'all' || artifact.format === value,
-                        ).length
-                      }
-                    </span>
-                  </Button>
-                ))}
-              </div>
               {failed.map(({ source, current }) => (
                 <p
                   key={source.owner}
                   role="alert"
-                  className="mb-3 break-words rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs text-destructive"
+                  className={cn(
+                    'mb-3 break-words rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs text-destructive',
+                    !selection && 'mx-3',
+                  )}
                 >
                   {source.computerName}: {current.error}
                   {current.saved && ` Showing artifacts saved ${savedTime(current.saved.savedAt)}.`}
@@ -362,7 +370,10 @@ export default function ArtifactsView() {
                 <p
                   key={source.owner}
                   role="status"
-                  className="mb-3 flex items-start gap-2 rounded-lg bg-muted/50 px-4 py-3 text-xs text-muted-foreground"
+                  className={cn(
+                    'mb-3 flex items-start gap-2 rounded-lg bg-muted/50 px-4 py-3 text-xs text-muted-foreground',
+                    !selection && 'mx-3',
+                  )}
                 >
                   <WifiOff aria-hidden="true" className="mt-px size-3.5 shrink-0" />
                   <span>
@@ -431,7 +442,12 @@ export default function ArtifactsView() {
                 />
               )}
               {!!visible.length && (
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <div
+                  className={cn(
+                    'mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground',
+                    !selection && 'mx-3',
+                  )}
+                >
                   <p role="status" aria-live="polite">
                     {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'}
                     {filtered && ` of ${entries.length}`}
@@ -533,7 +549,7 @@ export default function ArtifactsView() {
               ) : (
                 <div
                   className={cn(
-                    'grid',
+                    'grid px-3',
                     layout === 'preview'
                       ? 'grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-4'
                       : 'grid-cols-1 gap-2',

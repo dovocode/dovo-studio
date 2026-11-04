@@ -200,7 +200,7 @@ export function IssueDetail({
       {!comments.length &&
         (!discussionState || (discussionState.ready && !discussionState.error)) && (
           <p className="text-sm text-muted-foreground">
-            No comments yet. Add context or start a linked task.
+            No comments yet. Add context or start a linked thread.
           </p>
         )}
       <div className="space-y-3">

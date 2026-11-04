@@ -474,55 +474,27 @@ function WorkView({
                 </span>
               </Button>
             </PageHeader>
-            <div className="studio-page-toolbar shrink-0 space-y-3 border-b">
-              {mode === 'issues' && !!rows.length && (
-                <div
-                  className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
-                  aria-label="Visible issue summary"
-                >
-                  <span>
-                    <strong className="font-medium text-foreground">
-                      {
-                        rows.filter(({ item }) => 'assignees' in item && !item.assignees.length)
-                          .length
-                      }
-                    </strong>{' '}
-                    unassigned
-                  </span>
-                  <span>
-                    <strong className="font-medium text-foreground">
-                      {
-                        rows.filter(
-                          ({ source, item }) => source.jira && !source.projectLinks?.[item.id],
-                        ).length
-                      }
-                    </strong>{' '}
-                    without a linked project
-                  </span>
-                  <span className="sr-only">In loaded, filtered results</span>
-                </div>
-              )}
-
-              <div className="flex flex-col items-stretch gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {rows.length === matchingRows.length
-                    ? `${rows.length} loaded`
-                    : `${rows.length} of ${matchingRows.length} loaded`}{' '}
-                  · {visibleSources.length} {visibleSources.length === 1 ? 'source' : 'sources'}
-                </span>
-                <SearchField
-                  containerClassName="order-first w-full min-w-0"
-                  aria-label={`Search ${mode}`}
-                  placeholder={
-                    mode === 'issues'
-                      ? 'Search issue titles, keys, text…'
-                      : 'Search runs, branches, projects…'
-                  }
-                  value={search}
-                  maxLength={300}
-                  onValueChange={setSearch}
-                />
-              </div>
+            <div className="shrink-0 border-b border-border/70 px-3 py-2">
+              <SearchField
+                containerClassName="w-full min-w-0"
+                aria-label={`Search ${mode}`}
+                placeholder={
+                  mode === 'issues'
+                    ? 'Search issue titles, keys, text…'
+                    : 'Search runs, branches, projects…'
+                }
+                value={search}
+                maxLength={300}
+                onValueChange={setSearch}
+              />
+            </div>
+            <div className="shrink-0 border-b border-border/70 px-3 py-1">
+              <span className="sr-only">
+                {rows.length === matchingRows.length
+                  ? `${rows.length} loaded`
+                  : `${rows.length} of ${matchingRows.length} loaded`}{' '}
+                · {visibleSources.length} {visibleSources.length === 1 ? 'source' : 'sources'}
+              </span>
               {isJira ? (
                 <JiraToolbar
                   state={state}
@@ -566,7 +538,14 @@ function WorkView({
                   }}
                 />
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div
+                  className="flex flex-wrap items-center gap-2"
+                  title={
+                    mode === 'issues'
+                      ? 'Search your issue trackers · states filter loaded results'
+                      : undefined
+                  }
+                >
                   <ChoicePicker
                     aria-label={mode === 'issues' ? 'Issue source' : 'Pipeline source'}
                     className="h-8 w-auto max-w-72 text-xs"
@@ -608,7 +587,9 @@ function WorkView({
                         <>
                           <option value="all">All states</option>
                           {states.map((state) => (
-                            <option key={state}>{state}</option>
+                            <option key={state} value={state}>
+                              {state.charAt(0).toUpperCase() + state.slice(1)}
+                            </option>
                           ))}
                         </>
                       )}
@@ -638,13 +619,6 @@ function WorkView({
                     <option value="project">Source</option>
                     <option value="title">Title</option>
                   </ChoicePicker>
-                  {mode === 'issues' && (
-                    <span className="self-center text-[0.6875rem] text-muted-foreground">
-                      {isJira
-                        ? 'Search and status query Jira · project links filter loaded results'
-                        : 'Search your issue trackers · states filter loaded results'}
-                    </span>
-                  )}
                   {hasFilters && (
                     <Button
                       className="h-8 text-xs"
@@ -667,7 +641,11 @@ function WorkView({
                 </div>
               )}
               {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
-                <div role="group" aria-label="Filter loaded runs by status" className="space-y-2">
+                <div
+                  role="group"
+                  aria-label="Filter loaded runs by status"
+                  className="mt-2 space-y-2"
+                >
                   <p className="sr-only">Counts in loaded, searched results</p>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -884,7 +862,7 @@ function WorkView({
                       ) : (
                         <span className="inline-flex items-center gap-1.5 rounded bg-muted/40 px-1.5 py-0.5">
                           <CircleDot className="size-3.5" />
-                          {item.state}
+                          {item.state.charAt(0).toUpperCase() + item.state.slice(1)}
                         </span>
                       )}
                       <span>

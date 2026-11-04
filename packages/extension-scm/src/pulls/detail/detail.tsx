@@ -506,7 +506,10 @@ function PullDetailContent({
                             ...pullDetailChecks(detail),
                             label: `Check reports: ${pullDetailChecks(detail).label}`,
                           }
-                        : { label: 'Loading checks…', tone: 'neutral' }
+                        : {
+                            label: sections.checks.busy ? 'Loading checks…' : 'Checks · View',
+                            tone: 'neutral',
+                          }
                     }
                   />
                 </button>
@@ -781,7 +784,7 @@ function PullDetailContent({
                   onAskAgent={repository ? (selection) => setAsking({ selection }) : undefined}
                   onSteer={(value, baseline) => {
                     if (!repository)
-                      throw new Error('Connect this project before starting an agent task.')
+                      throw new Error('Connect this project before starting an agent thread.')
                     setObjective(value)
                     setObjectiveBaseline(baseline)
                     setStarting(true)

@@ -16,7 +16,7 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending&&options.tab==='checks',enabled:key!=='checks'||options.tab==='checks',detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRunsContent=()=>null;export const usePullPipelineRuns=()=>({runs:window.pipelineRuns??[]});`,
   '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
@@ -524,22 +524,42 @@ try {
     window.pipelineRuns = []
     window.detail.checks = window.pipelineTestChecks
   })
-  // A ready overview/status response without check data must not imply a passed/empty check result.
+  // Unopened checks remain actionable without claiming a request is running or checks passed.
   await page.evaluate(() => {
     window.checksPending = true
     window.savedChecksState = window.detail.pull.checksState
     delete window.detail.pull.checksState
+    window.pipelineRuns = [{ status: 'failure' }]
     window.showDestination('overview', 'checks-pending')
   })
-  await page
-    .getByRole('button', { name: 'View pull request checks', exact: true })
-    .getByText('Loading checks…', { exact: true })
-    .waitFor()
+  const checkSummary = page.getByRole('button', {
+    name: 'View pull request checks',
+    exact: true,
+  })
+  await checkSummary.getByText('Checks · View', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Loading checks…', { exact: true }).count(), 0)
+  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await checkSummary.click()
+  await page.waitForFunction(
+    () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
+  )
+  await checkSummary.getByText('Loading checks…', { exact: true }).waitFor()
+  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.checksPending = false
     window.detail.pull.checksState = window.savedChecksState
+    window.detail.checks = [{ name: 'Tests', status: 'SUCCESS', summary: 'Checks loaded' }]
+    window.showDestination('checks', 'checks-loaded')
   })
-  await page.evaluate(() => window.showDestination('checks', ''))
+  await checkSummary.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await page.getByText('Checks loaded', { exact: true }).waitFor()
+  assert.equal(await checkSummary.getByText('Loading checks…', { exact: true }).count(), 0)
+  await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.pipelineRuns = []
+    window.detail.checks = window.pipelineTestChecks
+    window.showDestination('checks', '')
+  })
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
   )

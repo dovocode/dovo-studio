@@ -19,7 +19,7 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
       {data.kind !== 'trigger' && <Handle type="target" position={Position.Left} />}
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <Icon size={14} />
-        {data.kind}
+        {data.kind === 'task' ? 'thread' : data.kind}
       </div>
       <div className="break-all text-sm font-medium">{data.label}</div>
       <p className="mt-2 truncate text-xs text-muted-foreground">
@@ -33,7 +33,7 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
                   'GitHub event')
                 : data.trigger
           : data.kind === 'task'
-            ? data.objective || 'Configure task instructions'
+            ? data.objective || 'Configure thread instructions'
             : 'Pause for your review'}
       </p>
       {data.runStep && (

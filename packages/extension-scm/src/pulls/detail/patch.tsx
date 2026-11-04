@@ -269,7 +269,7 @@ export function PullPatch({
                     selection.start !== selection.end
                   )
                     throw new Error(
-                      'This provider accepts one line per comment. Select a single line or send the range to an agent task.',
+                      'This provider accepts one line per comment. Select a single line or send the range to an agent thread.',
                     )
                   await onComment(
                     body,

@@ -20,6 +20,7 @@ function ComputerDefaultsLink() {
   )
 }
 export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
+  const host = useStudioHost()
   const applied = useRef<string | undefined>(undefined)
   const { setTarget } = useSettingsTarget()
   useEffect(() => {
@@ -43,7 +44,11 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
             </p>
           </Disclosure>
           <ComputerDefaultsLink />
-          <TaskBehaviorSettings scope={scope} repository={repository} />
+          <TaskBehaviorSettings
+            scope={scope}
+            repository={repository}
+            onOpenRuntime={() => host.navigate({ viewId: 'runtime' })}
+          />
         </>
       )}
     </SettingsScopePage>

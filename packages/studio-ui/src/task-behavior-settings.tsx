@@ -64,9 +64,11 @@ const fields = [
 export function TaskBehaviorSettings({
   scope,
   repository,
+  onOpenRuntime,
 }: {
   scope: SettingsScope
   repository?: Repository
+  onOpenRuntime?: () => void
 }) {
   const { request, connected, snapshot } = useWorkspace()
   const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
@@ -175,13 +177,17 @@ export function TaskBehaviorSettings({
   return (
     <div className="space-y-3">
       {!supported && (
-        <p
+        <div
           role="status"
-          className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
         >
-          Lifecycle settings require a newer runtime. Update this computer in Devices & runtime to
-          edit them.
-        </p>
+          <p>Lifecycle settings require a newer runtime. Update this computer to edit them.</p>
+          {onOpenRuntime && (
+            <Button variant="outline" size="sm" onClick={onOpenRuntime}>
+              Open Devices & runtime
+            </Button>
+          )}
+        </div>
       )}
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
