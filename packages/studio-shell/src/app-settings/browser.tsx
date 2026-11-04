@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import {
   runtimeComputerName,
   browserLanguageSchema,
@@ -307,6 +308,7 @@ function Profiles({
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const confirm = useConfirmation(JSON.stringify([profiles, disabled, busy]))
   const update = async (next: BrowserProfile[], added = false) => {
     if (busy || disabled) return
     setBusy(true)
@@ -341,11 +343,15 @@ function Profiles({
           onSave={(updated) =>
             void update(profiles.map((item) => (item.id === profile.id ? updated : item)))
           }
-          onRemove={() => {
+          onRemove={async () => {
             if (
-              window.confirm(
-                'Remove this profile from the picker? Its saved website data will remain on this computer.',
-              )
+              await confirm({
+                title: 'Remove browser profile?',
+                description:
+                  'This profile will leave the picker. Its saved website data will remain on this computer.',
+                confirmLabel: 'Remove profile',
+                destructive: true,
+              })
             )
               void update(profiles.filter((item) => item.id !== profile.id))
           }}
@@ -445,7 +451,10 @@ export default function BrowserSettings() {
   return (
     <SettingsPage
       title="Browser"
-      description="Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer."
+      description="Preview defaults save automatically on this device. Save profile edits with each profile’s Save button. Remote profiles and logins stay on the selected computer."
+      headerActions={
+        <span className="text-xs text-muted-foreground">Device preferences save automatically</span>
+      }
     >
       <DefaultBrowser />
       <SettingsGroup title="Tab order">
@@ -523,7 +532,7 @@ export default function BrowserSettings() {
       {browser && (
         <SettingsGroup
           title="Local browser profiles"
-          description="Used by regular tabs on this desktop. Domain rules also handle links sent from other apps when Dovo is chosen as their browser. Rules preserve private tabs and sign-in popup sessions."
+          description="Edit a profile, then choose Save to apply its changes. Used by regular tabs on this desktop. Domain rules also handle links sent from other apps when Dovo is chosen as their browser. Rules preserve private tabs and sign-in popup sessions."
         >
           <div className="space-y-3 p-4">
             <Profiles

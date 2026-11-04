@@ -11,7 +11,7 @@ const mocks = {
   // Snapshot previews have their own browser suite; this fixture exercises thread navigation.
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export const useApplicationState=useState;`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export * from '@dovo/protocol';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const updateTask=async()=>{};
@@ -610,8 +610,8 @@ try {
     await page.evaluate(() => window.setProjectActions([]))
     await page.getByRole('button', { name: 'Git actions', exact: true }).click()
     if (stylesheet) {
-      const menu = page.getByRole('menu').filter({ hasText: 'Advanced Git actions…' })
-      const advanced = menu.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true })
+      const menu = page.getByRole('menu').filter({ hasText: 'Stage, commit & push…' })
+      const advanced = menu.getByRole('menuitem', { name: 'Stage, commit & push…', exact: true })
       assert.equal(
         await menu.evaluate((element) => element.classList.contains('studio-menu-surface')),
         true,
@@ -644,7 +644,7 @@ try {
         document.documentElement.style.removeProperty('--studio-glow-strength')
       })
     }
-    await page.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Stage, commit & push…', exact: true }).click()
     await page.getByRole('dialog', { name: 'Git & project actions', exact: true }).waitFor()
     await page.keyboard.press('Escape')
     await page

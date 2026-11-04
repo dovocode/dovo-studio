@@ -389,12 +389,14 @@ function WorkView({
             ? 'Refresh the source connection to make pipeline actions available.'
             : 'These sources support viewing pipeline runs only.'
       : null
-  const closePreview = () =>
+  const closePreview = async () => {
+    if (entityId && (await host.goBack?.())) return
     transition(() => {
       if (selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
       setSelected(null)
-      if (entityId && !host.goBack?.()) host.navigate({ viewId: isJira ? 'jira' : mode })
+      if (entityId) host.navigate({ viewId: isJira ? 'jira' : mode })
     }, 'close')
+  }
   const detail = selected ? (
     selectedSource ? (
       <WorkspaceRuntimeScope runtimeId={selectedSource.runtimeId}>
@@ -436,7 +438,7 @@ function WorkView({
         )
           return
         event.preventDefault()
-        closePreview()
+        void closePreview()
       }}
     >
       <nav

@@ -13,6 +13,8 @@ import { conversationPageSchema, taskTranscript, type ConversationPage } from '@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
+  useConfirmation,
+  clientScopeKey,
   generatedTitleSchema,
   hasUnviewedTaskCompletion,
   isSnoozed,
@@ -114,6 +116,30 @@ export function TaskContextMenu({
   const host = useStudioHost()
   const store = useTaskActionStore()
   const client = taskActionClient(store, source)
+  const actionScope = JSON.stringify([
+    store.activeRuntimeId,
+    clientScopeKey(store.connection),
+    source.runtimeId,
+    source.address,
+    clientScopeKey(client.profile?.connection ?? null),
+    task.id,
+  ])
+  const confirm = useConfirmation(
+    JSON.stringify([actionScope, task.pinned, task.archivedAt, task.status]),
+  )
+  const currentScope = useRef(actionScope)
+  currentScope.current = actionScope
+  const available = useRef(source.online)
+  available.current = source.online
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const isCurrent = () =>
+    mounted.current && available.current && currentScope.current === actionScope
   const { repository, branch } = taskRowValues(task, source.repositories)
   const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
@@ -146,12 +172,13 @@ export function TaskContextMenu({
     try {
       return await action()
     } catch (failure) {
+      if (!isCurrent()) return
       const message = failure instanceof Error ? failure.message : String(failure)
       setError(message)
       onError(message)
     } finally {
       pendingRef.current = false
-      setPending(false)
+      if (mounted.current) setPending(false)
     }
   }
   const copyConversation = async () => {
@@ -247,13 +274,20 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit}
               onSelect={() => {
-                if (
-                  task.pinned &&
-                  readAppPreferences().confirmUnpin &&
-                  !window.confirm(`Unpin “${task.title}”?`)
-                )
-                  return
-                void run(() => patch({ pinned: !task.pinned }))
+                void run(async () => {
+                  if (
+                    task.pinned &&
+                    readAppPreferences().confirmUnpin &&
+                    !(await confirm({
+                      title: `Unpin “${task.title}”?`,
+                      description: 'This thread will return to its usual position in the list.',
+                      confirmLabel: 'Unpin thread',
+                    }))
+                  )
+                    return
+                  if (!isCurrent()) return
+                  await patch({ pinned: !task.pinned })
+                })
               }}
             >
               {task.pinned ? <PinOff /> : <Pin />}
@@ -688,16 +722,18 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit || task.status === 'running'}
               onSelect={() => {
-                // Settings → General → Confirm before archiving.
-                if (
-                  !task.archivedAt &&
-                  readAppPreferences().confirmArchive &&
-                  !window.confirm(
-                    `Archive “${task.title}”? You can restore it from Settings → Archived threads.`,
-                  )
-                )
-                  return
                 void run(async () => {
+                  if (
+                    !task.archivedAt &&
+                    readAppPreferences().confirmArchive &&
+                    !(await confirm({
+                      title: `Archive “${task.title}”?`,
+                      description: 'You can restore it from Settings → Archived threads.',
+                      confirmLabel: 'Archive thread',
+                    }))
+                  )
+                    return
+                  if (!isCurrent()) return
                   await client.request(
                     '/api/tasks/lifecycle',
                     {
@@ -706,6 +742,7 @@ export function TaskContextMenu({
                     },
                     responses.ok,
                   )
+                  if (!isCurrent()) return
                   if (selected && !task.archivedAt) onDeselect()
                   await client.refresh()
                 })

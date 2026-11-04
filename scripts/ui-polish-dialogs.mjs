@@ -60,14 +60,10 @@ export async function captureFollowUpDialogs(page, origin, output) {
         await projectAction('Edit project actions…')()
         const dialog = page.getByRole('dialog', { name: 'Project actions', exact: true })
         await dialog.getByRole('textbox', { name: 'Command', exact: true }).fill('pnpm test')
-        let message = ''
-        page.once('dialog', async (native) => {
-          message = native.message()
-          await native.dismiss()
-        })
         await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-        await dialog.waitFor()
-        assert.match(message, /discard/i)
+        await page
+          .getByRole('dialog', { name: 'Discard project action changes?', exact: true })
+          .waitFor()
       },
     ],
     ['saved-prompts', 'tasks', projectAction('Edit saved prompts…')],
@@ -119,7 +115,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
       async () => {
         await info()
         await button('Git actions').click()
-        await menu('Advanced Git actions…').click()
+        await menu('Stage, commit & push…').click()
       },
     ],
     [
@@ -128,11 +124,11 @@ export async function captureFollowUpDialogs(page, origin, output) {
       async () => {
         await info()
         await button('Git actions').click()
-        await menu('Advanced Git actions…').click()
+        await menu('Stage, commit & push…').click()
         await page.getByRole('checkbox', { name: 'Select src/navigation.tsx', exact: true }).check()
         assert.equal(
           await page
-            .getByRole('checkbox', { name: 'Select all changed files', exact: true })
+            .getByRole('checkbox', { name: 'Select all unstaged files', exact: true })
             .getAttribute('aria-checked'),
           'mixed',
         )
@@ -145,12 +141,34 @@ export async function captureFollowUpDialogs(page, origin, output) {
       async () => {
         await info()
         await button('Git actions').click()
-        await menu('Advanced Git actions…').click()
+        await menu('Stage, commit & push…').click()
         await page
           .getByRole('textbox', { name: 'Commit message', exact: true })
           .fill('Clarify workspace navigation')
         assert.equal(await button('Commit & push').isEnabled(), true)
         assert.equal(await button('Commit staged').isEnabled(), true)
+      },
+    ],
+    [
+      'thread-archive-confirm',
+      'tasks',
+      async () => {
+        await page.evaluate(() => window.uiSetPreferences({ confirmArchive: true }))
+        await threadAction('Archive thread')()
+        await page.getByRole('dialog', { name: /^Archive “/ }).waitFor()
+      },
+    ],
+    [
+      'stop-confirm',
+      'tasks',
+      async () => {
+        const current = new URL(page.url())
+        current.searchParams.delete('idle')
+        await page.goto(current.toString())
+        await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
+        await page.evaluate(() => window.uiSetPreferences({ confirmStop: true }))
+        await button('Stop').click()
+        await page.getByRole('dialog', { name: /^Stop “/ }).waitFor()
       },
     ],
     ['thread-rename', 'tasks', threadAction('Rename…')],

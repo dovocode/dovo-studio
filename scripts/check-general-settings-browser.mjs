@@ -5,6 +5,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const core = `import {createContext,useContext} from 'react';
+export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';
 export {useAppPreferences,updateAppPreferences,readAppPreferences,useStudioTheme,useResolvedTheme,useDiffOptions} from '${root}/packages/studio-core/src/preferences.ts';
 export {importCodeTheme,maxCodeThemeBytes} from '${root}/packages/studio-core/src/code-themes.ts';
 export {browserModelCatalogCache} from '${root}/packages/studio-core/src/workspace/model-catalog-cache.ts';
@@ -58,7 +59,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';
+    contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {builtInAgentPresets,defaultTaskHarness} from '@dovo/protocol';
 import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions} from '@dovo/studio-core';
 import {SettingsNav} from '${root}/packages/studio-shell/src/settings-nav.tsx';
@@ -107,8 +108,8 @@ window.updateState={status:'idle',channel:'stable'};window.updateCalls=[];window
 window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateListeners.add(fn);return()=>window.updateListeners.delete(fn)},check:async()=>window.updateCalls.push('check'),install:async()=>window.updateCalls.push('install'),setChannel:async channel=>{window.updateCalls.push(channel);window.publishUpdate({...window.updateState,channel})}};
 const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
 const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
-function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
-createRoot(document.getElementById('app')).render(<SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider>);`,
+function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=async id=>{if(id===view)return true;if(!(await confirm()))return false;setView(id);return true};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
+createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider></StudioConfirmationProvider>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -391,9 +392,12 @@ try {
     'Save and Discard stay inside the visible settings area',
   )
   // Rejecting search navigation preserves the draft and never highlights another page.
-  page.once('dialog', (dialog) => dialog.dismiss())
   await search.fill('time format')
   await search.press('Enter')
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
   await page.getByRole('heading', { name: 'Thread defaults', level: 1, exact: true }).waitFor()
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
@@ -568,8 +572,11 @@ try {
   )
   await settingsSidebar.getByRole('button', { name: 'Thread defaults', exact: true }).click()
   await choose('Working directory', 'New worktree')
-  page.once('dialog', (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
   assert.equal(
     await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).count(),
     1,
@@ -578,8 +585,11 @@ try {
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
     'New worktree',
   )
-  page.once('dialog', (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
   await page.getByRole('heading', { name: 'Thread defaults', exact: true, level: 1 }).waitFor()
   assert.equal(
     await settingsSidebar
@@ -588,8 +598,11 @@ try {
     'page',
   )
   await page.getByText('on MacBook Pro', { exact: true }).waitFor()
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
+    .getByRole('button', { name: 'Discard changes', exact: true })
+    .click()
   const minimalComposer = page.getByRole('switch', { name: 'Minimal composer', exact: true })
   assert.equal(await minimalComposer.getAttribute('aria-checked'), 'true')
   await minimalComposer.click()
@@ -740,7 +753,7 @@ try {
   await openLocal('Browser')
   await page
     .getByText(
-      'Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer.',
+      'Preview defaults save automatically on this device. Save profile edits with each profile’s Save button. Remote profiles and logins stay on the selected computer.',
       { exact: true },
     )
     .waitFor()

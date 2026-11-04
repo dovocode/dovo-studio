@@ -10,7 +10,7 @@ import {
   FileText,
   ShieldCheck,
 } from 'lucide-react'
-import { confirmDiscardChanges } from '../dialogs/unsaved-changes'
+import { useConfirmDiscardChanges } from '../dialogs/unsaved-changes'
 import { TaskTemplatesDialog } from '../dialogs/task-templates-dialog'
 import { SavedPromptsDialog } from '../dialogs/saved-prompts-dialog'
 import { ProjectInstructionsDialog } from '../dialogs/project-instructions-dialog'
@@ -307,8 +307,13 @@ function ProjectActionsDialog({
     actions.length ? actions : [{ id: randomUUID(), name: 'Run tests', command: '' }],
   )
   const [initialRows] = useState(rows)
-  const close = () => {
-    if (confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
+  const confirmDiscardChanges = useConfirmDiscardChanges(
+    repositoryId,
+    'project action',
+    JSON.stringify(rows),
+  )
+  const close = async () => {
+    if (await confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
   }
   const [error, setError] = useState('')
   const [attempted, setAttempted] = useState(false)

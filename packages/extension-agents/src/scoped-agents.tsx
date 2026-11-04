@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import { Disclosure } from '@dovo/studio-ui'
 import { useEffect } from 'react'
 import { Copy, Star, Plus, Search } from 'lucide-react'
@@ -41,6 +42,9 @@ export function ScopedAgents({
   const [notice, setNotice] = useApplicationState('')
   const [query, setQuery] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
+  const confirm = useConfirmation(
+    JSON.stringify([scope, repository?.id, settings, selectedId, dirty, editing, busy]),
+  )
   useEffect(() => {
     if (!connected || !snapshot?.scopedAgentsSupported) return
     let current = true
@@ -140,9 +144,18 @@ export function ScopedAgents({
           aria-label="Agent profile"
           value={selected?.id ?? ''}
           disabled={busy || !agents.length}
-          onValueChange={(id) => {
+          onValueChange={async (id) => {
             if (id === selected?.id) return
-            if (dirty && !window.confirm('Discard unsaved configuration changes?')) return
+            if (
+              dirty &&
+              !(await confirm({
+                title: 'Discard profile changes?',
+                description: 'Your unsaved agent configuration changes will be lost.',
+                confirmLabel: 'Discard changes',
+                destructive: true,
+              }))
+            )
+              return
             setNotice('')
             setSelectedId(id)
           }}
@@ -186,9 +199,18 @@ export function ScopedAgents({
                   type="button"
                   aria-pressed={selected?.id === agent.id}
                   disabled={busy}
-                  onClick={() => {
+                  onClick={async () => {
                     if (agent.id === selected?.id) return
-                    if (dirty && !window.confirm('Discard unsaved configuration changes?')) return
+                    if (
+                      dirty &&
+                      !(await confirm({
+                        title: 'Discard profile changes?',
+                        description: 'Your unsaved agent configuration changes will be lost.',
+                        confirmLabel: 'Discard changes',
+                        destructive: true,
+                      }))
+                    )
+                      return
                     setNotice('')
                     setSelectedId(agent.id)
                   }}
@@ -303,12 +325,15 @@ export function ScopedAgents({
                           : 'Delete this profile'
                       }
                       disabled={!connected || busy}
-                      onClick={() => {
+                      onClick={async () => {
                         if (
                           !inheritedSelected &&
-                          !window.confirm(
-                            `Delete “${selected.name}”? Existing threads keep their configuration.`,
-                          )
+                          !(await confirm({
+                            title: `Delete “${selected.name}”?`,
+                            description: 'Existing threads keep their configuration.',
+                            confirmLabel: 'Delete profile',
+                            destructive: true,
+                          }))
                         )
                           return
                         void save(own.filter((entry) => entry.id !== selected.id))
@@ -417,8 +442,16 @@ export function ScopedAgents({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              if (!dirty || window.confirm('Discard unsaved configuration changes?'))
+            onClick={async () => {
+              if (
+                !dirty ||
+                (await confirm({
+                  title: 'Discard profile changes?',
+                  description: 'Your unsaved agent configuration changes will be lost.',
+                  confirmLabel: 'Discard changes',
+                  destructive: true,
+                }))
+              )
                 setRetry(retry + 1)
             }}
           >

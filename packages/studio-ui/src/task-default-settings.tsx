@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import { Disclosure } from './disclosure'
 import {
   settingsChangeCount,
@@ -66,6 +67,9 @@ export function TaskDefaultSettings(props: {
   const [open, setOpen] = useApplicationState(false)
   const [editing, setEditing] = useApplicationState(false)
   const [saving, setSaving] = useApplicationState(false)
+  const confirm = useConfirmation(
+    JSON.stringify([open, editing, saving, props.scope, props.repository?.id]),
+  )
   if (props.inline) return <TaskDefaultSettingsForm {...props} />
   return (
     <div className="space-y-3">
@@ -73,8 +77,17 @@ export function TaskDefaultSettings(props: {
         variant="outline"
         aria-expanded={open}
         disabled={saving}
-        onClick={() => {
-          if (!open || !editing || window.confirm('Discard unsaved settings changes?'))
+        onClick={async () => {
+          if (
+            !open ||
+            !editing ||
+            (await confirm({
+              title: 'Discard unsaved settings changes?',
+              description: 'Your edits will be lost.',
+              confirmLabel: 'Discard changes',
+              destructive: true,
+            }))
+          )
             setOpen(!open)
         }}
       >
@@ -114,6 +127,7 @@ function TaskDefaultSettingsForm({
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
   const [showSetupCommand, setShowSetupCommand] = useApplicationState(false)
+  const confirm = useConfirmation(JSON.stringify([scope, repository?.id, draft, prompts, busy]))
   const protectDraft = useRef(false)
   useEffect(() => {
     let active = true
@@ -258,8 +272,16 @@ function TaskDefaultSettingsForm({
           <Select
             value={scope}
             disabled={busy}
-            onValueChange={(value) => {
-              if (!dirty || window.confirm('Discard unsaved settings changes?'))
+            onValueChange={async (value) => {
+              if (
+                !dirty ||
+                (await confirm({
+                  title: 'Discard unsaved settings changes?',
+                  description: 'Your edits will be lost.',
+                  confirmLabel: 'Discard changes',
+                  destructive: true,
+                }))
+              )
                 setScope(settingsScopes.find((entry) => entry === value) ?? 'environment')
             }}
           >
@@ -847,10 +869,16 @@ function TaskDefaultSettingsForm({
           <Button
             variant="ghost"
             disabled={!connected || busy}
-            onClick={() => {
+            onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+                !(await confirm({
+                  title: 'Reload saved settings?',
+                  description:
+                    'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+                  confirmLabel: 'Discard and reload',
+                  destructive: true,
+                }))
               )
                 return
               protectDraft.current = false

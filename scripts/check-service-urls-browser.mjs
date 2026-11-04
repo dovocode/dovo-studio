@@ -53,7 +53,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        'export const useAppPreferences=()=>window.services;export const updateAppPreferences=patch=>window.save(patch);',
+        'export const useSettingsDraft=dirty=>{window.serviceDraftDirty=dirty};export const useAppPreferences=()=>window.services;export const updateAppPreferences=patch=>window.save(patch);',
     },
     {
       path: '@dovo/studio-ui',
@@ -106,6 +106,10 @@ try {
     const save = page.getByRole('button', { name: 'Save service URLs', exact: true })
     assert.equal(await save.isDisabled(), true)
     await connect.fill('https://user:secret@connect.example.com/path')
+    if (kind === 'desktop') {
+      assert.equal(await page.evaluate(() => window.serviceDraftDirty), true)
+      await page.getByRole('status').filter({ hasText: 'Unsaved changes' }).waitFor()
+    }
     await save.click()
     await page.getByRole('alert').waitFor()
     assert.equal(await page.evaluate(() => window.saves.length), 0)
@@ -118,6 +122,7 @@ try {
       artifactsOrigin: 'https://artifacts.example.com',
     })
     await page.evaluate(() => window.render())
+    if (kind === 'desktop') assert.equal(await page.evaluate(() => window.serviceDraftDirty), false)
     assert.equal(await connect.inputValue(), 'https://connect.example.com')
     await page.getByRole('button', { name: 'Use defaults', exact: true }).click()
     await save.click()

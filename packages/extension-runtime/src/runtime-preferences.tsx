@@ -11,7 +11,7 @@ import {
   decode,
   DIAGNOSTIC_RETENTION_DAYS,
 } from '@dovo/protocol'
-import { clientTaskScope, useWorkspace, useSettingsDraft } from '@dovo/studio-core'
+import { clientTaskScope, useWorkspace, useSettingsDraft, useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   Input,
@@ -23,6 +23,7 @@ import {
   SettingRow,
   SettingsGroup,
   Toggle,
+  Button,
 } from '@dovo/studio-ui'
 
 type Preferences = typeof runtimePreferencesSchema.Type
@@ -770,6 +771,23 @@ export function StudioToolsPreferences() {
 
 export function RemoteDesktopPreferences() {
   const { snapshot } = useWorkspace()
+  const host = useStudioHost()
+  if (snapshot?.remoteDesktopEnabled === undefined)
+    return (
+      <div
+        role="status"
+        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
+      >
+        <p>Remote desktop requires a newer runtime. Update this computer to use it.</p>
+        <Button variant="outline" size="sm" onClick={() => host.navigate({ viewId: 'runtime' })}>
+          Open Devices &amp; runtime
+        </Button>
+      </div>
+    )
+  return <SupportedRemoteDesktopPreferences />
+}
+
+function SupportedRemoteDesktopPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
@@ -781,16 +799,11 @@ export function RemoteDesktopPreferences() {
           <Toggle
             label="Enable remote desktop"
             checked={value?.enableRemoteDesktop ?? false}
-            disabled={disabled || snapshot?.remoteDesktopEnabled === undefined}
+            disabled={disabled}
             onChange={(enableRemoteDesktop) => save({ enableRemoteDesktop })}
           />
         </SettingRow>
       </SettingsGroup>
-      {snapshot?.remoteDesktopEnabled === undefined && (
-        <p className="text-xs text-muted-foreground">
-          Update this computer’s runtime to use remote desktop.
-        </p>
-      )}
       <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )

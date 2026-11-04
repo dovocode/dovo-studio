@@ -304,6 +304,10 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   expect(stagedFiles[0].gitStatus).toEqual({ index: 'modified', workingTree: 'unchanged' })
   expect(s.store.task(isolated.id).files).not.toBe(beforeRefresh)
   expect(s.store.task(isolated.id).files[0].viewed).toBe(true)
+  await call('/api/scm/unstage', { ...scope, paths: ['hello.txt'] })
+  expect(await s.git.command(cwd, ['diff', '--cached'])).toBe('')
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('review edit\n')
+  await call('/api/scm/stage', { ...scope, paths: ['hello.txt'] })
   await call('/api/scm/commit', {
     ...scope,
     message: 'Task worktree change',

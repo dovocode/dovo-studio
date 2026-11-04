@@ -4,7 +4,7 @@ import { useWorkDraftText, clearWorkDraft } from './work-drafts'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode, runtimeComputerName } from '@dovo/protocol'
 import { issueEditInput, issueLabel } from '@dovo/studio-core'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useId, useMemo, useRef } from 'react'
 import { Schema } from 'effect'
 import {
   useWorkspace,
@@ -56,6 +56,8 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
+  const refHelpId = useId()
+  const inputsHelpId = useId()
   const {
     request,
     connected: online,
@@ -428,10 +430,32 @@ export function WorkForm({
                   </Button>
                 )}
                 <FormField label="Branch or ref">
-                  <Input required value={ref} onChange={(e) => setRef(e.target.value)} />
+                  <Input
+                    aria-label="Branch or ref"
+                    aria-describedby={refHelpId}
+                    required
+                    value={ref}
+                    placeholder="main or refs/heads/release"
+                    onChange={(e) => setRef(e.target.value)}
+                  />
+                  <p id={refHelpId} className="text-xs text-muted-foreground">
+                    Starts with the selected run’s ref or the project branch when available. Choose
+                    the branch, tag or ref to run; this field is required.
+                  </p>
                 </FormField>
-                <FormField label="Inputs (JSON string values)">
-                  <Textarea value={inputs} onChange={(e) => setInputs(e.target.value)} />
+                <FormField label="Inputs (optional JSON)">
+                  <Textarea
+                    aria-label="Inputs (optional JSON)"
+                    aria-describedby={inputsHelpId}
+                    rows={3}
+                    value={inputs}
+                    onChange={(e) => setInputs(e.target.value)}
+                  />
+                  <p id={inputsHelpId} className="text-xs text-muted-foreground">
+                    Use input names defined by this pipeline and string values, for example{' '}
+                    <code>{'{"input_name": "value"}'}</code>. Keep <code>{'{}'}</code> to send no
+                    inputs. The pipeline validates required inputs.
+                  </p>
                 </FormField>
               </>
             ) : (

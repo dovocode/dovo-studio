@@ -28,6 +28,8 @@ import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useConfirmation,
+  clientScopeKey,
   generatedTitleSchema,
   readAppPreferences,
   resolveTaskAgent,
@@ -717,31 +719,42 @@ export function Composer({
     (stagingGapActive || (!!task.queue?.length && !!(task.queuePaused || task.queue[0]?.paused)))
   const backgroundPreview = hasBackgroundAction && altPressed
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
+  const stopLock = useRef(false)
+  const stopScope = JSON.stringify([
+    activeRuntimeId,
+    clientScopeKey(connection),
+    task.id,
+    task.activeRunId,
+    connected,
+  ])
+  const confirm = useConfirmation(stopScope)
+  const currentStopScope = useRef(stopScope)
+  currentStopScope.current = stopScope
   const stop = async () => {
+    if (stopLock.current || !connected) return
     const runId = task.activeRunId
-    // Settings → General → Confirm before stopping a running task.
-    if (
-      readAppPreferences().confirmStop &&
-      !window.confirm(
-        `Stop “${task.title}”? Queued messages stay paused until you continue or send a follow-up.`,
-      )
-    )
-      return
+    const taskId = task.id
+    const isCurrent = () => mounted.current && currentStopScope.current === stopScope
+    stopLock.current = true
     setStopping(true)
-    setError('')
     try {
-      await request(
-        '/api/tasks/cancel',
-        {
-          id: task.id,
-          runId,
-        },
-        responses.ok,
+      if (
+        readAppPreferences().confirmStop &&
+        !(await confirm({
+          title: `Stop “${task.title}”?`,
+          description: 'Queued messages stay paused until you continue or send a follow-up.',
+          confirmLabel: 'Stop thread',
+        }))
       )
+        return
+      if (!isCurrent()) return
+      setError('')
+      await request('/api/tasks/cancel', { id: taskId, runId }, responses.ok)
     } catch (e) {
-      setError(String(e))
+      if (isCurrent()) setError(String(e))
     } finally {
-      setStopping(false)
+      stopLock.current = false
+      if (mounted.current) setStopping(false)
     }
   }
   const beginEdit = (message: Task['messages'][number]) => {

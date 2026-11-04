@@ -93,12 +93,24 @@ try {
       mode === 'comment' || mode === 'edit-pr'
         ? page.getByRole('textbox', { name: 'Markdown draft' })
         : mode === 'pipeline'
-          ? page.getByLabel('Inputs (JSON string values)')
+          ? page.getByLabel('Inputs (optional JSON)')
           : mode === 'create-pr'
             ? page.getByRole('textbox', { name: 'New PR description' })
             : page.getByLabel('Description')
-    if (mode === 'pipeline') await draft.fill('{"preserve":"pipeline draft"}')
-    else await draft.fill('Keep this draft through destination rejection')
+    if (mode === 'pipeline') {
+      assert.equal(await draft.inputValue(), '{}')
+      assert.equal(await page.getByLabel('Branch or ref', { exact: true }).inputValue(), 'main')
+      await page
+        .getByText('Starts with the selected run’s ref or the project branch when available.', {
+          exact: false,
+        })
+        .waitFor()
+      await page.getByText('{"input_name": "value"}', { exact: true }).waitFor()
+      await page
+        .getByText('to send no inputs. The pipeline validates required inputs.', { exact: false })
+        .waitFor()
+      await draft.fill('{"preserve":"pipeline draft"}')
+    } else await draft.fill('Keep this draft through destination rejection')
     if (mode === 'create-pr') {
       await page.getByRole('textbox', { name: 'New PR title' }).fill('New guarded PR')
       await page.getByRole('textbox', { name: 'New PR base branch' }).fill('main')
@@ -140,6 +152,10 @@ try {
     )
     assert.equal(mutations.length, 1)
     assert.equal(mutations[0].input.expectedDestination, 'old-destination', mode)
+    if (mode === 'pipeline') {
+      assert.equal(mutations[0].input.ref, 'main')
+      assert.deepEqual(mutations[0].input.inputs, { preserve: 'pipeline draft' })
+    }
     assert.equal(
       await draft.inputValue(),
       mode === 'pipeline'

@@ -25,8 +25,13 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
   const { setTarget } = useSettingsTarget()
   useEffect(() => {
     if (entityId && applied.current !== entityId) {
-      applied.current = entityId
-      setTarget({ environmentId: entityId, projectId: '' })
+      let active = true
+      void setTarget({ environmentId: entityId, projectId: '' }).then((accepted) => {
+        if (active && accepted) applied.current = entityId
+      })
+      return () => {
+        active = false
+      }
     }
   }, [entityId, setTarget])
   return (

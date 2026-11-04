@@ -377,7 +377,7 @@ export function TaskProjectPanel({
                   className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                   onSelect={() => setGitOpen(true)}
                 >
-                  Advanced Git actions…
+                  Stage, commit & push…
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>

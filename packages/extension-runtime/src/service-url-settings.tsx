@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import { ACCOUNT_DIRECTORY_URL, normalizeServiceUrls } from '@dovo/protocol'
-import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
+import { useAppPreferences, updateAppPreferences, useSettingsDraft } from '@dovo/studio-core'
 import { Button, Input } from '@dovo/studio-ui'
 
 export function ServiceUrlSettings() {
@@ -12,9 +12,10 @@ export function ServiceUrlSettings() {
   const fields = draft ?? saved
   const dirty =
     fields.connectOrigin !== saved.connectOrigin || fields.artifactsOrigin !== saved.artifactsOrigin
+  useSettingsDraft(dirty)
   return (
     <form
-      className="space-y-3 border-b border-border/50 pb-6"
+      className="space-y-4 rounded-lg border bg-card/40 p-4"
       aria-label="Dovo service URLs"
       onSubmit={(event) => {
         event.preventDefault()
@@ -33,16 +34,17 @@ export function ServiceUrlSettings() {
         }
       }}
     >
-      <h2 className="text-sm font-semibold tracking-tight">Dovo services</h2>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Saved on this device. Account sessions stay separate for each Connect server. New computer
-        setups use this URL; existing Connect connections keep their current server until disabled
-        and enabled again through LAN / VPN pairing.
-      </p>
+      <div className="space-y-1">
+        <h2 className="text-sm font-medium">Dovo services</h2>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Saved on this device. Account sessions stay separate for each Connect server.
+        </p>
+      </div>
       <label className="block space-y-1 text-[0.8125rem]" htmlFor={`${id}-connect`}>
         <span className="font-medium">Dovo Connect URL</span>
         <Input
           id={`${id}-connect`}
+          aria-describedby={`${id}-connect-help`}
           value={fields.connectOrigin}
           placeholder={ACCOUNT_DIRECTORY_URL}
           autoCapitalize="none"
@@ -54,10 +56,15 @@ export function ServiceUrlSettings() {
           }}
         />
       </label>
+      <p id={`${id}-connect-help`} className="text-xs leading-relaxed text-muted-foreground">
+        Used for new computer setup. Existing Connect connections keep their server until Connect is
+        disabled and enabled again through LAN / VPN pairing.
+      </p>
       <label className="block space-y-1 text-[0.8125rem]" htmlFor={`${id}-artifacts`}>
         <span className="font-medium">Dovo Artifacts URL</span>
         <Input
           id={`${id}-artifacts`}
+          aria-describedby={`${id}-artifacts-help`}
           value={fields.artifactsOrigin}
           placeholder="Automatic — from Connect"
           autoCapitalize="none"
@@ -69,12 +76,17 @@ export function ServiceUrlSettings() {
           }}
         />
       </label>
-      <p className="text-xs text-muted-foreground">
+      <p id={`${id}-artifacts-help`} className="text-xs leading-relaxed text-muted-foreground">
         Leave Artifacts blank to use the store announced by Connect. A custom URL must also be
         configured on your Connect broker and artifact server; Studio checks they match before
         sharing.
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+        {dirty && (
+          <span role="status" className="mr-auto text-xs text-muted-foreground">
+            Unsaved changes
+          </span>
+        )}
         <Button type="submit" size="sm" disabled={!dirty}>
           Save service URLs
         </Button>

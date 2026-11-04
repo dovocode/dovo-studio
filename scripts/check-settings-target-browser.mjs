@@ -12,10 +12,11 @@ try {
       ? root + '/apps/mobile/src/runtime/preferences'
       : root + '/packages/studio-core/src'
     const header = mobile ? 'ScopedSettings' : 'SettingsScopePage'
-    const core = `import {createContext,useContext} from 'react';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,snapshot:entry.snapshot,connected:entry.connected,request:(path,input)=>window.request(profile.id,path,input)}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
+    const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';import {createContext,useContext} from 'react';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,snapshot:entry.snapshot,connected:entry.connected,request:(path,input)=>window.request(profile.id,path,input)}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
     const nativeRuntime = `import {createContext,useContext,useCallback} from 'react';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const call=useCallback((path,input)=>window.request(runtimeId,path,input),[runtimeId]);const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,activeId:runtimeId,snapshot:entry.snapshot,connected:entry.connected,call}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
+      './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
       './workspace/provider': `export const useWorkspace=()=>window.runtime;`,
       './workspace/runtime-sources': `export const useRuntimeSources=()=>window.sources;`,
       './runtime/application-state': state,
@@ -28,7 +29,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{defaults:{},workspace:{repositories:[repo,{id:'local-folder',name:'Local folder',path:'/mac/folder',kind:'folder'}]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};const savedSources=window.sources;function App(){const [revision,setRevision]=useState(0);window.configureSources=(count,offline=false)=>{window.sources=savedSources.slice(0,count).map((entry,index)=>({...entry,connected:!(offline&&index===count-1)}));window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings"'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<App/>);`,
+        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{defaults:{},workspace:{repositories:[repo,{id:'local-folder',name:'Local folder',path:'/mac/folder',kind:'folder'}]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};const savedSources=window.sources;function App(){const [revision,setRevision]=useState(0);window.configureSources=(count,offline=false)=>{window.sources=savedSources.slice(0,count).map((entry,index)=>({...entry,connected:!(offline&&index===count-1)}));window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings"'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -66,6 +67,13 @@ try {
       ],
     })
     const page = await browser.newPage()
+    const assertTarget = async (expected) => {
+      await page.waitForFunction(
+        (value) => document.querySelector('[data-testid="target"]')?.textContent === value,
+        expected,
+      )
+      assert.equal(await page.getByTestId('target').textContent(), expected)
+    }
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<div id="app"></div>')
@@ -101,6 +109,28 @@ try {
     } else
       await page.getByRole('button', { name: 'Show Advanced workspace setup', exact: true }).click()
     await page.getByLabel('Setup command', { exact: true }).fill('project setup')
+    if (!mobile) {
+      await environments.selectOption('mac')
+      const discard = page.getByRole('dialog', {
+        name: 'Discard unsaved settings changes?',
+        exact: true,
+      })
+      await discard.getByRole('button', { name: 'Cancel', exact: true }).click()
+      assert.equal(await environments.inputValue(), 'linux')
+      assert.equal(
+        await page.getByLabel('Setup command', { exact: true }).inputValue(),
+        'project setup',
+      )
+      assert.equal(await page.evaluate(() => window.writes.length), 0)
+      await environments.selectOption('mac')
+      await discard.getByRole('button', { name: 'Discard changes', exact: true }).click()
+      await page.waitForFunction(
+        () => document.querySelector('[aria-label="Settings computer"]')?.value === 'mac',
+      )
+      await environments.selectOption('linux')
+      await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
+      await page.getByLabel('Setup command', { exact: true }).fill('project setup')
+    }
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page
       .getByText(mobile ? /^Settings saved at / : 'Changes saved.', {
@@ -118,7 +148,7 @@ try {
     await page.getByRole('button', { name: 'Tools page', exact: true }).click()
     assert.equal(await projects.inputValue(), 'git:github.com/team/repo')
     assert.equal(await environments.inputValue(), 'linux')
-    assert.equal(await page.getByTestId('target').textContent(), 'environment-project:linux-repo')
+    await assertTarget('environment-project:linux-repo')
     await environments.selectOption('empty')
     await page
       .getByText('This project is not available on the selected computer. Choose another target.', {
@@ -127,9 +157,9 @@ try {
       .waitFor()
     assert.equal(await page.getByTestId('target').count(), 0)
     await environments.selectOption('')
-    assert.equal(await page.getByTestId('target').textContent(), 'project:mac-repo')
+    await assertTarget('project:mac-repo')
     await projects.selectOption('')
-    assert.equal(await page.getByTestId('target').textContent(), 'global:')
+    await assertTarget('global:')
     await page.getByRole('button', { name: 'Defaults page', exact: true }).click()
     if (!mobile)
       await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
@@ -177,6 +207,11 @@ try {
     await page
       .getByRole('button', { name: 'Reset all later worktree setup overrides', exact: true })
       .click()
+    if (!mobile)
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Reset overrides', exact: true })
+        .click()
     await page.getByText('Reset 1 override.', { exact: true }).waitFor()
     const reset = await page.evaluate(() => window.writes.at(-1))
     assert.equal(reset.host, 'linux')
@@ -189,16 +224,16 @@ try {
     await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
     if (mobile) await page.getByText('Mac defaults', { exact: true }).waitFor()
     else await page.getByText('on Mac', { exact: true }).waitFor()
-    assert.equal(await page.getByTestId('target').textContent(), 'environment:')
+    await assertTarget('environment:')
     await projects.selectOption('git:github.com/team/repo')
-    assert.equal(await page.getByTestId('target').textContent(), 'environment-project:mac-repo')
+    await assertTarget('environment-project:mac-repo')
     await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
-    assert.equal(await page.getByTestId('target').textContent(), 'project:mac-repo')
+    await assertTarget('project:mac-repo')
     await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
     await projects.selectOption('local:["mac","local-folder"]')
-    assert.equal(await page.getByTestId('target').textContent(), 'environment-project:local-folder')
+    await assertTarget('environment-project:local-folder')
     await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
-    assert.equal(await page.getByTestId('target').textContent(), 'global:')
+    await assertTarget('global:')
     await page.evaluate(() => window.configureSources(2, true))
     await environments.waitFor()
     assert.equal(await environments.locator('option').last().textContent(), 'Linux · Offline')

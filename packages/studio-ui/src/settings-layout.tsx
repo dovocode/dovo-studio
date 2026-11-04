@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import type { SettingsChange } from '@dovo/protocol'
 import { Card } from '@dovo/web-ui/card'
 import { Switch } from './components/ui/switch'
@@ -28,9 +28,21 @@ export function SettingsPage({
 }) {
   return (
     <section className="studio-settings-page flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title="Settings" heading={false}>
+      <PageHeader
+        title={
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-muted-foreground">Settings</span>
+            <span aria-hidden="true" className="shrink-0 text-muted-foreground/50">
+              /
+            </span>
+            <span className="truncate">{title}</span>
+          </span>
+        }
+        heading={false}
+      >
         {local && (
-          <span className="rounded-md border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground">
+          <span className="studio-settings-storage inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Check className="size-3" aria-hidden="true" />
             This device · saved automatically
           </span>
         )}
@@ -43,13 +55,17 @@ export function SettingsPage({
         role="region"
         aria-label={`${title} settings`}
         tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-7 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
+        className="studio-settings-scroll min-h-0 flex-1 overflow-y-auto px-4 py-7 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
       >
-        <div className={`${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}>
-          <div className="space-y-2">
-            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <div
+          className={`studio-settings-content ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}
+        >
+          <div className="studio-settings-intro space-y-2">
+            <h1 className="text-[1.375rem] font-semibold tracking-tight">{title}</h1>
             {description && (
-              <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+              <p className="max-w-[68ch] text-[0.8125rem] leading-relaxed text-muted-foreground">
+                {description}
+              </p>
             )}
           </div>
           {children}
@@ -101,7 +117,7 @@ export function SettingsGroup({
       aria-labelledby={id}
       className="studio-settings-group scroll-mt-4 space-y-2 outline-none"
     >
-      <div>
+      <div className="studio-settings-group-heading">
         <h2 id={id} className="text-sm font-semibold tracking-tight">
           {title}
         </h2>
@@ -133,7 +149,7 @@ export function SettingRow({
       tabIndex={-1}
       className="studio-setting-row flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-0 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
     >
-      <div className="min-w-0 flex-1">
+      <div className="studio-setting-copy min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">
           <p id={`${id}-label`} className="text-[0.8125rem] font-medium">
             {label}
@@ -219,8 +235,11 @@ export function SettingsSaveBar({
   const count = changeCount || changes.length || 1
   if (!dirty && !saving)
     return (
-      <div className="space-y-3 text-xs text-muted-foreground">
-        {saved && <p role="status">Changes saved.</p>}
+      <div className="studio-settings-saved space-y-3 text-xs text-muted-foreground">
+        <p role={saved ? 'status' : undefined} className="flex items-center gap-2">
+          {saved && <Check className="size-3.5" aria-hidden="true" />}
+          {saved ? 'Changes saved.' : description}
+        </p>
         {children && (
           <Disclosure title="More settings actions">
             <div className="flex flex-wrap gap-2 pt-2">{children}</div>
@@ -237,31 +256,31 @@ export function SettingsSaveBar({
         : description
   return (
     <div
-      className={`sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur ${dirty || saving ? 'border-border/70 shadow-sm' : 'border-border/40 text-muted-foreground'}`}
+      className={`studio-settings-savebar sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur ${dirty || saving ? 'border-border/70 shadow-sm' : 'border-border/40 text-muted-foreground'}`}
       role="group"
       aria-label="Settings save actions"
       aria-busy={saving}
     >
-      <div
-        role="status"
-        className="flex min-h-8 w-full min-w-0 items-center gap-2 text-xs text-muted-foreground sm:w-auto sm:flex-1"
-      >
-        <span
-          aria-hidden="true"
-          className={`size-1.5 shrink-0 rounded-full bg-status-warning ${dirty ? '' : 'invisible'}`}
-        />
-        {dirty && changes.length > 0 ? (
-          <button
-            type="button"
-            className="rounded px-1 py-2 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-expanded={review}
-            onClick={() => setReview((value) => !value)}
-          >
-            {status}
-          </button>
-        ) : (
-          status
-        )}
+      <div role="status" className="w-full min-w-0 text-xs sm:w-auto sm:flex-1">
+        <div className="flex min-h-6 items-center gap-2 font-medium">
+          <span
+            aria-hidden="true"
+            className={`size-1.5 shrink-0 rounded-full bg-status-warning ${dirty ? '' : 'invisible'}`}
+          />
+          {dirty && changes.length > 0 ? (
+            <button
+              type="button"
+              className="rounded px-1 py-2 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-expanded={review}
+              onClick={() => setReview((value) => !value)}
+            >
+              {status}
+            </button>
+          ) : (
+            status
+          )}
+        </div>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {children && (

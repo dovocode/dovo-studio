@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import {
   settingsChangeCount,
   settingsChanges,
@@ -46,6 +47,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
   const protectDraft = useRef(false)
   protectDraft.current = dirty
   const [retry, setRetry] = useApplicationState(0)
+  const confirm = useConfirmation(JSON.stringify([computerUse, settings, busy]))
   useSettingsDraft(dirty, busy)
   useEffect(() => {
     const generation = ++cuaGeneration.current
@@ -340,12 +342,16 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                               variant={action.id === 'history-delete' ? 'destructive' : 'outline'}
                               size="sm"
                               disabled={busy || !connected || cuaActionDisabled(action.id, cua)}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (
                                   action.id === 'history-delete' &&
-                                  !window.confirm(
-                                    'Delete all recorded Computer History and its encryption key on this computer? This cannot be undone.',
-                                  )
+                                  !(await confirm({
+                                    title: 'Delete Computer History?',
+                                    description:
+                                      'All recorded Computer History and its encryption key on this computer will be permanently deleted. This cannot be undone.',
+                                    confirmLabel: 'Delete history',
+                                    destructive: true,
+                                  }))
                                 )
                                   return
                                 runAction(action.id)
@@ -441,10 +447,16 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           <Button
             variant="ghost"
             disabled={!connected || busy}
-            onClick={() => {
+            onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+                !(await confirm({
+                  title: 'Reload saved settings?',
+                  description:
+                    'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+                  confirmLabel: 'Discard and reload',
+                  destructive: true,
+                }))
               )
                 return
               protectDraft.current = false

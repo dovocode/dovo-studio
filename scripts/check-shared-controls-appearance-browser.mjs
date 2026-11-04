@@ -171,11 +171,12 @@ try {
       )
     }
     const toggle = page.getByRole('switch', { name: 'Switch' })
+    const checkedFill = await toggle.evaluate((el) => getComputedStyle(el).backgroundColor)
     await toggle.click()
     await toggle.evaluate((el) =>
       Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)),
     )
-    const offContrast = await toggle.evaluate((element) => {
+    const offContrast = await toggle.evaluate((element, checkedFill) => {
       const luminance = (color) => {
         const channels = color
           .match(/[\d.]+/g)
@@ -187,17 +188,51 @@ try {
           })
         return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
       }
-      const border = luminance(getComputedStyle(element).borderColor)
+      const css = getComputedStyle(element)
+      const thumb = getComputedStyle(element.querySelector('[data-slot="switch-thumb"]'))
+      const contrast = (first, second) =>
+        (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+      const border = luminance(css.borderColor)
       const surface = luminance(
         getComputedStyle(element.closest('[data-slot="card"]')).backgroundColor,
       )
-      return (Math.max(border, surface) + 0.05) / (Math.min(border, surface) + 0.05)
-    })
+      const track = luminance(css.backgroundColor)
+      return {
+        boundary: contrast(border, surface),
+        thumb: Math.max(
+          contrast(luminance(thumb.borderColor), track),
+          contrast(luminance(thumb.backgroundColor), track),
+        ),
+        fill: css.backgroundColor,
+        thumbLuminance: luminance(thumb.backgroundColor),
+        checkedLuminance: luminance(checkedFill),
+      }
+    }, checkedFill)
     assert.ok(
-      offContrast >= 3,
-      `${palette} ${mode}: unchecked switch boundary contrast ${offContrast}`,
+      offContrast.boundary >= 3,
+      `${palette} ${mode}: unchecked switch boundary contrast ${offContrast.boundary}`,
     )
-    await toggle.click()
+    assert.ok(
+      offContrast.thumb >= 3,
+      `${palette} ${mode}: unchecked thumb contrast ${offContrast.thumb}`,
+    )
+    assert.notEqual(offContrast.fill, checkedFill, `${palette} ${mode}: distinct checked fill`)
+    if (mode === 'light')
+      assert.ok(
+        offContrast.thumbLuminance >= 0.85 &&
+          offContrast.thumbLuminance > offContrast.checkedLuminance,
+        `${palette} ${mode}: light neutral thumb`,
+      )
+    await page.screenshot({
+      path: `${output}/${palette}-${mode}-${highContrast ? 'contrast' : effects ? 'effects' : 'flat'}-switch-off.png`,
+    })
+    await toggle.focus()
+    await page.keyboard.press('Space')
+    await toggle.evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+    )
+    assert.equal(await toggle.isChecked(), true)
+    assert.ok(parseFloat(await toggle.evaluate((el) => getComputedStyle(el).outlineWidth)) >= 2)
     await page.getByRole('combobox', { name: 'Choice' }).click()
     assert.equal(
       await page
@@ -263,6 +298,48 @@ try {
       .evaluate((el) => getComputedStyle(el).color),
     'rgb(255, 255, 255)',
   )
+  await page.keyboard.press('Escape')
+  for (const mode of ['light', 'dark']) {
+    await page.emulateMedia({ forcedColors: 'active', colorScheme: mode })
+    await page.evaluate(
+      (mode) => document.documentElement.classList.toggle('dark', mode === 'dark'),
+      mode,
+    )
+    const toggle = page.getByRole('switch', { name: 'Switch' })
+    for (const checked of [false, true]) {
+      await toggle.focus()
+      await page.keyboard.press('Space')
+      await toggle.evaluate((el) =>
+        Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+      )
+      assert.equal(await toggle.isChecked(), checked)
+      const colors = await toggle.evaluate((el) => {
+        const root = getComputedStyle(el)
+        const thumb = getComputedStyle(el.querySelector('[data-slot="switch-thumb"]'))
+        const probe = document.createElement('span')
+        probe.style.color = 'ButtonText'
+        document.body.append(probe)
+        const buttonText = getComputedStyle(probe).color
+        probe.remove()
+        return {
+          trackBorder: root.borderColor,
+          thumbBorder: thumb.borderColor,
+          thumbFill: thumb.backgroundColor,
+          buttonText,
+          thumbBorderWidth: thumb.borderTopWidth,
+          outline: root.outlineWidth,
+        }
+      })
+      assert.equal(colors.trackBorder, colors.buttonText, `${mode}: forced track boundary`)
+      assert.equal(colors.thumbBorder, colors.buttonText, `${mode}: forced thumb boundary`)
+      assert.equal(colors.thumbBorderWidth, '1px')
+      assert.notEqual(colors.thumbBorder, colors.thumbFill)
+      assert.ok(parseFloat(colors.outline) >= 2, `${mode}: forced keyboard focus`)
+      await page.screenshot({
+        path: `${output}/forced-colors-${mode}-switch-${checked ? 'on' : 'off'}.png`,
+      })
+    }
+  }
   console.log('Shared controls appearance checks passed')
 } finally {
   await browser.close()

@@ -309,6 +309,14 @@ function PullActionDialog({
     expectedDestination: detail.destination ?? detail.pull.destination,
     connectionId: detail.pull.connectionId,
   })
+  const currentFailures =
+    mergeStatus?.headSha === scope.headSha
+      ? mergeStatus.signals
+          .filter((signal) => signal.tone === 'danger')
+          .map((signal) => signal.label)
+      : []
+  const failureIdentity = JSON.stringify(currentFailures)
+  useEffect(() => setConfirmed(false), [failureIdentity, setConfirmed])
   const provider = forgeLabels[detail.pull.provider ?? 'github']
   const list = (value: string) => [...new Set(value.split(/[\s,]+/).filter(Boolean))]
   const payload = (): PullAction => {
@@ -706,6 +714,11 @@ function PullActionDialog({
                       I confirm merging reviewed commit {scope.headSha.slice(0, 8)}. Repository
                       rules still apply.
                     </>
+                  )}
+                  {currentFailures.length > 0 && (
+                    <span className="mt-1 block text-status-error">
+                      I acknowledge the current failures: {currentFailures.join('; ')}.
+                    </span>
                   )}
                 </span>
               </label>

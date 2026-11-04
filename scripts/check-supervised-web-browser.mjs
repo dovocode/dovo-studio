@@ -133,7 +133,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        "export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>window.openedThread=target});export const useSettingsDraft=()=>{};",
+        "export const useConfirmation=()=>async()=>true;export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>window.openedThread=target});export const useSettingsDraft=()=>{};",
     },
     {
       path: '@dovo/studio-ui',

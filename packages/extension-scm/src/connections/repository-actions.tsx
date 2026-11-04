@@ -1,6 +1,6 @@
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { CreateGithub } from './create-github'
-import { useEffect, useEffectEvent, useRef } from 'react'
+import { useEffect, useEffectEvent, useId, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { branchesSchema, clientScopeKey, encodeWorkTarget } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
@@ -33,6 +33,18 @@ function isStaged(file: ChangedFile) {
     index !== undefined &&
     !['unchanged', 'unknown', 'unmerged', 'untracked'].includes(index)
   )
+}
+
+function stagingUnavailable(file: ChangedFile) {
+  return (
+    !file.gitStatus ||
+    file.gitStatus.index === 'unknown' ||
+    file.gitStatus.workingTree === 'unknown'
+  )
+}
+
+function canStageFile(file: ChangedFile) {
+  return stagingUnavailable(file) || file.gitStatus?.workingTree !== 'unchanged'
 }
 
 function fileStagingDescription(file: ChangedFile) {
@@ -89,6 +101,8 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
         }
       : {}),
   }
+  const messageId = useId()
+  const changesHeading = useRef<HTMLHeadingElement>(null)
   const pending = useRef(false)
   const mounted = useRef(true)
   const revision = useRef(0)
@@ -96,7 +110,10 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
   const unstagedKnown = files.every(
     (file) => file.gitStatus && file.gitStatus.workingTree !== 'unknown',
   )
-  const stagedCount = files.filter(isStaged).length
+  const stagedFiles = files.filter(isStaged)
+  const unstagedFiles = files.filter((file) => !stagingUnavailable(file) && canStageFile(file))
+  const unknownFiles = files.filter(stagingUnavailable)
+  const stagedCount = stagedFiles.length
   const unstagedCount = files.filter(
     (file) =>
       file.gitStatus && !['unchanged', 'unknown', 'unmerged'].includes(file.gitStatus.workingTree),
@@ -127,7 +144,9 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
       setBranch(inspected.branch)
       setFiles(result.files)
       setSelected((previous) =>
-        previous.filter((path) => result.files.some((file) => file.path === path)),
+        previous.filter((path) =>
+          result.files.some((file) => file.path === path && canStageFile(file)),
+        ),
       )
     } catch (error) {
       if (mounted.current && current === revision.current) setLoadError(String(error))
@@ -145,6 +164,12 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
       revision.current++
     }
   }, [connected])
+  useEffect(() => {
+    if (loading || loadError || !connected || files.length) return
+    const active = document.activeElement
+    if (active === document.body || active?.getAttribute('role') === 'dialog')
+      changesHeading.current?.focus()
+  }, [loading, loadError, connected, files.length])
   const act = (fn: () => Promise<void>) => {
     if (pending.current || !connected) return
     pending.current = true
@@ -163,7 +188,9 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
     <div className="mt-1 divide-y">
       <section className="space-y-3 pb-4">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xs font-medium">Changes</h3>
+          <h3 ref={changesHeading} tabIndex={-1} className="text-xs font-medium">
+            Changes
+          </h3>
           <Button
             size="sm"
             variant="ghost"
@@ -186,33 +213,68 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
             Could not load changes: {loadError}. Use Refresh Git to retry.
           </p>
         ) : files.length ? (
-          <div className="overflow-hidden rounded-lg border">
-            <p className="border-b px-3 py-2 text-xs text-muted-foreground">
-              Select files to stage. For partially staged files, this stages their remaining
-              changes.
-            </p>
-            <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2">
-              <label className="flex items-center gap-2 text-xs">
-                <Checkbox
-                  aria-label="Select all changed files"
-                  checked={
-                    selected.length === files.length
-                      ? true
-                      : selected.length
-                        ? 'indeterminate'
-                        : false
-                  }
-                  disabled={busy}
-                  onCheckedChange={(checked) =>
-                    setSelected(checked === true ? files.map((file) => file.path) : [])
-                  }
-                />
-                {files.length} changed {files.length === 1 ? 'file' : 'files'}
-              </label>
+          <div className="space-y-3">
+            <section aria-label="Staged" className="overflow-hidden rounded-lg border">
+              <h4 className="border-b bg-muted/30 px-3 py-2 text-xs font-medium">
+                Staged · {stagedCount}
+                {!stagingKnown && ' known'}
+              </h4>
+              {stagedFiles.length ? (
+                <ul className="max-h-40 overflow-auto py-1">
+                  {stagedFiles.map((file) => (
+                    <li key={file.path} className="flex items-start gap-3 px-3 py-1.5 text-xs">
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-all font-mono text-[0.6875rem]">
+                          {file.path}
+                        </span>
+                        <span className="mt-0.5 block text-muted-foreground">
+                          Staged: {changeLabels[file.gitStatus?.index ?? 'unknown']}
+                        </span>
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Unstage ${file.path}`}
+                        disabled={busy || loading || !connected || !!loadError}
+                        onClick={() =>
+                          act(async () => {
+                            await request(
+                              '/api/scm/unstage',
+                              { ...input, paths: [file.path] },
+                              responses.ok,
+                            )
+                            setStatus(`Unstaged ${file.path}. Working file contents kept.`)
+                            await refresh()
+                          })
+                        }
+                      >
+                        Unstage
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  {stagingKnown ? 'No staged files.' : 'Staged membership is not fully available.'}
+                </p>
+              )}
+            </section>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Select files below to stage their remaining changes.
+              </p>
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy || !selected.length || selected.length > 200}
+                disabled={
+                  busy ||
+                  loading ||
+                  !connected ||
+                  !!loadError ||
+                  !selected.length ||
+                  selected.length > 200
+                }
                 onClick={() =>
                   act(async () => {
                     await request('/api/scm/stage', { ...input, paths: selected }, responses.ok)
@@ -227,37 +289,100 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                 Stage selected
               </Button>
             </div>
-            <ul className="max-h-52 overflow-auto py-1">
-              {files.map((file) => (
-                <li key={file.path}>
-                  <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
-                    <Checkbox
-                      aria-label={`Select ${file.path}`}
-                      className="mt-0.5 shrink-0"
-                      checked={selected.includes(file.path)}
-                      disabled={busy}
-                      onCheckedChange={(checked) =>
-                        setSelected((previous) =>
-                          checked === true
-                            ? [...previous, file.path]
-                            : previous.filter((path) => path !== file.path),
-                        )
-                      }
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-all font-mono text-[0.6875rem]">
-                        {file.path}
-                      </span>
-                      <span className="mt-0.5 block text-muted-foreground">
-                        {fileStagingDescription(file)}
-                      </span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
+            {[
+              { name: 'Unstaged', files: unstagedFiles, unavailable: false },
+              { name: 'Staging status unavailable', files: unknownFiles, unavailable: true },
+            ].map(
+              (group) =>
+                (group.files.length > 0 || !group.unavailable) && (
+                  <section
+                    key={group.name}
+                    aria-label={group.name}
+                    className="overflow-hidden rounded-lg border"
+                  >
+                    <div className="border-b bg-muted/30 px-3 py-2">
+                      <label className="flex items-center gap-2 text-xs font-medium">
+                        <Checkbox
+                          aria-label={
+                            group.unavailable
+                              ? 'Select all files with unavailable staging status'
+                              : 'Select all unstaged files'
+                          }
+                          checked={
+                            group.files.length > 0 &&
+                            group.files.every((file) => selected.includes(file.path))
+                              ? true
+                              : group.files.some((file) => selected.includes(file.path))
+                                ? 'indeterminate'
+                                : false
+                          }
+                          disabled={busy || !group.files.length}
+                          onCheckedChange={(checked) =>
+                            setSelected((previous) =>
+                              checked === true
+                                ? [
+                                    ...new Set([
+                                      ...previous,
+                                      ...group.files.map((file) => file.path),
+                                    ]),
+                                  ]
+                                : previous.filter(
+                                    (path) => !group.files.some((file) => file.path === path),
+                                  ),
+                            )
+                          }
+                        />
+                        {group.name} · {group.files.length}
+                      </label>
+                    </div>
+                    {group.unavailable && (
+                      <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+                        These files may already be staged. Update this runtime to see their
+                        membership. Selection only controls Stage selected.
+                      </p>
+                    )}
+                    {group.files.length ? (
+                      <ul className="max-h-40 overflow-auto py-1">
+                        {group.files.map((file) => (
+                          <li key={file.path}>
+                            <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
+                              <Checkbox
+                                aria-label={`Select ${file.path}`}
+                                className="mt-0.5 shrink-0"
+                                checked={selected.includes(file.path)}
+                                disabled={busy}
+                                onCheckedChange={(checked) =>
+                                  setSelected((previous) =>
+                                    checked === true
+                                      ? [...previous, file.path]
+                                      : previous.filter((path) => path !== file.path),
+                                  )
+                                }
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block break-all font-mono text-[0.6875rem]">
+                                  {file.path}
+                                </span>
+                                <span className="mt-0.5 block text-muted-foreground">
+                                  {group.unavailable || file.gitStatus?.workingTree === 'unmerged'
+                                    ? fileStagingDescription(file)
+                                    : file.gitStatus?.workingTree === 'untracked'
+                                      ? 'Untracked'
+                                      : `Unstaged: ${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}`}
+                                </span>
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">No unstaged files.</p>
+                    )}
+                  </section>
+                ),
+            )}
             {selected.length > 200 && (
-              <p className="px-3 pb-2 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Select up to 200 files to stage at a time.
               </p>
             )}
@@ -267,78 +392,83 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
             No uncommitted changes.
           </p>
         )}
-        <form
-          className="space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!canCommit) return
-            act(async () => {
-              const result = await request(
-                '/api/scm/commit',
-                {
-                  ...input,
-                  message,
-                },
-                responses.commit,
-              )
-              setStatus(`Committed ${result.commit.slice(0, 8)}`)
-              setMessage('')
-              await refresh()
-            })
-          }}
-        >
-          {!loading && !loadError && connected && (
-            <p className="text-xs text-muted-foreground" aria-label="Staging summary">
-              {stagingKnown
-                ? `${stagedCount} staged ${stagedCount === 1 ? 'file' : 'files'} · ${unstagedKnown ? `${unstagedCount} with unstaged changes` : 'working tree status unavailable'}`
-                : 'Staged contents unavailable. Update this runtime to see commit membership.'}
-              {hasConflicts && ' Resolve conflicts before committing.'}
+        {files.length > 0 && (
+          <form
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!canCommit) return
+              act(async () => {
+                const result = await request(
+                  '/api/scm/commit',
+                  {
+                    ...input,
+                    message,
+                  },
+                  responses.commit,
+                )
+                setStatus(`Committed ${result.commit.slice(0, 8)}`)
+                setMessage('')
+                await refresh()
+              })
+            }}
+          >
+            {!loading && !loadError && connected && (
+              <p className="text-xs text-muted-foreground" aria-label="Staging summary">
+                {stagingKnown
+                  ? `${stagedCount} staged ${stagedCount === 1 ? 'file' : 'files'} · ${unstagedKnown ? `${unstagedCount} with unstaged changes` : 'working tree status unavailable'}`
+                  : 'Staged contents unavailable. Update this runtime to see commit membership.'}
+                {hasConflicts && ' Resolve conflicts before committing.'}
+              </p>
+            )}
+            <label htmlFor={messageId} className="block text-xs font-medium">
+              Commit message
+            </label>
+            <Input
+              id={messageId}
+              placeholder="Commit message for staged changes"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              disabled={!connected || busy || loading || !!loadError}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Commits include all staged files, including files staged outside this dialog. Checkbox
+              selection only controls Stage selected.
             </p>
-          )}
-          <Input
-            aria-label="Commit message"
-            placeholder="Commit message for staged changes"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            disabled={!connected || busy}
-            required
-          />
-          <p className="text-xs text-muted-foreground">
-            Commits include all staged files, including files staged outside this dialog. Checkbox
-            selection only controls Stage selected.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" disabled={!canCommit}>
-              Commit staged
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!canCommit}
-              onClick={() =>
-                act(async () => {
-                  const result = await request(
-                    '/api/scm/commit',
-                    { ...input, message },
-                    responses.commit,
-                  )
-                  setMessage('')
-                  try {
-                    await request('/api/scm/push', input, responses.ok)
-                    setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
-                  } catch (error) {
-                    setStatus(
-                      `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" disabled={!canCommit}>
+                Commit staged
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!canCommit}
+                onClick={() =>
+                  act(async () => {
+                    const result = await request(
+                      '/api/scm/commit',
+                      { ...input, message },
+                      responses.commit,
                     )
-                  }
-                  await refresh()
-                })
-              }
-            >
-              Commit &amp; push
-            </Button>
-          </div>
-        </form>
+                    setMessage('')
+                    try {
+                      await request('/api/scm/push', input, responses.ok)
+                      setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
+                    } catch (error) {
+                      setStatus(
+                        `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
+                      )
+                    }
+                    await refresh()
+                  })
+                }
+              >
+                Commit &amp; push
+              </Button>
+            </div>
+          </form>
+        )}
       </section>
       <section className="space-y-2 py-4">
         <h3 className="text-xs font-medium">Branch</h3>

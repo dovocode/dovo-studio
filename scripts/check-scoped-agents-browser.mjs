@@ -8,10 +8,11 @@ const state = `export {useState as useApplicationState} from 'react';`
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
-    const core = `import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';export const useStudioHost=()=>({navigate:target=>window.navigation=target});export {providers} from '${root}/packages/studio-core/src/providers.ts';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
+    const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';import {createContext,useContext} from 'react';export {selectableAccessModes,supportsAccess,agentSchema} from '@dovo/protocol';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';export const useStudioHost=()=>({navigate:target=>window.navigation=target});export {providers} from '${root}/packages/studio-core/src/providers.ts';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,workspace:entry.snapshot.workspace,snapshot:entry.snapshot,connected:entry.connected,request:window.requests[profile.id]}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
     const native = `import {createContext,useContext} from 'react';import {Effect} from 'effect';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,profile:entry.profile,snapshot:entry.snapshot,connected:entry.connected,callEffect:window.effects[runtimeId]}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
+      './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
       '@dovo/studio-core/state': state,
       '../runtime/state/application-state': state,
       '../state/application-state': state,
@@ -23,7 +24,7 @@ try {
       './workspace/runtime-sources': `export const useRuntimeSources=()=>window.sources;`,
       'react-native':
         controls + `export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress()};`,
-      '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;`,
+      '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';`,
       'expo-router': `export const router={push:()=>{}};`,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '@dovo/studio-ui':
@@ -33,7 +34,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import Agents from '${root}/${mobile ? 'apps/mobile/src/screens/agents' : 'packages/extension-agents/src/view'}.tsx';import {SettingsTargetProvider} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-core/src'}/settings-target.tsx';window.crypto.randomUUID=()=>Math.random().toString(36).slice(2);const writer={id:'writer',name:'Writer',provider:'codex',model:'gpt-6.1-sol',reasoning:'',instructions:'Inherited instructions',permission:'ask',endpoint:''};const repo={id:'mac-repo',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=['mac','linux'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id+'.local',token:'test'}},name:id,scope:id,connected:true,snapshot:{scopedAgentsSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'a',value:{agents:[writer]}}]}},workspace:{agents:[],repositories:[{...repo,id:id+'-repo'}]}}}));window.writes=[];window.docs={};window.requests={};window.effects={};for(const source of window.sources){const id=source.profile.id;window.requests[id]=async(path,input)=>{const key=id+':'+input.scope+':'+(input.repositoryId||'');if(path.endsWith('/read'))return {value:window.docs[key]??(input.scope==='global'?{agents:[writer]}:{agents:[]}),inherited:input.scope==='global'?{}:{agents:[writer]},projectKey:input.repositoryId?'project:github.com/team/repo':undefined};if(path.endsWith('/save')){if(window.rejectSave)throw Error('Save rejected');window.writes.push({host:id,...input});window.docs[key]=input.after;return {value:input.after,inherited:input.scope==='global'?{}:{agents:[writer]}}}throw Error(path)};window.effects[id]=(path,input)=>Effect.tryPromise(()=>window.requests[id](path,input));}window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',refreshRuntimes:async()=>{}};createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Agents/></SettingsTargetProvider>);`,
+        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import Agents from '${root}/${mobile ? 'apps/mobile/src/screens/agents' : 'packages/extension-agents/src/view'}.tsx';import {SettingsTargetProvider} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-core/src'}/settings-target.tsx';window.crypto.randomUUID=()=>Math.random().toString(36).slice(2);const writer={id:'writer',name:'Writer',provider:'codex',model:'gpt-6.1-sol',reasoning:'',instructions:'Inherited instructions',permission:'ask',endpoint:''};const repo={id:'mac-repo',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=['mac','linux'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id+'.local',token:'test'}},name:id,scope:id,connected:true,snapshot:{scopedAgentsSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'a',value:{agents:[writer]}}]}},workspace:{agents:[],repositories:[{...repo,id:id+'-repo'}]}}}));window.writes=[];window.docs={};window.requests={};window.effects={};for(const source of window.sources){const id=source.profile.id;window.requests[id]=async(path,input)=>{const key=id+':'+input.scope+':'+(input.repositoryId||'');if(path.endsWith('/read'))return {value:window.docs[key]??(input.scope==='global'?{agents:[writer]}:{agents:[]}),inherited:input.scope==='global'?{}:{agents:[writer]},projectKey:input.repositoryId?'project:github.com/team/repo':undefined};if(path.endsWith('/save')){if(window.rejectSave)throw Error('Save rejected');window.writes.push({host:id,...input});window.docs[key]=input.after;return {value:input.after,inherited:input.scope==='global'?{}:{agents:[writer]}}}throw Error(path)};window.effects[id]=(path,input)=>Effect.tryPromise(()=>window.requests[id](path,input));}window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',refreshRuntimes:async()=>{}};createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><SettingsTargetProvider><Agents/></SettingsTargetProvider></StudioConfirmationProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -303,9 +304,15 @@ try {
         },
       )
       await page.getByLabel('Instructions', { exact: true }).fill('Unsaved changes')
-      const confirmation = page.waitForEvent('dialog')
       await navigation.getByRole('button', { name: /Cursor worker/ }).click()
-      assert.equal((await confirmation).message(), 'Discard unsaved configuration changes?')
+      const confirmation = page.getByRole('dialog')
+      await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
+      assert.equal(
+        await page.getByLabel('Instructions', { exact: true }).inputValue(),
+        'Unsaved changes',
+      )
+      await navigation.getByRole('button', { name: /Cursor worker/ }).click()
+      await confirmation.getByRole('button', { name: 'Discard changes', exact: true }).click()
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Cursor worker')
     }
     if (!mobile) {

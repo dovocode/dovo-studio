@@ -260,3 +260,10 @@ export {
 export { useEncryptedPublication } from './use-encrypted-publication'
 export { useThreadSuggestions } from './use-thread-suggestions'
 export { useSharingPeople, type SharingPeople } from './use-sharing-people'
+
+export {
+  ConfirmationContext,
+  useConfirmation,
+  type ConfirmationOptions,
+  type RequestConfirmation,
+} from './confirmation'

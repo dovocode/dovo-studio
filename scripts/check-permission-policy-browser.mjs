@@ -90,8 +90,9 @@ const moduleMocks = new Map([
 ])
 const mocks = {
   '@dovo/protocol': `export * from '${root}packages/protocol/src/index.ts';`,
+  './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}packages/studio-core/src/providers';export {updateTask} from '${root}packages/studio-core/src/workspace/actions';import {createContext,useContext} from 'react';export const WorkspaceContext=createContext(null);export const useWorkspace=()=>useContext(WorkspaceContext);export const useSettingsDraft=()=>{};`,
+  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';export * from '@dovo/protocol';export {providers} from '${root}packages/studio-core/src/providers';export {updateTask} from '${root}packages/studio-core/src/workspace/actions';import {createContext,useContext} from 'react';export const WorkspaceContext=createContext(null);export const useWorkspace=()=>useContext(WorkspaceContext);export const useSettingsDraft=()=>{};`,
   '@dovo/studio-ui': `export {Disclosure} from '${ui}src/disclosure';export {SettingsSaveBar} from '${ui}src/settings-layout';export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
   'react-native': `
     export const Platform={OS:'android'};

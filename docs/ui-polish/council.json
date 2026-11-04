@@ -392,10 +392,51 @@
       "score": 7.5,
       "shipVerdict": "ship after disabled-state fix",
       "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+    },
+    {
+      "round": "independent41",
+      "model": "Opus 5.5",
+      "id": "eed4739e-cef5-4086-9305-23410f613e9d",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings.",
+      "score": 7.5,
+      "shipVerdict": "ship; refinements recommended"
+    },
+    {
+      "round": "independent41",
+      "model": "Opus 5.5",
+      "id": "923e8d95-bf03-4f65-b80e-9e942d3cf061",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings.",
+      "score": 7.5,
+      "shipVerdict": "ship; refinements recommended"
+    },
+    {
+      "round": "independent41",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent41_sol_a",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings.",
+      "score": 8.4,
+      "shipVerdict": "ship; refinements recommended"
+    },
+    {
+      "round": "independent41",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent41_sol_b",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings.",
+      "score": 8.4,
+      "shipVerdict": "ship; refinements recommended"
+    },
+    {
+      "round": "independent41",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent41_sol_c",
+      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings.",
+      "score": 8.5,
+      "shipVerdict": "ship; refinements recommended"
     }
   ],
   "remaining": [
-    "Complete independent gallery41 council assessment and verified follow-up",
+    "Complete independent gallery44 council assessment and verified follow-up",
+    "Retry Muse after provider reset",
     "Finish PR #50 after quality gate"
   ],
   "approvalTarget": {
@@ -405,10 +446,11 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 41,
-    "captures": 288,
-    "corePass": 41,
-    "dialogPass": 41
+    "round": 44,
+    "captures": 296,
+    "corePass": 44,
+    "dialogPass": 44,
+    "settingsPass": 44
   },
   "unavailableReviews": [
     {
@@ -452,38 +494,52 @@
       "id": "34198ee0-5207-4cbc-8d7f-6a71841d72a5",
       "status": "failed",
       "reason": "Configured Google/AGY agent accepted ask mode but rejected model: Model 'gemini-4-argon-high' is not available for the current authentication method. No assessment issued."
+    },
+    {
+      "round": "independent41",
+      "model": "Gemini 4 Argon High (direct AGY)",
+      "id": "53695cfc-b4af-44ab-81fd-7840239a5850",
+      "status": "failed",
+      "reason": "agy models lists gemini-4-argon-high. Direct plan+sandbox invocation reached antigravity provider but failed with503 auth_not_found. No assessment issued."
+    },
+    {
+      "round": "settings42",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "29714ab5-9d01-4bbe-aea5-796b1db56875",
+      "status": "failed",
+      "reason": "Exact model retry returned429 subscription quota exhausted after10 provider attempts; reset2026-11-04T18:51:35Z. No assessment issued."
     }
   ],
   "pendingReviews": [
     {
-      "round": "independent41",
+      "round": "independent44",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent44_sol_a",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No past or target scores, historical findings or other reviews."
+    },
+    {
+      "round": "independent44",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent44_sol_b",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No past or target scores, historical findings or other reviews."
+    },
+    {
+      "round": "independent44",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent44_sol_c",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No past or target scores, historical findings or other reviews."
+    },
+    {
+      "round": "independent44",
       "model": "Opus 5.5",
-      "id": "eed4739e-cef5-4086-9305-23410f613e9d",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+      "id": "23e73827-855e-4a4d-ae2a-05bb76b46a51",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No past or target scores, historical findings or other reviews."
     },
     {
-      "round": "independent41",
+      "round": "independent44",
       "model": "Opus 5.5",
-      "id": "923e8d95-bf03-4f65-b80e-9e942d3cf061",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
-    },
-    {
-      "round": "independent41",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent41_sol_a",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
-    },
-    {
-      "round": "independent41",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent41_sol_b",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
-    },
-    {
-      "round": "independent41",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent41_sol_c",
-      "brief": "Fresh context; current frozen screenshots and product constraints only. No previous scores, target ratings or historical findings."
+      "id": "f1601af5-0c68-4119-9557-e27024869709",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No past or target scores, historical findings or other reviews."
     }
   ],
   "queuedReviews": [
@@ -517,5 +573,21 @@
       "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     }
   ],
-  "postGalleryRefinements": []
+  "postGalleryRefinements": [],
+  "designConsultations": [
+    {
+      "round": "settings42",
+      "model": "Opus 5.5",
+      "id": "edee2ccb-9de7-4bdf-bf40-675e4ffe184c",
+      "status": "completed",
+      "summary": "Recommended unified scope/save presentation, consistent field alignment and section hierarchy, clearer values and sidebar scroll edges. No numeric rating requested."
+    },
+    {
+      "round": "settings42",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "29714ab5-9d01-4bbe-aea5-796b1db56875",
+      "status": "failed",
+      "summary": "Exact model retry after reported availability still returned429 subscription quota exhausted through provider meta; reset2026-11-04T18:51:35Z. No consultation or assessment issued."
+    }
+  ]
 }

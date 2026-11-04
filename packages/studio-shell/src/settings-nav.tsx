@@ -134,15 +134,24 @@ export function SettingsNav({
 }: {
   views: readonly StudioView[]
   activeId: string
-  onSelect: (viewId: string) => void
+  onSelect: (viewId: string) => boolean | void | Promise<boolean | void>
 }) {
   const input = useRef<HTMLInputElement>(null)
   const navigation = useRef<HTMLElement>(null)
+  const links = useRef<HTMLDivElement>(null)
+  const selectionAttempt = useRef(0)
   const [query, setQuery] = useApplicationState('')
   const [jump, setJump] = useState<{ viewId: string; label: string } | null>(null)
   const [searchStatus, setSearchStatus] = useState('')
   const { target, scope, source, repository } = useSettingsTarget()
+  useEffect(
+    () => () => {
+      selectionAttempt.current++
+    },
+    [],
+  )
   const clearSearch = () => {
+    selectionAttempt.current++
     setQuery('')
     setJump(null)
     setSearchStatus('')
@@ -202,8 +211,10 @@ export function SettingsNav({
       highlighted?.classList.remove('bg-accent')
     }
   }, [jump, activeId, target.environmentId, target.projectId])
-  const select = (id: string) => {
-    if (id !== activeId) onSelect(id)
+  const select = async (id: string) => {
+    const attempt = ++selectionAttempt.current
+    const accepted = id === activeId || (await onSelect(id)) !== false
+    return accepted && attempt === selectionAttempt.current
   }
   const needle = query.trim().toLowerCase()
   const sectionFor = (view: StudioView): NavigationSection => {
@@ -243,9 +254,13 @@ export function SettingsNav({
       view.title.toLowerCase().includes(needle)
     )
   })
-  const openSetting = (viewId: string, label: string) => {
+  const openSetting = async (viewId: string, label: string) => {
+    const attempt = selectionAttempt.current + 1
     setSearchStatus(`Opening ${label}…`)
-    select(viewId)
+    if (!(await select(viewId))) {
+      if (attempt === selectionAttempt.current) setSearchStatus('')
+      return
+    }
     setJump({ viewId, label })
   }
   const firstField = ordered.flatMap((view) =>
@@ -275,6 +290,25 @@ export function SettingsNav({
         ?.querySelector('[aria-current="page"]')
         ?.scrollIntoView({ block: 'nearest' })
   }, [activeId, sidebarVisible])
+  useEffect(() => {
+    const region = links.current
+    if (!region) return
+    const updateEdges = () => {
+      region.style.setProperty('--settings-nav-fade-top', region.scrollTop > 1 ? '14px' : '0px')
+      region.style.setProperty(
+        '--settings-nav-fade-bottom',
+        region.scrollHeight - region.clientHeight - region.scrollTop > 1 ? '18px' : '0px',
+      )
+    }
+    updateEdges()
+    const observer = new ResizeObserver(updateEdges)
+    observer.observe(region)
+    region.addEventListener('scroll', updateEdges, { passive: true })
+    return () => {
+      observer.disconnect()
+      region.removeEventListener('scroll', updateEdges)
+    }
+  }, [query, sidebarVisible, views])
   return (
     <nav
       ref={navigation}
@@ -338,6 +372,7 @@ export function SettingsNav({
               placeholder="Search settings"
               value={query}
               onChange={(event) => {
+                selectionAttempt.current++
                 setQuery(event.target.value)
                 setJump(null)
                 setSearchStatus('')
@@ -348,8 +383,9 @@ export function SettingsNav({
                   moveResult(null, event.key === 'ArrowDown' ? 1 : 0)
                 }
                 if (event.key === 'Enter') {
-                  if (firstField) openSetting(firstField.viewId, firstField.label)
-                  else if (matches[0]) select(matches[0].id)
+                  event.preventDefault()
+                  if (firstField) void openSetting(firstField.viewId, firstField.label)
+                  else if (matches[0]) void select(matches[0].id)
                 }
                 if (event.key === 'Escape') clearSearch()
               }}
@@ -373,11 +409,13 @@ export function SettingsNav({
           </p>
         )}
         <div
+          ref={links}
           role="region"
           aria-label="Settings navigation"
           style={{
             scrollbarWidth: 'thin',
-            maskImage: 'linear-gradient(#000 calc(100% - 20px), transparent)',
+            maskImage:
+              'linear-gradient(transparent, #000 var(--settings-nav-fade-top, 0px), #000 calc(100% - var(--settings-nav-fade-bottom, 18px)), transparent)',
             paddingBottom: 20,
           }}
           tabIndex={0}

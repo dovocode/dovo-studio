@@ -145,6 +145,58 @@ it('retains index and working tree membership for text, empty, binary and mode-o
     await f.cleanup()
   }
 })
+it('unstages literal scoped paths without changing partial working contents or other staged files', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    await writeFile(join(f.directory, 'hello.txt'), 'staged contents\n')
+    await writeFile(join(f.directory, 'a[1].txt'), 'literal\n')
+    await writeFile(join(f.directory, 'a1.txt'), 'other staged\n')
+    await git.stage(f.directory, ['hello.txt', 'a[1].txt', 'a1.txt'])
+    await writeFile(join(f.directory, 'hello.txt'), 'working contents\n')
+    await git.unstage(f.directory, ['hello.txt', 'a[1].txt'])
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('working contents\n')
+    expect(await readFile(join(f.directory, 'a[1].txt'), 'utf8')).toBe('literal\n')
+    expect((await git.command(f.directory, ['diff', '--cached', '--name-only'])).trim()).toBe(
+      'a1.txt',
+    )
+    expect(await git.command(f.directory, ['show', ':hello.txt'])).toBe('original\n')
+    const index = await readFile(join(f.directory, '.git', 'index'))
+    await git.unstage(f.directory, [])
+    expect(await readFile(join(f.directory, '.git', 'index'))).toEqual(index)
+    await expect(git.unstage(f.directory, ['../escape'])).rejects.toThrow('outside the repository')
+    await expect(git.unstage(f.directory, ['.git/config'])).rejects.toThrow('Invalid file path')
+    await symlink('/tmp', join(f.directory, 'outside'))
+    await expect(git.unstage(f.directory, ['outside/escape'])).rejects.toThrow(
+      'Symlink points outside',
+    )
+    expect(await readFile(join(f.directory, '.git', 'index'))).toEqual(index)
+  } finally {
+    await f.cleanup()
+  }
+})
+it('unstages added and deleted paths in an unborn checkout without touching working files', async () => {
+  const f = await fixture(),
+    git = new GitService()
+  try {
+    await git.command(f.directory, ['checkout', '--orphan', 'unborn-unstage'])
+    await writeFile(join(f.directory, 'hello.txt'), 'new working contents\n')
+    await writeFile(join(f.directory, 'added.txt'), 'keep me\n')
+    await writeFile(join(f.directory, 'missing.txt'), 'staged then removed\n')
+    await git.stage(f.directory, ['hello.txt', 'added.txt', 'missing.txt'])
+    await rm(join(f.directory, 'missing.txt'))
+    await git.unstage(f.directory, ['added.txt', 'missing.txt'])
+    expect(await readFile(join(f.directory, 'added.txt'), 'utf8')).toBe('keep me\n')
+    await expect(readFile(join(f.directory, 'missing.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    expect((await git.command(f.directory, ['ls-files'])).trim()).toBe('hello.txt')
+    expect(await git.command(f.directory, ['show', ':hello.txt'])).toBe('new working contents\n')
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('new working contents\n')
+  } finally {
+    await f.cleanup()
+  }
+})
 it('reports an add/add merge conflict without claiming a staged addition', async () => {
   const f = await fixture(),
     git = new GitService()

@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import { Disclosure } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
@@ -63,6 +64,7 @@ export function AcpRegistry({
     () => !agent.acpInstallationId && !agent.endpoint.trim(),
   )
 
+  const confirm = useConfirmation(JSON.stringify([installations, busyId, managedId]))
   useEffect(() => {
     if (!connected) return
     let active = true
@@ -301,8 +303,16 @@ export function AcpRegistry({
                             size="icon"
                             aria-label={`Remove ${entry.name}`}
                             disabled={isBusy || !connected}
-                            onClick={() => {
-                              if (!window.confirm(`Remove ${entry.name} from this computer?`))
+                            onClick={async () => {
+                              if (
+                                !(await confirm({
+                                  title: `Remove ${entry.name}?`,
+                                  description:
+                                    'This agent installation will be removed from this computer.',
+                                  confirmLabel: 'Remove agent',
+                                  destructive: true,
+                                }))
+                              )
                                 return
                               void mutate(
                                 installed.id,
@@ -400,6 +410,7 @@ function AcpAuthentication({
   > | null>(null)
   const [sessionsBusy, setSessionsBusy] = useApplicationState(false)
   const [sessionsError, setSessionsError] = useApplicationState('')
+  const confirm = useConfirmation(JSON.stringify([installation.id, sessionsBusy, disabled]))
   const refreshMethods = useCallback(async () => {
     const value = await request(
       '/api/agents/acp/inspect',
@@ -489,7 +500,15 @@ function AcpAuthentication({
     }
   }
   const deleteSession = async (sessionId: string) => {
-    if (!window.confirm('Permanently delete this ACP session and its saved context?')) return
+    if (
+      !(await confirm({
+        title: 'Delete ACP session?',
+        description: 'This permanently deletes the session and its saved context.',
+        confirmLabel: 'Delete session',
+        destructive: true,
+      }))
+    )
+      return
     setSessionsBusy(true)
     setSessionsError('')
     try {

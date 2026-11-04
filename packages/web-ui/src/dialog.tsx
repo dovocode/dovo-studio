@@ -20,7 +20,10 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn('dovo-dialog-fade fixed inset-0 z-50 bg-black/55 backdrop-blur-sm', className)}
+    className={cn(
+      'dovo-dialog-overlay dovo-dialog-fade fixed inset-0 z-50 backdrop-blur-sm',
+      className,
+    )}
     {...props}
   />
 ))

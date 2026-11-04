@@ -1,6 +1,6 @@
 import { randomUUID } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { confirmDiscardChanges } from './unsaved-changes'
+import { useConfirmDiscardChanges } from './unsaved-changes'
 import { Plus, Trash2 } from 'lucide-react'
 import type { SavedPrompt } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
@@ -35,8 +35,13 @@ export function SavedPromptsDialog({
   const [validated, setValidated] = useState(false)
   const [focusId, setFocusId] = useState('')
   const fields = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>())
-  const close = () => {
-    if (confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
+  const confirmDiscardChanges = useConfirmDiscardChanges(
+    repositoryId,
+    'saved prompt',
+    JSON.stringify(rows),
+  )
+  const close = async () => {
+    if (await confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
   }
   const normalizedName = (name: string) => name.trim().replace(/\s+/g, '-')
   const issues = new Map<string, string>()

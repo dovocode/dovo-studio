@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import { useEffect, useRef, useState } from 'react'
 import {
   settingsChangeCount,
@@ -87,6 +88,7 @@ export function TaskBehaviorSettings({
   const dirty =
     !!loaded &&
     (invalidDays || JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {}))
+  const confirm = useConfirmation(JSON.stringify([scope, repository?.id, draft, dayInputs, busy]))
   const protectDraft = useRef(false)
   const loadedTarget = useRef('')
   protectDraft.current = dirty
@@ -385,10 +387,16 @@ export function TaskBehaviorSettings({
           <Button
             variant="ghost"
             disabled={!connected || busy}
-            onClick={() => {
+            onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+                !(await confirm({
+                  title: 'Reload saved settings?',
+                  description:
+                    'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+                  confirmLabel: 'Discard and reload',
+                  destructive: true,
+                }))
               )
                 return
               protectDraft.current = false

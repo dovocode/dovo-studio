@@ -39,60 +39,68 @@ export function SettingsScopePage({
       wide={wide}
       toolbar={
         <div
-          className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-10"
+          className="studio-settings-target shrink-0 border-b px-4 py-3 sm:px-10"
           aria-label="Settings target"
         >
-          <div className={`${width} flex flex-wrap items-center gap-2 text-xs`}>
-            <span className="max-w-full break-words text-xs font-medium">Applies to</span>
-            <Popover.Root>
-              <Popover.Trigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="size-8 shrink-0 p-0"
-                  aria-label="Settings inheritance details"
-                  title={summary.title}
-                >
-                  <Layers className="size-4" aria-hidden="true" />
-                </Button>
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content
-                  align="start"
-                  sideOffset={8}
-                  className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
-                >
-                  <p className="font-semibold">Editing {summary.title}</p>
-                  <p>{summary.description}</p>
-                  <p className="text-muted-foreground">{summary.storage}</p>
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
+          <div
+            className={`studio-settings-target-inner ${width} flex flex-wrap items-end gap-x-3 gap-y-2 text-xs`}
+          >
+            <div className="flex min-h-9 items-center gap-1">
+              <span className="max-w-full break-words text-xs font-medium">Applies to</span>
+              <Popover.Root>
+                <Popover.Trigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-8 shrink-0 p-0"
+                    aria-label="Settings inheritance details"
+                    title={summary.title}
+                  >
+                    <Layers className="size-4" aria-hidden="true" />
+                  </Button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content
+                    align="start"
+                    sideOffset={8}
+                    className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
+                  >
+                    <p className="font-semibold">Editing {summary.title}</p>
+                    <p>{summary.description}</p>
+                    <p className="text-muted-foreground">{summary.storage}</p>
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
+            </div>
             {source && !source.connected && (
               <span role="status" className="text-xs text-muted-foreground">
                 Offline · edits kept here
               </span>
             )}
-            <ChoicePicker
-              aria-label="Settings project"
-              className="h-8 w-auto min-w-40 max-w-full bg-background/60"
-              value={target.projectId}
-              onValueChange={(projectId) => setTarget({ ...target, projectId })}
-            >
-              <option value="">All projects</option>
-              {target.projectId && !projects.some((project) => project.id === target.projectId) && (
-                <option value={target.projectId}>Project unavailable on this computer</option>
-              )}
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                  {project.archived ? ' · Archived' : ''}
-                </option>
-              ))}
-            </ChoicePicker>
+            <label className="studio-settings-target-field min-w-0 max-w-full">
+              <span className="studio-settings-target-label">Project</span>
+              <ChoicePicker
+                aria-label="Settings project"
+                className="h-8 w-auto min-w-40 max-w-full bg-background/60"
+                value={target.projectId}
+                onValueChange={(projectId) => setTarget({ ...target, projectId })}
+              >
+                <option value="">All projects</option>
+                {target.projectId &&
+                  !projects.some((project) => project.id === target.projectId) && (
+                    <option value={target.projectId}>Project unavailable on this computer</option>
+                  )}
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                    {project.archived ? ' · Archived' : ''}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </label>
             {sources.length > 1 && (
-              <>
-                <span className="text-muted-foreground">on</span>
+              <label className="studio-settings-target-field min-w-0 max-w-full">
+                <span className="studio-settings-target-label">Computer</span>
                 <ChoicePicker
                   aria-label="Settings computer"
                   className="h-8 w-auto min-w-40 max-w-full bg-background/60"
@@ -111,10 +119,10 @@ export function SettingsScopePage({
                     </option>
                   ))}
                 </ChoicePicker>
-              </>
+              </label>
             )}
             {sources.length === 1 && (
-              <span className="text-muted-foreground">
+              <span className="flex min-h-9 items-center text-muted-foreground">
                 on {target.environmentId ? sources[0].name : 'all computers'}
               </span>
             )}
@@ -122,10 +130,11 @@ export function SettingsScopePage({
               <Button
                 variant="outline"
                 size="sm"
+                className="min-h-9"
                 onClick={() => {
                   const environmentId = target.environmentId ? '' : sources[0].profile.id
                   const choices = settingsProjectChoices(sources, environmentId)
-                  setTarget({
+                  void setTarget({
                     environmentId,
                     projectId: choices.some((project) => project.id === target.projectId)
                       ? target.projectId

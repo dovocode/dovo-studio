@@ -5,7 +5,7 @@ import { TaskDefaultSettings, SettingsScopePage } from '@dovo/studio-ui'
 export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
   const { setTarget } = useSettingsTarget()
   useEffect(() => {
-    if (entityId) setTarget({ environmentId: entityId, projectId: '' })
+    if (entityId) void setTarget({ environmentId: entityId, projectId: '' })
   }, [entityId, setTarget])
   return (
     <SettingsScopePage

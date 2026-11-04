@@ -4,7 +4,8 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const core = `
 import {createContext,useContext,useState,useCallback} from 'react';
-export * from '@dovo/protocol';export * from '@dovo/client-runtime';
+export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';export * from '@dovo/client-runtime';
 const Store=createContext(null),Host=createContext(null);
 export const useWorkspace=()=>useContext(Store);export const useStudioHost=()=>useContext(Host);
 // This integration-navigation fixture has no active remote desktop sessions.
@@ -25,7 +26,7 @@ export function WorkspaceProvider({children}) {
 export const WorkspaceRuntimeScope=({runtimeId,children})=>{const global=useWorkspace();const connected=window.sources.some(s=>s.runtimeId===runtimeId&&s.connected);return <Store.Provider value={{...global,activeRuntimeId:runtimeId,workspace:window.spaces[runtimeId],connected}}><section data-owner={runtimeId}>{children}</section></Store.Provider>};
 export const formatDateTime=v=>v;
 `
-const ui = `
+const ui = `export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state.tsx';export {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';
 export * from '${root}packages/studio-ui/src/sidebar-header.tsx';
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as ContextMenu from '@radix-ui/react-context-menu';
 export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;

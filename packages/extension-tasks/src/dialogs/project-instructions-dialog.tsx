@@ -10,7 +10,7 @@ import {
   DialogTitle,
   Textarea,
 } from '@dovo/studio-ui'
-import { confirmDiscardChanges } from './unsaved-changes'
+import { useConfirmDiscardChanges } from './unsaved-changes'
 
 const readSchema = mutableStruct({ text: Schema.String, version: Schema.String })
 const previewSchema = mutableStruct({ diff: Schema.String, changed: Schema.Boolean })
@@ -33,8 +33,13 @@ export function ProjectInstructionsDialog({
   const [saved, setSaved] = useState('')
   const draft = drafts[name]
   const dirty = Object.values(drafts).some((item) => item.text !== item.original)
-  const close = () => {
-    if (!busy && confirmDiscardChanges(dirty)) onClose()
+  const confirmDiscardChanges = useConfirmDiscardChanges(
+    repositoryId,
+    'project instruction',
+    JSON.stringify(drafts),
+  )
+  const close = async () => {
+    if (!busy && (await confirmDiscardChanges(dirty))) onClose()
   }
   useEffect(() => {
     setError('')
@@ -110,7 +115,7 @@ export function ProjectInstructionsDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) close()
+        if (!open) void close()
       }}
     >
       <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col">

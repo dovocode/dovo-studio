@@ -1864,6 +1864,14 @@ export class GitService {
     // Literal names: a path such as a[1].txt must not stage every glob match.
     if (names.length) await this.command(root, ['--literal-pathspecs', 'add', '--', ...names])
   }
+  async unstage(path: string, names: string[]) {
+    const { path: root } = await this.inspect(path)
+    for (const name of names) await safeFile(root, name)
+    // A path-scoped reset changes only the index. Git also uses the empty tree for
+    // an unborn HEAD, so newly added files remain on disk as untracked files.
+    if (names.length)
+      await this.command(root, ['--literal-pathspecs', 'reset', '-q', '--', ...names])
+  }
   async commit(path: string, message: string) {
     const { path: root } = await this.inspect(path)
     await this.command(root, ['commit', '-m', message])

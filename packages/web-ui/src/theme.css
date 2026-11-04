@@ -156,6 +156,18 @@
   --studio-icon-glow: none;
 }
 
+/* Keep a single scrim when a confirmation opens above an existing editor. */
+.dovo-dialog-overlay {
+  background-color: rgb(0 0 0 / 0.28);
+}
+:is(.dark, [data-theme='dark']) .dovo-dialog-overlay {
+  background-color: rgb(0 0 0 / 0.55);
+}
+.dovo-dialog-overlay:has(~ .dovo-dialog-overlay[data-state='open']) {
+  background-color: transparent;
+  backdrop-filter: none;
+}
+
 /* Shared modal surfaces keep the app's compact type and control sizes. */
 .dovo-dialog-content {
   --dialog-edge: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);

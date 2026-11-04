@@ -36,7 +36,7 @@ const result = await build({
           resolveDir: root + 'packages/studio-ui',
           contents:
             path === 'core'
-              ? `export const useWorkspace=()=>({connected:window.connected,request:window.request,workspace:window.workspace,setWorkspace:fn=>window.workspace=fn(window.workspace)});`
+              ? `export const useConfirmation=()=>async()=>false;export const useWorkspace=()=>({connected:window.connected,request:window.request,workspace:window.workspace,setWorkspace:fn=>window.workspace=fn(window.workspace)});`
               : `import React from 'react';export const Button=({variant,size,...props})=><button {...props}/>;export const IconButton=({label,...props})=><button aria-label={label} {...props}/>;export const Input=React.forwardRef((props,ref)=><input ref={ref} {...props}/>);export const Textarea=React.forwardRef((props,ref)=><textarea ref={ref} {...props}/>);export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h1>{children}</h1>;export const DialogDescription=({children})=><p>{children}</p>;`,
         }))
       },
@@ -50,7 +50,6 @@ try {
   await page.evaluate(() => {
     window.connected = true
     window.closeCount = 0
-    window.confirm = () => false
     window.workspace = {
       repositories: [
         {

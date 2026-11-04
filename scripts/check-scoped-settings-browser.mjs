@@ -6,7 +6,8 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState} from 'react';export const useApplicationState=useState;`
 const controls = `import {useState,cloneElement,isValidElement,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{"aria-label":label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select aria-label={props["aria-label"]} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children,accessibilityRole})=><div role={accessibilityRole}>{children}</div>;export const Platform={OS:'ios'};export const Sheet=({children})=>children;export const useInsideSheet=()=>false;export const Icon=()=> <span aria-hidden='true'/>;export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark',palette:'dovo'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>{if(!window.cancelAlert)buttons.at(-1).onPress?.()}};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} disabled={disabled} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable,error})=><label>{label}{multiline?<textarea aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>} {error&&<span role="alert">{error}</span>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);setError('');try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}}`
 const mocks = {
-  '@dovo/studio-core': `export const useWorkspace=()=>window.store;export const useSettingsDraft=()=>{};export const useOptionalSettingsTarget=()=>null;`,
+  './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
+  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const useWorkspace=()=>window.store;export const useSettingsDraft=()=>{};export const useOptionalSettingsTarget=()=>null;`,
   '@dovo/studio-core/state': state,
   '../state/application-state': state,
   '../connection/provider': `export const useRuntime=()=>window.store;export const RuntimeScope=({children})=>children;`,
@@ -20,7 +21,7 @@ try {
   for (const mobile of [false, true]) {
     const built = await build({
       stdin: {
-        contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {TaskDefaultSettings} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-ui/src'}/task-default-settings.tsx';import {${mobile ? 'TaskLifecycleSettings' : 'TaskBehaviorSettings'} as Lifecycle} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences/task-lifecycle-settings.tsx' : 'packages/studio-ui/src/task-behavior-settings.tsx'}';${mobile ? `import {SettingsPage as Frame} from '${root}/apps/mobile/src/screens/settings-theme.tsx';` : 'const Frame=({children})=>children;'}import {defaultTaskHarness} from '@dovo/protocol';const repo={id:'project',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.writes=[];window.scopes={global:{taskDefaults:{harness:defaultTaskHarness('claude'),setupCommand:'global setup'},resources:{mcpServers:[],skills:[]},prompts:[{id:'review',name:'review',text:'Shared review'}]},environment:{},project:{},'environment-project':{}};const request=async(path,input)=>{if(path==='/api/runtime/preferences/read')return {autoContinueAfterRestart:false,settleOnPullClose:false,autoArchiveDays:21};if(path.endsWith('/read')){if(input.scope==='project'&&window.delayProject)await new Promise(resolve=>window.releaseProject=resolve);return {value:structuredClone(window.scopes[input.scope]),inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}if(path.endsWith('/save')){if(window.failSave)throw new Error('Settings changed on another device. Reload before saving.');window.writes.push(input);window.scopes[input.scope]=structuredClone(input.after);return {value:input.after,inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}throw new Error(path)};const snapshot={defaults:{configured:true,harness:defaultTaskHarness('codex'),permission:'full-access',scopedSettings:{environment:{taskDefaults:{execution:'worktree'}},shared:[{key:'global',updatedAt:1,changeId:'one',value:window.scopes.global}]}},workspace:{repositories:[repo],agents:[]}};const runtimes=[{profile:{id:'local',name:'Mac',connection:{address:'http://local',token:'local'}},snapshot,connected:true},{profile:{id:'remote',name:'Linux',connection:{address:'http://remote',token:'remote'}},snapshot:{...snapshot,defaults:{...snapshot.defaults,scopedSettings:{...snapshot.defaults.scopedSettings,environment:{taskDefaults:{execution:'main'}}}}},connected:false}];window.store={connected:true,request,call:request,snapshot,runtimes,overviews:runtimes,activeRuntimeId:'local',activeId:'local'};function App(){const [,render]=useState(0);const [lifecycle,setLifecycle]=useState(false);window.openLifecycle=()=>{window.store.snapshot.taskBehaviorSupported=true;window.store.snapshot.threadBehaviorSupported=true;setLifecycle(true)};window.setConnection=connected=>{window.store.connected=connected;render(value=>value+1)};return <Frame>{lifecycle?<Lifecycle scope='global' repository={repo}/>:<TaskDefaultSettings repository={repo} ${mobile ? '' : 'inline'}/>}</Frame>};createRoot(document.getElementById('app')).render(<App/>);`,
+        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {TaskDefaultSettings} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/studio-ui/src'}/task-default-settings.tsx';import {${mobile ? 'TaskLifecycleSettings' : 'TaskBehaviorSettings'} as Lifecycle} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences/task-lifecycle-settings.tsx' : 'packages/studio-ui/src/task-behavior-settings.tsx'}';${mobile ? `import {SettingsPage as Frame} from '${root}/apps/mobile/src/screens/settings-theme.tsx';` : 'const Frame=({children})=>children;'}import {defaultTaskHarness} from '@dovo/protocol';const repo={id:'project',name:'Project',path:'/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.writes=[];window.scopes={global:{taskDefaults:{harness:defaultTaskHarness('claude'),setupCommand:'global setup'},resources:{mcpServers:[],skills:[]},prompts:[{id:'review',name:'review',text:'Shared review'}]},environment:{},project:{},'environment-project':{}};const request=async(path,input)=>{if(path==='/api/runtime/preferences/read')return {autoContinueAfterRestart:false,settleOnPullClose:false,autoArchiveDays:21};if(path.endsWith('/read')){if(input.scope==='project'&&window.delayProject)await new Promise(resolve=>window.releaseProject=resolve);return {value:structuredClone(window.scopes[input.scope]),inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}if(path.endsWith('/save')){if(window.failSave)throw new Error('Settings changed on another device. Reload before saving.');window.writes.push(input);window.scopes[input.scope]=structuredClone(input.after);return {value:input.after,inherited:input.scope==='global'?{}:structuredClone(window.scopes.global),projectKey:'project:github.com/team/repo'}}throw new Error(path)};const snapshot={defaults:{configured:true,harness:defaultTaskHarness('codex'),permission:'full-access',scopedSettings:{environment:{taskDefaults:{execution:'worktree'}},shared:[{key:'global',updatedAt:1,changeId:'one',value:window.scopes.global}]}},workspace:{repositories:[repo],agents:[]}};const runtimes=[{profile:{id:'local',name:'Mac',connection:{address:'http://local',token:'local'}},snapshot,connected:true},{profile:{id:'remote',name:'Linux',connection:{address:'http://remote',token:'remote'}},snapshot:{...snapshot,defaults:{...snapshot.defaults,scopedSettings:{...snapshot.defaults.scopedSettings,environment:{taskDefaults:{execution:'main'}}}}},connected:false}];window.store={connected:true,request,call:request,snapshot,runtimes,overviews:runtimes,activeRuntimeId:'local',activeId:'local'};function App(){const [,render]=useState(0);const [lifecycle,setLifecycle]=useState(false);window.openLifecycle=()=>{window.store.snapshot.taskBehaviorSupported=true;window.store.snapshot.threadBehaviorSupported=true;setLifecycle(true)};window.setConnection=connected=>{window.store.connected=connected;render(value=>value+1)};return <Frame>{lifecycle?<Lifecycle scope='global' repository={repo}/>:<TaskDefaultSettings repository={repo} ${mobile ? '' : 'inline'}/>}</Frame>};createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -294,15 +295,24 @@ try {
     if (mobile) {
       // RN's Alert choices are exercised through the native boundary fixture.
       await page.evaluate(() => (window.cancelAlert = true))
-    } else page.once('dialog', (dialog) => dialog.dismiss())
+    }
     await page.getByRole('button', { name: 'Reload settings', exact: true }).click()
+    if (!mobile)
+      await page
+        .getByRole('dialog', { name: 'Reload saved settings?', exact: true })
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
     assert.equal(
       await page.getByLabel('Setup command', { exact: true }).inputValue(),
       'keep my offline edits',
     )
-    if (!mobile) page.once('dialog', (dialog) => dialog.accept())
-    else await page.evaluate(() => (window.cancelAlert = false))
+    if (mobile) await page.evaluate(() => (window.cancelAlert = false))
     await page.getByRole('button', { name: 'Reload settings', exact: true }).click()
+    if (!mobile)
+      await page
+        .getByRole('dialog', { name: 'Reload saved settings?', exact: true })
+        .getByRole('button', { name: 'Discard and reload', exact: true })
+        .click()
     await page.waitForFunction(
       () =>
         document.querySelector('[aria-label="Setup command"]')?.value === 'saved on another device',
@@ -350,19 +360,29 @@ try {
       .filter({ hasText: 'Settings changed on another device' })
       .waitFor()
     if (mobile) await page.evaluate(() => (window.cancelAlert = true))
-    else page.once('dialog', (dialog) => dialog.dismiss())
+
     await page
       .getByRole('button', { name: mobile ? 'Reload settings' : 'Reload', exact: true })
       .click()
+    if (!mobile)
+      await page
+        .getByRole('dialog', { name: 'Reload saved settings?', exact: true })
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
     assert.equal(
       mobile ? await resume.inputValue() : await resume.textContent(),
       mobile ? 'on' : 'On',
     )
     if (mobile) await page.evaluate(() => (window.cancelAlert = false))
-    else page.once('dialog', (dialog) => dialog.accept())
+
     await page
       .getByRole('button', { name: mobile ? 'Reload settings' : 'Reload', exact: true })
       .click()
+    if (!mobile)
+      await page
+        .getByRole('dialog', { name: 'Reload saved settings?', exact: true })
+        .getByRole('button', { name: 'Discard and reload', exact: true })
+        .click()
     if (mobile) await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
     await page.waitForFunction(
       (label) => {

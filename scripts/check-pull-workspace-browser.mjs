@@ -324,6 +324,9 @@ try {
       .waitFor()
     await mergeReadiness.getByText(status, { exact: true }).waitFor()
   }
+  await mergeDialog
+    .getByText('I acknowledge the current failures: Pipeline runs: 1 failed.', { exact: true })
+    .waitFor()
   const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
   assert.equal(await mergeConfirm.isDisabled(), true)
   await mergeDialog.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
@@ -741,6 +744,9 @@ try {
       .getByRole('region', { name: 'Merge readiness' })
       .getByText(status, { exact: true })
       .waitFor()
+  await autoDialog
+    .getByText(/I acknowledge the current failures:.*Pipeline runs: 1 failed/)
+    .waitFor()
   const autoSubmit = autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true })
   await page.evaluate(() => {
     window.detail = { ...window.detail, pull: { ...window.detail.pull, autoMergeEnabled: true } }
@@ -761,6 +767,15 @@ try {
     window.detail = { ...window.detail, stale: false }
     window.showDestination('overview', 'enable-auto-merge')
   })
+  await page.waitForFunction(
+    () => document.querySelector('[role="dialog"] button[type="submit"]')?.disabled,
+  )
+  assert.equal(
+    await autoDialog.getByRole('checkbox').isChecked(),
+    false,
+    'Changed readiness invalidates prior consent',
+  )
+  await autoDialog.getByRole('checkbox').check()
   await autoSubmit.click()
   await autoDialog.waitFor({ state: 'detached' })
   const autoWrite = await page.evaluate(() => window.writes.at(-1).input)

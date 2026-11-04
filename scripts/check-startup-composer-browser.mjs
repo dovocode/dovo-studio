@@ -13,7 +13,7 @@ const mocks = {
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';

@@ -52,7 +52,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
       description="Connect computers and phones, manage trusted devices and check runtime health."
     >
       {threadConnection && (
-        <article className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
+        <article className="rounded-md border bg-card/40 p-4 space-y-3">
           <h2 className="text-sm font-medium">Pair computer to open {threadConnection.title}</h2>
           <p className="text-xs text-muted-foreground">
             Pair the computer running this thread with its LAN/VPN address and pairing code. The
@@ -95,8 +95,9 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
         .map((entry) => (
           <LastCrashNotice key={entry.profile.id} source={entry} />
         ))}
+      <PairingClient onManage={setManaging} discovered={discovered} />
       {host && (
-        <article className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-4">
+        <article className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card/40 p-4">
           <div className="min-w-0">
             <h2 className="text-sm font-medium">Connect your phone</h2>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -104,12 +105,13 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
               an eight-digit code.
             </p>
           </div>
-          <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
+          <Button variant="outline" onClick={() => setPairingPhone(host.profile)}>
+            Connect your phone
+          </Button>
         </article>
       )}
       <ServiceUrlSettings />
       <AccountPanel onPair={(address) => setDiscovered({ address })} />
-      <PairingClient onManage={setManaging} discovered={discovered} />
       <p className="text-xs leading-6 text-muted-foreground">
         Threads and projects appear together; each runs on its own computer. Use a reachable LAN,
         Tailscale or NetBird address. HTTP and optional HTTPS are supported.

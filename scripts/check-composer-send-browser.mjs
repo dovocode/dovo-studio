@@ -10,7 +10,7 @@ const mocks = {
   './use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['harness:codex']),loading:false,refresh:()=>{}});`,
   './agent-avatar': `export const AgentAvatar=()=>null;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
@@ -35,10 +35,11 @@ const built = await build({
   stdin: {
     contents: `
 import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {RunControls} from './src/chat/actions/run-controls.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
+const connection={address:'http://runtime',token:'token'};
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-thread/create'){if(window.failSideSave)throw Error('Side save failed');return new Promise((resolve,reject)=>{window.sideSaved=()=>resolve({id:'side-'+input.childId});window.sideLost=()=>reject(Error('Side chat response lost'))})};if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return new Promise(resolve=>{window.finishTitle=()=>resolve({title:'Generated title'})});if(path==='/api/tasks/queue'&&input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{workspace,...inputs,runs:[],queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection,flush:async()=>{},snapshot:{workspace,...inputs,runs:[],queuedTurnSettingsSupported:true,persistentTurnModelsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -101,6 +102,46 @@ try {
       previous,
     )
   }
+  await page.evaluate(() => {
+    window.setComposerPreferences({ confirmStop: true })
+    window.confirmationResponse = (options) =>
+      new Promise((resolve) => {
+        window.pendingConfirmation = { options, resolve }
+      })
+    window.setTask((task) => ({ ...task, status: 'running', activeRunId: 'run-one' }))
+  })
+  const stop = page.getByRole('button', { name: 'Stop', exact: true })
+  await stop.click()
+  await page.waitForFunction(() => !!window.pendingConfirmation)
+  await page.evaluate(() => window.pendingConfirmation.resolve(false))
+  await stop.waitFor({ state: 'visible' })
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Stop"]').disabled)
+  assert.equal(
+    await page.evaluate(() => window.requests.filter((r) => r.path === '/api/tasks/cancel').length),
+    0,
+  )
+  await stop.click()
+  await page.evaluate(() => window.setTask((task) => ({ ...task, activeRunId: 'run-two' })))
+  await page.waitForFunction(() => window.current.activeRunId === 'run-two')
+  await page.evaluate(() => window.pendingConfirmation.resolve(true))
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Stop"]').disabled)
+  assert.equal(
+    await page.evaluate(() => window.requests.filter((r) => r.path === '/api/tasks/cancel').length),
+    0,
+  )
+  await stop.click()
+  await page.evaluate(() => window.pendingConfirmation.resolve(true))
+  await page.waitForFunction(() => window.requests.some((r) => r.path === '/api/tasks/cancel'))
+  assert.deepEqual(
+    await page.evaluate(() => window.requests.find((r) => r.path === '/api/tasks/cancel').input),
+    { id: 'task', runId: 'run-two' },
+  )
+  await page.evaluate(() => {
+    window.setComposerPreferences({ confirmStop: false })
+    delete window.confirmationResponse
+    window.requests = []
+    window.setTask((task) => ({ ...task, status: 'draft', activeRunId: undefined }))
+  })
   await page.evaluate(() => window.setTask((task) => ({ ...task, autoProject: true })))
   await input.fill('Update dashboard using API')
   await page.evaluate(() => {

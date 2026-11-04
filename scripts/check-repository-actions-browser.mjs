@@ -85,7 +85,7 @@ try {
     )
   const refresh = page.getByRole('button', { name: 'Refresh Git', exact: true })
   const stage = page.getByRole('button', { name: 'Stage selected', exact: true })
-  const all = page.getByRole('checkbox', { name: 'Select all changed files', exact: true })
+  const all = page.getByRole('checkbox', { name: /^Select all / }).and(page.locator(':enabled'))
   const message = page.getByRole('textbox', { name: 'Commit message', exact: true })
   const commitPush = page.getByRole('button', { name: 'Commit & push', exact: true })
   const push = page.getByRole('button', { name: 'Push branch', exact: true })
@@ -98,7 +98,19 @@ try {
     { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
   ])
   await all.waitFor()
-  await page.getByText('Staged: Modified · Unstaged: Modified', { exact: true }).waitFor()
+  await page
+    .getByRole('region', { name: 'Staged', exact: true })
+    .getByText('Staged: Modified', { exact: true })
+    .waitFor()
+  await page
+    .getByRole('region', { name: 'Unstaged', exact: true })
+    .getByText('Unstaged: Modified', { exact: true })
+    .waitFor()
+  assert.equal(
+    await page.getByRole('region', { name: 'Staged', exact: true }).getByRole('checkbox').count(),
+    0,
+  )
+  assert.equal(await page.getByText('src/one.ts', { exact: true }).count(), 2)
   await page.getByText('Untracked', { exact: true }).waitFor()
   await page
     .getByLabel('Staging summary')
@@ -150,7 +162,18 @@ try {
   await refresh.click()
   await reads(5)
   await finish(4, ['legacy.ts'])
-  await page.getByText('Staging status unavailable', { exact: true }).waitFor()
+  await page
+    .getByRole('region', { name: 'Staging status unavailable', exact: true })
+    .getByText('legacy.ts', { exact: true })
+    .waitFor()
+  await page.getByRole('heading', { name: 'Staged · 0 known', exact: true }).waitFor()
+  assert.equal(
+    await page
+      .getByRole('region', { name: 'Unstaged', exact: true })
+      .getByText('legacy.ts', { exact: true })
+      .count(),
+    0,
+  )
   await page
     .getByLabel('Staging summary')
     .filter({ hasText: 'Staged contents unavailable' })
@@ -162,11 +185,12 @@ try {
   await commitPush.click()
   await reads(6)
   await finish(5, [])
+  await message.waitFor({ state: 'detached' })
   await page
     .getByRole('status')
     .filter({ hasText: 'Use Push branch to retry without committing again' })
     .waitFor()
-  assert.equal(await message.inputValue(), '')
+  assert.equal(await message.count(), 0)
   await page.evaluate(() => (window.failPush = false))
   await push.click()
   await page.getByRole('status').filter({ hasText: 'Branch pushed.' }).waitFor()
@@ -218,7 +242,7 @@ try {
   await message.fill('Draft for third')
   await page.evaluate(() => window.configure({ connection: { id: 'other-runtime' } }))
   await reads(10)
-  assert.equal(await message.inputValue(), '')
+  assert.equal(await message.count(), 0)
   assert.equal(
     await page.getByRole('checkbox', { name: 'Select third.ts', exact: true }).count(),
     0,
@@ -250,17 +274,28 @@ try {
   await page.getByText('No uncommitted changes.', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'new-branch', exact: true }).waitFor()
 
-  // Known clean/unstaged-only checkouts cannot commit, even after entering a message.
-  await message.fill('All staged membership')
-  assert.equal(await commitPush.isDisabled(), true)
+  // A clean checkout hides the commit form and gives focus to an available control or heading.
+  assert.equal(await message.count(), 0)
+  assert.equal(await page.getByLabel('Staging summary').count(), 0)
+  assert.equal(
+    await page.getByText('Commits include all staged files', { exact: false }).count(),
+    0,
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        document.activeElement?.tagName === 'H3' || document.activeElement?.tagName === 'BUTTON',
+    ),
+    true,
+  )
   const commit = page.getByRole('button', { name: 'Commit staged', exact: true })
-  assert.equal(await commit.isDisabled(), true)
   await refresh.click()
   await reads(12)
   await finish(11, [
     { path: 'unstaged.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
   ])
   await page.getByText('Unstaged: Modified', { exact: true }).waitFor()
+  await message.fill('All staged membership')
   assert.equal(await commit.isDisabled(), true)
   await all.check()
   assert.equal(await commitPush.isDisabled(), true)
@@ -313,6 +348,34 @@ try {
   await page.getByLabel('Staging summary').filter({ hasText: '0 staged files' }).waitFor()
   assert.equal(await commit.isDisabled(), true)
   assert.equal(await commitPush.isDisabled(), true)
+  // Unstaging only the requested staged path preserves the other commit members.
+  await refresh.click()
+  await reads(16)
+  await finish(15, [
+    { path: 'partial.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
+    { path: 'other.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
+  ])
+  await page.getByRole('button', { name: 'Unstage partial.ts', exact: true }).click()
+  await reads(17)
+  assert.deepEqual(await page.evaluate(() => window.writes.at(-1)), {
+    path: '/api/scm/unstage',
+    input: { repositoryId: 'repo', taskId: 'third', paths: ['partial.ts'] },
+    connection: { id: 'other-runtime' },
+  })
+  await finish(16, [
+    { path: 'partial.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
+    { path: 'other.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
+  ])
+  await page.getByRole('button', { name: 'Unstage other.ts', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Unstage partial.ts', exact: true }).count(),
+    0,
+  )
+  assert.equal(
+    await page.getByRole('checkbox', { name: 'Select other.ts', exact: true }).count(),
+    0,
+  )
+  await page.getByRole('status').filter({ hasText: 'Working file contents kept' }).waitFor()
   assert.deepEqual(errors, [])
   console.log('Repository actions browser checks passed')
 } finally {

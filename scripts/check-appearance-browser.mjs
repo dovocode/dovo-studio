@@ -185,8 +185,22 @@ try {
     })
   })
   const ready = () => page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor()
-  const choose = async (name) =>
-    page.getByRole('radio', { name, exact: true }).locator('..').click()
+  const palettePicker = page.locator('details[data-setting-label="Color palette choices"]')
+  const browsePalettes = palettePicker.locator('summary')
+  const openPalettes = async () => {
+    if ((await palettePicker.getAttribute('open')) === null) await browsePalettes.click()
+  }
+  const choose = async (name) => {
+    await openPalettes()
+    await page.getByRole('radio', { name, exact: true }).locator('..').click()
+    await browsePalettes.click()
+    assert.equal(
+      await page
+        .getByRole('img', { name: `Current color palette: ${name}`, exact: true })
+        .isVisible(),
+      true,
+    )
+  }
   const mode = async (name) => {
     await page.getByRole('combobox', { name: 'Color scheme', exact: true }).click()
     await page.getByRole('option', { name, exact: true }).click()
@@ -218,7 +232,37 @@ try {
       .querySelector('[data-testid=diff] diffs-container')
       ?.shadowRoot?.textContent.includes('greet'),
   )
+  assert.equal(await palettePicker.getAttribute('open'), null, 'Palette browser starts collapsed')
+  assert.equal(
+    await page.getByRole('img', { name: 'Current color palette: Dovo', exact: true }).isVisible(),
+    true,
+  )
+  assert.equal(
+    await palettePicker.getByRole('radio').count(),
+    0,
+    'Palette choices stay out of the collapsed page',
+  )
+  if (process.env.DOVO_APPEARANCE_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', '-collapsed.png'),
+    })
+  await browsePalettes.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await palettePicker.getByRole('radio').count(),
+    await page.evaluate(() => window.paletteIds.length),
+  )
   assert.equal(await page.getByRole('radio', { name: 'Dovo', exact: true }).isChecked(), true)
+  if (process.env.DOVO_APPEARANCE_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', '-palettes.png'),
+    })
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await palettePicker.getAttribute('open'),
+    null,
+    'Palette browser closes from the keyboard',
+  )
   assert.equal(
     await page.locator('.studio-titlebar-brand img, .studio-titlebar-brand svg').count(),
     0,
@@ -234,8 +278,12 @@ try {
     )
   }
   assert.equal(await glow.inputValue(), '0', 'New workspaces default to quiet surfaces')
+  assert.equal(await glow.getAttribute('aria-valuetext'), 'Off')
+  assert.equal(await glow.locator('..').locator('output').textContent(), 'Off')
   assert.equal(await gradients.isChecked(), false)
   await setGlow(0.5)
+  assert.equal(await glow.getAttribute('aria-valuetext'), '50 percent')
+  assert.equal(await glow.locator('..').locator('output').textContent(), '50%')
   await gradients.click()
   const ids = await page.evaluate(() => window.paletteIds)
   for (const id of ids) {
@@ -610,9 +658,18 @@ try {
   await mode('System')
   await page.reload()
   await ready()
-  assert.equal(await page.getByRole('radio', { name: 'Claude', exact: true }).isChecked(), true)
+  assert.equal(
+    await page.getByRole('radio', { name: 'Claude', exact: true, includeHidden: true }).isChecked(),
+    true,
+  )
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
   await page.getByRole('combobox', { name: 'App font', exact: true }).fill('Georgia')
+  const fontPreviews = page.getByRole('group', { name: 'Font previews', exact: true })
+  assert.ok(
+    await fontPreviews
+      .getByText('A clear view of your next idea.', { exact: true })
+      .evaluate((el) => getComputedStyle(el).fontFamily.startsWith('Georgia')),
+  )
   assert.doesNotMatch(
     await page.getByRole('region', { name: 'Terminal font preview', exact: true }).innerText(),
     /[\uE000-\uF8FF]/,
@@ -621,6 +678,11 @@ try {
   await page
     .getByRole('combobox', { name: 'Code font', exact: true })
     .fill('JetBrains Mono Nerd Font')
+  assert.ok(
+    await fontPreviews
+      .locator('code')
+      .evaluate((el) => getComputedStyle(el).fontFamily.includes('JetBrains Mono Nerd Font')),
+  )
   await page
     .getByRole('combobox', { name: 'Terminal font', exact: true })
     .fill('JetBrains Mono Nerd Font')
@@ -722,6 +784,12 @@ try {
     assert.ok(Math.abs(width - fontState.widths[0]) < 0.1, 'Nerd icons fit one monospace cell')
   assert.equal(fontState.sockets, 1, 'Changing fonts must not reconnect the terminal')
   assert.ok(fontState.buffer.includes('theme session preserved'))
+  if (process.env.DOVO_APPEARANCE_SCREENSHOT) {
+    await fontPreviews.scrollIntoViewIfNeeded()
+    await page.screenshot({
+      path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', '-fonts.png'),
+    })
+  }
   await page.reload()
   await ready()
   assert.equal(
@@ -750,9 +818,17 @@ try {
     window.terminals[0].options.fontFamily.startsWith('ui-monospace'),
   )
   // Native radio cards support keyboard navigation as well as pointer selection.
+  await openPalettes()
   await page.getByRole('radio', { name: 'Claude', exact: true }).focus()
   await page.keyboard.press('ArrowRight')
   assert.equal(await page.getByRole('radio', { name: 'T3 Code', exact: true }).isChecked(), true)
+  await browsePalettes.click()
+  assert.equal(
+    await page
+      .getByRole('img', { name: 'Current color palette: T3 Code', exact: true })
+      .isVisible(),
+    true,
+  )
   for (const width of [320, 390, 768]) {
     await page.setViewportSize({ width, height: 844 })
     if (process.env.DOVO_APPEARANCE_SCREENSHOT)
@@ -763,6 +839,14 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       `Appearance fits ${width}px screens`,
     )
+    for (const preview of [
+      fontPreviews,
+      page.getByRole('region', { name: 'Terminal font preview', exact: true }),
+    ])
+      assert.ok(
+        await preview.evaluate((el) => el.clientWidth <= el.parentElement.clientWidth),
+        `Font previews fit ${width}px screens`,
+      )
     assert.ok(
       await page
         .getByRole('combobox', { name: 'Color scheme', exact: true })

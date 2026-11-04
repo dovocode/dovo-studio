@@ -112,6 +112,7 @@ function ScreenWorkspace({
               ? [...root.snapshot.questions, busyDesktopQuestion]
               : root.snapshot.questions,
           artifactsEnabled: true,
+          remoteDesktopEnabled: state === 'legacy' ? undefined : false,
           scopedAgentsSupported: state !== 'legacy',
           taskBehaviorSupported: state !== 'legacy',
           threadBehaviorSupported: state !== 'legacy',
@@ -207,7 +208,7 @@ function ScreenWorkspace({
                 ]
               : [],
         },
-        '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'feature/navigation' },
+        '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'main' },
         '/api/terminals/ticket': { ticket: 'catalog-preview' },
         '/api/review/read': { files: [], groups: [] },
         '/api/tasks/waiting': { dependencies: [] },
@@ -241,7 +242,7 @@ function ScreenWorkspace({
           truncated: false,
         },
         '/api/scm/action-state': {
-          dirty: false,
+          dirty: state === 'git-changes',
           branch: 'main',
           ahead: 0,
           behind: 0,

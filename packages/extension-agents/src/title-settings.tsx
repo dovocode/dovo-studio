@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import { Disclosure } from '@dovo/studio-ui'
 import { settingsChanges, supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
@@ -79,8 +80,18 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
   const dirty = !!settings && JSON.stringify(settings) !== JSON.stringify(baseline)
   protectDraft.current = dirty
   useSettingsDraft(dirty, busy)
-  const reloadSettings = () => {
-    if (dirty && !window.confirm('Discard your unsaved edits and load the latest saved settings?'))
+  const confirm = useConfirmation(JSON.stringify([settingsPath, settings, busy]))
+  const reloadSettings = async () => {
+    if (
+      dirty &&
+      !(await confirm({
+        title: 'Reload saved settings?',
+        description:
+          'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+        confirmLabel: 'Discard and reload',
+        destructive: true,
+      }))
+    )
       return
     setBaseline(settings)
     setReload((value) => value + 1)

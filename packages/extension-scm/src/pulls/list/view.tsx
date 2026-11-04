@@ -265,7 +265,8 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     setUrlOwnerId(owner ?? null)
     setChooseRuntime(!owner)
   }, [entityId, pullTarget, navigationKey, sources])
-  const back = () =>
+  const back = async () => {
+    if ((entityId || pullTarget) && (await host.goBack?.())) return
     transition(() => {
       setSelected(null)
       setUrlSelection(null)
@@ -273,9 +274,9 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
       setUrlOwnerId(null)
       setLinkChoices(null)
       setChooseRuntime(false)
-      if ((entityId || pullTarget) && host.goBack?.()) return
       host.navigate({ viewId: 'pulls' })
     }, 'close')
+  }
   const hasDetail = !!selected || !!urlSelection
   const urlRuntimeId = urlOwnerId
   const rowKey = (pull: (typeof pulls)[number]) => JSON.stringify([pull.source.key, pull.number])

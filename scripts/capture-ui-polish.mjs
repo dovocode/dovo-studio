@@ -63,6 +63,7 @@ import {DesktopFollowUp} from './src/desktop-dialogs-fixture';
 import {PullDetail} from '../../packages/extension-scm/src/pulls/detail/detail';
 window.uiRoutes=desktopScreenViews.map(({id,title})=>({id,title}));
 import {updateAppPreferences} from '@dovo/studio-core';
+window.uiSetPreferences=updateAppPreferences;
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
 updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
@@ -148,7 +149,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
               ...routes
                 .filter(({ id }) => !['tasks', 'pulls', 'general'].includes(id))
                 .map(({ id }) => [id, id]),
-              ...['agents', 'task-behavior'].map((route) => [
+              ...['agents', 'task-behavior', 'remote-desktop'].map((route) => [
                 route + '-legacy',
                 route,
                 undefined,
@@ -424,6 +425,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .getByRole('button', { name: 'Files', exact: true })
         await files.hover()
         await page.getByRole('tooltip', { name: 'Files', exact: true }).waitFor()
+        await page
+          .getByRole('tooltip', { name: 'Files', exact: true })
+          .evaluate(async (element) => {
+            await Promise.all(
+              element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+            )
+          })
         await page.screenshot({ path: resolve(output, `tools-tooltip-${mode}.png`) })
         await page.mouse.move(0, 0)
         await page.keyboard.press('Escape')
@@ -441,6 +449,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .getByRole('button', { name: 'Browser', exact: true })
         await browserNavigation.hover()
         await page.getByRole('tooltip', { name: 'Browser', exact: true }).waitFor()
+        await page
+          .getByRole('tooltip', { name: 'Browser', exact: true })
+          .evaluate(async (element) => {
+            await Promise.all(
+              element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+            )
+          })
         await page.screenshot({ path: resolve(output, `navigation-tooltip-${mode}.png`) })
         await page.mouse.move(0, 0)
         await page.keyboard.press('Escape')
@@ -451,6 +466,16 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         await page.screenshot({ path: resolve(output, `${name}-compact-${mode}.png`) })
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
         await page.setViewportSize({ width: 1440, height: 960 })
+      }
+      if (name === 'appearance' && process.argv.includes('--controls')) {
+        const palettes = page.locator('details[data-setting-label="Color palette choices"]')
+        await palettes.locator('summary').click()
+        assert.equal(await palettes.getByRole('radio').count(), 17)
+        await palettes.evaluate((element) => element.scrollIntoView({ block: 'start' }))
+        await page.evaluate(() => document.fonts.ready)
+        await page.screenshot({ path: resolve(output, `appearance-palettes-${mode}.png`) })
+        await palettes.locator('summary').click()
+        assert.equal(await palettes.getAttribute('open'), null)
       }
       if (process.argv.includes('--controls')) {
         const control =

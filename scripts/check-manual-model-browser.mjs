@@ -12,7 +12,7 @@ const mocks = {
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';

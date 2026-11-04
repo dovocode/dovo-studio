@@ -2927,17 +2927,80 @@ a.studio-project-row:hover {
   }
 }
 
+/* Settings use one quiet reading column; section rules separate categories from fields. */
 .studio-settings-page {
   container: settings / inline-size;
 }
+.studio-settings-intro {
+  padding-bottom: 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+.studio-settings-storage {
+  padding: 5px 0;
+}
+.studio-settings-group-heading > h2 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.studio-settings-group-heading > h2::after {
+  content: '';
+  flex: 1;
+  min-width: 24px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.studio-settings-page .studio-setting-control {
+  min-width: 208px;
+}
+.studio-settings-page
+  .studio-setting-control
+  > :is([data-choice-picker], [data-slot='select-trigger']) {
+  min-width: 208px;
+}
+.studio-settings-target {
+  background: color-mix(in srgb, var(--card) 45%, transparent);
+}
+.studio-settings-target-field {
+  display: grid;
+  gap: 5px;
+}
+.studio-settings-target-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.studio-settings-savebar {
+  box-shadow: 0 6px 24px #00000018;
+}
+.studio-settings-saved {
+  padding-top: 4px;
+}
+
 @container settings (max-width: 36rem) {
   .studio-setting-row {
     flex-direction: column;
     align-items: stretch;
   }
-  .studio-setting-row .studio-setting-control {
+  .studio-settings-page .studio-setting-row .studio-setting-control {
     width: 100%;
     max-width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .studio-settings-page
+    .studio-setting-control
+    > :is([data-choice-picker], [data-slot='select-trigger']) {
+    min-width: 0;
+    width: 100%;
+  }
+  .studio-settings-target-inner {
+    align-items: center;
+  }
+  .studio-settings-target-field {
+    flex: 1 1 180px;
+  }
+  .studio-settings-target-field > [data-choice-picker] {
+    width: 100%;
     min-width: 0;
   }
 }

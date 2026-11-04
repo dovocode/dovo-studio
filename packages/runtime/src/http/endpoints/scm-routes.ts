@@ -836,11 +836,13 @@ export function scmRoute(request: IncomingMessage, path: string) {
             ok: true,
           })
         }
-        if (path === '/api/scm/stage') {
+        if (path === '/api/scm/stage' || path === '/api/scm/unstage') {
           const paths = decode(maxValue(mutableArray(Schema.String), 200), input.paths)
           yield* s.tasks.withCheckoutEditEffect(
             cwd,
-            runtimeOperation(() => s.git.stage(cwd, paths)),
+            runtimeOperation(() =>
+              path === '/api/scm/stage' ? s.git.stage(cwd, paths) : s.git.unstage(cwd, paths),
+            ),
           )
           return yield* serviceResult({
             ok: true,

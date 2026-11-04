@@ -15,7 +15,10 @@ const Switch = React.forwardRef<
     )}
     {...props}
   >
-    <SwitchPrimitive.Thumb className="pointer-events-none block size-4 rounded-full bg-background shadow-sm transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 data-[state=unchecked]:bg-muted-foreground" />
+    <SwitchPrimitive.Thumb
+      data-slot="switch-thumb"
+      className="pointer-events-none block size-4 rounded-full border border-transparent bg-background shadow-sm transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 data-[state=unchecked]:border-muted-foreground dark:data-[state=unchecked]:bg-foreground forced-colors:border-[ButtonText] forced-colors:bg-[Canvas]"
+    />
   </SwitchPrimitive.Root>
 ))
 Switch.displayName = SwitchPrimitive.Root.displayName

@@ -15,6 +15,8 @@ import { selectTaskKeys } from './task-selection'
 import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useConfirmation,
+  clientScopeKey,
   readAppPreferences,
   updateAppPreferences,
   latestCompletedTaskTurn,
@@ -101,6 +103,18 @@ export function TaskList({
 }) {
   const host = useStudioHost()
   const store = useTaskActionStore()
+  const scope = JSON.stringify([activeRuntimeId, clientScopeKey(store.connection)])
+  const currentScope = useRef(scope)
+  currentScope.current = scope
+  const currentSources = useRef(sources)
+  currentSources.current = sources
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
   const [showAllSettled, setShowAllSettled] = useApplicationState(false)
   const [settledLimit, setSettledLimit] = useApplicationState(settledSummaryPageSize)
@@ -363,32 +377,56 @@ export function TaskList({
   ])
   const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
+  const confirm = useConfirmation(
+    JSON.stringify([scope, selectedEntries.map((entry) => entry.key)]),
+  )
   const bulk = async (
     action: 'archive' | 'reopen' | 'snooze' | 'delete' | 'read' | 'unread',
     until?: string,
   ) => {
     if (!selectedEntries.length || bulkLock.current) return
     if (action === 'snooze' && until === undefined) throw new Error('Choose a snooze duration.')
-    if (
-      action === 'delete' &&
-      !window.confirm(
-        `Delete ${selectedEntries.length} selected threads? This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.`,
-      )
-    )
-      return
-    if (
-      action === 'archive' &&
-      readAppPreferences().confirmArchive &&
-      !window.confirm(
-        `Archive ${selectedEntries.length} selected threads? You can restore them later.`,
-      )
-    )
-      return
     bulkLock.current = true
     setBulkBusy(true)
     setActionError('')
+    const capturedEntries = selectedEntries
+    const isCurrent = () => mounted.current && currentScope.current === scope
+    const sourceIsCurrent = (entry: TaskEntry) => {
+      const current = currentSources.current.find(
+        (source) => source.runtimeId === entry.source.runtimeId,
+      )
+      return (
+        current?.online &&
+        current.address === entry.source.address &&
+        clientScopeKey(current.connection ?? null) ===
+          clientScopeKey(entry.source.connection ?? null) &&
+        current.workspace.tasks.some((task) => task.id === entry.task.id)
+      )
+    }
     try {
-      for (const entry of selectedEntries) {
+      if (
+        action === 'delete' &&
+        !(await confirm({
+          title: `Delete ${capturedEntries.length} selected threads?`,
+          description:
+            'This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.',
+          confirmLabel: 'Delete threads',
+          destructive: true,
+        }))
+      )
+        return
+      if (
+        action === 'archive' &&
+        readAppPreferences().confirmArchive &&
+        !(await confirm({
+          title: `Archive ${capturedEntries.length} selected threads?`,
+          description: 'You can restore them from Settings → Archived threads.',
+          confirmLabel: 'Archive threads',
+        }))
+      )
+        return
+      for (const entry of capturedEntries) {
+        if (!isCurrent() || !sourceIsCurrent(entry)) return
         const client = taskActionClient(store, entry.source)
         if (action === 'archive' || action === 'delete')
           await client.request('/api/tasks/lifecycle', { id: entry.task.id, action }, responses.ok)
@@ -418,6 +456,7 @@ export function TaskList({
           await client.patch(entry.task, {
             snoozedUntil: until,
           })
+        if (!isCurrent()) return
         if ((action === 'archive' || action === 'delete') && entry.key === selectedMainKey)
           onDeselect()
         setSelected((current) => {
@@ -429,11 +468,12 @@ export function TaskList({
       setSelected(new Set())
       await store.refreshRuntimes()
     } catch (cause) {
+      if (!isCurrent()) return
       setActionError(cause instanceof Error ? cause.message : String(cause))
       await store.refreshRuntimes().catch(() => undefined)
     } finally {
       bulkLock.current = false
-      setBulkBusy(false)
+      if (mounted.current) setBulkBusy(false)
     }
   }
   const revealedEntryKey =

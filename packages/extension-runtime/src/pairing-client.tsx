@@ -270,39 +270,41 @@ export function PairingClient({
                           : 'Offline'}
                   </span>
                 </p>
-                <ol
-                  aria-label="Connection stages"
-                  className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-                >
-                  {connectionProgress(entry).map((step) => (
-                    <li
-                      key={step.label}
-                      aria-current={
-                        step.state === 'current' || step.state === 'failed' ? 'step' : undefined
-                      }
-                      className={cn(
-                        'flex items-center gap-1 whitespace-nowrap',
-                        step.state === 'failed'
-                          ? 'text-status-error'
-                          : step.state === 'current'
-                            ? 'text-foreground'
-                            : 'text-muted-foreground',
-                      )}
-                    >
-                      <span aria-hidden="true">
-                        {step.state === 'done'
-                          ? '✓'
-                          : step.state === 'failed'
-                            ? '×'
+                {!entry.connected && (
+                  <ol
+                    aria-label="Connection stages"
+                    className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+                  >
+                    {connectionProgress(entry).map((step) => (
+                      <li
+                        key={step.label}
+                        aria-current={
+                          step.state === 'current' || step.state === 'failed' ? 'step' : undefined
+                        }
+                        className={cn(
+                          'flex items-center gap-1 whitespace-nowrap',
+                          step.state === 'failed'
+                            ? 'text-status-error'
                             : step.state === 'current'
-                              ? '◉'
-                              : '○'}
-                      </span>
-                      {step.label}
-                      <span className="sr-only"> · {step.state}</span>
-                    </li>
-                  ))}
-                </ol>
+                              ? 'text-foreground'
+                              : 'text-muted-foreground',
+                        )}
+                      >
+                        <span aria-hidden="true">
+                          {step.state === 'done'
+                            ? '✓'
+                            : step.state === 'failed'
+                              ? '×'
+                              : step.state === 'current'
+                                ? '◉'
+                                : '○'}
+                        </span>
+                        {step.label}
+                        <span className="sr-only"> · {step.state}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
                 {entry.connected && (
                   <p className="text-xs text-muted-foreground">
                     {runtimePeerAddress(entry.profile.connection)
