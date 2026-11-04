@@ -91,15 +91,12 @@ function FileIdentity({ path, status }: { path: string; status: string }) {
       {directory && <span className="sr-only">{path}</span>}
       <span
         aria-hidden={directory ? true : undefined}
-        className="block truncate font-mono text-[0.6875rem] font-medium"
+        className="block truncate font-mono text-xs font-medium"
       >
         {basename}
       </span>
       {directory && (
-        <span
-          aria-hidden="true"
-          className="block truncate font-mono text-[0.625rem] text-muted-foreground"
-        >
+        <span aria-hidden="true" className="block truncate font-mono text-xs text-muted-foreground">
           {directory}/
         </span>
       )}
@@ -567,12 +564,32 @@ function CheckoutActions({
             }}
           >
             {!loading && !loadError && connected && (
-              <p className="text-xs text-muted-foreground" aria-label="Staging summary">
-                {stagingKnown
-                  ? `${stagedCount} staged ${stagedCount === 1 ? 'file' : 'files'} · ${unstagedKnown ? `${unstagedCount} with unstaged changes` : 'working tree status unavailable'}`
-                  : 'Staged contents unavailable. Update this runtime to see commit membership.'}
-                {hasConflicts && ' Resolve conflicts before committing.'}
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground" aria-label="Staging summary">
+                  {stagingKnown
+                    ? `${stagedCount} staged ${stagedCount === 1 ? 'file' : 'files'} · ${unstagedKnown ? `${unstagedCount} with unstaged changes` : 'working tree status unavailable'}`
+                    : 'Staged contents unavailable. Update this runtime to see commit membership.'}
+                  {hasConflicts && ' Resolve conflicts before committing.'}
+                </p>
+                <div
+                  role="group"
+                  aria-label="Commit target"
+                  className="min-w-0 text-xs text-muted-foreground"
+                >
+                  <p className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0">Commit to</span>
+                    <span
+                      title={branch || undefined}
+                      className="min-w-0 truncate font-mono text-foreground"
+                    >
+                      {branch || 'Branch unavailable'}
+                    </span>
+                  </p>
+                  <p title={checkout || undefined} className="truncate font-mono">
+                    {checkout || 'Checkout path unavailable'}
+                  </p>
+                </div>
+              </>
             )}
             <label htmlFor={messageId} className="block text-xs font-medium">
               Commit message

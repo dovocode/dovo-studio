@@ -174,7 +174,7 @@ try {
     else await page.getByLabel('Name', { exact: true }).waitFor()
     if (!mobile) {
       const helper = page.getByText(/Use apps already connected to your/)
-      const cleanNote = page.getByText(/^Changes apply to new turns on/)
+      const cleanNote = page.getByText(/^Writer · .*Applies to new turns\.$/)
       for (const dark of [false, true]) {
         await page
           .locator('html')

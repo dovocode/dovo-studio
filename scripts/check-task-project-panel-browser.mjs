@@ -652,6 +652,36 @@ try {
     assert.equal(await continuation.count(), 0, 'Fitting content needs no continuation cue')
     await page.evaluate(() => window.setGitFixture({ long: true }))
     await continuation.waitFor()
+    for (const scheme of ['light', 'dark']) {
+      const colors = await continuation.evaluate((element, scheme) => {
+        const html = document.documentElement
+        const previousClass = html.className
+        const previousTheme = html.dataset.theme
+        const probe = document.createElement('span')
+        try {
+          html.classList.toggle('dark', scheme === 'dark')
+          html.dataset.theme = scheme
+          const dialog = element.closest('[role="dialog"]')
+          probe.style.backgroundColor =
+            getComputedStyle(element).getPropertyValue('--tw-gradient-from')
+          element.append(probe)
+          return {
+            fade: getComputedStyle(probe).backgroundColor,
+            surface: getComputedStyle(dialog).backgroundColor,
+          }
+        } finally {
+          probe.remove()
+          html.className = previousClass
+          if (previousTheme === undefined) delete html.dataset.theme
+          else html.dataset.theme = previousTheme
+        }
+      }, scheme)
+      assert.equal(
+        colors.fade,
+        colors.surface,
+        `${scheme} Git continuation matches its dialog surface`,
+      )
+    }
     await gitScroll.evaluate((element) => {
       element.scrollTop = element.scrollHeight
     })

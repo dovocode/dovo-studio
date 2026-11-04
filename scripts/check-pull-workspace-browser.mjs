@@ -374,6 +374,16 @@ try {
     .getByText('I acknowledge the current failures: Pipeline runs: 1 failed.', { exact: true })
     .waitFor()
   const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
+  assert.equal(
+    await mergeDialog
+      .getByRole('checkbox', {
+        name: 'Confirm merge of reviewed commit. Acknowledge current failures: Pipeline runs: 1 failed',
+        exact: true,
+      })
+      .count(),
+    1,
+    'Failure acknowledgement is part of the accessible consent label',
+  )
   assert.equal(await mergeConfirm.isDisabled(), true)
   await mergeDialog.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
   assert.equal(

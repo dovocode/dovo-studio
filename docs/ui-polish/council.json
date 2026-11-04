@@ -607,6 +607,46 @@
       "coverage": "44 exact full-size images across both themes;4 contact sheets used for inventory.",
       "verification": "Original assessment recovered directly from paginated child history after source-snapshot follow-up started an acknowledgement turn. Frozen gallery47 and matching source snapshot preserved.",
       "brief": "Fresh context; no prior/target ratings, historical findings, generated references or other reviews."
+    },
+    {
+      "round": "independent48",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent48_sol_a",
+      "score": 8.2,
+      "verdict": "ship; no blockers",
+      "gallery": 48
+    },
+    {
+      "round": "independent48",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent48_sol_b",
+      "score": 8.3,
+      "verdict": "ship; no blockers",
+      "gallery": 48
+    },
+    {
+      "round": "independent48",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent48_sol_c",
+      "score": 8.3,
+      "verdict": "ship; no blockers",
+      "gallery": 48
+    },
+    {
+      "round": "independent48",
+      "model": "Opus 5.5",
+      "id": "5599883e-7a18-4ee7-989c-a27a380c9573",
+      "score": 7.5,
+      "verdict": "ship; no blockers",
+      "gallery": 48
+    },
+    {
+      "round": "independent48",
+      "model": "Opus 5.5",
+      "id": "a34510fd-2c91-451c-afdb-8795f7962876",
+      "score": 7.5,
+      "verdict": "ship; no blockers",
+      "gallery": 48
     }
   ],
   "remaining": [
@@ -621,12 +661,12 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 48,
-    "captures": 334,
-    "corePass": 48,
-    "dialogPass": 48,
-    "settingsPass": 48,
-    "note": "167 surface pairs including 1100px dense-list, Agent draft and long Git comparison states, plus expanded merge and auto-merge status sources. Production captures use schema-checked fixtures; no manifest errors or alerts. Lossless exports verified pixel-for-pixel."
+    "round": 49,
+    "captures": 336,
+    "corePass": 49,
+    "dialogPass": 49,
+    "settingsPass": 49,
+    "note": "168 surface pairs; added explicit Steer default. Full refresh after icon-only composer, context/legibility, stable Issue filters, consent and Markdown fixes. No manifest errors/alerts; #080808 chat/Browser pixels confirmed; lossless exports verified."
   },
   "unavailableReviews": [
     {
@@ -686,7 +726,14 @@
       "reason": "Exact model retry returned429 subscription quota exhausted after10 provider attempts; reset2026-11-04T18:51:35Z. No assessment issued."
     }
   ],
-  "pendingReviews": [],
+  "pendingReviews": [
+    {
+      "round": "independent48",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "d454cc37-5975-40b0-b8d4-de5bdaae9258",
+      "status": "running"
+    }
+  ],
   "queuedReviews": [
     {
       "round": "reset30",
@@ -735,6 +782,10 @@
     {
       "round": "pass48",
       "summary": "Bounded opaque Agent save/error footer through Settings scroll padding; normal-flow clean scope note and current Computer guidance; readable six-line instructions and shared Input/Textarea type. PR rows reserve responsive readiness column with quiet supporting metadata; one repository merge verdict with compact named source details. Git rows align selection, basename/directory and actions, retain accessible full paths, and indicate more content only when staging actually overflows. Added compact desktop and expanded readiness evidence."
+    },
+    {
+      "round": "pass49",
+      "summary": "Stop/Queue/Add-to-queue/Steer icon-only with hover titles, accessible names and unchanged keyboard/busy/disabled/dropdown semantics; Send/Save remain labeled. PR target branches independently visible; Agent save footer names profile and scope; stable Open/Closed Issue filters; failure consent is emphasized and accessible without changing merge payload/acknowledgment/reset guards. Git commit target repeats inspected branch/checkout, filenames readable at12px; continuation fade matches dialog surface. Markdown bullets use outside markers with nested/ordered/checklist geometry verified. Relevant browser suites, builds, affected types, lint and diff passed."
     }
   ],
   "designConsultations": [
@@ -765,6 +816,13 @@
       "id": "3eaf82d1-7d0d-4bff-843b-cd0d98aba2aa",
       "status": "completed",
       "summary": "Concrete monochrome/attention hierarchy and Settings scope/save, surface grammar, Git review and action-hierarchy guidance. No numerical rating requested. Selected source-backed recommendations implemented; all sections and user constraints retained."
+    },
+    {
+      "round": "design49",
+      "model": "Opus 5.5",
+      "id": "5578358e-ca6a-49a8-8917-d4674a625fc5",
+      "status": "completed",
+      "summary": "Requested decisive system-level instructions without scores. Quiet Instrument direction: common selection, typography/row/surface grammar; pinned Settings target and responsive Agent composition; coherent action hierarchy. Next implementation pass will preserve explicit save boundaries, requested sections and merge-readiness safeguards rather than adopt all recommendations literally."
     }
   ]
 }

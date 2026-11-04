@@ -694,9 +694,12 @@ function PullActionDialog({
                   disabled={busy}
                   onCheckedChange={(value) => setConfirmed(value === true)}
                   aria-label={
-                    detail.pull.provider === 'bitbucket'
+                    (detail.pull.provider === 'bitbucket'
                       ? 'Confirm merge of current source branch'
-                      : 'Confirm merge of reviewed commit'
+                      : 'Confirm merge of reviewed commit') +
+                    (currentFailures.length > 0
+                      ? `. Acknowledge current failures: ${currentFailures.join('; ')}`
+                      : '')
                   }
                 />
                 <span>
@@ -718,7 +721,7 @@ function PullActionDialog({
                     </>
                   )}
                   {currentFailures.length > 0 && (
-                    <span className="mt-1 block text-muted-foreground">
+                    <span className="mt-1 block font-medium text-foreground">
                       I acknowledge the current failures: {currentFailures.join('; ')}.
                     </span>
                   )}

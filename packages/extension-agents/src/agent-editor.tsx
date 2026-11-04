@@ -543,7 +543,7 @@ export function AgentEditor({
                   !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
                   !supportsAccess(agent.provider, agent.permission)
                 }
-                description={`Changes apply to new turns on ${computerName}.`}
+                description={`${agent.name.trim() || initial.name} · ${computerName}. Applies to new turns.`}
                 onDiscard={discard}
                 onSave={() => form.current?.requestSubmit()}
               />

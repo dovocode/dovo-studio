@@ -315,7 +315,7 @@ function WorkView({
     matchingRows.flatMap(({ item }) => ('status' in item ? [item.status] : [])),
     state,
   )
-  const states = [
+  const observedStates = [
     ...new Set([
       ...visiblePages.flatMap((page) =>
         page.items.map((item) => ('state' in item ? item.state : item.status)),
@@ -323,6 +323,14 @@ function WorkView({
       ...(state !== 'all' ? [state] : []),
     ]),
   ].sort()
+  const states =
+    mode === 'issues'
+      ? [
+          'open',
+          'closed',
+          ...observedStates.filter((value) => value !== 'open' && value !== 'closed'),
+        ]
+      : observedStates
   const canCreate = pages
     .filter(
       (page) =>

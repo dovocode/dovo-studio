@@ -1236,6 +1236,8 @@ export function Composer({
     !!task.archivedAt ||
     (!!connection && !connected) ||
     (firstMessage && (!connected || !task.repositoryId || !agent))
+  // Keep data-labeled on icon actions: it also opts out of legacy accent and glow styles.
+  const iconOnlySubmit = !editing && (stageFirst || task.status === 'running')
   const settingsContainer = projectSettings?.container ?? infoContainer
   const workspaceSettings = workspaceControls?.(accessSlot) ?? (
     <ComposerWorkspace
@@ -1441,7 +1443,8 @@ export function Composer({
                   busy={sending}
                   data-labeled=""
                   className={cn(
-                    'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]',
+                    'h-8 rounded-full text-[0.6875rem]',
+                    iconOnlySubmit ? 'w-8 p-0' : 'w-auto gap-1.5 px-3',
                     !editing &&
                       task.status !== 'running' &&
                       !stageFirst &&
@@ -1491,17 +1494,9 @@ export function Composer({
                   )}
                   {editing ? (
                     'Save changes'
-                  ) : stageFirst ? (
-                    'Queue'
-                  ) : task.status === 'running' ? (
-                    steerFirst ? (
-                      'Steer'
-                    ) : (
-                      'Queue'
-                    )
-                  ) : (
+                  ) : !iconOnlySubmit ? (
                     <span className="max-[360px]:sr-only">Send</span>
-                  )}
+                  ) : null}
                 </ComposerSubmit>
                 {showSendOptions && (
                   <DropdownMenu.Root>
@@ -1645,7 +1640,7 @@ export function Composer({
                 variant="outline"
                 data-composer-stop=""
                 data-labeled=""
-                className="studio-destructive-accent h-8 w-auto gap-1.5 rounded-full border border-border bg-transparent px-2.5 text-xs text-foreground shadow-none hover:bg-muted"
+                className="studio-destructive-accent h-8 w-8 rounded-full border border-border bg-transparent p-0 text-xs text-foreground shadow-none hover:bg-muted"
                 aria-label="Stop"
                 aria-busy={stopping}
                 title="Stop the agent and pause queued messages"
@@ -1653,7 +1648,6 @@ export function Composer({
                 onClick={() => void stop()}
               >
                 <Square className="size-3.5 fill-current text-destructive" />
-                Stop
               </ComposerSubmit>
             )}
           </>

@@ -86,6 +86,7 @@ const built = await build({
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;const [scopeEnabled,setScopeEnabled]=useState(false);window.setScopeEnabled=setScopeEnabled;
         const [activity,setActivity]=useState(false);window.setActivity=setActivity;const [activityPaused,setActivityPaused]=useState(true);window.setActivityPaused=setActivityPaused;
+        const [queueStaging,setQueueStaging]=useState(false);window.setQueueStaging=setQueueStaging;
         const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);window.hideSettings=()=>setSettings(false);
         const task=workspace.tasks.find(task=>task.id===id);
         window.task=task;window.reset=()=>{setId(null);setPending(null);setWorkspace({repositories,agents:[],tasks:[],automations:[]})};
@@ -106,7 +107,7 @@ const built = await build({
           }
           throw Error('Unexpected request '+path);
         };
-        const value={workspace,setWorkspace,snapshot:{workspace,defaults,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
+        const value={workspace,setWorkspace,snapshot:{workspace,defaults,promptQueueStagingSupported:queueStaging,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
         const renderThread=(task,workspaceControls,temporary,onSelectRemote,onStartBackground)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} onStartBackground={onStartBackground??(window.testBackground?()=>{}:undefined)}/>;
         return <WorkspaceValueProvider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</WorkspaceValueProvider>
       }
@@ -187,6 +188,17 @@ try {
             (a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity,
           ),
     )
+  const checkIconAction = async (name, title) => {
+    const button = page.getByRole('button', { name, exact: true })
+    await button.waitFor()
+    assert.equal((await button.textContent()).trim(), '', name + ' has no visible label')
+    assert.equal(await button.getAttribute('aria-label'), name)
+    assert.match(await button.getAttribute('title'), title, name + ' keeps its hover name')
+    const bounds = await button.boundingBox()
+    assert.ok(Math.abs(bounds.width - 32) < 0.1, name + ' retains its 32px pointer target')
+    assert.ok(Math.abs(bounds.height - 32) < 0.1, name + ' retains its 32px pointer target')
+    assert.equal(await button.locator('svg').count(), 1, name + ' keeps its action icon')
+  }
   const checkIdle = async (screenshot) => {
     const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await page
@@ -549,8 +561,8 @@ try {
         }
       })
       assert.equal(stopStyle.type, 'button', 'Stop must not submit the message form')
-      assert.ok(parseFloat(stopStyle.width) >= 60, 'Stop keeps a readable visible label')
-      assert.equal((await stop.textContent()).trim(), 'Stop')
+      await checkIconAction('Stop', /^Stop the agent and pause queued messages$/)
+      assert.equal(stopStyle.width, '32px')
       assert.equal(stopStyle.height, '32px')
       assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
       assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
@@ -1013,10 +1025,11 @@ try {
     const defaultLabel = defaultMode === 'steer' ? 'Steer agent' : 'Queue follow-up'
     const alternateLabel = defaultMode === 'steer' ? 'Queue follow-up' : 'Steer agent'
     await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await checkIconAction(defaultLabel, new RegExp('^' + defaultLabel + ' \\(Enter\\)$'))
     await page.keyboard.down('Alt')
     const alternateButton = page.getByRole('button', { name: alternateLabel, exact: true })
     await alternateButton.waitFor()
-    assert.match(await alternateButton.getAttribute('title'), /Alt\+Enter/)
+    await checkIconAction(alternateLabel, /\(Alt\+Enter\)$/)
     assert.equal(await followUpInput.inputValue(), 'Keep this draft while choosing an action')
     await page.keyboard.up('Alt')
     await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
@@ -1071,8 +1084,29 @@ try {
     await page.keyboard.up('Alt')
   }
   await page.evaluate(() => {
+    window.setQueueStaging(true)
+    window.setTask({
+      status: 'review',
+      queuePaused: true,
+      queue: [{ id: 'stage-icon', role: 'user', text: 'Paused follow-up', paused: true }],
+    })
+  })
+  await followUpInput.fill('Add this message without starting the queue')
+  await checkIconAction('Add to queue', /^Add to queue \(Enter\)$/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add to queue', exact: true }).isDisabled(),
+    false,
+  )
+  await followUpInput.fill('')
+  await checkIconAction('Add to queue', /^Add to queue \(Enter\)$/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add to queue', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.setQueueStaging(false)
     window.setFollowUp('queue')
-    window.setTask({ queue: [], contextUsage: undefined })
+    window.setTask({ queue: [], queuePaused: undefined, contextUsage: undefined })
   })
   // A transcript with unloaded history must keep its loading/error path, not show a new-task hero.
   await page.evaluate(() =>

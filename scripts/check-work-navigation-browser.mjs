@@ -78,6 +78,12 @@ try {
     .getByRole('button', { name: /Fix issue/ })
     .locator('.studio-collection-status')
   await issueState.getByText('Open', { exact: true }).waitFor()
+  const issueStates = page.getByRole('group', { name: 'Issue states', exact: true })
+  assert.deepEqual(await issueStates.getByRole('button').allTextContents(), [
+    'All states',
+    'Open',
+    'Closed',
+  ])
   const openColor = await issueState.evaluate((node) => getComputedStyle(node).color)
   assert.equal(await issueState.locator('svg.lucide-circle-dot[aria-hidden="true"]').count(), 1)
   await page.evaluate(() => {
@@ -85,6 +91,11 @@ try {
     window.render()
   })
   await issueState.getByText('Closed', { exact: true }).waitFor()
+  assert.deepEqual(
+    await issueStates.getByRole('button').allTextContents(),
+    ['All states', 'Open', 'Closed'],
+    'Issue state filters retain order when loaded rows change',
+  )
   assert.equal(await issueState.locator('svg.lucide-circle-check[aria-hidden="true"]').count(), 1)
   assert.notEqual(
     await issueState.evaluate((node) => getComputedStyle(node).color),

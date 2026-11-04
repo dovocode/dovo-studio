@@ -144,10 +144,16 @@ export function PullRow({
                         <span className="truncate">{pull.author}</span>
                       </span>
                       <span
-                        className="min-w-0 max-w-80 truncate"
+                        className="inline-flex min-w-0 flex-1 items-center gap-1"
                         title={`${pull.head} → ${pull.base}`}
                       >
-                        {pull.head} → {pull.base}
+                        <span data-pull-branch-head className="min-w-0 truncate">
+                          {pull.head}
+                        </span>
+                        <span className="shrink-0">→</span>
+                        <span data-pull-branch-base className="max-w-[35%] shrink-0 truncate">
+                          {pull.base}
+                        </span>
                       </span>
                     </span>
                     {pull.stack && (

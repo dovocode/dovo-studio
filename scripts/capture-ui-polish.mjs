@@ -66,7 +66,7 @@ import {updateAppPreferences} from '@dovo/studio-core';
 window.uiSetPreferences=updateAppPreferences;
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
-updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
+updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true,followUp:query.has('steer')?'steer':'queue'});
 function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("git-dense")?"git-review-dense":query.has("dense")?"lists-dense":query.has("changes")?"git-changes":query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -138,6 +138,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         ['welcome', 'tasks'],
         ['conversation', 'tasks', 'preview-task'],
         ['busy-conversation', 'tasks', 'preview-task', undefined, 'busy'],
+        ['busy-steer', 'tasks', 'preview-task', undefined, 'busy-steer'],
         ['busy-unified-workspace', 'tasks', 'preview-task', 'unified', 'busy'],
         ['busy-long-draft', 'tasks', 'preview-task', undefined, 'busy-long-draft'],
         ['busy-mid-scroll', 'tasks', 'preview-task', 'mid-scroll', 'busy'],
@@ -189,7 +190,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .includes(name),
     )) {
       await page.goto(
-        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'lists-dense' ? '&dense' : state === 'legacy' ? '&legacy' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy' ? '&busy' : ''}`,
+        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'lists-dense' ? '&dense' : state === 'legacy' ? '&legacy' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy-steer' ? '&busy&steer' : state === 'busy' ? '&busy' : ''}`,
       )
       await page.locator('.studio').waitFor()
       await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))
@@ -436,6 +437,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
             bounds && bounds.height >= 24 && bounds.width >= 24,
             'Turn navigation has accessible pointer targets',
           )
+        }
+      }
+      if (name === 'busy-conversation' || name === 'busy-steer') {
+        for (const label of [name === 'busy-steer' ? 'Steer agent' : 'Queue follow-up', 'Stop']) {
+          const button = page.getByRole('button', { name: label, exact: true })
+          assert.equal((await button.innerText()).trim(), '', `${label} stays icon-only`)
+          assert.ok(await button.getAttribute('title'), `${label} has a hover label`)
         }
       }
       const controls = await page

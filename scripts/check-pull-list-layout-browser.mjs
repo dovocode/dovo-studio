@@ -254,8 +254,17 @@ try {
             '[title="fix/runtime-reconnection-and-queued-thread-continuity-with-a-long-qualified-branch → feature/preserve-active-thread-context"]',
           )
           assert.ok(
-            await branch.evaluate((node) => node.scrollWidth > node.clientWidth),
+            await branch
+              .locator('[data-pull-branch-head]')
+              .evaluate((node) => node.scrollWidth > node.clientWidth),
             'Long branches truncate with complete hover context',
+          )
+          const destination = await branch.locator('[data-pull-branch-base]').boundingBox()
+          const branchBounds = await branch.boundingBox()
+          assert.ok(destination.width > 16, 'Target branch remains independently visible')
+          assert.ok(
+            destination.x + destination.width <= branchBounds.x + branchBounds.width + 1,
+            'Target branch stays within the row at narrow and wide sizes',
           )
         }
         await assertReadinessBounds(width === 1280)

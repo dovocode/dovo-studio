@@ -106,7 +106,7 @@ function GitActionsScrollArea({
         <div
           aria-hidden="true"
           data-git-scroll-continuation
-          className="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-background to-transparent pb-0.5 text-muted-foreground"
+          className="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-card to-transparent pb-0.5 text-muted-foreground"
         >
           <ChevronDown size={14} />
         </div>

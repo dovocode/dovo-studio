@@ -39,7 +39,7 @@ const built = await build({
             if(window.failActionState)throw new Error('Branch status unavailable');
             return state;
           }
-          if(path==='/api/scm/inspect')return {path:'/repo/'+(input.taskId??'main'),branch:'feature'};
+          if(path==='/api/scm/inspect')return window.inspectedCheckout??{path:'/repo/'+(input.taskId??'main'),branch:'feature'};
           if(path==='/api/scm/changes')return new Promise((resolve,reject)=>window.reads.push({resolve,reject,input,connection}));
           if(path==='/api/scm/file-preview'){
             window.previews.push(input);
@@ -129,6 +129,7 @@ try {
   const message = page.getByRole('textbox', { name: 'Commit message', exact: true })
   const commitPush = page.getByRole('button', { name: 'Commit & push', exact: true })
   const push = page.getByRole('button', { name: 'Push branch', exact: true })
+  const commitTarget = page.getByRole('group', { name: 'Commit target', exact: true })
 
   // Opening loads changes without a click; a partial selection stages exactly those paths.
   await reads(1)
@@ -140,6 +141,9 @@ try {
     { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
   ])
   await all.waitFor()
+  await commitTarget.getByText('feature', { exact: true }).waitFor()
+  await commitTarget.getByText('/repo/first', { exact: true }).waitFor()
+  assert.equal(await commitTarget.getByText('main', { exact: true }).count(), 0)
   assert.equal(await push.isDisabled(), true)
   await page.getByLabel('Push status').filter({ hasText: 'Branch is up to date.' }).waitFor()
   assert.equal(
@@ -393,6 +397,8 @@ try {
   await reads(9)
   await finish(8, ['second.ts'])
   await page.getByRole('checkbox', { name: 'Select second.ts', exact: true }).waitFor()
+  await commitTarget.getByText('/repo/second', { exact: true }).waitFor()
+  assert.equal(await commitTarget.getByText('/repo/first', { exact: true }).count(), 0)
   await finish(7, ['stale.ts'])
   assert.equal(
     await page.getByRole('checkbox', { name: 'Select stale.ts', exact: true }).count(),
@@ -625,6 +631,7 @@ try {
   await reads(++nextRead)
   await finish(nextRead - 1, [])
   assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitTarget.count(), 0)
   await page.getByLabel('Push status').filter({ hasText: 'Checking branch status' }).waitFor()
   await page.evaluate(() => {
     window.holdActionState = false
@@ -633,12 +640,30 @@ try {
   await page.getByLabel('Push status').filter({ hasText: 'Publish this branch' }).waitFor()
   assert.equal(await push.isDisabled(), false)
 
+  // A missing inspected branch must not fall back to repository or Push metadata.
+  await page.evaluate(() => {
+    window.inspectedCheckout = { path: '/actual/thread-checkout', branch: '' }
+  })
+  await state({ branch: 'push-state-branch' })
+  await commitTarget.getByText('Branch unavailable', { exact: true }).waitFor()
+  await commitTarget.getByText('/actual/thread-checkout', { exact: true }).waitFor()
+  assert.equal(await commitTarget.getByText('push-state-branch', { exact: true }).count(), 0)
+  assert.equal(await commitTarget.getByText('main', { exact: true }).count(), 0)
+
   // Long paths keep basename and directory identity without changing row/action geometry.
   const longPaths = [
     'packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.ts',
     'packages/studio-core/src/runtime/navigation/project-runtime-selection/runtime-targets.test.ts',
     'packages/extension-tasks/src/runtime/navigation/project-runtime-selection/runtime-targets.ts',
   ]
+  const longBranch = 'feature/retain-the-active-thread-and-its-queued-follow-ups-on-reconnect'
+  const longCheckout = '/workspace/projects/dovo-studio/worktrees/active-thread-reconnect-review'
+  await page.evaluate(
+    ({ branch, path }) => {
+      window.inspectedCheckout = { branch, path }
+    },
+    { branch: longBranch, path: longCheckout },
+  )
   await state(
     {},
     longPaths.map((path) => ({ path, gitStatus: { index: 'modified', workingTree: 'modified' } })),
@@ -660,6 +685,18 @@ try {
           .count(),
         1,
       )
+      for (const identity of [
+        stagedPath.getByText('runtime-targets.ts', { exact: true }),
+        stagedPath.getByText(longPaths[0].slice(0, longPaths[0].lastIndexOf('/') + 1), {
+          exact: true,
+        }),
+      ]) {
+        assert.ok(
+          await identity.evaluate(
+            (element) => parseFloat(getComputedStyle(element).fontSize) >= 12,
+          ),
+        )
+      }
       assert.equal((await stagedPath.boundingBox()).x, (await unstagedPath.boundingBox()).x)
       const stagedReview = staged.getByRole('button', {
         name: `Review staged ${longPaths[0]}`,
@@ -684,6 +721,25 @@ try {
           ),
       )
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      await commitTarget.getByText(longBranch, { exact: true }).waitFor()
+      assert.equal(
+        await commitTarget.getByText(longBranch, { exact: true }).getAttribute('title'),
+        longBranch,
+      )
+      assert.equal(
+        await commitTarget.getByText(longCheckout, { exact: true }).getAttribute('title'),
+        longCheckout,
+      )
+      await message
+        .locator('xpath=ancestor::form')
+        .evaluate((form) => form.scrollIntoView({ block: 'end' }))
+      const targetBox = await commitTarget.boundingBox()
+      const messageBox = await message.boundingBox()
+      assert.ok(targetBox.y >= 0 && targetBox.y + targetBox.height <= messageBox.y)
+      assert.ok(targetBox.height <= 40, 'Commit target stays compact in both themes and widths')
+      assert.ok(
+        await commitTarget.evaluate((element) => element.scrollWidth <= element.clientWidth),
+      )
     }
   }
   assert.equal(await page.evaluate(() => window.writes.length), writesBeforeGeometry)
