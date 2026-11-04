@@ -4,8 +4,8 @@ The desktop workspace keeps its black `#080808` canvas and thin, icon-only activ
 Inter, calmer surfaces, shared gutters and more readable metadata bring the conversation, Browser,
 PRs, terminal, panels and settings into one visual system.
 
-Thread info now reserves a desktop inspector column when there is room, with a bounded popover in
-narrow layouts. Flat project, checkout and action sections retain their customization order and
+Thread info now floats over the chat without resizing the conversation, bounded to the chat pane
+and clear of its composer. Flat project, checkout and action sections retain their customization order and
 visibility, portal state and close/Escape controls. The shell uses flush columns, neutral selections
 and restrained separators instead of nested panel frames.
 
@@ -25,6 +25,9 @@ and restrained separators instead of nested panel frames.
 
 - Thread rows retain project and status above a single-line ellipsized title, with visible machine,
   harness, PR and terminal indicators.
+- Artifact export chrome and image editing follow the active theme with bundled offline typography;
+  exported document styling stays intact. Image zoom, fit, actual size and pan preserve source pixels;
+  drawing uses image coordinates at every zoom. Import dialogs share the same fields and action footer.
 - The queue and composer align with conversation content; long previews keep attachment counts
   visible. Narrow desktop panes put the input above its controls.
 - Selected and disabled actions have distinct treatment. Stop remains visible without an animated
@@ -38,13 +41,14 @@ and restrained separators instead of nested panel frames.
 
 ## Evidence and limits
 
-The current gallery includes 260 captures: 49 production desktop routes/compositions in both themes,
+The current gallery includes 264 captures: 49 production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
-comparison images are retained. The gallery uses the latest complete pass, with focused replacements
-for the dialogs and PR overview changed afterward. A single-state full pass remains required before
-final approval. The checked-in WebP files are lossless conversions of the reviewed PNGs. All
-captures use production components with schema-checked synthetic workspace data; account/runtime
-mutations are blocked. Empty collections are intentional empty states.
+comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
+consistent thread terminology, dialog fields and expanded file tree. Review status below records
+which frozen gallery each council round inspected. The checked-in
+WebP files are lossless conversions of the reviewed PNGs. All captures use production components
+with schema-checked synthetic workspace data; account/runtime mutations are blocked. Empty
+collections are intentional empty states.
 
 Browser uses the production BrowserPane with a synthetic native bridge. Terminal uses the production
 worker, renderer and WASM with a local WebSocket replay. Captures wait for rendered terminal output;
@@ -52,13 +56,14 @@ its `git status` text is sample data. These previews do not verify live Electron
 integrations or real provider/account connections.
 
 Council review is **in progress**. Dominic rejected the earlier direction as 7/10; those earlier
-approvals do not count. Round 9 scored 8/10 from each of the three Sol reviewers and 6/10 from both
-Opus reviewers. Those reviews prompted consolidated dialog primitives, persistent agent-setup
-actions, grouped Git actions, a plain merge commit field, shared image-editor typography and a
-corrected rail offset. A fresh five-member review is underway; unanimous approval has not been
-earned. The latest review record is in [council.json](council.json). Final review requires three
-GPT-6.1 Sol and two Opus 5.5 reviewers on the same final screenshots. Scores are subjective;
-interaction and accessibility checks are separate.
+approvals do not count. Round 19 scored 8.3, 8.5 and 8.5 from the three Sol reviewers. The most recent Opus
+round (21) scored 7.5 from both reviewers. Their findings led to themed artifact-export controls, shared
+import-dialog pickers and footers, clearer settings scope and PR acknowledgements, consistent list
+search/refresh controls, and simpler Thread info grouping. The complete 264-capture round 22 gallery is frozen and fresh
+reviews are underway; unanimous approval has not been earned. The latest review record is in
+[council.json](council.json). Final review requires three GPT-6.1 Sol and two Opus 5.5 reviewers on
+the same final screenshots. Scores are subjective; interaction and accessibility checks are
+separate.
 
 ## Verification
 

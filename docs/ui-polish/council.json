@@ -68,12 +68,77 @@
       "model": "Opus 5.5",
       "score": 6,
       "id": "21d45e1b-731f-4fe6-83b7-1b0eb814207b"
+    },
+    {
+      "round": "reset13",
+      "model": "GPT-6.1 Sol",
+      "score": 8.3,
+      "id": "653b1022-5e9e-4e1e-acf4-114aba48bdc0"
+    },
+    {
+      "round": "reset13",
+      "model": "GPT-6.1 Sol",
+      "score": 8.3,
+      "id": "0e806c12-aadf-4aec-8109-3ca15413bd9d"
+    },
+    {
+      "round": "reset13",
+      "model": "GPT-6.1 Sol",
+      "score": 8.5,
+      "id": "4c91dcfd-01f8-4903-9773-0cc6a25127ed"
+    },
+    {
+      "round": "reset13",
+      "model": "Opus 5.5",
+      "score": 7,
+      "id": "a6e0d591-2d9b-4f53-bb29-b667d56fd4a6"
+    },
+    {
+      "round": "reset13",
+      "model": "Opus 5.5",
+      "score": 7.5,
+      "id": "9826ff9b-e9a9-448c-b379-95a6a260474d"
+    },
+    {
+      "round": "reset19",
+      "model": "GPT-6.1 Sol",
+      "score": 8.3,
+      "id": "cd87f186-2042-426b-ac54-685bbf1230fd",
+      "note": "Intermediate gallery; subsequent overlay, image zoom/pan, file-browser and copy refinements require fresh review."
+    },
+    {
+      "round": "reset19",
+      "model": "GPT-6.1 Sol",
+      "score": 8.5,
+      "id": "0a988dfa-dbd6-4fed-9ab4-1071ef0d6174",
+      "note": "Intermediate gallery; subsequent overlay, image zoom/pan, file-browser and copy refinements require fresh review."
+    },
+    {
+      "round": "reset19",
+      "model": "GPT-6.1 Sol",
+      "score": 8.5,
+      "id": "92c4a546-3bf7-4235-bb38-3b008bb9f24b",
+      "note": "Intermediate gallery; subsequent overlay, image zoom/pan, file-browser and copy refinements require fresh review."
+    },
+    {
+      "round": "reset21",
+      "model": "Opus 5.5",
+      "score": 7.5,
+      "id": "459fa424-61aa-4eef-8af3-b3fce83420ed",
+      "note": "Intermediate gallery; remaining findings include disclosure styles, Thread info customization labels, repeated PR actions, scope indicators and select affordance."
+    },
+    {
+      "round": "reset21",
+      "model": "Opus 5.5",
+      "score": 7.5,
+      "id": "de6ad69f-a27b-4696-8b4c-8d64bd4b6d4e",
+      "note": "Intermediate gallery; remaining findings include disclosure styles, Thread info customization labels, repeated PR actions, scope indicators and select affordance."
     }
   ],
   "remaining": [
-    "Verify consolidated dialog patterns and visible completion controls",
-    "Review refreshed complete captures after frame, Git dialog and image editor changes",
-    "Obtain five honest final approvals",
-    "Complete checks and PR"
+    "Complete five-member review against frozen 264-capture gallery22",
+    "Address verified council findings and recapture affected surfaces",
+    "Obtain unanimous honest final 10/10 reviews",
+    "Finish draft PR #50 after final gates"
   ]
 }
