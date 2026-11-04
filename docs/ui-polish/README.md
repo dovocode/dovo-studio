@@ -61,13 +61,17 @@ Council review is **in progress**. Dominic changed the approval target to at lea
 Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 7.5 and
 7.0; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
 
-Round 29 refreshes all workspace/control screens and dialogs, including shared settings disclosures,
-white enabled fields in light theme, explicit scope controls, a continuous Browser header, matching
-editor close controls, labelled model visibility and separate check-report/pipeline scope. It
-includes rounded sidebars, flat borderless main chat/Browser surfaces, shared disclosures, matching
-Thread info labels, one home for PR linking, quieter field borders, consistent scope chips, visible
-context search, focused field validation and aligned dialog headers. Both Opus reviewers are
-assessing this frozen gallery. The 9/10 target has not yet been earned. See
+Round 30 incorporates the complete round 29 refresh of all workspace/control screens and dialogs,
+including shared settings disclosures, white enabled fields in light theme, explicit scope controls,
+a continuous Browser header, matching editor close controls, labelled model visibility and separate
+check-report/pipeline scope. It includes rounded sidebars, flat borderless main chat/Browser
+surfaces, shared disclosures, matching Thread info labels, one home for PR linking, quieter field
+borders, consistent scope chips, visible context search, focused field validation and aligned dialog
+headers. It also keeps Close visible in long dialogs without adding title spacing, and clears
+compact search controls. Two fresh Opus reviewers are assessing this frozen gallery after
+authentication was restored. Muse wonder-full-1.0 could not start because its saved API key was
+rejected. Gemini 4.0 Argon is unavailable in the configured Google catalog, which currently only
+lists Gemini 3.8 Flash. Neither issued a score. The 9/10 target has not yet been earned. See
 [council.json](council.json) for the review record. Scores are subjective; interaction and
 accessibility checks are separate.
 

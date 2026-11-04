@@ -199,6 +199,13 @@
       "id": "6ab6d99c-90e5-4da1-8c87-60f8de1128ed",
       "status": "failed",
       "reason": "Opus gateway returned 503 auth_unavailable before review; no score issued"
+    },
+    {
+      "round": "reset30",
+      "model": "Muse wonder-full-1.0",
+      "id": "73256406-460c-4589-a1a2-760f3f9a8350",
+      "status": "failed",
+      "reason": "Muse saved API key rejected; requires muse login; no review issued"
     }
   ],
   "pendingReviews": [
@@ -211,18 +218,14 @@
       "round": "reset30",
       "model": "Opus 5.5",
       "id": "353e5678-6465-416a-a02e-f2fcf49533c4"
-    },
-    {
-      "round": "reset30",
-      "model": "Muse wonder-full-1.0",
-      "id": "73256406-460c-4589-a1a2-760f3f9a8350"
     }
   ],
   "queuedReviews": [
     {
       "round": "reset30",
       "model": "Gemini 4.0 Argon",
-      "reason": "Awaiting council slot"
+      "status": "unavailable",
+      "reason": "Configured Google agent catalog only provides Gemini 3.8 Flash high/medium/low; requested model unavailable"
     }
   ]
 }
