@@ -237,12 +237,15 @@ export function PairingClient({
       <div className="divide-y">
         {runtimes.map((entry) => {
           return (
-            <div key={entry.profile.id} className="flex flex-wrap items-center gap-3 py-3">
+            <div
+              key={entry.profile.id}
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 py-3"
+            >
               <RuntimeIcon
                 icon={entry.snapshot?.runtimeIcon}
                 aria-hidden="true"
                 size={17}
-                className="shrink-0 text-muted-foreground"
+                className="mt-0.5 shrink-0 text-muted-foreground"
               />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -278,7 +281,7 @@ export function PairingClient({
                         step.state === 'current' || step.state === 'failed' ? 'step' : undefined
                       }
                       className={cn(
-                        'flex items-center gap-1',
+                        'flex items-center gap-1 whitespace-nowrap',
                         step.state === 'failed'
                           ? 'text-status-error'
                           : step.state === 'current'
@@ -323,7 +326,16 @@ export function PairingClient({
                   <p className="break-words text-xs text-destructive">{entry.error}</p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="col-start-2 flex flex-wrap items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Manage ${entry.profile.name}`}
+                  disabled={busy}
+                  onClick={() => onManage(entry.profile)}
+                >
+                  Manage
+                </Button>
                 {mutationStatus(entry.profile).pending > 0 && (
                   <Button
                     size="sm"
@@ -358,6 +370,7 @@ export function PairingClient({
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="text-muted-foreground"
                     disabled={busy || !entry.connected}
                     onClick={() =>
                       void act(async () => {
@@ -380,16 +393,8 @@ export function PairingClient({
                 )}
                 <Button
                   size="sm"
-                  variant="outline"
-                  aria-label={`Manage ${entry.profile.name}`}
-                  disabled={busy}
-                  onClick={() => onManage(entry.profile)}
-                >
-                  Manage
-                </Button>
-                <Button
-                  size="sm"
                   variant="ghost"
+                  className="text-muted-foreground"
                   aria-label={`Reconnect ${entry.profile.name}`}
                   disabled={busy}
                   onClick={() =>
@@ -404,6 +409,7 @@ export function PairingClient({
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
                   aria-label={`Forget ${entry.profile.name}`}
                   title="Remove this saved connection from this device"
                   disabled={busy}

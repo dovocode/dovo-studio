@@ -1,5 +1,6 @@
 import { integrationMutationError } from '../../connections/mutation-error'
 import { PullMarkdownEditor } from '../detail/markdown-editor'
+import { Signal } from '../detail/status'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
@@ -12,6 +13,7 @@ import {
   type PullAction,
   type PullComment,
   type PullDetail,
+  type PullSignal,
   readAppPreferences,
 } from '@dovo/studio-core'
 import {
@@ -34,6 +36,11 @@ export type PullActionContext = {
   onDone: () => void
 }
 type ActionKind = PullAction['action']
+type MergeStatus = {
+  headSha: string
+  signals: PullSignal[]
+  warnings: string[]
+}
 const titles: Record<ActionKind, string> = {
   comment: 'Comment on PR',
   review: 'Submit review',
@@ -49,6 +56,7 @@ const titles: Record<ActionKind, string> = {
 }
 export function PullActions(
   props: PullActionContext & {
+    mergeStatus: MergeStatus
     onStartTask?: () => void
     extraMenuItems?: ReactNode
   },
@@ -239,11 +247,13 @@ function PullActionDialog({
   repositoryId,
   detail: initialDetail,
   kind,
+  mergeStatus,
   comment,
   onClose,
   onCompleted,
 }: PullActionContext & {
   kind: ActionKind
+  mergeStatus?: MergeStatus
   comment?: PullComment
   onClose: () => void
   onCompleted: (message: string) => void
@@ -576,6 +586,38 @@ function PullActionDialog({
                 {kind === 'auto-merge' ? 'Automatically merge' : 'Merge'}{' '}
                 <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
               </p>
+              <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
+                <h3 className="text-sm font-medium">Current status</h3>
+                {mergeStatus?.headSha === scope.headSha ? (
+                  <>
+                    <ul className="space-y-2">
+                      {mergeStatus.signals.map((signal, index) => (
+                        <li key={index}>
+                          <Signal signal={signal} />
+                        </li>
+                      ))}
+                    </ul>
+                    {mergeStatus.warnings.map((warning) => (
+                      <p
+                        key={warning}
+                        className="text-xs text-muted-foreground [overflow-wrap:anywhere]"
+                      >
+                        {warning}
+                      </p>
+                    ))}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Status for reviewed commit {scope.headSha.slice(0, 8)} is not loaded. Close this
+                    dialog to review the current revision.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {kind === 'auto-merge'
+                    ? 'Auto-merge waits for the provider’s requirements. Later commits may change these statuses.'
+                    : 'Review these statuses before confirming. The provider enforces repository requirements.'}
+                </p>
+              </section>
               <FormField label="Merge method">
                 <ChoicePicker
                   aria-label="Merge method"

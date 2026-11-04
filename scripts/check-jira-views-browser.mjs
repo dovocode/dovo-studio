@@ -11,7 +11,7 @@ const mocks = {
     ['button', 'input', 'dialog']
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
-    `export * from '${ui}/choice-picker.tsx';export * as Popover from '@radix-ui/react-popover';`,
+    `export {cn} from '${ui}/lib/utils.ts';export * from '${ui}/choice-picker.tsx';export * as Popover from '@radix-ui/react-popover';`,
 }
 const built = await build({
   stdin: {

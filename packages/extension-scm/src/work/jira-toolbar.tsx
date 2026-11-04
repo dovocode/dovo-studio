@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { JiraBrowseControls } from './jira-browse-controls'
 import { SlidersHorizontal, X, List, Columns3 } from 'lucide-react'
 import { hasJiraIssueFilters, type ForgeIssue, type JiraIssueFilters } from '@dovo/protocol'
-import { Button, Input, Popover, ChoicePicker } from '@dovo/studio-ui'
+import { Button, Input, Popover, ChoicePicker, cn } from '@dovo/studio-ui'
 import type { WorkSource } from './work-sources'
 import { matchesWorkSource } from './work-source-identity'
 
@@ -74,8 +74,15 @@ export function JiraToolbar({
       <X className="size-3" />
     </Button>
   )
+  const filterClass = (selected: boolean) =>
+    cn(
+      'h-8 rounded-md border px-2.5 text-xs',
+      selected
+        ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
+        : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
+    )
   return (
-    <div className="space-y-2">
+    <fieldset disabled={!sources.length} className="m-0 min-w-0 space-y-2 border-0 p-0">
       <div className="flex flex-wrap items-center gap-1.5">
         <div className="flex flex-wrap gap-1" role="group" aria-label="Jira quick views">
           {presets.map((preset) => (
@@ -83,13 +90,12 @@ export function JiraToolbar({
               key={preset.name}
               type="button"
               size="sm"
-              variant={
+              variant="ghost"
+              className={filterClass(
                 state === preset.state &&
-                (filters.assignee ?? 'all') === preset.assignee &&
-                !filters.statusCategory
-                  ? 'secondary'
-                  : 'ghost'
-              }
+                  (filters.assignee ?? 'all') === preset.assignee &&
+                  !filters.statusCategory,
+              )}
               aria-pressed={
                 state === preset.state &&
                 (filters.assignee ?? 'all') === preset.assignee &&
@@ -104,7 +110,7 @@ export function JiraToolbar({
             </Button>
           ))}
         </div>
-        <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Root open={open && !!sources.length} onOpenChange={setOpen}>
           <Popover.Trigger asChild>
             <Button type="button" size="sm" variant="outline">
               <SlidersHorizontal className="size-3.5" />
@@ -132,11 +138,10 @@ export function JiraToolbar({
                     type="button"
                     key={value}
                     size="sm"
-                    variant={
-                      (filters.statusCategory ?? 'all') === value && state === 'all'
-                        ? 'secondary'
-                        : 'ghost'
-                    }
+                    variant="ghost"
+                    className={filterClass(
+                      (filters.statusCategory ?? 'all') === value && state === 'all',
+                    )}
                     aria-pressed={(filters.statusCategory ?? 'all') === value && state === 'all'}
                     onClick={() => {
                       onState('all')
@@ -190,7 +195,8 @@ export function JiraToolbar({
                         type="button"
                         key={value}
                         size="sm"
-                        variant={state === value ? 'secondary' : 'ghost'}
+                        variant="ghost"
+                        className={filterClass(state === value)}
                         aria-pressed={state === value}
                         onClick={() => {
                           onState(value)
@@ -234,8 +240,11 @@ export function JiraToolbar({
                           key={value}
                           type="button"
                           size="sm"
-                          className="max-w-full whitespace-normal break-words text-left text-xs"
-                          variant={filters[group.key] === value ? 'secondary' : 'ghost'}
+                          className={cn(
+                            filterClass(filters[group.key] === value),
+                            'max-w-full whitespace-normal break-words text-left',
+                          )}
+                          variant="ghost"
                           aria-pressed={filters[group.key] === value}
                           onClick={() =>
                             onFilters({
@@ -282,7 +291,8 @@ export function JiraToolbar({
               key={layout}
               type="button"
               size="sm"
-              variant={view === layout ? 'secondary' : 'ghost'}
+              variant="ghost"
+              className={filterClass(view === layout)}
               aria-pressed={view === layout}
               onClick={() => onView(layout)}
             >
@@ -345,6 +355,6 @@ export function JiraToolbar({
           </Button>
         )}
       </div>
-    </div>
+    </fieldset>
   )
 }

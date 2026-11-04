@@ -1,4 +1,5 @@
 import { Disclosure } from '@dovo/studio-ui'
+import type { ReactNode } from 'react'
 import { CircleCheck, CircleAlert, Clock3, CircleDashed } from 'lucide-react'
 import {
   checkSignal,
@@ -38,9 +39,13 @@ export function Signal({ signal }: { signal: PullSignal }) {
 export function PullStatus({
   detail,
   reviewsReady = true,
+  checksReady = true,
+  children,
 }: {
   detail: PullDetail
   reviewsReady?: boolean
+  checksReady?: boolean
+  children?: ReactNode
 }) {
   const reviews = latestPullReviews(detail.comments)
   const checks = [...detail.checks].sort((a, b) => {
@@ -50,88 +55,93 @@ export function PullStatus({
   })
   return (
     <div className="grid items-start gap-4 @4xl/pr-detail:grid-cols-[minmax(0,1fr)_220px]">
-      <section className="min-w-0 rounded-xl border">
-        <h3 className="border-b px-4 py-3 text-sm font-medium">
-          Checks <span className="text-muted-foreground">{checks.length}</span>
-        </h3>
-        {!checks.length && (
-          <p className="p-4 text-xs text-muted-foreground">
-            No checks returned. See any loading warnings above.
-          </p>
-        )}
-        <div className="divide-y">
-          {checks.map((check, i) => (
-            <div key={`${check.name}-${i}`} className="min-w-0 space-y-3 px-4 py-3 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {check.url ? (
-                  <a
-                    className="min-w-0 [overflow-wrap:anywhere] font-medium hover:underline"
-                    href={check.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {check.name} ↗
-                  </a>
-                ) : (
-                  <span className="min-w-0 [overflow-wrap:anywhere]">{check.name}</span>
-                )}
-                <Signal signal={checkSignal(check.status)} />
-              </div>
-              {check.summary && (
-                <MessageResponse
-                  baseURL={check.url ?? detail.pull.url}
-                  fileBaseURL={detail.fileBaseUrl}
-                >
-                  {check.summary}
-                </MessageResponse>
-              )}
-              {(check.details || check.annotations?.length) && (
-                <Disclosure
-                  className="min-w-0"
-                  title={
-                    <>
-                      Check output
-                      {check.annotations?.length
-                        ? ` · ${check.annotations.length} annotation${check.annotations.length === 1 ? '' : 's'}`
-                        : ''}
-                    </>
-                  }
-                >
-                  <div className="min-w-0 space-y-3 pt-2">
-                    {check.details && (
-                      <MessageResponse
-                        baseURL={check.url ?? detail.pull.url}
-                        fileBaseURL={detail.fileBaseUrl}
+      <div className="min-w-0">
+        {children}
+        {checksReady && (
+          <section className="min-w-0 rounded-xl border">
+            <h3 className="border-b px-4 py-3 text-sm font-medium">
+              Checks <span className="text-muted-foreground">{checks.length}</span>
+            </h3>
+            {!checks.length && (
+              <p className="p-4 text-xs text-muted-foreground">
+                No checks returned. See any loading warnings above.
+              </p>
+            )}
+            <div className="divide-y">
+              {checks.map((check, i) => (
+                <div key={`${check.name}-${i}`} className="min-w-0 space-y-3 px-4 py-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {check.url ? (
+                      <a
+                        className="min-w-0 [overflow-wrap:anywhere] font-medium hover:underline"
+                        href={check.url}
+                        target="_blank"
+                        rel="noreferrer"
                       >
-                        {check.details}
-                      </MessageResponse>
+                        {check.name} ↗
+                      </a>
+                    ) : (
+                      <span className="min-w-0 [overflow-wrap:anywhere]">{check.name}</span>
                     )}
-                    {check.annotations?.map((annotation, index) => (
-                      <article
-                        key={`${annotation.path}:${annotation.startLine}:${index}`}
-                        className="space-y-1 border-l-2 border-border pl-3"
-                      >
-                        <p className="break-all font-mono text-[0.6875rem]">
-                          {annotation.path}:{annotation.startLine}
-                          {annotation.endLine !== annotation.startLine
-                            ? `–${annotation.endLine}`
-                            : ''}
-                        </p>
-                        <p className="[overflow-wrap:anywhere] font-medium">
-                          {annotation.title || annotation.level}
-                        </p>
-                        <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground">
-                          {annotation.message}
-                        </p>
-                      </article>
-                    ))}
+                    <Signal signal={checkSignal(check.status)} />
                   </div>
-                </Disclosure>
-              )}
+                  {check.summary && (
+                    <MessageResponse
+                      baseURL={check.url ?? detail.pull.url}
+                      fileBaseURL={detail.fileBaseUrl}
+                    >
+                      {check.summary}
+                    </MessageResponse>
+                  )}
+                  {(check.details || check.annotations?.length) && (
+                    <Disclosure
+                      className="min-w-0"
+                      title={
+                        <>
+                          Check output
+                          {check.annotations?.length
+                            ? ` · ${check.annotations.length} annotation${check.annotations.length === 1 ? '' : 's'}`
+                            : ''}
+                        </>
+                      }
+                    >
+                      <div className="min-w-0 space-y-3 pt-2">
+                        {check.details && (
+                          <MessageResponse
+                            baseURL={check.url ?? detail.pull.url}
+                            fileBaseURL={detail.fileBaseUrl}
+                          >
+                            {check.details}
+                          </MessageResponse>
+                        )}
+                        {check.annotations?.map((annotation, index) => (
+                          <article
+                            key={`${annotation.path}:${annotation.startLine}:${index}`}
+                            className="space-y-1 border-l-2 border-border pl-3"
+                          >
+                            <p className="break-all font-mono text-[0.6875rem]">
+                              {annotation.path}:{annotation.startLine}
+                              {annotation.endLine !== annotation.startLine
+                                ? `–${annotation.endLine}`
+                                : ''}
+                            </p>
+                            <p className="[overflow-wrap:anywhere] font-medium">
+                              {annotation.title || annotation.level}
+                            </p>
+                            <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground">
+                              {annotation.message}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+                    </Disclosure>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
+        )}
+      </div>
       <aside className="min-w-0 space-y-5 border-t pt-4 text-xs [overflow-wrap:anywhere] @4xl/pr-detail:border-l @4xl/pr-detail:border-t-0 @4xl/pr-detail:pl-5 @4xl/pr-detail:pt-0">
         <div>
           <h3 className="mb-2 font-medium">Review decisions</h3>

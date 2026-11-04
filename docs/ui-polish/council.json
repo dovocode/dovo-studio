@@ -202,10 +202,23 @@
       "model": "Muse muse-wonder-full-1.0",
       "score": 8.5,
       "id": "a3da728d-a11e-4855-8e19-0694f27bf56f"
+    },
+    {
+      "round": "reset32",
+      "model": "Opus 5.5",
+      "score": 8.8,
+      "id": "a8126e96-0cb8-465e-b1fe-728b6178c927"
+    },
+    {
+      "round": "reset32",
+      "model": "Opus 5.5",
+      "score": 8.6,
+      "id": "fbaaa045-cdb9-48ad-8cb9-0f01bb3ec8a3"
     }
   ],
   "remaining": [
-    "Obtain at least 9/10 from both Opus reviewers; round32 frozen gallery in review",
+    "Resolve round32 filter/Jira/runtime/merge-status findings",
+    "Refresh gallery and obtain at least 9 from both Opus reviewers",
     "Finish PR #50"
   ],
   "approvalTarget": {
@@ -244,16 +257,6 @@
     }
   ],
   "pendingReviews": [
-    {
-      "round": "reset32",
-      "model": "Opus 5.5",
-      "id": "a8126e96-0cb8-465e-b1fe-728b6178c927"
-    },
-    {
-      "round": "reset32",
-      "model": "Opus 5.5",
-      "id": "fbaaa045-cdb9-48ad-8cb9-0f01bb3ec8a3"
-    },
     {
       "round": "reset32",
       "model": "Muse muse-wonder-full-1.0",

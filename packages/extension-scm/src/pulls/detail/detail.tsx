@@ -22,6 +22,7 @@ import {
   latestPullReviews,
   forgeLabels,
   formatDateTime,
+  type PullSignal,
 } from '@dovo/studio-core'
 import {
   HeaderContent,
@@ -141,6 +142,22 @@ function PullDetailContent({
     : activeRuns
       ? { label: `Pipeline runs: ${activeRuns} running`, tone: 'warning' as const }
       : { label: `Pipeline runs: ${pipelineRuns.runs.length} loaded`, tone: 'neutral' as const }
+  const checksReady =
+    sections.checks.ready || (sections.status.ready && detail?.pull.checksState !== undefined)
+  const checkSummary: PullSignal =
+    detail && checksReady
+      ? {
+          ...pullDetailChecks(detail),
+          label: `Check reports: ${pullDetailChecks(detail).label}`,
+        }
+      : {
+          label: sections.checks.busy ? 'Loading checks…' : 'Check reports not loaded',
+          tone: 'neutral',
+        }
+  const reviewSummary: PullSignal =
+    detail && (sections.status.ready || sections.discussion.ready)
+      ? pullDetailReviews(detail)
+      : { label: 'Review status not loaded', tone: 'neutral' }
   const previousChanges = useRef<typeof detail>(null)
   const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
   useEffect(() => {
@@ -295,6 +312,35 @@ function PullDetailContent({
             <PullActions
               repositoryId={repositoryId}
               detail={detail}
+              mergeStatus={{
+                headSha: detail.pull.headSha,
+                signals: [
+                  checkSummary,
+                  pipelineRuns.runs.length
+                    ? pipelineSummary
+                    : {
+                        label: pipelineRuns.busy
+                          ? 'Loading pipeline runs…'
+                          : 'No pipeline runs loaded',
+                        tone: 'neutral',
+                      },
+                  reviewSummary,
+                  pullMergeability(detail.pull),
+                ],
+                warnings: [
+                  ...new Set(
+                    [
+                      sections.status.error,
+                      sections.checks.error,
+                      sections.discussion.error,
+                      detail.pull.statusError,
+                      pipelineRuns.error,
+                      pipelineRuns.notice,
+                      ...detail.warnings,
+                    ].filter((message): message is string => !!message),
+                  ),
+                ],
+              }}
               onDone={changed}
               extraMenuItems={
                 <>
@@ -498,29 +544,14 @@ function PullDetailContent({
                   onClick={() => selectTab('checks')}
                   className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
                 >
-                  <Signal
-                    signal={
-                      sections.checks.ready ||
-                      (sections.status.ready && detail.pull.checksState !== undefined)
-                        ? {
-                            ...pullDetailChecks(detail),
-                            label: `Check reports: ${pullDetailChecks(detail).label}`,
-                          }
-                        : {
-                            label: sections.checks.busy ? 'Loading checks…' : 'Checks · View',
-                            tone: 'neutral',
-                          }
-                    }
-                  />
+                  {checksReady || sections.checks.busy ? (
+                    <Signal signal={checkSummary} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Checks · View</span>
+                  )}
                 </button>
                 {pipelineRuns.runs.length > 0 && <Signal signal={pipelineSummary} />}
-                <Signal
-                  signal={
-                    sections.status.ready || sections.discussion.ready
-                      ? pullDetailReviews(detail)
-                      : { label: 'Loading review status…', tone: 'neutral' }
-                  }
-                />
+                <Signal signal={reviewSummary} />
                 <Signal signal={pullMergeability(detail.pull)} />
                 {detail.pull.autoMergeEnabled && (
                   <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
@@ -745,18 +776,21 @@ function PullDetailContent({
               aria-labelledby="pr-tab-checks"
               hidden={tab !== 'checks'}
             >
-              {checksOpened && repository && (
-                <PullPipelineRunsContent
-                  state={pipelineRuns}
-                  sha={detail.pull.headSha}
-                  active={tab === 'checks'}
-                />
-              )}
-              <PullSectionStatus label="Checks" section={sections.checks} />
-              <PullSectionStatus label="Reviews" section={sections.discussion} />
-              {sections.checks.ready && (
-                <PullStatus reviewsReady={sections.discussion.ready} detail={detail} />
-              )}
+              <PullStatus
+                reviewsReady={sections.discussion.ready}
+                checksReady={sections.checks.ready}
+                detail={detail}
+              >
+                {checksOpened && repository && (
+                  <PullPipelineRunsContent
+                    state={pipelineRuns}
+                    sha={detail.pull.headSha}
+                    active={tab === 'checks'}
+                  />
+                )}
+                <PullSectionStatus label="Checks" section={sections.checks} />
+                <PullSectionStatus label="Reviews" section={sections.discussion} />
+              </PullStatus>
             </section>
             <section
               role="tabpanel"

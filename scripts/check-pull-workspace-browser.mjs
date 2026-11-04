@@ -300,14 +300,32 @@ try {
       actions: ['comment', 'review', 'merge'],
       mergeMethods: ['squash'],
     }
+    window.pipelineRuns = [{ status: 'failure' }]
   })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail.getByRole('button', { name: 'Merge', exact: true }).click()
   const mergeDialog = page.getByRole('dialog')
+  const mergeReadiness = mergeDialog.getByRole('region', { name: 'Merge readiness' })
+  for (const status of [
+    'Pipeline runs: 1 failed',
+    'Check reports: 1 check passed',
+    'Review required',
+  ]) {
+    await detail
+      .getByLabel('Pull request status', { exact: true })
+      .getByText(status, { exact: true })
+      .waitFor()
+    await mergeReadiness.getByText(status, { exact: true }).waitFor()
+  }
   const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
   assert.equal(await mergeConfirm.isDisabled(), true)
   await mergeDialog.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
+  assert.equal(
+    await mergeConfirm.isEnabled(),
+    true,
+    'Status warnings must preserve provider merge policy',
+  )
   await mergeConfirm.click()
   await mergeDialog.waitFor({ state: 'detached' })
   const merged = await page.evaluate(() =>
@@ -315,6 +333,9 @@ try {
   )
   assert.equal(merged.input.headSha, 'a'.repeat(40))
   assert.equal(merged.input.method, 'squash')
+  await page.evaluate(() => {
+    window.pipelineRuns = []
+  })
   await page.screenshot({ path: '/tmp/dovo-pull-workspace.png' })
   await page.getByRole('tab', { name: /Changes/ }).click()
   await page.getByRole('button', { name: '2 files · 1 viewed', exact: true }).waitFor()
@@ -537,8 +558,20 @@ try {
     exact: true,
   })
   await checkSummary.getByText('Checks · View', { exact: true }).waitFor()
+  assert.equal(
+    await checkSummary.locator('svg').count(),
+    0,
+    'Unopened checks must not use a pending icon',
+  )
   assert.equal(await page.getByText('Loading checks…', { exact: true }).count(), 0)
   await page.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
+  const unloadedMerge = page.getByRole('dialog')
+  await unloadedMerge.getByText('Check reports not loaded', { exact: true }).waitFor()
+  await unloadedMerge.getByText('Pipeline runs: 1 failed', { exact: true }).waitFor()
+  assert.equal(await unloadedMerge.getByText(/checks? passed/i).count(), 0)
+  await unloadedMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
   await checkSummary.click()
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
@@ -690,11 +723,19 @@ try {
   await page.evaluate(() => {
     window.detail.pull = { ...window.detail.pull, draft: false, mergeStateStatus: 'BLOCKED' }
     window.detail.capabilities.actions = ['draft', 'auto-merge']
+    window.detail.pull.checksState = 'FAILURE'
+    window.detail.checks = [{ name: 'Tests', status: 'FAILURE' }]
+    window.pipelineRuns = [{ status: 'failure' }]
     window.showDestination('overview', 'enable-auto-merge')
   })
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
   const autoDialog = page.getByRole('dialog')
+  for (const status of ['Pipeline runs: 1 failed', 'Check reports: 1 failed', 'Review required'])
+    await autoDialog
+      .getByRole('region', { name: 'Merge readiness' })
+      .getByText(status, { exact: true })
+      .waitFor()
   const autoSubmit = autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true })
   await page.evaluate(() => {
     window.detail = { ...window.detail, pull: { ...window.detail.pull, autoMergeEnabled: true } }

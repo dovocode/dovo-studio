@@ -259,16 +259,15 @@ export default function ArtifactsView() {
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col" aria-label="All artifacts">
       {!selection && (
-        <PageHeader title="Your artifacts">
-          <Button
-            variant="ghost"
-            size="sm"
+        <PageHeader title="Artifacts">
+          <IconButton
+            label="Refresh"
+            className="size-8"
             onClick={() => setReload((value) => value + 1)}
             disabled={loading}
           >
             <RotateCw className={cn('size-3.5', loading && 'animate-spin')} />
-            Refresh
-          </Button>
+          </IconButton>
         </PageHeader>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -323,8 +322,10 @@ export default function ArtifactsView() {
                       aria-pressed={format === value}
                       onClick={() => setFormat(value)}
                       className={cn(
-                        'studio-filter-chip h-8 shrink-0',
-                        format === value ? 'text-foreground' : 'text-muted-foreground',
+                        'h-8 shrink-0 rounded-md border px-2.5 text-xs',
+                        format === value
+                          ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
+                          : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
                       )}
                     >
                       {value === 'all' ? 'All' : artifactFormatLabels[value]}

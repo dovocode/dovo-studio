@@ -8,7 +8,7 @@ import {
   type JiraIssueFilters,
 } from '@dovo/protocol'
 import { JiraToolbar } from './jira-toolbar'
-import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
+import { EmptyState, PageHeader, SidebarHeader, cn, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import {
@@ -484,6 +484,7 @@ function WorkView({
                     : 'Search runs, branches, projects…'
                 }
                 value={search}
+                disabled={isJira && !sources.length}
                 maxLength={300}
                 onValueChange={setSearch}
               />
@@ -619,6 +620,57 @@ function WorkView({
                     <option value="project">Source</option>
                     <option value="title">Title</option>
                   </ChoicePicker>
+                  {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
+                    <div
+                      role="group"
+                      aria-label="Filter loaded runs by status"
+                      className="flex flex-wrap items-center gap-1"
+                    >
+                      <p className="sr-only">Counts in loaded, searched results</p>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-pressed={state === 'all'}
+                        aria-label={`All runs: ${matchingRows.length}`}
+                        onClick={() => setState('all')}
+                        className={cn(
+                          'h-8 gap-2 rounded-md border px-2.5 text-xs',
+                          state === 'all'
+                            ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
+                            : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
+                        )}
+                      >
+                        All runs <span className="tabular-nums">{matchingRows.length}</span>
+                      </Button>
+                      {pipelineStatuses.map(({ status, label, count }) => (
+                        <Button
+                          key={label}
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Filter ${label}: ${count} runs`}
+                          aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
+                          onClick={() =>
+                            setState(
+                              state !== 'all' && pipelineSignal(state).label === label
+                                ? 'all'
+                                : status,
+                            )
+                          }
+                          className={cn(
+                            'h-8 min-w-0 max-w-full gap-2 rounded-md border px-2.5 text-xs',
+                            state !== 'all' && pipelineSignal(state).label === label
+                              ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1'
+                              : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
+                          )}
+                        >
+                          <span className="inline-flex items-center gap-1.5 text-xs">
+                            {label}{' '}
+                            <span className="tabular-nums text-muted-foreground">{count}</span>
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                   {hasFilters && (
                     <Button
                       className="h-8 text-xs"
@@ -638,49 +690,6 @@ function WorkView({
                       Clear filters
                     </Button>
                   )}
-                </div>
-              )}
-              {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
-                <div
-                  role="group"
-                  aria-label="Filter loaded runs by status"
-                  className="mt-2 space-y-2"
-                >
-                  <p className="sr-only">Counts in loaded, searched results</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant={state === 'all' ? 'secondary' : 'ghost'}
-                      aria-pressed={state === 'all'}
-                      aria-label={`All runs: ${matchingRows.length}`}
-                      onClick={() => setState('all')}
-                      className="h-9 gap-2 text-xs"
-                    >
-                      All runs <span className="tabular-nums">{matchingRows.length}</span>
-                    </Button>
-                    {pipelineStatuses.map(({ status, label, count }) => (
-                      <Button
-                        key={label}
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Filter ${label}: ${count} runs`}
-                        aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
-                        onClick={() =>
-                          setState(
-                            state !== 'all' && pipelineSignal(state).label === label
-                              ? 'all'
-                              : status,
-                          )
-                        }
-                        className="h-9 min-w-0 max-w-full gap-2 px-2 aria-pressed:bg-muted aria-pressed:ring-1 aria-pressed:ring-ring"
-                      >
-                        <span className="inline-flex items-center gap-1.5 text-xs">
-                          {label}{' '}
-                          <span className="tabular-nums text-muted-foreground">{count}</span>
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>
@@ -710,20 +719,28 @@ function WorkView({
                       : `Connect to load ${mode}.`
                     : ''}
             </p>
-            {!sources.length && (
-              <div className="space-y-3 py-8 text-sm text-muted-foreground">
-                <p>
-                  {sourceKind === 'jira'
-                    ? 'Connect Jira from Sources to browse Jira issues.'
-                    : 'Connect a code project to browse its issues.'}
-                </p>
-                {isJira && (
-                  <Button size="sm" variant="outline" onClick={() => void chooseSource('settings')}>
-                    Connect Jira
-                  </Button>
-                )}
-              </div>
-            )}
+            {!sources.length &&
+              (isJira ? (
+                <EmptyState
+                  icon={<CircleDot />}
+                  title="Connect Jira"
+                  description="Browse Jira issues and link them to code projects when you’re ready to work on them."
+                  action={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={opening}
+                      onClick={() => void chooseSource('settings')}
+                    >
+                      Connect Jira
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-3 py-8 text-sm text-muted-foreground">
+                  <p>Connect a code project to browse its issues.</p>
+                </div>
+              ))}
             {!!sourceProblems.length && (
               <div
                 className="mb-4 space-y-2 rounded-xl border bg-muted/15 p-3"
@@ -837,15 +854,17 @@ function WorkView({
               </div>
             )}
             {isJira ? (
-              <JiraIssueList
-                layout={jiraLayout}
-                rows={rows.flatMap((row) =>
-                  'state' in row.item ? [{ ...row, item: row.item }] : [],
-                )}
-                selected={selected}
-                opening={opening}
-                onOpen={open}
-              />
+              !!sources.length && (
+                <JiraIssueList
+                  layout={jiraLayout}
+                  rows={rows.flatMap((row) =>
+                    'state' in row.item ? [{ ...row, item: row.item }] : [],
+                  )}
+                  selected={selected}
+                  opening={opening}
+                  onOpen={open}
+                />
+              )
             ) : (
               <div className="divide-y">
                 {rows.map(({ source, item, stale, provider }) => (
