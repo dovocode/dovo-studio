@@ -264,7 +264,10 @@ try {
     const taskScope = scopes.getByRole('button', { name: 'Tasks', exact: true })
     const messageScope = scopes.getByRole('button', { name: 'Messages', exact: true })
     const inputBox = await threadSearch.boundingBox()
-    assert.ok(inputBox.x + inputBox.width <= closeBox.x, 'Search input stays clear of close')
+    assert.ok(
+      inputBox.x + inputBox.width <= closeBox.x,
+      `Search input stays clear of close: ${JSON.stringify({ inputBox, closeBox })}`,
+    )
     const dialogBox = await page.getByRole('dialog').boundingBox()
     for (const scope of [taskScope, messageScope]) {
       const box = await scope.boundingBox()

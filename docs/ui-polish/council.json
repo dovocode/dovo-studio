@@ -154,6 +154,18 @@
       "score": 8.2,
       "id": "6f1e0507-eba6-442f-b61a-2e2760a02529",
       "note": "Intermediate gallery before rounded sidebars and the shared disclosure/control consistency pass."
+    },
+    {
+      "round": "reset28",
+      "model": "Opus 5.5",
+      "score": 7.5,
+      "id": "6901e6db-589a-42c7-80ee-244704652743"
+    },
+    {
+      "round": "reset28",
+      "model": "Opus 5.5",
+      "score": 7,
+      "id": "0cefa964-e2bf-43cb-9eb5-c3003837e08f"
     }
   ],
   "remaining": [
@@ -167,22 +179,50 @@
     "minimumScore": 9,
     "reason": "Dominic changed the target to Opus 9/10."
   },
-  "pendingReviews": [
+  "gallery": {
+    "round": 30,
+    "captures": 264,
+    "corePass": 29,
+    "dialogPass": "29 with refreshed representative30 dialogs"
+  },
+  "unavailableReviews": [
     {
-      "round": "reset28",
+      "round": "reset29",
       "model": "Opus 5.5",
-      "id": "6901e6db-589a-42c7-80ee-244704652743"
+      "id": "3647ea8b-4ce0-4db4-a9fc-c283a4e2bd29",
+      "status": "failed",
+      "reason": "Opus gateway returned 503 auth_unavailable before review; no score issued"
     },
     {
-      "round": "reset28",
+      "round": "reset29",
       "model": "Opus 5.5",
-      "id": "0cefa964-e2bf-43cb-9eb5-c3003837e08f"
+      "id": "6ab6d99c-90e5-4da1-8c87-60f8de1128ed",
+      "status": "failed",
+      "reason": "Opus gateway returned 503 auth_unavailable before review; no score issued"
     }
   ],
-  "gallery": {
-    "round": 28,
-    "captures": 264,
-    "corePass": 26,
-    "dialogPass": 28
-  }
+  "pendingReviews": [
+    {
+      "round": "reset30",
+      "model": "Opus 5.5",
+      "id": "8e9ab794-684e-456f-95cd-2335334246ac"
+    },
+    {
+      "round": "reset30",
+      "model": "Opus 5.5",
+      "id": "353e5678-6465-416a-a02e-f2fcf49533c4"
+    },
+    {
+      "round": "reset30",
+      "model": "Muse wonder-full-1.0",
+      "id": "73256406-460c-4589-a1a2-760f3f9a8350"
+    }
+  ],
+  "queuedReviews": [
+    {
+      "round": "reset30",
+      "model": "Gemini 4.0 Argon",
+      "reason": "Awaiting council slot"
+    }
+  ]
 }

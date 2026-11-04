@@ -334,3 +334,16 @@
   :is([data-choice-picker], [data-slot='select-trigger']):not([aria-invalid='true']) {
   border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
 }
+
+/* Share the title's grid cell so a sticky close control adds no row or gap. */
+.dovo-dialog-content:not(.flex):not(:has(> [data-slot='dialog-title'].sr-only)) > :first-child {
+  grid-area: 1 / 1;
+}
+.dovo-dialog-content:not(.flex):not(:has(> [data-slot='dialog-title'].sr-only))
+  > .dovo-dialog-close-anchor {
+  position: sticky;
+  top: 4px;
+  grid-area: 1 / 1;
+  inset-inline: 0;
+  align-self: start;
+}

@@ -84,7 +84,7 @@ export function TaskSearchDialog({
   }
   return (
     <Dialog open={!!mode} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="top-[20%] max-w-xl translate-y-0 gap-2 p-2">
+      <DialogContent className="top-[20%] max-w-xl translate-y-0 gap-2 p-2 [&_[data-dialog-close]]:-right-4 [&_[data-dialog-close]]:-top-4">
         <DialogTitle className="sr-only">
           {mode === 'messages' ? 'Search conversations' : 'Go to task'}
         </DialogTitle>

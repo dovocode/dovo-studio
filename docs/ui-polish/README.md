@@ -4,10 +4,11 @@ The desktop workspace keeps its black `#080808` canvas and thin, icon-only activ
 Inter, calmer surfaces, shared gutters and more readable metadata bring the conversation, Browser,
 PRs, terminal, panels and settings into one visual system.
 
-Thread info now floats over the chat without resizing the conversation, bounded to the chat pane
-and clear of its composer. Flat project, checkout and action sections retain their customization order and
-visibility, portal state and close/Escape controls. Sidebars retain softly outlined rounded corners; the main chat and Browser surfaces stay flat
-and borderless. Neutral selections and restrained separators keep the composition calm.
+Thread info now floats over the chat without resizing the conversation, bounded to the chat pane and
+clear of its composer. Flat project, checkout and action sections retain their customization order
+and visibility, portal state and close/Escape controls. Sidebars retain softly outlined rounded
+corners; the main chat and Browser surfaces stay flat and borderless. Neutral selections and
+restrained separators keep the composition calm.
 
 ## Review the result
 
@@ -26,8 +27,9 @@ and borderless. Neutral selections and restrained separators keep the compositio
 - Thread rows retain project and status above a single-line ellipsized title, with visible machine,
   harness, PR and terminal indicators.
 - Artifact export chrome and image editing follow the active theme with bundled offline typography;
-  exported document styling stays intact. Image zoom, fit, actual size and pan preserve source pixels;
-  drawing uses image coordinates at every zoom. Import dialogs share the same fields and action footer.
+  exported document styling stays intact. Image zoom, fit, actual size and pan preserve source
+  pixels; drawing uses image coordinates at every zoom. Import dialogs share the same fields and
+  action footer.
 - The queue and composer align with conversation content; long previews keep attachment counts
   visible. Narrow desktop panes put the input above its controls.
 - Selected and disabled actions have distinct treatment. Stop remains visible without an animated
@@ -41,14 +43,14 @@ and borderless. Neutral selections and restrained separators keep the compositio
 
 ## Evidence and limits
 
-The checked-in round 28 gallery includes 264 captures: 49 production desktop routes/compositions in both themes,
-compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
-comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
-consistent thread terminology, dialog fields and expanded file tree. Review status below records
-which frozen gallery each council round inspected. The checked-in
-WebP files are lossless conversions of the reviewed PNGs. All captures use production components
-with schema-checked synthetic workspace data; account/runtime mutations are blocked. Empty
-collections are intentional empty states.
+The checked-in round 30 gallery includes 264 captures: 49 production desktop routes/compositions in
+both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
+Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
+zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
+records which frozen gallery each council round inspected. The checked-in WebP files are lossless
+conversions of the reviewed PNGs. All captures use production components with schema-checked
+synthetic workspace data; account/runtime mutations are blocked. Empty collections are intentional
+empty states.
 
 Browser uses the production BrowserPane with a synthetic native bridge. Terminal uses the production
 worker, renderer and WASM with a local WebSocket replay. Captures wait for rendered terminal output;
@@ -56,14 +58,16 @@ its `git status` text is sample data. These previews do not verify live Electron
 integrations or real provider/account connections.
 
 Council review is **in progress**. Dominic changed the approval target to at least 9/10 from both
-Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 7.5 from
-both reviewers; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
+Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 7.5 and
+7.0; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
 
-Round 28 combines the complete round 26 workspace/control pass with refreshed round 28 dialogs.
-It includes rounded sidebars, flat borderless main chat/Browser surfaces, shared disclosures,
-matching Thread info labels, one home for PR linking, quieter field borders, consistent scope chips,
-visible context search, focused field validation and aligned dialog headers. Both Opus reviewers
-are assessing this frozen gallery. The 9/10 target has not yet been earned. See
+Round 29 refreshes all workspace/control screens and dialogs, including shared settings disclosures,
+white enabled fields in light theme, explicit scope controls, a continuous Browser header, matching
+editor close controls, labelled model visibility and separate check-report/pipeline scope. It
+includes rounded sidebars, flat borderless main chat/Browser surfaces, shared disclosures, matching
+Thread info labels, one home for PR linking, quieter field borders, consistent scope chips, visible
+context search, focused field validation and aligned dialog headers. Both Opus reviewers are
+assessing this frozen gallery. The 9/10 target has not yet been earned. See
 [council.json](council.json) for the review record. Scores are subjective; interaction and
 accessibility checks are separate.
 

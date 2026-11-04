@@ -41,7 +41,7 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <div className="pointer-events-none absolute inset-x-6 top-6 z-10 h-0">
+      <div className="dovo-dialog-close-anchor pointer-events-none absolute inset-x-6 top-6 z-10 h-0">
         <DialogPrimitive.Close
           data-dialog-close
           className="pointer-events-auto bg-background absolute right-0 -top-1 flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none max-sm:size-11"
