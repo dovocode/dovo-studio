@@ -216,11 +216,7 @@
       "id": "fbaaa045-cdb9-48ad-8cb9-0f01bb3ec8a3"
     }
   ],
-  "remaining": [
-    "Resolve round32 filter/Jira/runtime/merge-status findings",
-    "Refresh gallery and obtain at least 9 from both Opus reviewers",
-    "Finish PR #50"
-  ],
+  "remaining": ["Obtain at least9 from both Opus reviewers; round33 in review", "Finish PR #50"],
   "approvalTarget": {
     "model": "Opus 5.5",
     "reviewers": 2,
@@ -228,10 +224,10 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 32,
+    "round": 33,
     "captures": 264,
-    "corePass": 32,
-    "dialogPass": 32
+    "corePass": 33,
+    "dialogPass": 33
   },
   "unavailableReviews": [
     {
@@ -261,6 +257,16 @@
       "round": "reset32",
       "model": "Muse muse-wonder-full-1.0",
       "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47"
+    },
+    {
+      "round": "reset33",
+      "model": "Opus 5.5",
+      "id": "2b79c874-91e4-4335-95cb-f81950e52b42"
+    },
+    {
+      "round": "reset33",
+      "model": "Opus 5.5",
+      "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a"
     }
   ],
   "queuedReviews": [

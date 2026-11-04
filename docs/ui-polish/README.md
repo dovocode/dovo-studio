@@ -43,7 +43,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The checked-in round 32 gallery includes 264 captures: 49 production desktop routes/compositions in
+The checked-in round 33 gallery includes 264 captures: 49 production desktop routes/compositions in
 both themes, compact views, tooltips, open controls, follow-up dialogs and image-editing substates.
 Six earlier comparison images are retained. A fresh capture pass includes the chat overlay, image
 zoom/pan, consistent thread terminology, dialog fields and expanded file tree. Review status below
@@ -58,8 +58,8 @@ its `git status` text is sample data. These previews do not verify live Electron
 integrations or real provider/account connections.
 
 Council review is **in progress**. Dominic changed the approval target to at least 9/10 from both
-Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 8.5 and
-8.5; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
+Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 8.8 and
+8.6; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
 
 Round 30 incorporates the complete round 29 refresh of all workspace/control screens and dialogs,
 including shared settings disclosures, white enabled fields in light theme, explicit scope controls,
@@ -73,9 +73,11 @@ compact search controls. Both round 31 Opus reviewers scored 8.5/10, as did Muse
 thread/computer wording, lazy-check status, update-navigation actions and model-preference
 hierarchy. Gemini Argon exists in AGY as `gemini-4-argon-high`; its ACP adapter rejected read-only
 mode, and a direct sandboxed review failed with provider `503 auth_not_found`. It has not issued a
-score. Both Opus reviewers and Muse are reviewing the frozen round 32 evidence. The 9/10 target has
-not yet been earned. See [council.json](council.json) for the review record. Scores are subjective;
-interaction and accessibility checks are separate.
+score. Round 33 unifies neutral filter selections, compacts Pipeline filters, gives disconnected
+Jira a shared empty state, improves runtime action hierarchy, and surfaces PR readiness at merge
+confirmation using existing status data. Its full 264-image gallery is frozen and under review by
+two Opus reviewers. The 9/10 target has not yet been earned. See [council.json](council.json) for
+the review record. Scores are subjective; interaction and accessibility checks are separate.
 
 ## Verification
 
