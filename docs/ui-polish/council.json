@@ -166,5 +166,23 @@
     "reviewers": 2,
     "minimumScore": 9,
     "reason": "Dominic changed the target to Opus 9/10."
+  },
+  "pendingReviews": [
+    {
+      "round": "reset28",
+      "model": "Opus 5.5",
+      "id": "6901e6db-589a-42c7-80ee-244704652743"
+    },
+    {
+      "round": "reset28",
+      "model": "Opus 5.5",
+      "id": "0cefa964-e2bf-43cb-9eb5-c3003837e08f"
+    }
+  ],
+  "gallery": {
+    "round": 28,
+    "captures": 264,
+    "corePass": 26,
+    "dialogPass": 28
   }
 }

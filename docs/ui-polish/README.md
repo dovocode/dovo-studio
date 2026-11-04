@@ -41,7 +41,7 @@ and borderless. Neutral selections and restrained separators keep the compositio
 
 ## Evidence and limits
 
-The checked-in round 22 gallery includes 264 captures: 49 production desktop routes/compositions in both themes,
+The checked-in round 28 gallery includes 264 captures: 49 production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -55,14 +55,17 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-Council review is **in progress**. Dominic rejected the earlier direction as 7/10; those earlier
-approvals do not count. Round 19 scored 8.3, 8.5 and 8.5 from the three Sol reviewers. The most recent Opus
-round (21) scored 7.5 from both reviewers. Their findings led to themed artifact-export controls, shared
-import-dialog pickers and footers, clearer settings scope and PR acknowledgements, consistent list
-search/refresh controls, and simpler Thread info grouping. The next full gallery (round 26) is being captured after the shared disclosure, field, scope and rounded-sidebar refinements; the current Opus target has not yet been earned. The latest review record is in
-[council.json](council.json). Dominic subsequently changed the approval target to at least 9/10 from both Opus 5.5 reviewers
-on the same final screenshots. Sol findings continue to inform the implementation. Scores are subjective; interaction and accessibility checks are
-separate.
+Council review is **in progress**. Dominic changed the approval target to at least 9/10 from both
+Opus 5.5 reviewers on the same final screenshots. The latest completed Opus round scored 7.5 from
+both reviewers; Sol round 22 scored 8.2, 8.3 and 8.2. Those are intermediate findings, not approval.
+
+Round 28 combines the complete round 26 workspace/control pass with refreshed round 28 dialogs.
+It includes rounded sidebars, flat borderless main chat/Browser surfaces, shared disclosures,
+matching Thread info labels, one home for PR linking, quieter field borders, consistent scope chips,
+visible context search, focused field validation and aligned dialog headers. Both Opus reviewers
+are assessing this frozen gallery. The 9/10 target has not yet been earned. See
+[council.json](council.json) for the review record. Scores are subjective; interaction and
+accessibility checks are separate.
 
 ## Verification
 
