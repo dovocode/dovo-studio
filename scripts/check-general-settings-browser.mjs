@@ -210,6 +210,26 @@ try {
       await screenshot(`${name}-${mode}`)
     }
   }
+  const assertIntroCue = async (cue) => {
+    const bounds = await cue.evaluate((element) => {
+      const column = element.closest('.studio-settings-content')
+      const description = column?.querySelector('.studio-settings-intro > p')
+      if (!column || !description) return null
+      const content = column.getBoundingClientRect()
+      const copy = description.getBoundingClientRect()
+      const target = element.getBoundingClientRect()
+      return {
+        left: target.left - content.left,
+        gap: target.top - copy.bottom,
+        right: target.right - content.right,
+      }
+    })
+    assert.ok(bounds, 'Scope and storage cues belong to the page content column')
+    assert.ok(Math.abs(bounds.left) <= 1, 'Cue aligns with the page title and description')
+    assert.ok(bounds.gap >= 0 && bounds.gap <= 24, 'Cue sits directly below the page description')
+    assert.ok(bounds.right <= 1, 'Cue fits the page content column')
+  }
+  await assertIntroCue(page.getByText('This device · saved automatically', { exact: true }))
   if (process.env.DOVO_HEADER_SCREENSHOTS) {
     const brand = await page.locator('.studio-titlebar').boundingBox()
     const heading = await page.locator('.studio-page-header').first().boundingBox()
@@ -465,12 +485,15 @@ try {
     await page.getByRole('combobox', { name: 'Thread grouping', exact: true }).innerText(),
     'Status',
   )
-  await page
-    .getByRole('group', { name: 'Page actions' })
-    .getByText('This device', { exact: true })
-    .waitFor()
+  await assertIntroCue(
+    page.locator('.studio-settings-intro').getByText('This device', { exact: true }),
+  )
   await page
     .getByText(/Use Save calendar shortcuts and Save snooze durations to apply edits/)
+    .waitFor()
+  await page
+    .locator('section[data-setting-label="Snoozing"]')
+    .getByText('Save required', { exact: true })
     .waitFor()
   const discardSettings = page.getByRole('dialog', {
     name: 'Discard unsaved settings changes?',
@@ -566,6 +589,7 @@ try {
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).click()
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
   await page.getByLabel('Settings target', { exact: true }).waitFor()
+  await assertIntroCue(page.getByLabel('Settings target', { exact: true }))
   await page.getByRole('button', { name: 'Settings inheritance details', exact: true }).waitFor()
   assert.equal(
     await settingsSidebar.getByLabel('Inherited settings target').count(),
@@ -575,6 +599,14 @@ try {
   const profiles = page.getByRole('navigation', { name: 'Provider configurations' })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
   assert.equal(await profiles.getByRole('button').count(), 9, 'Providers are present before setup')
+  assert.equal(await profiles.getByText('Default model', { exact: true }).count(), 0)
+  assert.equal(
+    await profiles
+      .getByRole('button', { name: /Claude Code/ })
+      .locator(':scope > span > span')
+      .count(),
+    2,
+  )
   await profiles.getByRole('button', { name: /Mistral Vibe/ }).waitFor()
   await screenshot('agents-dark')
   await profiles.getByRole('button', { name: /Claude Code/ }).click()
@@ -610,9 +642,12 @@ try {
   await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
   await page
     .getByLabel('Settings target', { exact: true })
-    .getByText('on MacBook Pro', { exact: true })
+    .getByText('MacBook Pro', { exact: true })
     .waitFor()
-  await page.getByText('on MacBook Pro', { exact: true }).waitFor()
+  await page
+    .getByLabel('Settings target', { exact: true })
+    .getByText('MacBook Pro', { exact: true })
+    .waitFor()
   if (process.env.DOVO_SETTINGS_SCREENSHOTS)
     await page
       .getByRole('heading', { name: 'Thread lifecycle', exact: true, level: 2 })
@@ -660,7 +695,10 @@ try {
       .getAttribute('aria-current'),
     'page',
   )
-  await page.getByText('on MacBook Pro', { exact: true }).waitFor()
+  await page
+    .getByLabel('Settings target', { exact: true })
+    .getByText('MacBook Pro', { exact: true })
+    .waitFor()
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
   await page
     .getByRole('dialog', { name: 'Discard unsaved settings changes?', exact: true })
@@ -835,6 +873,7 @@ try {
   const localProfiles = page
     .getByRole('heading', { name: 'Local browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
+  await localProfiles.getByText('Save required', { exact: true }).waitFor()
   await localProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Local work')
   await localProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await localProfiles.getByRole('textbox', { name: 'Name for Local work' }).waitFor()
@@ -842,6 +881,7 @@ try {
   const remoteProfiles = page
     .getByRole('heading', { name: 'Remote browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
+  await remoteProfiles.getByText('Save required', { exact: true }).waitFor()
   await remoteProfiles.getByRole('textbox', { name: 'New profile name' }).fill('Remote work')
   await remoteProfiles.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remoteProfiles.getByRole('textbox', { name: 'Name for Remote work' }).waitFor()
@@ -1003,12 +1043,21 @@ try {
       true,
       `${title} fits a narrow viewport`,
     )
+    if (title === 'General')
+      await assertIntroCue(page.getByText('This device · saved automatically', { exact: true }))
+    if (title === 'Thread list & projects')
+      await assertIntroCue(
+        page.locator('.studio-settings-intro').getByText('This device', { exact: true }),
+      )
+    if (title === 'Browser')
+      await assertIntroCue(page.getByText('Device preferences save automatically', { exact: true }))
     await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
     if (['General', 'Thread list & projects'].includes(title))
       await screenshotThemes(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
   }
   await choose('Settings section', 'Agents')
   await page.getByRole('button', { name: 'Agent profile', exact: true }).waitFor()
+  await assertIntroCue(page.getByLabel('Settings target', { exact: true }))
   await page.getByLabel('Name', { exact: true }).waitFor()
   await screenshot('agents-narrow')
   assert.equal(

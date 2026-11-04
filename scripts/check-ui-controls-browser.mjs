@@ -335,9 +335,18 @@ try {
         .evaluate((el) => getComputedStyle(el).fontWeight),
       '500',
     )
+    const triggerWidth = (await page.getByRole('combobox', { name: 'Theme' }).boundingBox()).width
     await page.getByRole('combobox', { name: 'Theme' }).click()
     const menu = page.getByRole('listbox')
     await menu.waitFor()
+    await menu.evaluate((node) =>
+      Promise.all(node.getAnimations().map((animation) => animation.finished)),
+    )
+    const menuWidth = (await menu.boundingBox()).width
+    assert.ok(
+      Math.abs(menuWidth - triggerWidth) <= 2,
+      `Select menu aligns with its trigger width: ${menuWidth} / ${triggerWidth}`,
+    )
     // Wait for Radix positioning and opening animation before measuring.
     await page.waitForFunction(() => {
       const el = document.querySelector('[role="listbox"]')

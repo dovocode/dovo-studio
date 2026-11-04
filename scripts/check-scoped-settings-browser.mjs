@@ -423,10 +423,19 @@ try {
       exact: true,
     })
     if (!mobile) {
+      assert.equal(await archive.innerText(), 'Inherit')
+      await page.getByText('Computer policy · 21 days of inactivity', { exact: true }).waitFor()
+      assert.equal(
+        await archive.evaluate(
+          (control) =>
+            document.getElementById(control.getAttribute('aria-describedby'))?.textContent,
+        ),
+        'Computer policy · 21 days of inactivity',
+      )
       await archive.click()
       await page
         .getByRole('option', {
-          name: 'Inherit (Computer policy · 21 days of inactivity)',
+          name: 'Inherit',
           exact: true,
         })
         .waitFor()

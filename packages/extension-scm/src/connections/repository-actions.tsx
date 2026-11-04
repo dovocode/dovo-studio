@@ -2,6 +2,7 @@ import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { RuntimeRequestError } from '@dovo/protocol'
 import type { Schema } from 'effect'
 import { CreateGithub } from './create-github'
+import { StagingFilePreview } from './staging-file-preview'
 import { useEffect, useEffectEvent, useId, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { branchesSchema, clientScopeKey, encodeWorkTarget } from '@dovo/studio-core'
@@ -54,6 +55,10 @@ function canStageFile(file: ChangedFile) {
   return stagingUnavailable(file) || file.gitStatus?.workingTree !== 'unchanged'
 }
 
+function partialStagingLabel(file: ChangedFile) {
+  return isStaged(file) && canStageFile(file) ? ' · Partially staged' : ''
+}
+
 function fileStagingDescription(file: ChangedFile) {
   const status = file.gitStatus
   if (!status) return 'Staging status unavailable'
@@ -100,7 +105,13 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
     [pushState, setPushState] = useApplicationState<PushState | null>(null),
     [message, setMessage] = useApplicationState(''),
     [status, setStatus] = useApplicationState(''),
-    [busy, setBusy] = useApplicationState(false)
+    [busy, setBusy] = useApplicationState(false),
+    [review, setReview] = useApplicationState<{
+      path: string
+      comparison: 'staged' | 'unstaged'
+    } | null>(null)
+  const reviewOrigin = useRef<string | null>(null)
+  const stagingBody = useRef<HTMLDivElement>(null)
   const input = {
     repositoryId: repo.id,
     ...(taskId
@@ -237,8 +248,24 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
         if (mounted.current) setBusy(false)
       })
   }
+  if (review)
+    return (
+      <StagingFilePreview
+        key={`${review.comparison}:${review.path}`}
+        {...input}
+        {...review}
+        onBack={() => {
+          setReview(null)
+          requestAnimationFrame(() =>
+            Array.from(stagingBody.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+              .find((button) => button.getAttribute('aria-label') === reviewOrigin.current)
+              ?.focus(),
+          )
+        }}
+      />
+    )
   return (
-    <div className="mt-1 divide-y">
+    <div ref={stagingBody} className="mt-1 divide-y">
       <section className="space-y-3 pb-4">
         <div className="flex items-center justify-between gap-3">
           <h3 ref={changesHeading} tabIndex={-1} className="text-xs font-medium">
@@ -281,9 +308,23 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                           {file.path}
                         </span>
                         <span className="mt-0.5 block text-muted-foreground">
-                          Staged: {changeLabels[file.gitStatus?.index ?? 'unknown']}
+                          {changeLabels[file.gitStatus?.index ?? 'unknown']}
+                          {partialStagingLabel(file)}
                         </span>
                       </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Review staged ${file.path}`}
+                        disabled={busy || loading || !connected || !!loadError}
+                        onClick={(event) => {
+                          reviewOrigin.current = event.currentTarget.getAttribute('aria-label')
+                          setReview({ path: file.path, comparison: 'staged' })
+                        }}
+                      >
+                        Review
+                      </Button>
                       <Button
                         type="button"
                         size="sm"
@@ -369,33 +410,51 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                       <ul className="max-h-40 overflow-auto py-1">
                         {group.files.map((file) => (
                           <li key={file.path}>
-                            <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
-                              <Checkbox
-                                aria-label={`Select ${file.path}`}
-                                className="mt-0.5 shrink-0"
-                                checked={selected.includes(file.path)}
-                                disabled={busy}
-                                onCheckedChange={(checked) =>
-                                  setSelected((previous) =>
-                                    checked === true
-                                      ? [...previous, file.path]
-                                      : previous.filter((path) => path !== file.path),
-                                  )
-                                }
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block break-all font-mono text-[0.6875rem]">
-                                  {file.path}
+                            <div className="flex items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
+                              <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                                <Checkbox
+                                  aria-label={`Select ${file.path}`}
+                                  className="mt-0.5 shrink-0"
+                                  checked={selected.includes(file.path)}
+                                  disabled={busy}
+                                  onCheckedChange={(checked) =>
+                                    setSelected((previous) =>
+                                      checked === true
+                                        ? [...previous, file.path]
+                                        : previous.filter((path) => path !== file.path),
+                                    )
+                                  }
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block break-all font-mono text-[0.6875rem]">
+                                    {file.path}
+                                  </span>
+                                  <span className="mt-0.5 block text-muted-foreground">
+                                    {group.unavailable || file.gitStatus?.workingTree === 'unmerged'
+                                      ? fileStagingDescription(file)
+                                      : file.gitStatus?.workingTree === 'untracked'
+                                        ? 'Untracked'
+                                        : `${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}${partialStagingLabel(file)}`}
+                                  </span>
                                 </span>
-                                <span className="mt-0.5 block text-muted-foreground">
-                                  {group.unavailable || file.gitStatus?.workingTree === 'unmerged'
-                                    ? fileStagingDescription(file)
-                                    : file.gitStatus?.workingTree === 'untracked'
-                                      ? 'Untracked'
-                                      : `Unstaged: ${changeLabels[file.gitStatus?.workingTree ?? 'unknown']}`}
-                                </span>
-                              </span>
-                            </label>
+                              </label>
+                              {!group.unavailable && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  aria-label={`Review unstaged ${file.path}`}
+                                  disabled={busy || loading || !connected || !!loadError}
+                                  onClick={(event) => {
+                                    reviewOrigin.current =
+                                      event.currentTarget.getAttribute('aria-label')
+                                    setReview({ path: file.path, comparison: 'unstaged' })
+                                  }}
+                                >
+                                  Review
+                                </Button>
+                              )}
+                            </div>
                           </li>
                         ))}
                       </ul>

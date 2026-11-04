@@ -11,6 +11,8 @@ import {
   resolveScopedSettings,
   scopedAgentEntries,
   scopedSettingsReadSchema,
+  stagingFilePreviewQuerySchema,
+  type FilePreview,
   type RuntimeReadCache,
 } from '../../../packages/protocol/src'
 import {
@@ -28,6 +30,12 @@ import {
   busyDesktopQuestion,
   busyDesktopWorkspace,
 } from './desktop-busy-workspace'
+
+const gitNavigationContents = {
+  head: 'export const label = "Tasks"\n',
+  index: 'export const label = "Projects"\n',
+  working: 'export const label = "Threads"\n',
+}
 
 const readCache: RuntimeReadCache = {
   closed: false,
@@ -193,8 +201,8 @@ function ScreenWorkspace({
               ? [
                   {
                     path: 'src/navigation.tsx',
-                    before: 'export const label = "Tasks"\n',
-                    after: 'export const label = "Threads"\n',
+                    before: gitNavigationContents.head,
+                    after: gitNavigationContents.working,
                     viewed: false,
                     gitStatus: { index: 'modified', workingTree: 'modified' },
                   },
@@ -291,6 +299,22 @@ function ScreenWorkspace({
             String.fromCharCode(...new Uint8Array(await (await fetch(sampleImage)).arrayBuffer())),
           ),
         })
+      if (path === '/api/scm/file-preview') {
+        const query = Schema.decodeUnknownSync(stagingFilePreviewQuerySchema)(input)
+        if (state !== 'git-changes' || query.path !== 'src/navigation.tsx')
+          throw new Error('Catalog preview: no Git comparison for this file.')
+        const before =
+          query.comparison === 'staged' ? gitNavigationContents.head : gitNavigationContents.index
+        const after =
+          query.comparison === 'staged'
+            ? gitNavigationContents.index
+            : gitNavigationContents.working
+        return Schema.decodeUnknownSync(schema)({
+          before: { kind: 'text', size: before.length, text: before, truncated: false },
+          after: { kind: 'text', size: after.length, text: after, truncated: false },
+          patch: `--- a/${query.path}\n+++ b/${query.path}\n@@ -1 +1 @@\n-${before}+${after}`,
+        } satisfies FilePreview)
+      }
       if (path === '/api/tasks/files/read') {
         const file = Schema.decodeUnknownSync(Schema.Struct({ path: Schema.String }))(input)
         return Schema.decodeUnknownSync(schema)({

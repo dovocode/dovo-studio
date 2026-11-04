@@ -57,7 +57,7 @@ const built = await bundleBrowser(
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {Input} from '${root}packages/studio-ui/src/components/ui/input';`,
+      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {SettingsGroup} from '${root}packages/studio-ui/src/settings-layout';`,
     },
     {
       path: '../preferences/app-preferences',
@@ -105,6 +105,10 @@ try {
     const artifacts = page.getByLabel('Dovo Artifacts URL', { exact: true })
     const save = page.getByRole('button', { name: 'Save service URLs', exact: true })
     assert.equal(await save.isDisabled(), true)
+    if (kind === 'desktop') {
+      const group = page.getByRole('heading', { name: 'Dovo services', exact: true }).locator('..')
+      await group.getByText('Save required', { exact: true }).waitFor()
+    }
     await connect.fill('https://user:secret@connect.example.com/path')
     if (kind === 'desktop') {
       assert.equal(await page.evaluate(() => window.serviceDraftDirty), true)

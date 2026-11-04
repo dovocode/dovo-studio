@@ -691,53 +691,84 @@ try {
     /[\uE000-\uF8FF]/,
     'Bundled Nerd Font preview includes its developer icons',
   )
-  const terminalSize = page.getByRole('combobox', { name: 'Terminal font size', exact: true })
+  const terminalSize = page.getByRole('spinbutton', { name: 'Terminal font size', exact: true })
+  const decreaseSize = page.getByRole('button', {
+    name: 'Decrease terminal font size',
+    exact: true,
+  })
+  const increaseSize = page.getByRole('button', {
+    name: 'Increase terminal font size',
+    exact: true,
+  })
   for (const viewport of [
     { width: 1280, height: 1000 },
     { width: 390, height: 480 },
   ]) {
     await page.setViewportSize(viewport)
-    await terminalSize.click()
-    const sizeMenu = page.getByRole('listbox')
-    await sizeMenu.waitFor()
-    await sizeMenu.evaluate((menu) =>
-      Promise.all(menu.getAnimations().map((animation) => animation.finished)),
-    )
-    const sizeMenuGeometry = await sizeMenu.evaluate((menu) => {
-      const bounds = menu.getBoundingClientRect()
+    await terminalSize.scrollIntoViewIfNeeded()
+    const stepperGeometry = await terminalSize.evaluate((input) => {
+      const bounds = input.parentElement.getBoundingClientRect()
+      const control = input.closest('.studio-setting-control').getBoundingClientRect()
       return {
-        height: bounds.height,
-        availableHeight: parseFloat(
-          getComputedStyle(menu).getPropertyValue('--radix-select-content-available-height'),
-        ),
+        width: bounds.width,
+        controlWidth: control.width,
         insideViewport:
           bounds.left >= -1 &&
           bounds.top >= -1 &&
           bounds.right <= innerWidth + 1 &&
           bounds.bottom <= innerHeight + 1,
-        options: menu.querySelectorAll('[role=option]').length,
       }
     })
-    assert.equal(sizeMenuGeometry.options, 25, 'Every terminal font size remains available')
-    assert.ok(
-      sizeMenuGeometry.height > 0 &&
-        sizeMenuGeometry.height <= 290 &&
-        sizeMenuGeometry.height <= sizeMenuGeometry.availableHeight + 2,
-      'Terminal font size menu fits its 288px and available-height caps at ' +
-        JSON.stringify(viewport) +
-        ': ' +
-        JSON.stringify(sizeMenuGeometry),
+    assert.equal(
+      stepperGeometry.width,
+      stepperGeometry.controlWidth,
+      'Terminal font stepper fills the shared settings control width',
     )
-    assert.ok(sizeMenuGeometry.insideViewport, 'Terminal font size menu fits the viewport')
-    await page.keyboard.press('Escape')
+    assert.ok(stepperGeometry.insideViewport, 'Terminal font stepper fits the viewport')
   }
   await page.setViewportSize({ width: 1280, height: 1000 })
-  await terminalSize.click()
-  await page.getByRole('option', { name: '18 px', exact: true }).click()
-  await terminalSize.click()
-  await page.keyboard.press('End')
-  await page.waitForFunction(() => document.activeElement?.textContent.trim() === '32 px')
-  await page.keyboard.press('Enter')
+  for (let size = 8; size <= 32; size++) {
+    await terminalSize.fill(String(size))
+    await page.waitForFunction((size) => window.terminals[0].options.fontSize === size, size)
+  }
+  assert.equal(await increaseSize.isDisabled(), true)
+  await decreaseSize.click()
+  assert.equal(await terminalSize.inputValue(), '31')
+  await terminalSize.press('ArrowUp')
+  assert.equal(await terminalSize.inputValue(), '32')
+  await terminalSize.fill('8')
+  assert.equal(await decreaseSize.isDisabled(), true)
+  await increaseSize.click()
+  assert.equal(await terminalSize.inputValue(), '9')
+  await terminalSize.press('ArrowDown')
+  assert.equal(await terminalSize.inputValue(), '8')
+  await terminalSize.fill('18')
+  for (const invalid of ['', '7', '33', '18.5', '-1']) {
+    await terminalSize.fill(invalid)
+    assert.equal(await terminalSize.getAttribute('aria-invalid'), 'true')
+    assert.equal(
+      await page.evaluate(
+        () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).terminalFontSize,
+      ),
+      18,
+      'Invalid terminal sizes never change saved preferences',
+    )
+    assert.equal(await page.evaluate(() => window.terminals[0].options.fontSize), 18)
+    await terminalSize.blur()
+    assert.equal(
+      await terminalSize.inputValue(),
+      '18',
+      'Leaving an invalid entry restores the saved size',
+    )
+  }
+  await terminalSize.fill('33')
+  await terminalSize.press('Escape')
+  assert.equal(await terminalSize.inputValue(), '18')
+  await terminalSize.fill('')
+  await terminalSize.press('Enter')
+  assert.equal(await terminalSize.inputValue(), '18')
+  await terminalSize.fill('32')
+  await terminalSize.press('Enter')
   await page.waitForFunction(
     () =>
       window.terminals[0].options.fontSize === 32 &&

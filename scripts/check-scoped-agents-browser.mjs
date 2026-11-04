@@ -260,6 +260,10 @@ try {
     )
     if (!mobile) {
       const navigation = page.getByRole('navigation', { name: 'Provider configurations' })
+      const researchRow = navigation.getByRole('button', { name: /Research/ })
+      assert.equal(await researchRow.getByText('Default model', { exact: true }).count(), 0)
+      assert.equal(await researchRow.locator(':scope > span > span').count(), 2)
+      assert.match(await researchRow.textContent(), /Claude.*Customized here/)
       await navigation.getByRole('button', { name: /Research/ }).click()
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Research')
       assert.equal(await page.getByRole('dialog').count(), 0)
@@ -330,11 +334,22 @@ try {
         return window.writes.length
       })
       await project.selectOption('git:github.com/team/repo')
-      await page.getByRole('status').filter({ hasText: 'Update Dovo on this computer' }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Update Dovo on linux' }).waitFor()
       assert.equal(await page.getByRole('button', { name: 'Add profile', exact: true }).count(), 0)
       await page.getByRole('button', { name: 'Open Devices & runtime', exact: true }).click()
       assert.deepEqual(await page.evaluate(() => window.navigation), { viewId: 'runtime' })
       assert.equal(await page.evaluate(() => window.writes.length), writesBeforeUpgrade)
+      await page.evaluate(() => {
+        window.sources.find(
+          (source) => source.profile.id === 'mac',
+        ).snapshot.scopedAgentsSupported = false
+      })
+      await environment.selectOption('')
+      await page.getByRole('status').filter({ hasText: 'Update Dovo on mac' }).waitFor()
+      assert.equal(await environment.isEnabled(), true)
+      assert.equal(await project.isEnabled(), true)
+      await environment.selectOption('linux')
+      await page.getByRole('status').filter({ hasText: 'Update Dovo on linux' }).waitFor()
     }
     assert.deepEqual(errors, [])
     await page.close()

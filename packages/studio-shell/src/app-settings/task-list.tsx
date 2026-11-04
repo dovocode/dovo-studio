@@ -80,7 +80,7 @@ export default function TaskListSettings() {
     <SettingsPage
       title="Thread list & projects"
       description="Organize the thread list and project picker, and choose when to ask for confirmation. These preferences apply on this device."
-      headerActions={<span className="text-[11px] text-muted-foreground">This device</span>}
+      storageInfo={<span>This device</span>}
     >
       <SettingsGroup title="Projects" description="Arrange projects in the project picker.">
         <SettingRow
@@ -155,6 +155,7 @@ export default function TaskListSettings() {
       </SettingsGroup>
       <SettingsGroup
         title="Snoozing"
+        saveRequired
         description="Choose the thread snooze options on this device, in menu order. Use Save calendar shortcuts and Save snooze durations to apply edits. Existing snoozed threads keep their wake-up time."
       >
         <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} />

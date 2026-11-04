@@ -2552,6 +2552,9 @@ a.studio-project-row:hover {
   border-left-color: var(--primary);
 }
 .studio-thread-status[data-tone='active'] {
+  color: var(--muted-foreground);
+}
+.studio-thread-status[data-tone='active'] .studio-thread-status-icon {
   color: var(--primary);
 }
 .studio-thread-status[data-tone='attention'] {
@@ -2930,7 +2933,7 @@ a.studio-project-row:hover {
   }
 }
 
-/* Settings use one quiet reading column; section rules separate categories from fields. */
+/* Settings use one quiet reading column with spaced section headings. */
 .studio-settings-page {
   container: settings / inline-size;
 }
@@ -2943,14 +2946,9 @@ a.studio-project-row:hover {
 }
 .studio-settings-group-heading > h2 {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-}
-.studio-settings-group-heading > h2::after {
-  content: '';
-  flex: 1;
-  min-width: 24px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  gap: 12px;
 }
 .studio-settings-page .studio-setting-control {
   width: 208px;
@@ -2968,9 +2966,6 @@ a.studio-project-row:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: left;
-}
-.studio-settings-target {
-  background: color-mix(in srgb, var(--card) 45%, transparent);
 }
 .studio-settings-target-field {
   display: grid;

@@ -91,6 +91,7 @@ const postReadPaths = new Set([
   '/api/scm/action-state',
   '/api/scm/inspect',
   '/api/scm/changes',
+  '/api/scm/file-preview',
   '/api/scm/branches',
   '/api/scm/branch-changes',
 ])

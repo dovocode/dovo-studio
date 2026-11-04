@@ -302,6 +302,7 @@ export function expensiveRequestName(method: string | undefined, path: string) {
   if (path === '/api/tasks/commits/read') return 'commit history'
   if (path === '/api/tasks/commits/changes') return 'commit diff'
   if (path === '/api/tasks/commits/file-preview') return 'commit file read'
+  if (path === '/api/scm/file-preview') return 'staging file read'
   if (path === '/api/tasks/files/search-content') return 'file content search'
   if (path === '/api/tasks/files/search-paths') return 'file path search'
   if (path === '/api/tasks/files/directory') return 'directory page'

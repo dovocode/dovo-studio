@@ -9,8 +9,9 @@ import {
   useAppPreferences,
   type StudioThemeColors,
 } from '@dovo/studio-core'
-import { Check, CircleCheck, CircleX, MessageCircleQuestion } from 'lucide-react'
-import { Disclosure, Input } from '@dovo/studio-ui'
+import { Check, CircleCheck, CircleX, MessageCircleQuestion, Minus, Plus } from 'lucide-react'
+import { useId, useState } from 'react'
+import { Button, Disclosure, Input } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
 import { CodeThemeSettings } from './code-theme'
@@ -31,6 +32,17 @@ export default function AppearanceSettings() {
     terminalFontFamily,
     terminalFontSize,
   } = useAppPreferences()
+  const terminalSizeId = useId()
+  const [terminalSizeInput, setTerminalSizeInput] = useState<string | null>(null)
+  const invalidTerminalSize =
+    terminalSizeInput !== null &&
+    (!/^\d+$/.test(terminalSizeInput) ||
+      Number(terminalSizeInput) < 8 ||
+      Number(terminalSizeInput) > 32)
+  function stepTerminalFontSize(step: number) {
+    setTerminalSizeInput(null)
+    updateAppPreferences({ terminalFontSize: terminalFontSize + step })
+  }
   const selectedPalette = studioThemes[themePalette]
   return (
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
@@ -322,16 +334,66 @@ export default function AppearanceSettings() {
             onChange={(event) => updateAppPreferences({ terminalFontFamily: event.target.value })}
           />
         </SettingRow>
-        <SettingRow label="Terminal font size" description="In pixels, from 8 to 32.">
-          <SettingsSelect
-            label="Terminal font size"
-            value={String(terminalFontSize)}
-            options={Array.from({ length: 25 }, (_, index) => [
-              String(index + 8),
-              `${index + 8} px`,
-            ])}
-            onChange={(value) => updateAppPreferences({ terminalFontSize: Number(value) })}
-          />
+        <SettingRow
+          label="Terminal font size"
+          description="Whole pixels, from 8 to 32. Invalid or empty entries revert when you leave the field."
+        >
+          <div className="w-full space-y-1.5">
+            <div className="flex w-full items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                aria-label="Decrease terminal font size"
+                disabled={terminalFontSize <= 8}
+                onClick={() => stepTerminalFontSize(-1)}
+              >
+                <Minus className="size-4" aria-hidden="true" />
+              </Button>
+              <Input
+                aria-label="Terminal font size"
+                aria-invalid={invalidTerminalSize}
+                aria-describedby={invalidTerminalSize ? `${terminalSizeId}-error` : undefined}
+                type="number"
+                min={8}
+                max={32}
+                step={1}
+                className="min-w-0 flex-1 text-center tabular-nums"
+                value={terminalSizeInput ?? String(terminalFontSize)}
+                onChange={(event) => {
+                  const value = event.currentTarget.value
+                  setTerminalSizeInput(value)
+                  const size = Number(value)
+                  if (/^\d+$/.test(value) && size >= 8 && size <= 32)
+                    updateAppPreferences({ terminalFontSize: size })
+                }}
+                onBlur={() => setTerminalSizeInput(null)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === 'Escape') {
+                    event.preventDefault()
+                    setTerminalSizeInput(null)
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                aria-label="Increase terminal font size"
+                disabled={terminalFontSize >= 32}
+                onClick={() => stepTerminalFontSize(1)}
+              >
+                <Plus className="size-4" aria-hidden="true" />
+              </Button>
+            </div>
+            {invalidTerminalSize && (
+              <p id={`${terminalSizeId}-error`} className="text-xs text-destructive">
+                Enter a whole number from 8 to 32.
+              </p>
+            )}
+          </div>
         </SettingRow>
         <div
           className="my-3 overflow-x-auto rounded-lg border bg-background/50 px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"

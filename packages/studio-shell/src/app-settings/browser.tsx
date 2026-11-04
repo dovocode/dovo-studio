@@ -452,9 +452,7 @@ export default function BrowserSettings() {
     <SettingsPage
       title="Browser"
       description="Preview defaults save automatically on this device. Save profile edits with each profile’s Save button. Remote profiles and logins stay on the selected computer."
-      headerActions={
-        <span className="text-xs text-muted-foreground">Device preferences save automatically</span>
-      }
+      storageInfo={<span>Device preferences save automatically</span>}
     >
       <DefaultBrowser />
       <SettingsGroup title="Tab order">
@@ -532,6 +530,7 @@ export default function BrowserSettings() {
       {browser && (
         <SettingsGroup
           title="Local browser profiles"
+          saveRequired
           description="Edit a profile, then choose Save to apply its changes. Used by regular tabs on this desktop. Domain rules also handle links sent from other apps when Dovo is chosen as their browser. Rules preserve private tabs and sign-in popup sessions."
         >
           <div className="space-y-3 p-4">
@@ -545,6 +544,7 @@ export default function BrowserSettings() {
       )}
       <SettingsGroup
         title="Remote browser profiles"
+        saveRequired
         description="Used by remote tabs. Profile names and saved logins stay on the selected computer."
       >
         <div className="space-y-3 p-4">

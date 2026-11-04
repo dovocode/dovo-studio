@@ -1425,7 +1425,7 @@ export class GitService {
             ? join(root, basename(name))
             : join(await safeFile(root, parent), basename(name))
         const info = await lstat(file)
-        if (full && info.size !== sides.after?.size)
+        if (info.size !== sides.after?.size)
           throw new HttpError(409, 'The file changed while loading its diff. Reload and try again.')
         if (info.isSymbolicLink()) return Buffer.from(await readlink(file)).subarray(0, limit)
         const handle = await open(await safeFile(root, name), 'r')
@@ -1437,14 +1437,12 @@ export class GitService {
             if (!result.bytesRead) break
             offset += result.bytesRead
           }
-          if (full) {
-            const current = await handle.stat()
-            if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
-              throw new HttpError(
-                409,
-                'The file changed while loading its diff. Reload and try again.',
-              )
-          }
+          const current = await handle.stat()
+          if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
+            throw new HttpError(
+              409,
+              'The file changed while loading its diff. Reload and try again.',
+            )
           return bytes.subarray(0, offset)
         } finally {
           await handle.close()
@@ -1453,6 +1451,76 @@ export class GitService {
       full,
       includePatch,
     )
+  }
+
+  /** Read commit-dialog comparisons without writing an index, tree, or working file. */
+  async stagingFilePreview(cwd: string, name: string, comparison: 'staged' | 'unstaged') {
+    const { path: root } = await this.inspect(cwd)
+    await safeFile(root, name, { followFinalSymlink: false })
+    if (name.includes('\\') || name.split('/').some((part) => part === '..' || part === '.'))
+      throw new HttpError(400, 'Invalid file path')
+    const indexEntries = () =>
+      this.readCommand(root, ['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', name], {
+        maxBuffer: 64 * 1024,
+      })
+    const head = async () => {
+      try {
+        return (await this.command(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).trim()
+      } catch (error) {
+        if (!(error instanceof ProcessError) || error.code !== 1) throw error
+        const ref = (await this.command(root, ['symbolic-ref', '-q', 'HEAD'])).trim()
+        // Only an absent branch is unborn. Do not hide corrupt refs or Git read errors.
+        if ((await this.command(root, ['for-each-ref', '--format=%(refname)', ref])).trim())
+          throw error
+        return undefined
+      }
+    }
+    const [entries, revision] = await Promise.all([indexEntries(), head()])
+    let indexed: FilePreviewMetadata['before']
+    for (const entry of entries.split('\0').filter(Boolean)) {
+      const tab = entry.indexOf('\t')
+      if (entry.slice(tab + 1) !== name) continue
+      const [mode, hash, stage] = entry.slice(0, tab).split(' ')
+      if (stage !== '0')
+        throw new HttpError(
+          409,
+          'This file has unresolved conflicts. Resolve them before reviewing its staged comparison.',
+        )
+      const size =
+        mode === '160000' ? 0 : Number((await this.command(root, ['cat-file', '-s', hash])).trim())
+      indexed = { mode, hash, size }
+    }
+    const preview =
+      comparison === 'staged'
+        ? await this.workingFilePreview(
+            root,
+            name,
+            {
+              before: revision
+                ? (await this.treeFiles(root, revision, [name])).get(name)
+                : undefined,
+              after: indexed,
+            },
+            false,
+            true,
+          )
+        : await this.workingFilePreview(
+            root,
+            name,
+            {
+              before: indexed,
+              after: await this.workingFile(root, name),
+            },
+            false,
+            true,
+          )
+    const [currentEntries, currentHead] = await Promise.all([indexEntries(), head()])
+    if (entries !== currentEntries || revision !== currentHead)
+      throw new HttpError(
+        409,
+        'Git changed while loading this comparison. Return to staging, refresh Git, and try again.',
+      )
+    return preview
   }
 
   // An alternate index captures staged and unstaged contents without touching the user's index.

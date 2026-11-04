@@ -304,6 +304,17 @@ try {
   })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail
+    .getByRole('tab', { name: 'Checks (1)', exact: true })
+    .getByText('Failed', { exact: true })
+    .waitFor()
+  assert.match(
+    await detail
+      .getByRole('tab', { name: 'Checks (1)', exact: true })
+      .getAttribute('aria-description'),
+    /Pipeline runs: 1 failed/,
+    'Failure badge explains which check source failed',
+  )
   assert.equal(
     await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
     'outline',

@@ -80,7 +80,11 @@ try {
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
     if (mobile) await page.getByText('All projects on all computers', { exact: true }).waitFor()
-    else await page.getByText('Applies to', { exact: true }).waitFor()
+    else {
+      await page.getByText('Scope', { exact: true }).waitFor()
+      await page.getByText('Shared defaults', { exact: true }).waitFor()
+      assert.equal(await page.getByText('Applies to', { exact: true }).count(), 0)
+    }
     if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
     if (!mobile) await page.getByText('Shared across paired computers', { exact: true }).waitFor()
     if (!mobile) await page.keyboard.press('Escape')
@@ -223,7 +227,10 @@ try {
     await environments.waitFor({ state: 'detached' })
     await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
     if (mobile) await page.getByText('Mac defaults', { exact: true }).waitFor()
-    else await page.getByText('on Mac', { exact: true }).waitFor()
+    else {
+      await page.getByText('Mac', { exact: true }).waitFor()
+      await page.getByText('Computer overrides', { exact: true }).waitFor()
+    }
     await assertTarget('environment:')
     await projects.selectOption('git:github.com/team/repo')
     await assertTarget('environment-project:mac-repo')

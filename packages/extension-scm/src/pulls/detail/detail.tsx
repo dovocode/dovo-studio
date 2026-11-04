@@ -170,6 +170,7 @@ function PullDetailContent({
     detail && (sections.status.ready || sections.discussion.ready)
       ? pullDetailReviews(detail)
       : { label: 'Review status not loaded', tone: 'neutral' }
+  const checksFailed = failedRuns > 0 || (checksReady && checkSummary.tone === 'danger')
   const previousChanges = useRef<typeof detail>(null)
   const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
   useEffect(() => {
@@ -554,15 +555,17 @@ function PullDetailContent({
                   >
                     <item.icon
                       aria-hidden
-                      className={`size-3.5 ${item.id === 'checks' && (failedRuns > 0 || (checksReady && checkSummary.tone === 'danger')) ? 'text-status-error' : ''}`}
+                      className={`size-3.5 ${item.id === 'checks' && checksFailed ? 'text-status-error' : ''}`}
                     />
                     {item.label}
-                    <span
-                      aria-hidden
-                      className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
-                    >
-                      {item.count}
-                    </span>
+                    {(item.count !== undefined || (item.id === 'checks' && checksFailed)) && (
+                      <span
+                        aria-hidden
+                        className={`rounded px-1.5 text-[0.625rem] tabular-nums ${item.id === 'checks' && checksFailed ? 'bg-status-error/10 text-status-error' : 'bg-muted text-muted-foreground'}`}
+                      >
+                        {item.id === 'checks' && checksFailed ? 'Failed' : item.count}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>

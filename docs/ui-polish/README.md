@@ -46,7 +46,7 @@ restrained separators keep the composition calm.
 
 ## Evidence and limits
 
-The refreshed gallery includes 296 captures: production desktop routes/compositions in both themes,
+The refreshed gallery includes 300 captures: production desktop routes/compositions in both themes,
 compact views, tooltips, open controls, follow-up dialogs and image-editing substates. Six earlier
 comparison images are retained. A fresh capture pass includes the chat overlay, image zoom/pan,
 consistent thread terminology, dialog fields and expanded file tree. Review status below records
@@ -60,7 +60,7 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-Frozen gallery45 includes the automation spacing correction, consistent collection rows and stable
+Earlier gallery45 included the automation spacing correction, consistent collection rows and stable
 PR check summaries across tabs. Merge receives primary emphasis only when readiness is positive.
 Undo recovery emphasizes Refresh, access values remain readable, and conversation navigation has a
 grouped gutter and a latest-message action beside the reading column. Artifact empty states offer a
@@ -74,6 +74,19 @@ the files they act on. Disabled primary actions retain their filled silhouette w
 merge consent reads as consent, and Stop confirmations match the composer. Collection typography
 follows Appearance text sizing, and image preview Fit/Actual size modes have visible selection.
 
+The current pass places Settings scope/storage cues directly below each page description, aligns
+fields, labels separately saved groups, compacts Agent profiles and shows inherited archive policies
+without truncation. Terminal font size uses a bounded numeric stepper. Section headings use spacing
+instead of trailing rules, and active-thread text stays quiet while icons retain semantic color. PR
+Checks explicitly marks known failures. A
+[generated Settings reference](../../output/imagegen/README.md) from `gpt-image-2.5` informed the
+hierarchy; it is separate from the application evidence below.
+
+Git staging now offers read-only per-file comparisons: HEAD → index and index → working file. Back
+returns to the same commit draft and selections. Partial staging is explicit, index bytes are
+preserved, conflicts and concurrent changes report useful errors, and large/binary previews remain
+bounded. The gallery includes both comparison views.
+
 The Git dialog separates staged files from the unstaged selection, supports per-file Unstage without
 changing working contents, and labels the commit message. Partial staging appears in both groups;
 clean checkouts omit the empty commit form. Commits still include every staged file. Older runtimes
@@ -81,7 +94,7 @@ without metadata report that limitation explicitly. Commit-ready and edited-agen
 distinguish available actions from disabled or clean states. Issue creation and pipeline dialogs
 name the captured project/source and computer. Daybreak help expands inline, collapsed sections
 identify the current thread, and terminal font previews only show Nerd Font glyphs for that selected
-font. Font size lists stay within 18rem and the available viewport height.
+font. Terminal font size uses a bounded numeric stepper; open pickers stay within the viewport.
 
 Desktop follow-up confirmations now use the shared themed dialog, with Cancel focus, return focus,
 queued decisions and cancellation when the runtime, caller or edited target changes. MCP consent
@@ -218,6 +231,8 @@ previews isolate runtime/account writes and use no live user data.
 | forge-connections                | [Screenshot](screenshots/forge-connections-dark.webp)                | [Screenshot](screenshots/forge-connections-light.webp)                |
 | git-actions                      | [Screenshot](screenshots/git-actions-dark.webp)                      | [Screenshot](screenshots/git-actions-light.webp)                      |
 | git-actions-commit-ready         | [Screenshot](screenshots/git-actions-commit-ready-dark.webp)         | [Screenshot](screenshots/git-actions-commit-ready-light.webp)         |
+| git-actions-review-staged        | [Screenshot](screenshots/git-actions-review-staged-dark.webp)        | [Screenshot](screenshots/git-actions-review-staged-light.webp)        |
+| git-actions-review-unstaged      | [Screenshot](screenshots/git-actions-review-unstaged-dark.webp)      | [Screenshot](screenshots/git-actions-review-unstaged-light.webp)      |
 | git-actions-menu                 | [Screenshot](screenshots/git-actions-menu-dark.webp)                 | [Screenshot](screenshots/git-actions-menu-light.webp)                 |
 | git-actions-selection            | [Screenshot](screenshots/git-actions-selection-dark.webp)            | [Screenshot](screenshots/git-actions-selection-light.webp)            |
 | harness                          | [Screenshot](screenshots/harness-dark.webp)                          | [Screenshot](screenshots/harness-light.webp)                          |

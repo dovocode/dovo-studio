@@ -575,6 +575,37 @@ try {
     await page.addStyleTag({
       content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
+  const assertStatusColors = async (indicator, tone) => {
+    const colors = await indicator.evaluate((element, tone) => {
+      const probe = document.createElement('span')
+      const textToken =
+        tone === 'attention'
+          ? 'status-warning'
+          : tone === 'danger'
+            ? 'destructive'
+            : 'muted-foreground'
+      const iconToken =
+        tone === 'active' ? 'primary' : tone === 'success' ? 'status-success' : textToken
+      element.append(probe)
+      probe.style.color = `var(--${textToken})`
+      const expectedText = getComputedStyle(probe).color
+      probe.style.color = `var(--${iconToken})`
+      const expectedIcon = getComputedStyle(probe).color
+      probe.remove()
+      return {
+        text: getComputedStyle(element).color,
+        icon: getComputedStyle(element.querySelector('.studio-thread-status-icon')).color,
+        expectedText,
+        expectedIcon,
+      }
+    }, tone)
+    assert.equal(
+      colors.text,
+      colors.expectedText,
+      `${tone} status text keeps its intended emphasis`,
+    )
+    assert.equal(colors.icon, colors.expectedIcon, `${tone} status icon keeps its semantic color`)
+  }
   await page.evaluate(() => {
     const turn = {
       id: 'appearance-turn',
@@ -790,14 +821,14 @@ try {
     { row: workingRow, state: 'Working' },
     { row: waitingRow, state: 'Waiting' },
   ]) {
-    const indicator = row.getByLabel(new RegExp('^' + state))
+    const indicator = row.locator('.studio-thread-status')
     await indicator.waitFor()
     const text = await indicator.innerText()
+    assert.match(text, new RegExp('^' + state), `${state} rows keep their status label`)
     if (state === 'Working')
-      assert.match(text, /^\d+[smh]/, 'Grouped working rows keep their elapsed time')
-    else assert.equal(text, '', 'Waiting sections use an icon without a repeated label')
-    assert.ok(!text.includes(state), `${state} sections omit the repeated label`)
+      assert.match(text, /^Working \d+[smh]/, 'Grouped working rows keep their elapsed time')
     assert.equal(await indicator.locator('svg').count(), 1)
+    await assertStatusColors(indicator, state === 'Working' ? 'active' : 'neutral')
   }
   assert.match(
     await page
@@ -815,7 +846,7 @@ try {
   )
   await page.evaluate(() => window.setListPreferences({ workingSection: false }))
   assert.match(await workingRow.innerText(), /Working/, 'Ungrouped working rows keep their label')
-  assert.equal(await waitingRow.getByLabel(/^Waiting/).innerText(), '')
+  assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'Waiting')
 
   // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
   await page.evaluate(() => {
@@ -926,12 +957,13 @@ try {
     assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
     assert.equal(
       await row
-        .getByText('main', { exact: true })
+        .locator('[data-thread-branch]')
         .getAttribute('class')
         .then((value) => value.includes('font-mono')),
       true,
     )
     assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 1)
+    await assertStatusColors(indicator, tone)
     if (status !== 'draft') {
       assert.equal(
         await row.locator('[data-thread-execution] img, [data-thread-execution] svg').count(),

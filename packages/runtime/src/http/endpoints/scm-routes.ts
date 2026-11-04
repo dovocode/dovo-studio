@@ -5,6 +5,7 @@ import {
   forgeSourceIdentitySchema,
   forgeReadGuardFields,
   forgeDestinationGuardFields,
+  stagingFilePreviewQuerySchema,
 } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import {
@@ -799,6 +800,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
               ),
             }))
           return yield* serviceResult(result)
+        }
+        if (path === '/api/scm/file-preview') {
+          const { path: name, comparison } = decode(stagingFilePreviewQuerySchema, input)
+          return yield* serviceResult(s.git.stagingFilePreview(cwd, name, comparison))
         }
         if (path === '/api/scm/changes') {
           let files = yield* serviceResult(s.git.changes(cwd))

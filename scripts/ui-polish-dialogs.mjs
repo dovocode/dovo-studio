@@ -25,6 +25,46 @@ export async function captureFollowUpDialogs(page, origin, output) {
     await button('PR actions').click()
     await menu(name).click()
   }
+  const reviewGitFile = (comparison) => async () => {
+    await info()
+    await button('Git actions').click()
+    await menu('Stage, commit & push…').click()
+    await page
+      .getByRole('textbox', { name: 'Commit message', exact: true })
+      .fill('Clarify workspace navigation')
+    await page.getByRole('checkbox', { name: 'Select src/navigation.tsx', exact: true }).check()
+    await button(`Review ${comparison} src/navigation.tsx`).click()
+    await page
+      .getByText(
+        comparison === 'staged'
+          ? 'Staged changes · HEAD → index'
+          : 'Unstaged changes · index → working file',
+        { exact: true },
+      )
+      .waitFor()
+    const contents =
+      comparison === 'staged'
+        ? {
+            before: 'export const label = "Tasks"',
+            after: 'export const label = "Projects"',
+            absent: 'export const label = "Threads"',
+          }
+        : {
+            before: 'export const label = "Projects"',
+            after: 'export const label = "Threads"',
+            absent: 'export const label = "Tasks"',
+          }
+    await page.waitForFunction(
+      ({ before, after, absent }) =>
+        [...document.querySelectorAll('diffs-container')].some((element) => {
+          const text = element.shadowRoot?.querySelector('pre')?.textContent ?? ''
+          return text.includes(before) && text.includes(after) && !text.includes(absent)
+        }),
+      contents,
+    )
+    assert.equal(await button('Stage selected').count(), 0)
+    assert.equal(await button('Commit staged').count(), 0)
+  }
   /** @type {Array<[string, string, () => Promise<void>]>} */
   const scenarios = [
     [
@@ -148,6 +188,12 @@ export async function captureFollowUpDialogs(page, origin, output) {
         assert.equal(await button('Commit & push').isEnabled(), true)
         assert.equal(await button('Commit staged').isEnabled(), true)
       },
+    ],
+    ['git-actions-review-staged', 'tasks&thread=preview-task&changes=1', reviewGitFile('staged')],
+    [
+      'git-actions-review-unstaged',
+      'tasks&thread=preview-task&changes=1',
+      reviewGitFile('unstaged'),
     ],
     [
       'thread-archive-confirm',

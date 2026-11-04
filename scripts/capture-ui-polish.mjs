@@ -484,7 +484,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
             : name === 'pulls'
               ? page.getByRole('button', { name: 'Actions for PR #42', exact: true })
               : name === 'appearance'
-                ? page.getByRole('combobox', { name: 'Terminal font size', exact: true })
+                ? page.getByRole('spinbutton', { name: 'Terminal font size', exact: true })
                 : name === 'browser'
                   ? page.getByRole('button', { name: 'Browser options', exact: true })
                   : name === 'thread-info'

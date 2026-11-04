@@ -11,7 +11,7 @@ const built = await build({
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
       import {RepositoryActions} from '../extension-scm/src/connections/repository-actions';
       import {RuntimeRequestError} from '@dovo/protocol';
-      window.reads=[];window.writes=[];window.connection={id:'runtime'};
+      window.reads=[];window.writes=[];window.previews=[];window.connection={id:'runtime'};
       window.gitState={dirty:true,branch:'feature',ahead:0,behind:0,tracking:true,canPush:true};
       function App(){
         const [taskId,setTaskId]=useState('first'),[connected,setConnected]=useState(true),[connection,setConnection]=useState(window.connection),[revision,setRevision]=useState(0);
@@ -26,6 +26,15 @@ const built = await build({
           }
           if(path==='/api/scm/inspect')return {path:'/repo/'+(input.taskId??'main'),branch:'feature'};
           if(path==='/api/scm/changes')return new Promise((resolve,reject)=>window.reads.push({resolve,reject,input,connection}));
+          if(path==='/api/scm/file-preview'){
+            window.previews.push(input);
+            if(window.unsupportedPreview)throw new RuntimeRequestError({kind:'request',status:window.unsupportedPreview,message:'Endpoint not found'});
+            if(window.failPreview)throw new Error('Git changed while loading this comparison');
+            if(window.holdPreview)await new Promise(resolve=>window.releasePreview=resolve);
+            const before=input.comparison==='staged'?'HEAD contents':'INDEX contents';
+            const after=input.comparison==='staged'?'INDEX contents':'WORKING contents';
+            return {before:{kind:'text',text:before,size:before.length,truncated:false},after:{kind:'text',text:after,size:after.length,truncated:false},patch:'--- a/'+input.path+'\\n+++ b/'+input.path+'\\n@@ -1 +1 @@\\n-'+before+'\\n+'+after+'\\n'};
+          }
           if(path==='/api/scm/branches')return {current:'feature',revision:'revision',branches:[]};
           window.writes.push({path,input,connection});
           if(path==='/api/scm/branch')return {current:input.name,revision:'new-revision',branches:[]};
@@ -48,9 +57,9 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-          '@dovo/studio-core': `export * from '@dovo/protocol';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});`,
+          '@dovo/studio-core': `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '../studio-core/src/themes';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useAppPreferences=()=>({importedCodeThemes:[]});export const readAppPreferences=()=>({theme:'dark',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
           '@dovo/studio-core/repository-open': `export const useRepositoryOpen=()=>async()=>{};`,
-          '@dovo/studio-ui': `export {Button} from '../studio-ui/src/components/ui/button';export {Checkbox} from '../studio-ui/src/components/ui/checkbox';export {Input} from '../studio-ui/src/components/ui/input';export {BranchPicker} from '../studio-ui/src/branch-picker';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const RepositoryOpenItems=()=>null;`,
+          '@dovo/studio-ui': `export {Button} from '../studio-ui/src/components/ui/button';export {Checkbox} from '../studio-ui/src/components/ui/checkbox';export {Input} from '../studio-ui/src/components/ui/input';export {BranchPicker} from '../studio-ui/src/branch-picker';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const RepositoryOpenItems=()=>null;export const ChoicePicker=()=>null;export const LineCommentForm=()=>null;`,
           './create-github': `export const CreateGithub=()=>null;`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -124,11 +133,11 @@ try {
   )
   await page
     .getByRole('region', { name: 'Staged', exact: true })
-    .getByText('Staged: Modified', { exact: true })
+    .getByText('Modified · Partially staged', { exact: true })
     .waitFor()
   await page
     .getByRole('region', { name: 'Unstaged', exact: true })
-    .getByText('Unstaged: Modified', { exact: true })
+    .getByText('Modified · Partially staged', { exact: true })
     .waitFor()
   assert.equal(
     await page.getByRole('region', { name: 'Staged', exact: true }).getByRole('checkbox').count(),
@@ -144,6 +153,93 @@ try {
   await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).check()
   assert.equal(await all.getAttribute('aria-checked'), 'mixed')
   assert.deepEqual(await page.evaluate(() => window.writes), [])
+
+  // Reviewing each side preserves the commit draft and staging selection. The real diff renderer
+  // displays HEAD→index separately from index→disk even when a path is in both groups.
+  await message.fill('Keep this commit draft')
+  const back = page.getByRole('button', { name: '← Back to staging', exact: true })
+  await page.getByRole('button', { name: 'Review staged src/one.ts', exact: true }).click()
+  await page.getByRole('region', { name: 'Staged file review' }).waitFor()
+  await page.getByText('HEAD contents', { exact: true }).waitFor()
+  await page.getByText('INDEX contents', { exact: true }).waitFor()
+  assert.equal(await page.getByText('WORKING contents', { exact: true }).count(), 0)
+  assert.equal(await message.isVisible(), false)
+  await back.click()
+  assert.equal(await message.inputValue(), 'Keep this commit draft')
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Review staged src/one.ts',
+  )
+  assert.equal(
+    await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).isChecked(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Review unstaged src/one.ts', exact: true }).click()
+  await page.getByText('INDEX contents', { exact: true }).waitFor()
+  await page.getByText('WORKING contents', { exact: true }).waitFor()
+  assert.equal(await page.getByText('HEAD contents', { exact: true }).count(), 0)
+  await back.click()
+  assert.equal(await message.inputValue(), 'Keep this commit draft')
+  assert.deepEqual(await page.evaluate(() => window.previews), [
+    { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'staged' },
+    { repositoryId: 'repo', taskId: 'first', path: 'src/one.ts', comparison: 'unstaged' },
+  ])
+  assert.deepEqual(await page.evaluate(() => window.writes), [])
+  // Older computers keep the draft and staging selection while explaining the required update.
+  for (const status of [404, 405]) {
+    await page.evaluate((status) => {
+      window.unsupportedPreview = status
+    }, status)
+    const comparison = status === 404 ? 'staged' : 'unstaged'
+    const reviewLabel = `Review ${comparison} src/one.ts`
+    await page.getByRole('button', { name: reviewLabel, exact: true }).click()
+    await page
+      .getByRole('status')
+      .filter({
+        hasText:
+          'Update Dovo on this computer to review staged and unstaged changes. Your commit draft and selections are kept.',
+      })
+      .waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Retry preview', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('alert').count(), 0)
+    await back.click()
+    assert.equal(await message.inputValue(), 'Keep this commit draft')
+    assert.equal(
+      await page.getByRole('checkbox', { name: 'Select src/one.ts', exact: true }).isChecked(),
+      true,
+    )
+    await page.waitForFunction(
+      (label) => document.activeElement?.getAttribute('aria-label') === label,
+      reviewLabel,
+    )
+    assert.deepEqual(await page.evaluate(() => window.writes), [])
+  }
+  await page.evaluate(() => {
+    window.unsupportedPreview = false
+  })
+  await page.evaluate(() => {
+    window.failPreview = true
+  })
+  await page.getByRole('button', { name: 'Review staged src/one.ts', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Git changed while loading' }).waitFor()
+  await page.evaluate(() => {
+    window.failPreview = false
+  })
+  await page.getByRole('button', { name: 'Retry preview', exact: true }).click()
+  await page.getByText('HEAD contents', { exact: true }).waitFor()
+  await page.evaluate(() => window.configure({ connected: false }))
+  await page.getByRole('status').filter({ hasText: 'Connect to the runtime to review' }).waitFor()
+  assert.equal(await page.getByText('HEAD contents', { exact: true }).count(), 0)
+  await back.click()
+  assert.equal(await message.inputValue(), 'Keep this commit draft')
+  await page.evaluate(() => window.configure({ connected: true }))
+  await reads(2)
+  await finish(1, [
+    { path: 'src/one.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
+    { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
+  ])
+  // Keep the original read-count assertions below stable after the reconnect check.
+  await page.evaluate(() => window.reads.splice(1, 1))
+  await stage.and(page.locator(':enabled')).waitFor()
   await stage.click()
   await reads(2)
   assert.deepEqual(await page.evaluate(() => window.writes[0]), {
@@ -156,7 +252,7 @@ try {
     { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
   ])
   await all.waitFor()
-  await page.getByText('Staged: Modified', { exact: true }).waitFor()
+  await page.getByText('Modified', { exact: true }).waitFor()
   await page
     .getByLabel('Staging summary')
     .filter({ hasText: '1 staged file · 1 with unstaged changes' })
@@ -323,7 +419,7 @@ try {
   await finish(12, [
     { path: 'unstaged.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
   ])
-  await page.getByText('Unstaged: Modified', { exact: true }).waitFor()
+  await page.getByText('Modified', { exact: true }).waitFor()
   await message.fill('All staged membership')
   assert.equal(await commit.isDisabled(), true)
   await all.check()
@@ -343,8 +439,8 @@ try {
     .getByLabel('Staging summary')
     .filter({ hasText: '3 staged files · 3 with unstaged changes' })
     .waitFor()
-  await page.getByText('Staged: Added', { exact: true }).waitFor()
-  await page.getByText('Staged: Deleted', { exact: true }).waitFor()
+  await page.getByText('Added', { exact: true }).waitFor()
+  await page.getByText('Deleted', { exact: true }).waitFor()
   await page.getByRole('checkbox', { name: 'Select mode.sh', exact: true }).check()
   const stagesBeforeCommit = await page.evaluate(
     () => window.writes.filter((write) => write.path === '/api/scm/stage').length,

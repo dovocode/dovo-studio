@@ -472,11 +472,50 @@
       "brief": "Fresh context; frozen current screenshots and constraints only. No past or target scores, historical findings or other reviews.",
       "score": 7,
       "shipVerdict": "ship; material refinements recommended"
+    },
+    {
+      "round": "independent45",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent45_sol_a",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews.",
+      "score": 8.5,
+      "shipVerdict": "ship; nonblocking workflow refinements"
+    },
+    {
+      "round": "independent45",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent45_sol_c",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews.",
+      "score": 8.4,
+      "shipVerdict": "ship; nonblocking workflow refinements"
+    },
+    {
+      "round": "independent45",
+      "model": "Opus 5.5",
+      "id": "f5180a47-ea94-4068-b86d-adf6da98969d",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews.",
+      "score": 7.8,
+      "shipVerdict": "ship; material clarity refinements"
+    },
+    {
+      "round": "independent45",
+      "model": "Opus 5.5",
+      "id": "6644fa18-0cd1-46a3-bcb6-1237bb0edd9d",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews.",
+      "score": 7.5,
+      "shipVerdict": "ship; moderate save-model and PR signal refinements"
+    },
+    {
+      "round": "independent45",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent45_sol_b",
+      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews.",
+      "score": 8.7,
+      "shipVerdict": "ship; nonblocking discoverability refinements"
     }
   ],
   "remaining": [
-    "Complete independent frozen gallery45 reviews and verify necessary follow-up",
-    "Complete Muse Settings consultation",
+    "Obtain fresh independent final reviews of frozen gallery46",
     "Finish PR #50 after quality gate"
   ],
   "approvalTarget": {
@@ -486,11 +525,11 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 45,
-    "captures": 296,
-    "corePass": 45,
-    "dialogPass": 45,
-    "settingsPass": 45
+    "round": 46,
+    "captures": 300,
+    "corePass": 46,
+    "dialogPass": 46,
+    "settingsPass": 46
   },
   "unavailableReviews": [
     {
@@ -552,34 +591,40 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent45",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent45_sol_a",
-      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews."
-    },
-    {
-      "round": "independent45",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent45_sol_b",
-      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews."
-    },
-    {
-      "round": "independent45",
-      "model": "GPT-6.1 Sol high",
-      "id": "/root/independent45_sol_c",
-      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews."
-    },
-    {
-      "round": "independent45",
+      "round": "independent46",
       "model": "Opus 5.5",
-      "id": "f5180a47-ea94-4068-b86d-adf6da98969d",
-      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews."
+      "id": "0897f7a2-183d-49f3-a795-cd09f49b6bbe",
+      "status": "running"
     },
     {
-      "round": "independent45",
+      "round": "independent46",
       "model": "Opus 5.5",
-      "id": "6644fa18-0cd1-46a3-bcb6-1237bb0edd9d",
-      "brief": "Fresh context; frozen current screenshots and constraints only. No prior or target scores, historical findings or other reviews."
+      "id": "da4d167e-aaea-49bf-9864-4bf568944b51",
+      "status": "running"
+    },
+    {
+      "round": "independent46",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "d94ae9d2-0d2e-453b-9939-94a262f6be52",
+      "status": "running"
+    },
+    {
+      "round": "independent46",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent46_sol_a",
+      "status": "running"
+    },
+    {
+      "round": "independent46",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent46_sol_b",
+      "status": "running"
+    },
+    {
+      "round": "independent46",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent46_sol_c",
+      "status": "running"
     }
   ],
   "queuedReviews": [
@@ -596,27 +641,31 @@
       "model": "Muse muse-wonder-full-1.0",
       "id": "4fa5961d-3bae-45fc-8a01-cc0c53c0ae47",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "2b79c874-91e4-4335-95cb-f81950e52b42",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     },
     {
       "round": "reset33",
       "model": "Opus 5.5",
       "id": "221ac3f9-c599-45a0-a527-01ba782d9b3a",
       "status": "cancelled",
-      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic’s request."
+      "reason": "Restarted independent design conversations without past ratings or score targets at Dominic\u2019s request."
     }
   ],
   "postGalleryRefinements": [
     {
       "round": "independent45",
       "summary": "Restored desktop grouping selector and protected snoozing drafts; aligned Settings fields/save actions; truthful Git Push readiness and selection placement; known active-work deletion guard; filled disabled primary silhouette and neutral failure acknowledgement; Stop consistency; relative collection typography; image mode feedback; connected pre-response Working status. Verified builds, affected types, targeted browser suites and diff."
+    },
+    {
+      "round": "pass46",
+      "summary": "Settings scope/storage cues moved into intro column; save-required group markers; compact Agents; readable inherited policy; terminal numeric stepper; calmer Working text with semantic icon; aligned shared select width; per-file read-only staging review preserving commit draft and index; explicit PR failure tab badge. Generated gpt-image-2.5 Settings reference, separate from actual app captures."
     }
   ],
   "designConsultations": [
@@ -638,8 +687,15 @@
       "round": "settings45",
       "model": "Muse muse-wonder-full-1.0",
       "id": "02feb2e6-298b-4c11-844d-87362566d087",
-      "status": "running",
-      "summary": "Exact-model retry after provider reset; fresh Settings-only consultation without prior ratings."
+      "status": "completed",
+      "summary": "Exact model resumed after reset. Inspected28 Settings frames full-size, both themes. Recommends consistent scope/save labels, explicit-save group markers, readable inherited values, selected-menu consistency and navigation affordance. Recommendations require source verification; actual font fields already use placeholders and scope navigation must remain usable. No numeric rating requested."
+    },
+    {
+      "round": "design46",
+      "model": "Opus 5.5",
+      "id": "3eaf82d1-7d0d-4bff-843b-cd0d98aba2aa",
+      "status": "completed",
+      "summary": "Concrete monochrome/attention hierarchy and Settings scope/save, surface grammar, Git review and action-hierarchy guidance. No numerical rating requested. Selected source-backed recommendations implemented; all sections and user constraints retained."
     }
   ]
 }

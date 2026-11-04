@@ -324,20 +324,7 @@ export function TaskHeader({
                 <span className="truncate">{projectName}</span>
               </span>
             )}
-            <span
-              className={cn(
-                'truncate',
-                presentation.state === 'Needs input'
-                  ? 'text-status-warning'
-                  : presentation.state === 'Failed'
-                    ? 'text-destructive'
-                    : ['Done', 'Finished', 'Settled'].includes(presentation.state)
-                      ? 'text-status-success'
-                      : presentation.state === 'Working'
-                        ? 'text-primary'
-                        : 'text-muted-foreground',
-              )}
-            >
+            <span className="studio-thread-status truncate" data-tone={presentation.tone}>
               {presentation.label}
             </span>
             {!projectPanelOpen && (

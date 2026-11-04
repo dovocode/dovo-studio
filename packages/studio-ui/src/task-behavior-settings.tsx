@@ -1,5 +1,5 @@
 import { useConfirmation } from '@dovo/studio-core'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   settingsChangeCount,
   settingsChanges,
@@ -71,6 +71,7 @@ export function TaskBehaviorSettings({
   repository?: Repository
   onOpenRuntime?: () => void
 }) {
+  const id = useId()
   const { request, connected, snapshot } = useWorkspace()
   const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
   const [draft, setDraft] = useState<TaskBehavior>({})
@@ -194,6 +195,7 @@ export function TaskBehaviorSettings({
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
           title="Automation & limits"
+          saveRequired
           description="Applies to existing and new threads. Inherit uses the parent scope."
         >
           {fields.map(([key, label, description]) => (
@@ -229,30 +231,48 @@ export function TaskBehaviorSettings({
                 />
               }
             >
-              <Select
-                disabled={key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported}
-                value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
-                onValueChange={(value) =>
-                  change({ ...draft, [key]: value === 'inherit' ? undefined : value === 'on' })
-                }
-              >
-                <SelectTrigger aria-label={label}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">
-                    Inherit (
-                    {key === 'autoArchiveSettled' && inherited?.[key] === undefined
-                      ? archivePolicy
-                      : fallback(key)
-                        ? 'On'
-                        : 'Off'}
-                    )
-                  </SelectItem>
-                  <SelectItem value="on">On</SelectItem>
-                  <SelectItem value="off">Off</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-full space-y-1.5">
+                <Select
+                  disabled={key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported}
+                  value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
+                  onValueChange={(value) =>
+                    change({ ...draft, [key]: value === 'inherit' ? undefined : value === 'on' })
+                  }
+                >
+                  <SelectTrigger
+                    aria-label={label}
+                    className="w-full"
+                    aria-describedby={
+                      key === 'autoArchiveSettled' &&
+                      draft[key] === undefined &&
+                      inherited?.[key] === undefined
+                        ? `${id}-archive-policy`
+                        : undefined
+                    }
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      {key === 'autoArchiveSettled' && inherited?.[key] === undefined
+                        ? 'Inherit'
+                        : `Inherit (${fallback(key) ? 'On' : 'Off'})`}
+                    </SelectItem>
+                    <SelectItem value="on">On</SelectItem>
+                    <SelectItem value="off">Off</SelectItem>
+                  </SelectContent>
+                </Select>
+                {key === 'autoArchiveSettled' &&
+                  draft[key] === undefined &&
+                  inherited?.[key] === undefined && (
+                    <p
+                      id={`${id}-archive-policy`}
+                      className="text-xs leading-relaxed text-muted-foreground"
+                    >
+                      {archivePolicy}
+                    </p>
+                  )}
+              </div>
             </SettingRow>
           ))}
           <SettingRow

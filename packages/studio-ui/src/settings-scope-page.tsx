@@ -13,8 +13,7 @@ import { Button } from './components/ui/button'
 import { SettingsPage } from './settings-layout'
 import { ProjectOrganizationSettings } from './project-organization'
 
-/** Retained across scoped settings pages; app-only preferences have no target header. The
- * target bar stays visible above the scrolling page. */
+/** Scoped settings share project and computer controls beneath the page description. */
 export function SettingsScopePage({
   title,
   description,
@@ -30,7 +29,6 @@ export function SettingsScopePage({
 }) {
   const { target, setTarget, sources, source, scope, repository } = useSettingsTarget()
   const projects = settingsProjectChoices(sources, target.environmentId)
-  const width = wide ? 'max-w-6xl' : 'max-w-3xl'
   const summary = settingsScopeSummary(scope, { project: repository?.name, computer: source?.name })
   return (
     <SettingsPage
@@ -38,39 +36,39 @@ export function SettingsScopePage({
       description={description}
       wide={wide}
       toolbar={
-        <div
-          className="studio-settings-target shrink-0 border-b px-4 py-3 sm:px-10"
-          aria-label="Settings target"
-        >
-          <div
-            className={`studio-settings-target-inner ${width} flex flex-wrap items-end gap-x-3 gap-y-2 text-xs`}
-          >
-            <div className="flex min-h-9 items-center gap-1">
-              <span className="max-w-full break-words text-xs font-medium">Applies to</span>
-              <Popover.Root>
-                <Popover.Trigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="size-8 shrink-0 p-0"
-                    aria-label="Settings inheritance details"
-                    title={summary.title}
-                  >
-                    <Layers className="size-4" aria-hidden="true" />
-                  </Button>
-                </Popover.Trigger>
-                <Popover.Portal>
-                  <Popover.Content
-                    align="start"
-                    sideOffset={8}
-                    className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
-                  >
-                    <p className="font-semibold">Editing {summary.title}</p>
-                    <p>{summary.description}</p>
-                    <p className="text-muted-foreground">{summary.storage}</p>
-                  </Popover.Content>
-                </Popover.Portal>
-              </Popover.Root>
+        <div className="studio-settings-target" aria-label="Settings target">
+          <div className="studio-settings-target-inner flex flex-wrap items-end gap-x-4 gap-y-3 text-xs">
+            <div className="studio-settings-target-field min-w-0 max-w-full">
+              <span className="studio-settings-target-label">Scope</span>
+              <div className="flex h-8 items-center gap-1">
+                <span className="break-words font-medium">
+                  {target.environmentId ? 'Computer overrides' : 'Shared defaults'}
+                </span>
+                <Popover.Root>
+                  <Popover.Trigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="size-8 shrink-0 p-0"
+                      aria-label="Settings inheritance details"
+                      title={summary.title}
+                    >
+                      <Layers className="size-4" aria-hidden="true" />
+                    </Button>
+                  </Popover.Trigger>
+                  <Popover.Portal>
+                    <Popover.Content
+                      align="start"
+                      sideOffset={8}
+                      className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
+                    >
+                      <p className="font-semibold">Editing {summary.title}</p>
+                      <p>{summary.description}</p>
+                      <p className="text-muted-foreground">{summary.storage}</p>
+                    </Popover.Content>
+                  </Popover.Portal>
+                </Popover.Root>
+              </div>
             </div>
             {source && !source.connected && (
               <span role="status" className="text-xs text-muted-foreground">
@@ -122,9 +120,14 @@ export function SettingsScopePage({
               </label>
             )}
             {sources.length === 1 && (
-              <span className="flex min-h-9 items-center text-muted-foreground">
-                on {target.environmentId ? sources[0].name : 'all computers'}
-              </span>
+              <div className="studio-settings-target-field min-w-0 max-w-full">
+                <span className="studio-settings-target-label">Computer</span>
+                <span className="flex h-8 items-center text-muted-foreground">
+                  {target.environmentId
+                    ? (source?.name ?? 'Computer unavailable')
+                    : 'All computers'}
+                </span>
+              </div>
             )}
             {sources.length === 1 && (
               <Button

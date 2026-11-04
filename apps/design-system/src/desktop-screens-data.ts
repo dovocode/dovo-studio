@@ -20,6 +20,8 @@ export const screenPull = decode(pullDetailSchema, {
     title: 'Keep Dovo navigation consistent',
     url: 'https://github.com/dovo/studio/pull/42',
     state: 'open',
+    checksState: 'FAILURE',
+    reviewDecision: 'REVIEW_REQUIRED',
     draft: false,
     author: 'preview-author',
     updatedAt: date,

@@ -11,6 +11,7 @@ import {
   scopedAgentEntries,
   modelDisplayName,
   providerDisplayName,
+  runtimeComputerName,
   runtimeDefaultsSchema,
   builtInAgentDefinition,
   type Agent,
@@ -30,7 +31,8 @@ export function ScopedAgents({
   repository?: Repository
   onOpenRuntime: () => void
 }) {
-  const { snapshot, workspace, request, connected, refreshRuntimes } = useWorkspace()
+  const { snapshot, workspace, request, connected, refreshRuntimes, runtimes, activeRuntimeId } =
+    useWorkspace()
   const [settings, setSettings] = useApplicationState<
     typeof scopedSettingsResultSchema.Type | null
   >(null)
@@ -98,7 +100,13 @@ export function ScopedAgents({
         role="status"
         className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
       >
-        <p>Update Dovo on this computer to manage agent profiles at every settings level.</p>
+        <p>
+          Update Dovo on{' '}
+          {runtimeComputerName(
+            runtimes.find((entry) => entry.profile.id === activeRuntimeId) ?? { snapshot },
+          )}{' '}
+          to manage agent profiles at every settings level.
+        </p>
         <Button variant="outline" size="sm" onClick={onOpenRuntime}>
           Open Devices & runtime
         </Button>
@@ -192,7 +200,18 @@ export function ScopedAgents({
               const local = own.some((entry) => entry.id === agent.id)
               const origin = origins.find((entry) => entry.agent.id === agent.id)?.scope
               const provider = providers[agent.provider].short ?? providers[agent.provider].name
-              const model = modelDisplayName(agent.model) || 'Default model'
+              const model = modelDisplayName(agent.model)
+              const context = [
+                agent.name === providerDisplayName(agent.provider) ? '' : provider,
+                model,
+                local
+                  ? 'Customized here'
+                  : origin === 'built-in'
+                    ? 'Built-in'
+                    : `From ${origin ? settingsScopeLabels[origin] : 'an earlier level'}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')
               return (
                 <button
                   key={agent.id}
@@ -225,19 +244,11 @@ export function ScopedAgents({
                     <span className="block truncate text-[0.8125rem] font-medium">
                       {agent.name}
                     </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {agent.name === providerDisplayName(agent.provider)
-                        ? model
-                        : `${provider} · ${model}`}
-                    </span>
                     <span
-                      className={`mt-1 block text-[11px] ${local ? 'text-primary' : 'text-muted-foreground'}`}
+                      className="mt-0.5 block truncate text-xs text-muted-foreground"
+                      title={context}
                     >
-                      {local
-                        ? 'Customized here'
-                        : origin === 'built-in'
-                          ? 'Built-in'
-                          : `From ${origin ? settingsScopeLabels[origin] : 'an earlier level'}`}
+                      {context}
                     </span>
                   </span>
                 </button>
@@ -352,7 +363,7 @@ export function ScopedAgents({
                   )}
                 </div>
               </div>
-              <div className="mb-5 space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
+              <div className="mb-5 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-medium">
                   <SettingSource
                     label={selected.name}

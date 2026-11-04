@@ -14,7 +14,7 @@ export function SettingsPage({
   description,
   children,
   local = false,
-  headerActions,
+  storageInfo,
   toolbar,
   wide = false,
 }: {
@@ -22,7 +22,7 @@ export function SettingsPage({
   description: string
   children: ReactNode
   local?: boolean
-  headerActions?: ReactNode
+  storageInfo?: ReactNode
   toolbar?: ReactNode
   wide?: boolean
 }) {
@@ -39,18 +39,7 @@ export function SettingsPage({
           </span>
         }
         heading={false}
-      >
-        {local && (
-          <span className="studio-settings-storage inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Check className="size-3" aria-hidden="true" />
-            This device · saved automatically
-          </span>
-        )}
-        {headerActions}
-      </PageHeader>
-      {toolbar && (
-        <div className="shrink-0 overflow-y-hidden [scrollbar-gutter:stable]">{toolbar}</div>
-      )}
+      />
       <div
         role="region"
         aria-label={`${title} settings`}
@@ -67,6 +56,18 @@ export function SettingsPage({
                 {description}
               </p>
             )}
+            {(local || storageInfo) && (
+              <div className="studio-settings-storage flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                {local && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Check className="size-3" aria-hidden="true" />
+                    This device · saved automatically
+                  </span>
+                )}
+                {storageInfo}
+              </div>
+            )}
+            {toolbar && <div className="pt-2">{toolbar}</div>}
           </div>
           {children}
         </div>
@@ -79,11 +80,13 @@ export function SettingsGroup({
   description,
   children,
   advanced = false,
+  saveRequired = false,
 }: {
   title: string
   description?: string
   children: ReactNode
   advanced?: boolean
+  saveRequired?: boolean
 }) {
   const id = useId()
   const content = (
@@ -99,6 +102,11 @@ export function SettingsGroup({
         title={
           <span>
             {title}
+            {saveRequired && (
+              <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                Save required
+              </span>
+            )}
             {description && (
               <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
                 {description}
@@ -118,8 +126,21 @@ export function SettingsGroup({
       className="studio-settings-group scroll-mt-4 space-y-2 outline-none"
     >
       <div className="studio-settings-group-heading">
-        <h2 id={id} className="text-sm font-semibold tracking-tight">
+        <h2
+          id={id}
+          aria-label={saveRequired ? title : undefined}
+          aria-describedby={saveRequired ? `${id}-save` : undefined}
+          className="text-sm font-semibold tracking-tight"
+        >
           {title}
+          {saveRequired && (
+            <span
+              id={`${id}-save`}
+              className="shrink-0 text-[11px] font-normal tracking-normal text-muted-foreground"
+            >
+              Save required
+            </span>
+          )}
         </h2>
         {description && (
           <p className="mt-1 break-words text-[0.8125rem] leading-relaxed text-muted-foreground">
@@ -410,7 +431,7 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={value === id}
           onClick={() => onChange(id)}
-          className={`min-h-7 rounded-xl border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
+          className={`min-h-7 rounded-md border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
             value === id
               ? 'studio-selected-surface font-medium'
               : 'border-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground'
