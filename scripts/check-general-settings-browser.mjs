@@ -778,7 +778,7 @@ try {
       { exact: true },
     )
     .waitFor()
-  await page.getByText('Computer settings on MacBook Pro', { exact: true }).waitFor()
+  await page.getByText('Computer: MacBook Pro', { exact: true }).waitFor()
   assert.equal(
     await page.getByText('This device · saved automatically', { exact: true }).count(),
     0,

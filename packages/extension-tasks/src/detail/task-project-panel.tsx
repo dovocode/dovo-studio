@@ -273,6 +273,11 @@ export function TaskProjectPanel({
   )
   const gitActions = (
     <div className="grid gap-2">
+      {!show('project') && (
+        <p className="text-xs text-muted-foreground" role="status">
+          {gitSummary}
+        </p>
+      )}
       {repo && !repo.kind && (
         <div className="flex min-w-0 items-center gap-2" data-thread-git-actions>
           {hasPrimaryAction ? (
@@ -307,23 +312,11 @@ export function TaskProjectPanel({
               )}
               {commitBusy ? 'Working…' : primary}
             </Button>
-          ) : (
+          ) : commitBusy || (gitReady && !gitError && !!gitState?.behind) ? (
             <p className="min-w-0 flex-1 text-xs text-muted-foreground" role="status">
-              {commitBusy
-                ? 'Updating Git status…'
-                : gitError
-                  ? 'Git status unavailable'
-                  : !connected
-                    ? 'Connect to use Git actions'
-                    : !gitReady
-                      ? 'Waiting for the first message'
-                      : !gitState
-                        ? 'Checking Git status…'
-                        : gitState.behind
-                          ? 'Pull upstream changes before pushing'
-                          : 'No changes to commit'}
+              {commitBusy ? 'Updating Git status…' : 'Pull upstream changes before pushing'}
             </p>
-          )}
+          ) : null}
           <DropdownMenu.Root
             onOpenChange={(open) => {
               if (open && gitReady)
@@ -333,9 +326,17 @@ export function TaskProjectPanel({
             }}
           >
             <DropdownMenu.Trigger asChild>
-              <IconButton label="Git actions" className="size-8 shrink-0">
-                <MoreHorizontal className="size-4" />
-              </IconButton>
+              {hasPrimaryAction || commitBusy || (gitReady && !gitError && !!gitState?.behind) ? (
+                <IconButton label="Git actions" className="size-8 shrink-0">
+                  <MoreHorizontal className="size-4" />
+                </IconButton>
+              ) : (
+                <Button variant="ghost" className="studio-project-row w-full">
+                  <GitCommitHorizontal className="size-4" />
+                  <span className="flex-1 text-left">Git actions</span>
+                  <ChevronDown className="size-3.5 text-muted-foreground" />
+                </Button>
+              )}
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
@@ -439,7 +440,13 @@ export function TaskProjectPanel({
               <TaskBranchMenu
                 panel
                 task={task}
-                label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
+                verifiedBranch={gitState ? gitState.branch || null : undefined}
+                label={
+                  gitState?.branch ||
+                  task.checkoutBranch ||
+                  (task.execution === 'worktree' ? 'Worktree' : repo.branch) ||
+                  'Local checkout'
+                }
               />
               <p
                 className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
@@ -719,13 +726,11 @@ export function TaskProjectPanel({
                 {task.files.length > 0 &&
                   ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
               </span>
-              <span className="studio-project-diff">
-                {stats.additions || stats.deletions ? (
+              {!!(stats.additions || stats.deletions) && (
+                <span className="studio-project-diff">
                   <DiffAmounts stats={stats} />
-                ) : (
-                  <span className="text-muted-foreground">No changes</span>
-                )}
-              </span>
+                </span>
+              )}
             </Button>
           )}
         </div>

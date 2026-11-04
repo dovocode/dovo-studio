@@ -24,13 +24,16 @@ const item =
 export function TaskBranchMenu({
   task,
   label,
+  verifiedBranch,
   panel = false,
 }: {
   task: Task
   label: string
+  /** Current branch from this task's checkout; null means a verified detached HEAD. */
+  verifiedBranch?: string | null
   panel?: boolean
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, workspace } = useWorkspace()
   const host = useStudioHost()
   const [creating, setCreating] = useApplicationState(false)
   const newThread = (mode: 'reuse' | 'fork') => {
@@ -79,9 +82,28 @@ export function TaskBranchMenu({
     const timer = setTimeout(() => setNotice(''), 2500)
     return () => clearTimeout(timer)
   }, [notice])
-  const branch = task.checkoutBranch
-  // Only a started task has a checkout; opening one earlier would create it as a side effect.
-  const canOpen = connected && !!branch
+  const repository = workspace.repositories.find((entry) => entry.id === task.repositoryId)
+  const branch =
+    verifiedBranch !== undefined
+      ? verifiedBranch || undefined
+      : task.checkoutBranch || (!inWorktree ? repository?.branch : undefined)
+  // Local folders and selected worktrees already exist, even without a recorded branch.
+  // Never open an unallocated worktree: resolving its location can create it as a side effect.
+  const checkoutAvailable =
+    !inWorktree ||
+    !!task.checkoutBranch ||
+    !!task.existingWorktreePath ||
+    verifiedBranch !== undefined
+  const canOpen = connected && checkoutAvailable
+  const branchLabel =
+    verifiedBranch === null
+      ? 'Detached HEAD'
+      : branch || (inWorktree ? (checkoutAvailable ? 'Worktree' : 'Worktree pending') : label)
+  const branchUnavailable = !checkoutAvailable
+    ? 'The worktree is not available yet.'
+    : verifiedBranch === null
+      ? 'This checkout has no branch name (detached HEAD).'
+      : 'Branch information is unavailable for this checkout.'
   const openRepository = useRepositoryOpen()
   const open = (target: RepositoryOpenTarget, name: string) =>
     void openRepository({ repositoryId: task.repositoryId, taskId: task.id }, target).then(
@@ -93,7 +115,7 @@ export function TaskBranchMenu({
       <DropdownMenu.Trigger asChild>
         <button
           type="button"
-          title={branch ? `${branch} · Copy or open` : label}
+          title={`${branchLabel} · Branch actions`}
           className={
             panel
               ? 'studio-project-row w-full font-mono'
@@ -106,7 +128,7 @@ export function TaskBranchMenu({
             <GitBranch size={panel ? 18 : 10} className="shrink-0" />
           )}
           <span className={panel ? 'min-w-0 flex-1 truncate text-left font-mono' : 'truncate'}>
-            {notice && notice !== 'Copied' ? notice : label}
+            {notice && notice !== 'Copied' ? notice : branchLabel}
           </span>
           {panel && <ChevronDown className="studio-project-branch-chevron" size={16} />}
         </button>
@@ -139,6 +161,7 @@ export function TaskBranchMenu({
           <DropdownMenu.Item
             className={item}
             disabled={!branch}
+            title={!branch ? branchUnavailable : `Copy ${branch}`}
             onSelect={() => {
               if (!branch) return
               void navigator.clipboard.writeText(branch).then(
@@ -158,7 +181,7 @@ export function TaskBranchMenu({
           </DropdownMenu.Item>
           {!branch && (
             <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-              Available after the first message.
+              {branchUnavailable}
             </p>
           )}
         </DropdownMenu.Content>

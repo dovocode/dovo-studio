@@ -77,7 +77,6 @@ function TaskRowView({
   terminals,
   editable,
   disabled,
-  hideStatusLabel = false,
   selectedChildId,
   thread,
   selectedThreadKey,
@@ -94,7 +93,6 @@ function TaskRowView({
   terminals: number
   editable: boolean
   disabled: boolean
-  hideStatusLabel?: boolean
   selectedChildId?: string
   thread?: NestedThread
   selectedThreadKey?: string
@@ -213,14 +211,7 @@ function TaskRowView({
   const unread = hasUnreadTaskActivity(task)
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
-  const compactStatus = offline ? 'Offline' : presentation.compactLabel
-  const groupedStatus =
-    hideStatusLabel && !offline && ['Working', 'Waiting'].includes(presentation.state)
-  const visibleStatus = groupedStatus
-    ? presentation.state === 'Working'
-      ? presentation.time
-      : ''
-    : compactStatus
+  const visibleStatus = offline ? 'Offline' : presentation.compactLabel
   const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
   const statusTone = offline ? 'neutral' : presentation.tone
   const statusDetail = [
@@ -340,8 +331,7 @@ function TaskRowView({
                       className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
                       data-tone={statusTone}
                       data-thread-state={offline ? 'Offline' : presentation.state}
-                      aria-label={groupedStatus ? status : undefined}
-                      title={groupedStatus ? status : undefined}
+                      title={status}
                     >
                       {StatusIcon && (
                         <StatusIcon
@@ -374,7 +364,7 @@ function TaskRowView({
                     className="studio-thread-status shrink-0"
                     data-tone={statusTone}
                     data-thread-state={offline ? 'Offline' : presentation.state}
-                    aria-label={compactStatus}
+                    aria-label={visibleStatus}
                     title={status}
                   >
                     <StatusIcon className="studio-thread-status-icon size-3.5" aria-hidden="true" />

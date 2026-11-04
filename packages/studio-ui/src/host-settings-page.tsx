@@ -75,9 +75,9 @@ export function HostSettingsPage({
           <div className="flex min-w-0 max-w-full items-center justify-end gap-2">
             <span
               className="min-w-0 truncate rounded-md border bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground"
-              title={`${localSettings ? 'Computer settings on' : 'Saved on'} ${source.name}`}
+              title={`Computer: ${source.name}`}
             >
-              {localSettings ? 'Computer settings on' : 'Saved on'} {source.name}
+              Computer: {source.name}
             </span>
             {sources.length > 1 && (
               <ChoicePicker

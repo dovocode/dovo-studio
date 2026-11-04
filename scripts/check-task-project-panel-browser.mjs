@@ -80,7 +80,7 @@ const built = await build({
     import {Popover} from '@dovo/studio-ui';
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
-    window.gitState={dirty:true,ahead:0,behind:0,tracking:true,canPush:true};window.setGitState=state=>{window.gitState=state;document.dispatchEvent(new Event('visibilitychange'))};window.preferences={confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
+    window.gitState={branch:'fix/reconnection',dirty:true,ahead:0,behind:0,tracking:true,canPush:true};window.setGitState=state=>{window.gitState={branch:'fix/reconnection',...state};document.dispatchEvent(new Event('visibilitychange'))};window.preferences={confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
     const repo={id:'repo',name:'Project',path:'/project',branch:'main'};
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
@@ -90,12 +90,13 @@ const built = await build({
       window.setLineage=enabled=>{window.lineage=enabled?[{...task,id:'child-review',title:'Review browser',spawnParent:{runtimeId:'runtime',threadId:task.id},subagents:[{id:'native-review',name:'Native reviewer',provider:'codex',status:'working'}]},{...task,id:'grandchild',title:'Check page menus',spawnParent:{runtimeId:'runtime',threadId:'child-review'}}]:[];setTask(task=>({...task}))};
       window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'draft':'done'}))};
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
-      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
+      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));window.clearFiles=()=>setTask(task=>({...task,files:[]}));window.setProjectActions=actions=>{repo.actions=actions;setTask(task=>({...task}))};
       const request=async(path,input)=>{
         window.calls.push({path,input});
         if(path==='/api/scm/open-location')return {path:'/remote/worktree',runtimeId:'remote',sshAddress:'ssh://dominic@runtime',kind:'folder'};
         if(path==='/api/artifacts/list')return {artifacts:window.savedArtifacts??[],links:[]};
         if(path==='/api/scm/action-state')return window.gitState;
+        if(path==='/api/terminals/run')return {id:'project-action-terminal'};
         if(path==='/api/tasks/waiting')return {dependencies:window.stopped?[]:[{kind:'pipeline',repositoryId:'repo',target:'8',label:'Pipeline run 8',project:'Project',url:'https://github.com/test/project/actions/runs/8',status:'in_progress',checkedAt:''}],related:[{label:'PR #7',project:'Project',url:'https://github.com/test/project/pull/7'}]};
         if(path==='/api/workspace'){const updates=Object.fromEntries(Object.entries(input.changes).map(([key,change])=>[key,change.after??undefined]));setTask(t=>({...t,...updates}));return {revision:2,outcome:'applied'};}
         if(path==='/api/tasks/worktree-thread')return {id:'new-thread'};
@@ -585,6 +586,28 @@ try {
       .getByText('Commit & push', { exact: true })
       .waitFor()
     await page.getByRole('button', { name: /^Changes · 1 file/ }).waitFor()
+    await info.getByRole('button', { name: 'Project actions', exact: true }).click()
+    const runActions = page.getByRole('group', { name: 'Run actions', exact: true })
+    const projectSetup = page.getByRole('group', { name: 'Project setup', exact: true })
+    await runActions.getByText('No actions for Project yet.', { exact: true }).waitFor()
+    assert.equal(await projectSetup.getByRole('menuitem').count(), 5)
+    await projectSetup.getByRole('menuitem', { name: 'Edit project actions…', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Project actions', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await page.evaluate(() =>
+      window.setProjectActions([{ id: 'tests', name: 'Run tests', command: 'pnpm test' }]),
+    )
+    await info.getByRole('button', { name: 'Project actions', exact: true }).click()
+    await runActions.getByRole('menuitem', { name: 'Run tests pnpm test', exact: true }).click()
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) =>
+          call.path === '/api/terminals/run' &&
+          call.input.taskId === 'thread' &&
+          call.input.command === 'pnpm test',
+      ),
+    )
+    await page.evaluate(() => window.setProjectActions([]))
     await page.getByRole('button', { name: 'Git actions', exact: true }).click()
     if (stylesheet) {
       const menu = page.getByRole('menu').filter({ hasText: 'Advanced Git actions…' })
@@ -813,7 +836,12 @@ try {
     await page.evaluate(() =>
       window.setGitState({ dirty: false, ahead: 0, behind: 0, tracking: true, canPush: true }),
     )
-    await info.getByText('No changes to commit', { exact: true }).waitFor()
+    await info.getByText('Clean · Synced', { exact: true }).waitFor()
+    await info.getByRole('button', { name: 'Git actions', exact: true }).waitFor()
+    assert.equal(await info.getByText('No changes to commit', { exact: true }).count(), 0)
+    await page.evaluate(() => window.clearFiles())
+    await info.getByRole('button', { name: 'Changes', exact: true }).waitFor()
+    assert.equal(await info.getByText('No changes', { exact: true }).count(), 0)
     assert.equal(
       await info.locator('.studio-thread-primary-action').count(),
       0,

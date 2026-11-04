@@ -42,8 +42,8 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
               and PR settling fall back to the computer defaults when all levels inherit. Archiving
               falls back to the computer’s inactivity policy when no scoped rule is set.
             </p>
+            <ComputerDefaultsLink />
           </Disclosure>
-          <ComputerDefaultsLink />
           <TaskBehaviorSettings
             scope={scope}
             repository={repository}

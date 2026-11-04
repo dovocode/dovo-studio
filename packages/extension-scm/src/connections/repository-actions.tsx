@@ -1,8 +1,8 @@
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { CreateGithub } from './create-github'
-import { useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { branchesSchema, encodeWorkTarget } from '@dovo/studio-core'
+import { branchesSchema, clientScopeKey, encodeWorkTarget } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
 import {
   responses,
@@ -11,13 +11,27 @@ import {
   type Repository,
   type ChangedFile,
 } from '@dovo/studio-core'
-import { Button, Input, DropdownMenu, RepositoryOpenItems } from '@dovo/studio-ui'
-export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?: string }) {
+import { Button, Checkbox, Input, DropdownMenu, RepositoryOpenItems } from '@dovo/studio-ui'
+export function RepositoryActions(props: { repo: Repository; taskId?: string }) {
+  const { connection } = useWorkspace()
+  return (
+    <CheckoutActions
+      key={`${clientScopeKey(connection)}:${props.repo.id}:${props.taskId ?? ''}`}
+      {...props}
+    />
+  )
+}
+
+function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }) {
   const openRepository = useRepositoryOpen()
   const host = useStudioHost()
   const { request, connected } = useWorkspace(),
     [checkout, setCheckout] = useApplicationState(''),
+    [branch, setBranch] = useApplicationState(taskId ? '' : repo.branch),
     [files, setFiles] = useApplicationState<ChangedFile[]>([]),
+    [selected, setSelected] = useApplicationState<string[]>([]),
+    [loading, setLoading] = useApplicationState(true),
+    [loadError, setLoadError] = useApplicationState(''),
     [message, setMessage] = useApplicationState(''),
     [status, setStatus] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
@@ -30,74 +44,156 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
       : {}),
   }
   const pending = useRef(false)
+  const mounted = useRef(true)
+  const revision = useRef(0)
+  const refresh = async () => {
+    if (!mounted.current) return
+    const current = ++revision.current
+    setLoading(true)
+    setLoadError('')
+    try {
+      const [inspected, result] = await Promise.all([
+        request('/api/scm/inspect', input, responses.inspected),
+        request('/api/scm/changes', input, responses.files),
+      ])
+      if (!mounted.current || current !== revision.current) return
+      setCheckout(inspected.path)
+      setBranch(inspected.branch)
+      setFiles(result.files)
+      setSelected((previous) =>
+        previous.filter((path) => result.files.some((file) => file.path === path)),
+      )
+    } catch (error) {
+      if (mounted.current && current === revision.current) setLoadError(String(error))
+    } finally {
+      if (mounted.current && current === revision.current) setLoading(false)
+    }
+  }
+  const loadOnConnect = useEffectEvent(() => void refresh())
+  useEffect(() => {
+    mounted.current = true
+    if (connected) loadOnConnect()
+    else setLoading(false)
+    return () => {
+      mounted.current = false
+      revision.current++
+    }
+  }, [connected])
   const act = (fn: () => Promise<void>) => {
-    if (pending.current) return
+    if (pending.current || !connected) return
     pending.current = true
     setBusy(true)
     setStatus('')
     void fn()
-      .catch((error) => setStatus(String(error)))
+      .catch((error) => {
+        if (mounted.current) setStatus(String(error))
+      })
       .finally(() => {
         pending.current = false
-        setBusy(false)
+        if (mounted.current) setBusy(false)
       })
   }
   return (
-    <div className="mt-1 space-y-6">
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium text-muted-foreground">Changes</h3>
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="mt-1 divide-y">
+      <section className="space-y-3 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-xs font-medium">Changes</h3>
           <Button
             size="sm"
-            variant="outline"
-            disabled={!connected || busy}
-            onClick={() =>
-              act(async () => {
-                const inspected = await request('/api/scm/inspect', input, responses.inspected)
-                setCheckout(`${inspected.path} · ${inspected.branch}`)
-                const { files } = await request('/api/scm/changes', input, responses.files)
-                setFiles(files)
-                setStatus(
-                  `${files.length} text files changed (binary and files over 2 MB are omitted).`,
-                )
-              })
-            }
+            variant="ghost"
+            disabled={!connected || busy || loading}
+            onClick={() => act(refresh)}
           >
             Refresh Git
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!connected || busy || !files.length}
-            onClick={() =>
-              act(async () => {
-                await request(
-                  '/api/scm/stage',
-                  {
-                    ...input,
-                    paths: files.map((file) => file.path),
-                  },
-                  responses.ok,
-                )
-                setStatus('Listed changes staged.')
-              })
-            }
-          >
-            Stage listed changes
-          </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Refresh to inspect changes, then stage the files you want to commit.
-        </p>
-        {files.length > 0 && (
-          <ul className="max-h-40 overflow-auto font-mono text-[0.6875rem] text-muted-foreground">
-            {files.map((file) => (
-              <li key={file.path}>{file.path}</li>
-            ))}
-          </ul>
+        {!connected ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Connect to the runtime to load changes and use Git actions.
+          </p>
+        ) : loading ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Loading changes…
+          </p>
+        ) : loadError ? (
+          <p role="alert" className="text-xs text-destructive">
+            Could not load changes: {loadError}. Use Refresh Git to retry.
+          </p>
+        ) : files.length ? (
+          <div className="overflow-hidden rounded-lg border">
+            <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2">
+              <label className="flex items-center gap-2 text-xs">
+                <Checkbox
+                  aria-label="Select all changed files"
+                  checked={
+                    selected.length === files.length
+                      ? true
+                      : selected.length
+                        ? 'indeterminate'
+                        : false
+                  }
+                  disabled={busy}
+                  onCheckedChange={(checked) =>
+                    setSelected(checked === true ? files.map((file) => file.path) : [])
+                  }
+                />
+                {files.length} changed {files.length === 1 ? 'file' : 'files'}
+              </label>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !selected.length || selected.length > 200}
+                onClick={() =>
+                  act(async () => {
+                    await request('/api/scm/stage', { ...input, paths: selected }, responses.ok)
+                    setStatus(
+                      `${selected.length} ${selected.length === 1 ? 'file' : 'files'} staged.`,
+                    )
+                    setSelected([])
+                    await refresh()
+                  })
+                }
+              >
+                Stage selected
+              </Button>
+            </div>
+            <ul className="max-h-40 overflow-auto py-1">
+              {files.map((file) => (
+                <li key={file.path}>
+                  <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-xs hover:bg-muted/30">
+                    <Checkbox
+                      aria-label={`Select ${file.path}`}
+                      className="mt-0.5 shrink-0"
+                      checked={selected.includes(file.path)}
+                      disabled={busy}
+                      onCheckedChange={(checked) =>
+                        setSelected((previous) =>
+                          checked === true
+                            ? [...previous, file.path]
+                            : previous.filter((path) => path !== file.path),
+                        )
+                      }
+                    />
+                    <span className="min-w-0 break-all font-mono text-[0.6875rem]">
+                      {file.path}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {selected.length > 200 && (
+              <p className="px-3 pb-2 text-xs text-muted-foreground">
+                Select up to 200 files to stage at a time.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p role="status" className="text-xs text-muted-foreground">
+            No uncommitted changes.
+          </p>
         )}
         <form
-          className="flex flex-wrap gap-2"
+          className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault()
             act(async () => {
@@ -111,6 +207,7 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
               )
               setStatus(`Committed ${result.commit.slice(0, 8)}`)
               setMessage('')
+              await refresh()
             })
           }}
         >
@@ -119,64 +216,75 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
             placeholder="Commit message for staged changes"
             value={message}
             onChange={(event) => setMessage(event.target.value)}
+            disabled={!connected || busy}
             required
           />
-          <Button size="sm" variant="outline" disabled={!connected || busy || !message.trim()}>
-            Commit staged
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!connected || busy || !message.trim()}
-            onClick={() =>
-              act(async () => {
-                const result = await request(
-                  '/api/scm/commit',
-                  { ...input, message },
-                  responses.commit,
-                )
-                setMessage('')
-                setFiles([])
-                try {
-                  await request('/api/scm/push', input, responses.ok)
-                  setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
-                } catch (error) {
-                  setStatus(
-                    `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
+          <p className="text-xs text-muted-foreground">
+            Commits include all staged files, including files staged outside this dialog.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={!connected || busy || !message.trim()}>
+              Commit staged
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!connected || busy || !message.trim()}
+              onClick={() =>
+                act(async () => {
+                  const result = await request(
+                    '/api/scm/commit',
+                    { ...input, message },
+                    responses.commit,
                   )
-                }
-              })
-            }
-          >
-            Commit &amp; push
-          </Button>
+                  setMessage('')
+                  try {
+                    await request('/api/scm/push', input, responses.ok)
+                    setStatus(`Committed ${result.commit.slice(0, 8)} and pushed.`)
+                  } catch (error) {
+                    setStatus(
+                      `Committed ${result.commit.slice(0, 8)}, but push failed: ${String(error)}. Use Push branch to retry without committing again.`,
+                    )
+                  }
+                  await refresh()
+                })
+              }
+            >
+              Commit &amp; push
+            </Button>
+          </div>
         </form>
       </section>
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium text-muted-foreground">Branch</h3>
-        <BranchPicker
-          current={taskId ? undefined : repo.branch}
-          disabled={!connected || busy}
-          load={() => request('/api/scm/branches', input, branchesSchema)}
-          change={async (value) => {
-            const result = await request(
-              '/api/scm/branch',
-              {
-                ...input,
-                ...value,
-              },
-              branchesSchema,
-            )
-            setCheckout(result.current)
-            setFiles([])
-            return result
-          }}
-        />
-        {checkout && (
-          <p className="break-all font-mono text-xs text-muted-foreground">{checkout}</p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {' '}
+      <section className="space-y-2 py-4">
+        <h3 className="text-xs font-medium">Branch</h3>
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="min-w-[min(100%,16rem)] flex-1">
+            <BranchPicker
+              current={branch || undefined}
+              disabled={!connected || busy || loading}
+              load={() => request('/api/scm/branches', input, branchesSchema)}
+              change={async (value) => {
+                if (pending.current || !connected) throw new Error('Git actions are unavailable.')
+                pending.current = true
+                setBusy(true)
+                setStatus('')
+                try {
+                  const result = await request(
+                    '/api/scm/branch',
+                    { ...input, ...value },
+                    branchesSchema,
+                  )
+                  setBranch(result.current)
+                  setSelected([])
+                  await refresh()
+                  return result
+                } finally {
+                  pending.current = false
+                  if (mounted.current) setBusy(false)
+                }
+              }}
+            />
+          </div>
           <Button
             size="sm"
             variant="outline"
@@ -191,11 +299,13 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
             Push branch
           </Button>
         </div>
+        {checkout && (
+          <p className="break-all font-mono text-[0.6875rem] text-muted-foreground">{checkout}</p>
+        )}
       </section>
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium text-muted-foreground">Open</h3>
+      <section className="space-y-2 pt-4">
+        <h3 className="text-xs font-medium">Project</h3>
         <div className="flex flex-wrap gap-2">
-          {' '}
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button size="sm" variant="outline" disabled={!connected || busy}>
@@ -219,7 +329,7 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
                 />
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
-          </DropdownMenu.Root>{' '}
+          </DropdownMenu.Root>
           <Button
             size="sm"
             variant="outline"
@@ -232,7 +342,7 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
             }
           >
             Pull requests
-          </Button>{' '}
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -252,7 +362,7 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
         <CreateGithub path={repo.path} disabled={busy} />
       </section>
       {status && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="pt-3 text-xs text-muted-foreground">
           {status}
         </p>
       )}

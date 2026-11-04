@@ -28,6 +28,7 @@ try {
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '@dovo/studio-ui':
         controls +
+        `export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';` +
         `export {SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields';export {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '${root}/packages/studio-ui/src/components/ui/select.tsx';export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
     }
     const built = await build({
@@ -170,7 +171,7 @@ try {
     await setCloudIntegrations('default', 'Provider default')
     await setCloudIntegrations('true', 'Enabled')
     await editor
-      .getByRole('button', { name: mobile ? 'Save agent' : 'Add configuration', exact: true })
+      .getByRole('button', { name: mobile ? 'Save agent' : 'Add agent profile', exact: true })
       .click()
     await (
       mobile
@@ -238,7 +239,7 @@ try {
     await editor.getByText('Connection & account', { exact: true }).click()
     await editor.getByText(/Cursor desktop login is separate/).waitFor()
     await editor
-      .getByRole('button', { name: mobile ? 'Save agent' : 'Add configuration', exact: true })
+      .getByRole('button', { name: mobile ? 'Save agent' : 'Add agent profile', exact: true })
       .click()
     await (
       mobile
@@ -309,12 +310,24 @@ try {
     }
     if (!mobile) {
       await project.selectOption('')
-      await page.getByText('Installations & sign-in · this computer', { exact: true }).click()
+      await page.locator('summary[data-setting-label="Installations & sign-in"]').click()
       await page.getByRole('button', { name: 'Configure titles & dictation', exact: true }).click()
       assert.deepEqual(await page.evaluate(() => window.navigation), {
         viewId: 'text-generation',
         entityId: 'linux',
       })
+      const writesBeforeUpgrade = await page.evaluate(() => {
+        window.sources.find(
+          (source) => source.profile.id === 'linux',
+        ).snapshot.scopedAgentsSupported = false
+        return window.writes.length
+      })
+      await project.selectOption('git:github.com/team/repo')
+      await page.getByRole('status').filter({ hasText: 'Update Dovo on this computer' }).waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Add profile', exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'Open Devices & runtime', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.navigation), { viewId: 'runtime' })
+      assert.equal(await page.evaluate(() => window.writes.length), writesBeforeUpgrade)
     }
     assert.deepEqual(errors, [])
     await page.close()

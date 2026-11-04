@@ -23,9 +23,11 @@ import { ProviderCheck } from './provider-check'
 export function ScopedAgents({
   scope,
   repository,
+  onOpenRuntime,
 }: {
   scope: SettingsScope
   repository?: Repository
+  onOpenRuntime: () => void
 }) {
   const { snapshot, workspace, request, connected, refreshRuntimes } = useWorkspace()
   const [settings, setSettings] = useApplicationState<
@@ -88,9 +90,15 @@ export function ScopedAgents({
   const agents = [...new Map([...inherited, ...own].map((agent) => [agent.id, agent])).values()]
   if (!snapshot?.scopedAgentsSupported)
     return (
-      <p role="status" className="rounded-xl border p-4 text-xs text-muted-foreground">
-        Update Dovo on this computer to manage agent profiles at every settings level.
-      </p>
+      <div
+        role="status"
+        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
+      >
+        <p>Update Dovo on this computer to manage agent profiles at every settings level.</p>
+        <Button variant="outline" size="sm" onClick={onOpenRuntime}>
+          Open Devices & runtime
+        </Button>
+      </div>
     )
   const selected = agents.find((agent) => agent.id === selectedId) ?? agents[0]
   const local = selected && own.some((entry) => entry.id === selected.id)

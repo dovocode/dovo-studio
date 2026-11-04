@@ -957,7 +957,6 @@ export function TaskList({
                       bulkBusy ||
                       (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
                     }
-                    hideStatusLabel={group.id === 'working' || group.id === 'waiting'}
                     menuBusy={busy || temporary}
                     selectionMenu={selecting && !temporary ? selectionMenu : undefined}
                     canSplit={!!onSplit}

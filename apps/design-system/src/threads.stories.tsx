@@ -302,7 +302,6 @@ function ThreadRows({ args }: { args: ThreadStoryArgs }) {
                 owner={owner}
                 subagents={entry.id === 'working' && args.showNested ? subagents : []}
                 needsInput={needsInput}
-                hideStatusLabel={false}
                 terminals={entry.id === 'working' ? 1 : 0}
                 selected={selected}
                 selectedMain={selected}

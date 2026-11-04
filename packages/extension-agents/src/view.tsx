@@ -13,7 +13,11 @@ export default function AgentsView() {
     >
       {({ scope, repository }) => (
         <>
-          <ScopedAgents scope={scope} repository={repository} />
+          <ScopedAgents
+            scope={scope}
+            repository={repository}
+            onOpenRuntime={() => host.navigate({ viewId: 'runtime' })}
+          />
           <div className="grid gap-3 lg:grid-cols-2">
             <LinkCard
               title="Default agent for new threads"

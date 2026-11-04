@@ -9,6 +9,7 @@ import {
 } from '@dovo/studio-core'
 import {
   resolveScopedSettings,
+  scopedAgentEntries,
   scopedSettingsReadSchema,
   type RuntimeReadCache,
 } from '../../../packages/protocol/src'
@@ -43,6 +44,7 @@ const readCache: RuntimeReadCache = {
 }
 
 export type DesktopScreenState =
+  | 'legacy'
   | 'populated'
   | 'busy'
   | 'busy-long-draft'
@@ -109,6 +111,9 @@ function ScreenWorkspace({
               ? [...root.snapshot.questions, busyDesktopQuestion]
               : root.snapshot.questions,
           artifactsEnabled: true,
+          scopedAgentsSupported: state !== 'legacy',
+          taskBehaviorSupported: state !== 'legacy',
+          threadBehaviorSupported: state !== 'legacy',
           terminals: [
             {
               id: 'preview-terminal',
@@ -181,6 +186,7 @@ function ScreenWorkspace({
         '/api/artifacts/list': { artifacts: [], links: [] },
         '/api/tasks/files/list': { files: ['src/navigation.tsx', 'README.md'] },
         '/api/scm/changes': { files: [] },
+        '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'feature/navigation' },
         '/api/terminals/ticket': { ticket: 'catalog-preview' },
         '/api/review/read': { files: [], groups: [] },
         '/api/tasks/waiting': { dependencies: [] },
@@ -280,7 +286,19 @@ function ScreenWorkspace({
         )
         return Schema.decodeUnknownSync(schema)({
           value: {},
-          inherited: resolveScopedSettings(snapshot.defaults, repository, inputValue.scope),
+          inherited: {
+            ...resolveScopedSettings(snapshot.defaults, repository, inputValue.scope),
+            ...(inputValue.includeAgents
+              ? {
+                  agents: scopedAgentEntries(
+                    snapshot.defaults,
+                    repository,
+                    workspace.agents,
+                    inputValue.scope,
+                  ).map(({ agent }) => agent),
+                }
+              : {}),
+          },
         })
       }
       // Only the composer's explicitly implemented synthetic read endpoints are allowed.

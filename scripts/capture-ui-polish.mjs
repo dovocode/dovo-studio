@@ -66,7 +66,7 @@ import {updateAppPreferences} from '@dovo/studio-core';
 import {useAppearance} from '../../packages/studio-shell/src/appearance';
 const query=new URLSearchParams(location.search);
 updateAppPreferences({theme:query.get('mode')==='light'?'light':'dark',browserWorkspaceEnabled:true});
-function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
+function App(){useAppearance();const surface=query.get('surface');return <DesktopScreen route={query.get('route')??'tasks'} entityId={query.get('thread')??undefined} state={query.has("legacy")?"legacy":query.has("idle")?"idle":query.get("busy")==="long-draft"?"busy-long-draft":query.has("busy")?"busy":"populated"} overlay={query.has("dialog")?<DesktopFollowUp name={query.get("dialog")}/>:undefined}>{surface?.startsWith('pull-')?<PullDetail repositoryId="preview-project" number={42} initialTab={surface.slice(5)} onBack={()=>{}} onChanged={()=>{}}/>:undefined}</DesktopScreen>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     plugins: [
@@ -148,6 +148,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
               ...routes
                 .filter(({ id }) => !['tasks', 'pulls', 'general'].includes(id))
                 .map(({ id }) => [id, id]),
+              ...['agents', 'task-behavior'].map((route) => [
+                route + '-legacy',
+                route,
+                undefined,
+                undefined,
+                'legacy',
+              ]),
               ...['overview', 'changes', 'checks'].map((tab) => [
                 'pull-' + tab,
                 'pulls',
@@ -177,7 +184,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           .includes(name),
     )) {
       await page.goto(
-        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy' ? '&busy' : ''}`,
+        `${origin}/?mode=${mode}&route=${route}${thread ? '&thread=' + thread : ''}${action?.startsWith('pull-') ? '&surface=' + action : ''}${state === 'legacy' ? '&legacy' : state === 'busy-long-draft' ? '&busy=long-draft' : state === 'busy' ? '&busy' : ''}`,
       )
       await page.locator('.studio').waitFor()
       await page.waitForFunction(() => !document.body.innerText.includes('Loading extension…'))

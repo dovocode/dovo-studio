@@ -3094,6 +3094,22 @@ a.studio-project-row:hover {
   border-color: var(--primary);
 }
 
+/* Soften clipped lines at the reading viewport without covering controls or changing scroll geometry. */
+.studio-conversation-scroll {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent
+  );
+}
+@media (forced-colors: active) {
+  .studio-conversation-scroll {
+    mask-image: none;
+  }
+}
+
 /* Collection rows keep the same reading order across code, work and artifact lists. */
 .studio-collection-row {
   display: grid;

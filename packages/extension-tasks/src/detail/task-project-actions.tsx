@@ -47,6 +47,8 @@ export function TaskProjectActions({
   const [rules, setRules] = useState(false)
   const [instructions, setInstructions] = useState(false)
   const [error, setError] = useState('')
+  const runActionsLabel = useId()
+  const projectSetupLabel = useId()
   const repository = workspace.repositories.find((item) => item.id === task.repositoryId)
   if (!repository) return null
   const actions = repository.actions ?? []
@@ -111,46 +113,62 @@ export function TaskProjectActions({
               align="end"
               className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
             >
-              {actions.map((action) => (
-                <DropdownMenu.Item
-                  key={action.id}
-                  className={item}
-                  disabled={!ready}
-                  onSelect={() => run(action)}
+              <DropdownMenu.Group aria-labelledby={runActionsLabel}>
+                <DropdownMenu.Label
+                  id={runActionsLabel}
+                  className="px-2 py-1.5 text-[0.6875rem] font-medium text-muted-foreground"
                 >
-                  <Play className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{action.name}</span>
-                  <code className="max-w-32 truncate text-[0.625rem] text-muted-foreground">
-                    {action.command.split('\n')[0]}
-                  </code>
-                </DropdownMenu.Item>
-              ))}
-              {!actions.length && (
-                <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-                  No actions for {repository.name} yet.
-                </p>
-              )}
-              {!ready && !!actions.length && (
-                <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-                  {connected ? 'Available after the first message.' : 'Connect to run actions.'}
-                </p>
-              )}
+                  Run actions
+                </DropdownMenu.Label>
+                {actions.map((action) => (
+                  <DropdownMenu.Item
+                    key={action.id}
+                    className={item}
+                    disabled={!ready}
+                    onSelect={() => run(action)}
+                  >
+                    <Play className="size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{action.name}</span>
+                    <code className="max-w-32 truncate text-[0.625rem] text-muted-foreground">
+                      {action.command.split('\n')[0]}
+                    </code>
+                  </DropdownMenu.Item>
+                ))}
+                {!actions.length && (
+                  <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
+                    No actions for {repository.name} yet.
+                  </p>
+                )}
+                {!ready && !!actions.length && (
+                  <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
+                    {connected ? 'Available after the first message.' : 'Connect to run actions.'}
+                  </p>
+                )}
+              </DropdownMenu.Group>
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
-              <DropdownMenu.Item className={item} onSelect={() => setEditing(true)}>
-                <Settings2 className="size-3.5" /> Edit project actions…
-              </DropdownMenu.Item>
-              <DropdownMenu.Item className={item} onSelect={() => setPrompts(true)}>
-                <Hash className="size-3.5" /> Edit saved prompts…
-              </DropdownMenu.Item>
-              <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
-                <LayoutTemplate className="size-3.5" /> Manage thread templates…
-              </DropdownMenu.Item>
-              <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
-                <ShieldCheck className="size-3.5" /> Manage approval rules…
-              </DropdownMenu.Item>
-              <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
-                <FileText className="size-3.5" /> Edit project instructions…
-              </DropdownMenu.Item>
+              <DropdownMenu.Group aria-labelledby={projectSetupLabel}>
+                <DropdownMenu.Label
+                  id={projectSetupLabel}
+                  className="px-2 py-1.5 text-[0.6875rem] font-medium text-muted-foreground"
+                >
+                  Project setup
+                </DropdownMenu.Label>
+                <DropdownMenu.Item className={item} onSelect={() => setEditing(true)}>
+                  <Settings2 className="size-3.5" /> Edit project actions…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setPrompts(true)}>
+                  <Hash className="size-3.5" /> Edit saved prompts…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
+                  <LayoutTemplate className="size-3.5" /> Manage thread templates…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
+                  <ShieldCheck className="size-3.5" /> Manage approval rules…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
+                  <FileText className="size-3.5" /> Edit project instructions…
+                </DropdownMenu.Item>
+              </DropdownMenu.Group>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

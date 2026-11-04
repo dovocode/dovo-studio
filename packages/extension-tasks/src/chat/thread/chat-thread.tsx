@@ -513,6 +513,7 @@ export function ChatThread({
             }
           >
             <ConversationContent
+              scrollClassName="studio-conversation-scroll"
               className={
                 emptyDraft
                   ? 'mx-auto h-full w-full max-w-[var(--chat-max)] gap-0 p-0'

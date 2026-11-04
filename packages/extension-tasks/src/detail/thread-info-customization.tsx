@@ -8,6 +8,7 @@ export function ThreadInfoCustomization() {
   const { threadInfoSections: choices, threadInfoOrder } = useAppPreferences()
   const sections = orderedThreadInfoSections(threadInfoOrder)
   const trigger = useRef<HTMLButtonElement>(null)
+  const donePointerDown = useRef(false)
   const [bounds, setBounds] = useState({
     sideOffset: 8,
     alignOffset: 0,
@@ -60,6 +61,21 @@ export function ThreadInfoCustomization() {
             </DropdownMenu.Label>
             <DropdownMenu.Item
               aria-label="Done customizing thread info"
+              onPointerDown={() => {
+                donePointerDown.current = true
+              }}
+              onPointerLeave={() => {
+                donePointerDown.current = false
+              }}
+              onPointerCancel={() => {
+                donePointerDown.current = false
+              }}
+              onPointerUp={(event) => {
+                // Opening replaces Customize with Done under the same pointer. Radix
+                // synthesizes a click on pointer-up, even when Done had no pointer-down.
+                if (!donePointerDown.current) event.preventDefault()
+                donePointerDown.current = false
+              }}
               className="flex h-7 items-center justify-center rounded-lg px-2 outline-none data-[highlighted]:bg-accent"
             >
               Done
