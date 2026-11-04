@@ -686,7 +686,7 @@ function PullActionDialog({
                   ))}
                 </ChoicePicker>
               </FormField>
-              <label className="flex items-start gap-2 text-sm">
+              <label className="flex items-start gap-2 text-xs leading-relaxed">
                 <Checkbox
                   checked={confirmed}
                   disabled={busy}
@@ -716,7 +716,7 @@ function PullActionDialog({
                     </>
                   )}
                   {currentFailures.length > 0 && (
-                    <span className="mt-1 block text-status-error">
+                    <span className="mt-1 block text-muted-foreground">
                       I acknowledge the current failures: {currentFailures.join('; ')}.
                     </span>
                   )}

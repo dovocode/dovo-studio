@@ -744,6 +744,7 @@ export function Composer({
           title: `Stop “${task.title}”?`,
           description: 'Queued messages stay paused until you continue or send a follow-up.',
           confirmLabel: 'Stop thread',
+          destructive: true,
         }))
       )
         return

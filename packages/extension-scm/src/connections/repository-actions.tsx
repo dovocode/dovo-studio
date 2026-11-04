@@ -1,4 +1,6 @@
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
+import { RuntimeRequestError } from '@dovo/protocol'
+import type { Schema } from 'effect'
 import { CreateGithub } from './create-github'
 import { useEffect, useEffectEvent, useId, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -12,6 +14,11 @@ import {
   type ChangedFile,
 } from '@dovo/studio-core'
 import { Button, Checkbox, Input, DropdownMenu, RepositoryOpenItems } from '@dovo/studio-ui'
+
+type PushState =
+  | { kind: 'ready'; value: Schema.Schema.Type<typeof responses.gitActionState> }
+  | { kind: 'unsupported' }
+  | { kind: 'error'; message: string }
 
 const changeLabels = {
   unchanged: 'Unchanged',
@@ -90,6 +97,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
     [selected, setSelected] = useApplicationState<string[]>([]),
     [loading, setLoading] = useApplicationState(true),
     [loadError, setLoadError] = useApplicationState(''),
+    [pushState, setPushState] = useApplicationState<PushState | null>(null),
     [message, setMessage] = useApplicationState(''),
     [status, setStatus] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
@@ -129,20 +137,65 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
     !!message.trim() &&
     !hasConflicts &&
     (!stagingKnown || stagedCount > 0)
+  const actionState = pushState?.kind === 'ready' ? pushState.value : null
+  const pushAvailable = !!actionState?.branch && actionState.canPush && !actionState.behind
+  const canPush =
+    connected &&
+    !busy &&
+    !loading &&
+    !loadError &&
+    pushAvailable &&
+    (actionState.ahead > 0 || !actionState.tracking)
+  const pushReason = !connected
+    ? 'Connect to the runtime to check Push availability.'
+    : loading
+      ? 'Checking branch status…'
+      : loadError
+        ? 'Git state unavailable. Refresh Git before pushing.'
+        : pushState?.kind === 'unsupported'
+          ? 'Update this runtime to check Push availability. Staging and commit are still available.'
+          : pushState?.kind === 'error'
+            ? `Could not check Push availability: ${pushState.message}. Use Refresh Git to retry.`
+            : !actionState?.branch
+              ? 'Check out a branch before pushing.'
+              : actionState.behind > 0
+                ? `${actionState.behind} ${actionState.behind === 1 ? 'commit' : 'commits'} behind upstream. Pull or rebase before pushing.`
+                : !actionState.canPush
+                  ? 'No push destination available. Configure a Git remote.'
+                  : !actionState.tracking
+                    ? 'Publish this branch and set its upstream.'
+                    : actionState.ahead > 0
+                      ? `${actionState.ahead} ${actionState.ahead === 1 ? 'commit' : 'commits'} ready to push.`
+                      : 'Branch is up to date.'
+  const readPushState = async (): Promise<PushState> => {
+    try {
+      return {
+        kind: 'ready',
+        value: await request('/api/scm/action-state', input, responses.gitActionState),
+      }
+    } catch (error) {
+      return error instanceof RuntimeRequestError && [404, 405].includes(error.status ?? 0)
+        ? { kind: 'unsupported' }
+        : { kind: 'error', message: String(error) }
+    }
+  }
   const refresh = async () => {
     if (!mounted.current) return
     const current = ++revision.current
     setLoading(true)
     setLoadError('')
+    setPushState(null)
     try {
-      const [inspected, result] = await Promise.all([
+      const [inspected, result, pushResult] = await Promise.all([
         request('/api/scm/inspect', input, responses.inspected),
         request('/api/scm/changes', input, responses.files),
+        readPushState(),
       ])
       if (!mounted.current || current !== revision.current) return
       setCheckout(inspected.path)
       setBranch(inspected.branch)
       setFiles(result.files)
+      setPushState(pushResult)
       setSelected((previous) =>
         previous.filter((path) =>
           result.files.some((file) => file.path === path && canStageFile(file)),
@@ -260,35 +313,6 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                 </p>
               )}
             </section>
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                Select files below to stage their remaining changes.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  busy ||
-                  loading ||
-                  !connected ||
-                  !!loadError ||
-                  !selected.length ||
-                  selected.length > 200
-                }
-                onClick={() =>
-                  act(async () => {
-                    await request('/api/scm/stage', { ...input, paths: selected }, responses.ok)
-                    setStatus(
-                      `${selected.length} ${selected.length === 1 ? 'file' : 'files'} staged.`,
-                    )
-                    setSelected([])
-                    await refresh()
-                  })
-                }
-              >
-                Stage selected
-              </Button>
-            </div>
             {[
               { name: 'Unstaged', files: unstagedFiles, unavailable: false },
               { name: 'Staging status unavailable', files: unknownFiles, unavailable: true },
@@ -338,7 +362,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                     {group.unavailable && (
                       <p className="border-b px-3 py-2 text-xs text-muted-foreground">
                         These files may already be staged. Update this runtime to see their
-                        membership. Selection only controls Stage selected.
+                        membership.
                       </p>
                     )}
                     {group.files.length ? (
@@ -381,6 +405,35 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                   </section>
                 ),
             )}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {selected.length} {selected.length === 1 ? 'file' : 'files'} selected
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  busy ||
+                  loading ||
+                  !connected ||
+                  !!loadError ||
+                  !selected.length ||
+                  selected.length > 200
+                }
+                onClick={() =>
+                  act(async () => {
+                    await request('/api/scm/stage', { ...input, paths: selected }, responses.ok)
+                    setStatus(
+                      `${selected.length} ${selected.length === 1 ? 'file' : 'files'} staged.`,
+                    )
+                    setSelected([])
+                    await refresh()
+                  })
+                }
+              >
+                Stage selected
+              </Button>
+            </div>
             {selected.length > 200 && (
               <p className="text-xs text-muted-foreground">
                 Select up to 200 files to stage at a time.
@@ -433,8 +486,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
               required
             />
             <p className="text-xs text-muted-foreground">
-              Commits include all staged files, including files staged outside this dialog. Checkbox
-              selection only controls Stage selected.
+              Commits include all staged changes. Selection only controls staging.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" disabled={!canCommit}>
@@ -443,8 +495,10 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
               <Button
                 type="button"
                 size="sm"
-                disabled={!canCommit}
-                onClick={() =>
+                aria-describedby={`${messageId}-push`}
+                disabled={!canCommit || !pushAvailable}
+                onClick={() => {
+                  if (!canCommit || !pushAvailable) return
                   act(async () => {
                     const result = await request(
                       '/api/scm/commit',
@@ -462,7 +516,7 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
                     }
                     await refresh()
                   })
-                }
+                }}
               >
                 Commit &amp; push
               </Button>
@@ -503,17 +557,28 @@ function CheckoutActions({ repo, taskId }: { repo: Repository; taskId?: string }
           <Button
             size="sm"
             variant="outline"
-            disabled={!connected || busy}
-            onClick={() =>
+            aria-label="Push branch"
+            aria-describedby={`${messageId}-push`}
+            disabled={!canPush}
+            onClick={() => {
+              if (!canPush) return
               act(async () => {
                 await request('/api/scm/push', input, responses.ok)
                 setStatus('Branch pushed.')
+                await refresh()
               })
-            }
+            }}
           >
-            Push branch
+            Push branch{actionState && actionState.ahead > 0 ? ` (${actionState.ahead})` : ''}
           </Button>
         </div>
+        <p
+          id={`${messageId}-push`}
+          aria-label="Push status"
+          className="text-xs text-muted-foreground"
+        >
+          {pushReason}
+        </p>
         {checkout && (
           <p className="break-all font-mono text-[0.6875rem] text-muted-foreground">{checkout}</p>
         )}

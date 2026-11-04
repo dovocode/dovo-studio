@@ -60,7 +60,7 @@ export default function AppearanceSettings() {
           <span
             role="img"
             aria-label={`Current color palette: ${selectedPalette.name}`}
-            className="flex w-full overflow-hidden rounded-md border sm:w-48"
+            className="flex w-full overflow-hidden rounded-md border"
           >
             <PalettePreview colors={selectedPalette.dark} />
             <PalettePreview colors={selectedPalette.light} />
@@ -124,7 +124,7 @@ export default function AppearanceSettings() {
           label="Glow"
           description="A soft theme-colored glow around highlighted controls. Off removes the glow."
         >
-          <div className="flex w-full items-center gap-3 sm:w-48">
+          <div className="flex w-full items-center gap-3">
             <input
               type="range"
               aria-label="Glow intensity"
@@ -245,7 +245,7 @@ export default function AppearanceSettings() {
         >
           <Input
             aria-label="App font"
-            className="w-full sm:w-48"
+            className="w-full"
             list="app-fonts"
             placeholder="Default"
             value={appFontFamily}
@@ -259,7 +259,7 @@ export default function AppearanceSettings() {
         >
           <Input
             aria-label="Code font"
-            className="w-full sm:w-48"
+            className="w-full"
             list="mono-fonts"
             placeholder="System monospace"
             value={codeFontFamily}
@@ -314,7 +314,7 @@ export default function AppearanceSettings() {
         >
           <Input
             aria-label="Terminal font"
-            className="w-full sm:w-48"
+            className="w-full"
             list="mono-fonts"
             placeholder="System monospace"
             value={terminalFontFamily}

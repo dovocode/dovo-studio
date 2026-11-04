@@ -10,11 +10,20 @@ const built = await build({
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
       import {RepositoryActions} from '../extension-scm/src/connections/repository-actions';
+      import {RuntimeRequestError} from '@dovo/protocol';
       window.reads=[];window.writes=[];window.connection={id:'runtime'};
+      window.gitState={dirty:true,branch:'feature',ahead:0,behind:0,tracking:true,canPush:true};
       function App(){
         const [taskId,setTaskId]=useState('first'),[connected,setConnected]=useState(true),[connection,setConnection]=useState(window.connection),[revision,setRevision]=useState(0);
         window.configure=changes=>{if('taskId'in changes)setTaskId(changes.taskId);if('connected'in changes)setConnected(changes.connected);if('connection'in changes)setConnection(changes.connection);setRevision(value=>value+1)};
         window.store={connection,connected,request:async(path,input)=>{
+          if(path==='/api/scm/action-state'){
+            const state={...window.gitState};
+            if(window.holdActionState)await new Promise(resolve=>window.releaseActionState=resolve);
+            if(window.unsupportedState)throw new RuntimeRequestError({kind:'request',status:window.unsupportedState,message:'Endpoint not found'});
+            if(window.failActionState)throw new Error('Branch status unavailable');
+            return state;
+          }
           if(path==='/api/scm/inspect')return {path:'/repo/'+(input.taskId??'main'),branch:'feature'};
           if(path==='/api/scm/changes')return new Promise((resolve,reject)=>window.reads.push({resolve,reject,input,connection}));
           if(path==='/api/scm/branches')return {current:'feature',revision:'revision',branches:[]};
@@ -22,9 +31,10 @@ const built = await build({
           if(path==='/api/scm/branch')return {current:input.name,revision:'new-revision',branches:[]};
           if(path==='/api/scm/commit'){
             if(window.holdCommit)await new Promise(resolve=>window.releaseCommit=resolve);
+            window.gitState.ahead++;
             return {commit:'123456789'};
           }
-          if(path==='/api/scm/push'&&window.failPush)throw new Error('Push unavailable');
+          if(path==='/api/scm/push'){if(window.failPush)throw new Error('Push unavailable');window.gitState.ahead=0;window.gitState.tracking=true;}
           return {ok:true};
         }};
         return <RepositoryActions repo={{id:'repo',name:'Project',path:'/repo',branch:'main'}} taskId={taskId}/>;
@@ -93,11 +103,25 @@ try {
   // Opening loads changes without a click; a partial selection stages exactly those paths.
   await reads(1)
   await page.getByRole('status').filter({ hasText: 'Loading changes' }).waitFor()
+  assert.equal(await push.isDisabled(), true)
+  await page.getByLabel('Push status').filter({ hasText: 'Checking branch status' }).waitFor()
   await finish(0, [
     { path: 'src/one.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
     { path: 'image.png', gitStatus: { index: 'unchanged', workingTree: 'untracked' } },
   ])
   await all.waitFor()
+  assert.equal(await push.isDisabled(), true)
+  await page.getByLabel('Push status').filter({ hasText: 'Branch is up to date.' }).waitFor()
+  assert.equal(
+    await stage.evaluate(
+      (button) =>
+        !!(
+          document.querySelector('[aria-label="Unstaged"]').compareDocumentPosition(button) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+    ),
+    true,
+  )
   await page
     .getByRole('region', { name: 'Staged', exact: true })
     .getByText('Staged: Modified', { exact: true })
@@ -158,6 +182,8 @@ try {
   await page.evaluate(() => window.reads[3].reject(new Error('Changes unavailable')))
   await page.getByRole('alert').filter({ hasText: 'Changes unavailable' }).waitFor()
   assert.equal(await stage.count(), 0)
+  assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
   assert.equal(await page.getByText('No uncommitted changes.', { exact: true }).count(), 0)
   await refresh.click()
   await reads(5)
@@ -201,18 +227,21 @@ try {
     1,
   )
 
+  await reads(7)
+  await finish(6, [])
+  await page.getByLabel('Push status').filter({ hasText: 'Branch is up to date.' }).waitFor()
   // Offline does not read; reconnect reads again. No old checkout state leaks into another task.
   await page.evaluate(() => window.configure({ connected: false }))
   await page.getByRole('status').filter({ hasText: 'Connect to the runtime' }).waitFor()
   assert.equal(await refresh.isDisabled(), true)
-  assert.equal(await page.evaluate(() => window.reads.length), 6)
+  assert.equal(await page.evaluate(() => window.reads.length), 7)
   await page.evaluate(() => window.configure({ connected: true }))
-  await reads(7)
-  await page.evaluate(() => window.configure({ taskId: 'second' }))
   await reads(8)
-  await finish(7, ['second.ts'])
+  await page.evaluate(() => window.configure({ taskId: 'second' }))
+  await reads(9)
+  await finish(8, ['second.ts'])
   await page.getByRole('checkbox', { name: 'Select second.ts', exact: true }).waitFor()
-  await finish(6, ['stale.ts'])
+  await finish(7, ['stale.ts'])
   assert.equal(
     await page.getByRole('checkbox', { name: 'Select stale.ts', exact: true }).count(),
     0,
@@ -226,8 +255,8 @@ try {
   await commitPush.click()
   await page.waitForFunction(() => typeof window.releaseCommit === 'function')
   await page.evaluate(() => window.configure({ taskId: 'third' }))
-  await reads(9)
-  await finish(8, ['third.ts'])
+  await reads(10)
+  await finish(9, ['third.ts'])
   await page.evaluate(() => {
     window.holdCommit = false
     window.releaseCommit()
@@ -241,14 +270,14 @@ try {
   // A paired-runtime change also starts with a fresh list and commit draft.
   await message.fill('Draft for third')
   await page.evaluate(() => window.configure({ connection: { id: 'other-runtime' } }))
-  await reads(10)
+  await reads(11)
   assert.equal(await message.count(), 0)
   assert.equal(
     await page.getByRole('checkbox', { name: 'Select third.ts', exact: true }).count(),
     0,
   )
   await finish(
-    9,
+    10,
     Array.from({ length: 201 }, (_, index) => `file-${index}.ts`),
   )
   await all.waitFor()
@@ -262,7 +291,7 @@ try {
   await page.getByRole('button', { name: 'feature', exact: true }).click()
   await page.getByRole('textbox', { name: 'New branch name', exact: true }).fill('new-branch')
   await page.getByRole('button', { name: 'Create branch', exact: true }).click()
-  await reads(11)
+  await reads(12)
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
     repositoryId: 'repo',
     taskId: 'third',
@@ -270,7 +299,7 @@ try {
     name: 'new-branch',
     revision: 'revision',
   })
-  await finish(10, [])
+  await finish(11, [])
   await page.getByText('No uncommitted changes.', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'new-branch', exact: true }).waitFor()
 
@@ -290,8 +319,8 @@ try {
   )
   const commit = page.getByRole('button', { name: 'Commit staged', exact: true })
   await refresh.click()
-  await reads(12)
-  await finish(11, [
+  await reads(13)
+  await finish(12, [
     { path: 'unstaged.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
   ])
   await page.getByText('Unstaged: Modified', { exact: true }).waitFor()
@@ -302,8 +331,8 @@ try {
 
   // Commit membership is all staged files, independently of checkbox selection.
   await refresh.click()
-  await reads(13)
-  await finish(12, [
+  await reads(14)
+  await finish(13, [
     { path: 'partial.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
     { path: 'added.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
     { path: 'deleted.ts', gitStatus: { index: 'deleted', workingTree: 'unchanged' } },
@@ -322,7 +351,7 @@ try {
   )
   assert.equal(await commit.isDisabled(), false)
   await commit.click()
-  await reads(14)
+  await reads(15)
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
     repositoryId: 'repo',
     taskId: 'third',
@@ -334,13 +363,13 @@ try {
     ),
     stagesBeforeCommit,
   )
-  await finish(13, [])
+  await finish(14, [])
   await page.getByText('No uncommitted changes.', { exact: true }).waitFor()
 
   // Conflicts are explicit and cannot be mistaken for committable staged additions/deletions.
   await refresh.click()
-  await reads(15)
-  await finish(14, [
+  await reads(16)
+  await finish(15, [
     { path: 'conflict.ts', gitStatus: { index: 'unmerged', workingTree: 'unmerged' } },
   ])
   await page.getByText('Conflict: resolve before committing', { exact: true }).waitFor()
@@ -350,19 +379,19 @@ try {
   assert.equal(await commitPush.isDisabled(), true)
   // Unstaging only the requested staged path preserves the other commit members.
   await refresh.click()
-  await reads(16)
-  await finish(15, [
+  await reads(17)
+  await finish(16, [
     { path: 'partial.ts', gitStatus: { index: 'modified', workingTree: 'modified' } },
     { path: 'other.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
   ])
   await page.getByRole('button', { name: 'Unstage partial.ts', exact: true }).click()
-  await reads(17)
+  await reads(18)
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1)), {
     path: '/api/scm/unstage',
     input: { repositoryId: 'repo', taskId: 'third', paths: ['partial.ts'] },
     connection: { id: 'other-runtime' },
   })
-  await finish(16, [
+  await finish(17, [
     { path: 'partial.ts', gitStatus: { index: 'unchanged', workingTree: 'modified' } },
     { path: 'other.ts', gitStatus: { index: 'added', workingTree: 'unchanged' } },
   ])
@@ -376,6 +405,81 @@ try {
     0,
   )
   await page.getByRole('status').filter({ hasText: 'Working file contents kept' }).waitFor()
+  // Push availability comes from the runtime, independently of staged membership.
+  let nextRead = 18
+  const state = async (patch, paths = ['legacy.ts']) => {
+    await page.evaluate((patch) => Object.assign(window.gitState, patch), patch)
+    await refresh.click()
+    await reads(++nextRead)
+    await finish(nextRead - 1, paths)
+    await refresh.and(page.locator(':enabled')).waitFor()
+  }
+  await state({ ahead: 2 })
+  assert.equal(await push.isDisabled(), false)
+  assert.equal(await push.textContent(), 'Push branch (2)')
+  await page.getByLabel('Push status').filter({ hasText: '2 commits ready to push.' }).waitFor()
+  await message.fill('Check commit and push')
+  assert.equal(await commitPush.isDisabled(), false)
+
+  await state({ behind: 3 })
+  assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
+  assert.equal(await commit.isDisabled(), false)
+  await page.getByLabel('Push status').filter({ hasText: '3 commits behind upstream' }).waitFor()
+
+  await state({ ahead: 0, behind: 0, tracking: false, canPush: false })
+  assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
+  await page
+    .getByLabel('Push status')
+    .filter({ hasText: 'No push destination available' })
+    .waitFor()
+  await state({ canPush: true })
+  assert.equal(await push.isDisabled(), false)
+  await page.getByLabel('Push status').filter({ hasText: 'Publish this branch' }).waitFor()
+  await state({ branch: '', canPush: false })
+  assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
+  await page.getByLabel('Push status').filter({ hasText: 'Check out a branch' }).waitFor()
+
+  // A failed capability read preserves staging/commit but cannot silently enable Push.
+  await page.evaluate(() => (window.failActionState = true))
+  await state({ branch: 'feature', canPush: true })
+  await page.getByLabel('Push status').filter({ hasText: 'Branch status unavailable' }).waitFor()
+  assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
+  assert.equal(await commit.isDisabled(), false)
+  await page.evaluate(() => {
+    window.failActionState = false
+    window.unsupportedState = 404
+  })
+  await state({})
+  await page.getByLabel('Push status').filter({ hasText: 'Update this runtime' }).waitFor()
+  assert.equal(await push.isDisabled(), true)
+  assert.equal(await commitPush.isDisabled(), true)
+  assert.equal(await commit.isDisabled(), false)
+  await page.getByRole('checkbox', { name: 'Select legacy.ts', exact: true }).check()
+  assert.equal(await stage.isDisabled(), false)
+  await page.evaluate(() => (window.unsupportedState = 405))
+  await state({})
+  await page.getByLabel('Push status').filter({ hasText: 'Update this runtime' }).waitFor()
+
+  // Refresh waits for branch state too, and does not expose stale enabled actions.
+  await page.evaluate(() => {
+    window.unsupportedState = false
+    window.holdActionState = true
+  })
+  await refresh.click()
+  await reads(++nextRead)
+  await finish(nextRead - 1, [])
+  assert.equal(await push.isDisabled(), true)
+  await page.getByLabel('Push status').filter({ hasText: 'Checking branch status' }).waitFor()
+  await page.evaluate(() => {
+    window.holdActionState = false
+    window.releaseActionState()
+  })
+  await page.getByLabel('Push status').filter({ hasText: 'Publish this branch' }).waitFor()
+  assert.equal(await push.isDisabled(), false)
   assert.deepEqual(errors, [])
   console.log('Repository actions browser checks passed')
 } finally {

@@ -2658,6 +2658,9 @@ a.studio-project-row:hover {
 }
 
 /* Optional alternate-send actions share the send control's silhouette. */
+.task-composer .composer-send-group {
+  border-radius: 999px;
+}
 .task-composer .composer-send-group[data-options] {
   overflow: hidden;
   border-radius: 999px;
@@ -2950,12 +2953,21 @@ a.studio-project-row:hover {
   border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 .studio-settings-page .studio-setting-control {
-  min-width: 208px;
+  width: 208px;
+  min-width: 0;
 }
 .studio-settings-page
   .studio-setting-control
-  > :is([data-choice-picker], [data-slot='select-trigger']) {
-  min-width: 208px;
+  > :is([data-choice-picker], [data-slot='select-trigger'], [data-slot='input']) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.studio-settings-page .studio-setting-control > [data-slot='select-trigger'] > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 .studio-settings-target {
   background: color-mix(in srgb, var(--card) 45%, transparent);
@@ -2989,7 +3001,7 @@ a.studio-project-row:hover {
   }
   .studio-settings-page
     .studio-setting-control
-    > :is([data-choice-picker], [data-slot='select-trigger']) {
+    > :is([data-choice-picker], [data-slot='select-trigger'], [data-slot='input']) {
     min-width: 0;
     width: 100%;
   }
@@ -3200,28 +3212,28 @@ a.studio-project-row:hover {
   align-items: center;
   gap: 6px 12px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .studio-collection-meta {
-  min-height: 18px;
+  min-height: 1.125rem;
   gap: 4px 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .studio-collection-title {
   display: block;
   margin: 4px 0;
   overflow-wrap: anywhere;
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 1.25rem;
 }
 .studio-collection-date {
   align-self: start;
   padding-top: 1px;
   color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -3232,9 +3244,9 @@ a.studio-project-row:hover {
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
-  line-height: 18px;
+  line-height: 1.125rem;
 }
 .studio-collection-label {
   display: inline-block;
@@ -3248,7 +3260,7 @@ a.studio-project-row:hover {
   padding: 1px 6px;
   background: color-mix(in srgb, var(--muted) 40%, transparent);
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 400;
-  line-height: 16px;
+  line-height: 1rem;
 }

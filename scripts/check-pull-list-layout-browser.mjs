@@ -151,6 +151,28 @@ try {
         exact: true,
       })
       await search.waitFor()
+      if (!isMobile) {
+        const metadata = page.locator('.studio-collection-meta').first()
+        await metadata.waitFor()
+        for (const [size, expected] of [
+          ['small', 10.3125],
+          ['large', 12.03125],
+        ]) {
+          await page.evaluate((size) => (document.documentElement.dataset.textSize = size), size)
+          const rendered = await metadata.evaluate((node) =>
+            parseFloat(getComputedStyle(node).fontSize),
+          )
+          assert.ok(
+            Math.abs(rendered - expected) < 0.05,
+            `${size}: collection metadata follows text size`,
+          )
+          assert.equal(
+            await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+            false,
+          )
+        }
+        await page.evaluate(() => delete document.documentElement.dataset.textSize)
+      }
       const rows = isMobile
         ? page.locator('[data-rows] > div > button')
         : page
@@ -287,7 +309,7 @@ try {
           window.render()
         })
         if (width === 1280) {
-          const grid = first.locator('.grid').first()
+          const grid = first
           const columns = await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns)
           await page.evaluate(() => {
             window.pulls = window.pulls.map((pull) =>
@@ -307,7 +329,6 @@ try {
             await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns),
             await rows
               .filter({ hasText: 'Draft feature' })
-              .locator('.grid')
               .first()
               .evaluate((node) => getComputedStyle(node).gridTemplateColumns),
             'PR rows align with and without check data',

@@ -32,6 +32,7 @@ export const appSettingsExtension = defineStudioExtension(
         'Group matching projects',
         'Project order',
         'Add project starts in',
+        'Thread grouping',
         'Group running tasks',
         'Default task sort',
         'Snooze durations',

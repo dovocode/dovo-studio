@@ -247,7 +247,7 @@ function ScreenWorkspace({
           ahead: 0,
           behind: 0,
           tracking: true,
-          canPush: false,
+          canPush: true,
         },
 
         '/api/device-hosts': { enabled: false, hosts: [] },

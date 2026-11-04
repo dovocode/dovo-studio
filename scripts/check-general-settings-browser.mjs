@@ -61,7 +61,8 @@ const built = await build({
   stdin: {
     contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {builtInAgentPresets,defaultTaskHarness} from '@dovo/protocol';
-import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions} from '@dovo/studio-core';
+import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions,updateAppPreferences} from '@dovo/studio-core';
+window.updateAppPreferences=updateAppPreferences;
 import {SettingsNav} from '${root}/packages/studio-shell/src/settings-nav.tsx';
 import {SidebarHeaderLayout,HeaderFallback} from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
@@ -434,6 +435,68 @@ try {
   await page
     .getByRole('heading', { name: 'Thread list & projects', exact: true, level: 1 })
     .waitFor()
+  const customOrder = ['pinned', 'waiting', 'active', 'working', 'settled', 'snoozed']
+  await page.evaluate(
+    (order) =>
+      window.updateAppPreferences({
+        threadSectionOrder: order,
+        collapsedThreadSections: ['waiting'],
+        workingSection: false,
+      }),
+    customOrder,
+  )
+  for (const [label, value] of [
+    ['No grouping', 'none'],
+    ['Project', 'project'],
+    ['Status', 'status'],
+  ]) {
+    await choose('Thread grouping', label)
+    const saved = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('dovo.app-preferences.v1')),
+    )
+    assert.equal(saved.taskGrouping, value)
+    assert.deepEqual(saved.threadSectionOrder, customOrder)
+    assert.deepEqual(saved.collapsedThreadSections, ['waiting'])
+    assert.equal(saved.workingSection, false)
+  }
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await settingsSidebar.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Thread grouping', exact: true }).innerText(),
+    'Status',
+  )
+  await page
+    .getByRole('group', { name: 'Page actions' })
+    .getByText('This device', { exact: true })
+    .waitFor()
+  await page
+    .getByText(/Use Save calendar shortcuts and Save snooze durations to apply edits/)
+    .waitFor()
+  const discardSettings = page.getByRole('dialog', {
+    name: 'Discard unsaved settings changes?',
+    exact: true,
+  })
+  await page.getByRole('textbox', { name: 'Snooze durations', exact: true }).fill('25m, 2h')
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await discardSettings.waitFor()
+  await discardSettings.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Snooze durations', exact: true }).inputValue(),
+    '25m, 2h',
+  )
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await discardSettings.getByRole('button', { name: 'Discard changes', exact: true }).click()
+  await page.getByRole('heading', { name: 'General', level: 1, exact: true }).waitFor()
+  await settingsSidebar.getByRole('button', { name: 'Thread list & projects', exact: true }).click()
+  assert.notEqual(
+    await page.getByRole('textbox', { name: 'Snooze durations', exact: true }).inputValue(),
+    '25m, 2h',
+  )
+  await page.locator('input[aria-label="Morning time"]').fill('08:45')
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).click()
+  await discardSettings.waitFor()
+  await discardSettings.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await page.locator('input[aria-label="Morning time"]').inputValue(), '08:45')
   await page.locator('input[aria-label="Morning time"]').fill('08:30')
   await page.locator('input[aria-label="Evening time"]').fill('20:15')
   await choose('Next week starts on', 'Sunday')

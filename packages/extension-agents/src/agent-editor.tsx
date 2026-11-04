@@ -124,7 +124,7 @@ export function AgentEditor({
       )}
       <form
         ref={form}
-        className={inline ? 'space-y-5' : 'flex min-h-0 flex-col'}
+        className={inline ? 'space-y-5' : 'flex min-h-0 flex-col overflow-y-auto'}
         onSubmit={(event) => {
           event.preventDefault()
           if (creating && step < 2) {
@@ -177,7 +177,7 @@ export function AgentEditor({
             })
         }}
       >
-        <div className={inline ? undefined : 'min-h-0 flex-1 overflow-y-auto pb-5'}>
+        <div className={inline ? undefined : 'shrink-0 pb-5'}>
           <fieldset disabled={busy || !connected} className="min-w-0 space-y-5">
             <div className="space-y-5">
               {creating && step === 0 && (
@@ -521,7 +521,10 @@ export function AgentEditor({
             </div>
           </fieldset>
         </div>
-        <fieldset disabled={busy || !connected} className="min-w-0 shrink-0">
+        <fieldset
+          disabled={busy || !connected}
+          className={`min-w-0 shrink-0 ${inline ? '' : 'sticky bottom-0 z-10 bg-card pt-1'}`}
+        >
           {!creating ? (
             <SettingsSaveBar
               changes={settingsChanges(

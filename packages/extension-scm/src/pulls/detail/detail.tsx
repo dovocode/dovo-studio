@@ -518,6 +518,16 @@ function PullDetailContent({
                         : `${item.label} (${item.count})`
                     }
                     aria-controls={`pr-panel-${item.id}`}
+                    aria-description={
+                      item.id === 'checks'
+                        ? [
+                            checksReady ? checkSummary.label : '',
+                            pipelineRuns.runs.length ? pipelineSummary.label : '',
+                          ]
+                            .filter(Boolean)
+                            .join('. ') || undefined
+                        : undefined
+                    }
                     aria-selected={tab === item.id}
                     tabIndex={tab === item.id ? 0 : -1}
                     onKeyDown={(event) => {
@@ -542,7 +552,10 @@ function PullDetailContent({
                     onClick={() => selectTab(item.id)}
                     className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                   >
-                    <item.icon aria-hidden className="size-3.5" />
+                    <item.icon
+                      aria-hidden
+                      className={`size-3.5 ${item.id === 'checks' && (failedRuns > 0 || (checksReady && checkSummary.tone === 'danger')) ? 'text-status-error' : ''}`}
+                    />
                     {item.label}
                     <span
                       aria-hidden

@@ -8,13 +8,14 @@ import {
   taskSnoozeWeekdays,
   type TaskSnoozeSchedule,
 } from '@dovo/protocol'
-import { updateAppPreferences } from '@dovo/studio-core'
+import { updateAppPreferences, useSettingsDraft } from '@dovo/studio-core'
 import { SettingRow, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
 
 export function SnoozeSchedule({ schedule }: { schedule: TaskSnoozeSchedule }) {
   const [draft, setDraft] = useState(schedule)
   const [error, setError] = useState('')
+  useSettingsDraft(JSON.stringify(draft) !== JSON.stringify(schedule))
   useEffect(() => {
     setDraft(schedule)
     setError('')

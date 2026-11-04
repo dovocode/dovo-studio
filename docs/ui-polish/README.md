@@ -60,12 +60,19 @@ worker, renderer and WASM with a local WebSocket replay. Captures wait for rende
 its `git status` text is sample data. These previews do not verify live Electron browser
 integrations or real provider/account connections.
 
-Frozen gallery44 includes the automation spacing correction, consistent collection rows and stable
+Frozen gallery45 includes the automation spacing correction, consistent collection rows and stable
 PR check summaries across tabs. Merge receives primary emphasis only when readiness is positive.
 Undo recovery emphasizes Refresh, access values remain readable, and conversation navigation has a
 grouped gutter and a latest-message action beside the reading column. Artifact empty states offer a
 useful next action. Long-history navigation also settles deferred message layouts and respects
 interrupted jumps.
+
+The latest pass restores the desktop thread-grouping selector, protects explicit snoozing drafts,
+aligns Settings fields and agent save actions, and explains known project-deletion blockers before
+submission. Git Push uses current branch tracking and ahead/behind state; selection actions follow
+the files they act on. Disabled primary actions retain their filled silhouette without hover/glow,
+merge consent reads as consent, and Stop confirmations match the composer. Collection typography
+follows Appearance text sizing, and image preview Fit/Actual size modes have visible selection.
 
 The Git dialog separates staged files from the unstaged selection, supports per-file Unstage without
 changing working contents, and labels the commit message. Partial staging appears in both groups;

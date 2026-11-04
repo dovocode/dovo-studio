@@ -248,10 +248,10 @@
   [data-slot='button'][data-variant='default']:disabled,
   .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
 ) {
-  border: 1px solid var(--control-edge);
-  background-color: var(--card);
+  border: 1px solid transparent;
+  background-color: color-mix(in srgb, var(--action) 75%, var(--card));
   background-image: none;
-  color: var(--foreground);
+  color: var(--action-foreground);
   box-shadow: none;
   opacity: 0.5;
 }

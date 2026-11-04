@@ -1,10 +1,16 @@
 import { SnoozeSchedule } from './snooze-schedule'
-import { taskSortOptions, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
+import {
+  taskSortOptions,
+  updateAppPreferences,
+  useAppPreferences,
+  useSettingsDraft,
+} from '@dovo/studio-core'
 import { Input, Button } from '@dovo/studio-ui'
 import {
   defaultTaskSnoozeMinutes,
   formatTaskSnoozeMinutes,
   parseTaskSnoozeMinutes,
+  taskGroupOptions,
 } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
@@ -14,6 +20,7 @@ function SnoozeDurations({ minutes }: { minutes: number[] }) {
   const saved = formatTaskSnoozeMinutes(minutes)
   const [text, setText] = useState(saved)
   const [error, setError] = useState('')
+  useSettingsDraft(text !== saved)
   useEffect(() => {
     setText(saved)
     setError('')
@@ -71,9 +78,9 @@ export default function TaskListSettings() {
   const preferences = useAppPreferences()
   return (
     <SettingsPage
-      local
       title="Thread list & projects"
       description="Organize the thread list and project picker, and choose when to ask for confirmation. These preferences apply on this device."
+      headerActions={<span className="text-[11px] text-muted-foreground">This device</span>}
     >
       <SettingsGroup title="Projects" description="Arrange projects in the project picker.">
         <SettingRow
@@ -112,6 +119,17 @@ export default function TaskListSettings() {
       </SettingsGroup>
       <SettingsGroup title="Thread list">
         <SettingRow
+          label="Thread grouping"
+          description="Group the thread list by status or project, or show one list."
+        >
+          <SettingsSelect
+            label="Thread grouping"
+            value={preferences.taskGrouping}
+            options={taskGroupOptions.map((option) => [option.id, option.name])}
+            onChange={(taskGrouping) => updateAppPreferences({ taskGrouping })}
+          />
+        </SettingRow>
+        <SettingRow
           label="Group running threads"
           description="Keep running threads in a collapsed Working section. Threads needing input and pinned threads stay visible."
         >
@@ -137,7 +155,7 @@ export default function TaskListSettings() {
       </SettingsGroup>
       <SettingsGroup
         title="Snoozing"
-        description="Choose the thread snooze options on this device, in menu order. Existing snoozed threads keep their wake-up time."
+        description="Choose the thread snooze options on this device, in menu order. Use Save calendar shortcuts and Save snooze durations to apply edits. Existing snoozed threads keep their wake-up time."
       >
         <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} />
         <SettingRow

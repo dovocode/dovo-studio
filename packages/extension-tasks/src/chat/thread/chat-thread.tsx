@@ -685,6 +685,14 @@ export function ChatThread({
               </div>
               <TaskActivity
                 tools={activityGroups.unassigned}
+                working={
+                  connected &&
+                  task.status === 'running' &&
+                  !task.messages.some(
+                    (message) =>
+                      message.role === 'assistant' && turns.get(message.id)?.status === 'running',
+                  )
+                }
                 status={
                   task.status === 'running'
                     ? 'running'
