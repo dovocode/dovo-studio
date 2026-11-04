@@ -109,7 +109,14 @@ export function WorkspaceModes({ mode }: { mode: 'tasks' | 'browser' | 'terminal
                   size={16}
                   color={mode === item.id ? colors.accent : colors.muted}
                 />
-                <Text style={{ fontSize: 13 }}>{item.label}</Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: mode === item.id ? colors.text : colors.muted,
+                  }}
+                >
+                  {item.label}
+                </Text>
               </Pressable>
             ))}
         </View>
