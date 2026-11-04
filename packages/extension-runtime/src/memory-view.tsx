@@ -170,7 +170,7 @@ function MemorySettings() {
   return (
     <div className="space-y-5">
       {ready && !error && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[0.8125rem] leading-normal text-foreground/80">
           Enable switches save automatically on this computer. Use Save note to apply note edits.
         </p>
       )}

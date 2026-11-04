@@ -823,25 +823,88 @@
       "verdict": "ship",
       "coverage": "60 full-size frames,30 per theme",
       "summary": "Ship; Computer use/Device previews/runtime save summaries, Git continuation and preference for stronger legacy disabled treatment. Confirms scrim/dividers/crop dimming and prior fixes."
+    },
+    {
+      "round": "independent53",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent53_sol_a",
+      "score": 8.4,
+      "verdict": "ship; expanded merge footer clipping needs a small fix",
+      "coverage": "52 exact frames;26 per theme;five compact",
+      "summary": "Save boundaries, offline recovery, Git continuation and independent PR sources confirmed; agrees expanded merge sources partially clips action footer. Git density and Settings guidance emphasis are preferences."
+    },
+    {
+      "round": "independent53",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent53_sol_b",
+      "score": 8.6,
+      "verdict": "ship; expanded merge footer clipping needs a small fix",
+      "coverage": "68 exact frames;36 dark/32 light;12 compact",
+      "summary": "Save boundaries, offline recovery, Git continuation and independent PR sources confirmed; agrees expanded merge sources partially clips action footer. Git density and Settings guidance emphasis are preferences."
+    },
+    {
+      "round": "independent53",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent53_sol_c",
+      "score": 8.5,
+      "verdict": "ship; expanded merge footer clipping needs a small fix",
+      "coverage": "50 exact frames;25 per theme;five compact",
+      "summary": "Save boundaries, offline recovery, Git continuation and independent PR sources confirmed; agrees expanded merge sources partially clips action footer. Git density and Settings guidance emphasis are preferences."
+    },
+    {
+      "round": "independent53",
+      "model": "Opus 5.5",
+      "id": "05ec982c-1273-4848-9131-daa20e8f2208",
+      "score": 8,
+      "verdict": "ship",
+      "coverage": "58 full-size frames;28 dark/30 light;no contacts opened",
+      "summary": "Prior save boundaries/recovery/Git cue/PR target placement confirmed. Requests shared offline recovery and clearer save effects; Git density is a tradeoff."
+    },
+    {
+      "round": "independent53",
+      "model": "Opus 5.5",
+      "id": "d1d45787-4a50-40d4-baa6-4a355b2ee734",
+      "score": 8.3,
+      "verdict": "ship; fix expanded merge footer",
+      "coverage": "52 full-size frames;26 per theme;five compact;one contact triaged",
+      "summary": "Confirms prior fixes; expanded merge footer clipping, shared offline recovery and Computer use timing clarity identified."
+    },
+    {
+      "round": "independent53",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "bc90022b-9bfa-4eac-bc62-c84438ba9024",
+      "score": 8.3,
+      "verdict": "ship; merge footer and status presentation refinements",
+      "coverage": "62 full-size frames;32 dark/30 light;five contacts triaged",
+      "summary": "Confirms save/recovery/Git overflow/source naming fixes; verifies merge-footer clipping and inconsistent CI row position. Several claimed missing affordances conflict with exact evidence or KEEP; see triage."
     }
   ],
   "remaining": [
-    "Obtain fresh independent gallery53 approval",
+    "Obtain independent gallery54 approval",
     "Finish PR #50 after council quality gate"
   ],
   "approvalTarget": {
-    "model": "Opus 5.5",
-    "reviewers": 2,
-    "minimumScore": 9,
-    "reason": "Dominic changed the target to Opus 9/10."
+    "reviewers": [
+      {
+        "model": "GPT-6.1 Sol",
+        "count": 3,
+        "minimumScore": 10
+      },
+      {
+        "model": "Opus 5.5",
+        "count": 2,
+        "minimumScore": 10
+      }
+    ],
+    "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
   },
   "gallery": {
-    "round": 53,
+    "round": 54,
     "captures": 340,
-    "corePass": 53,
-    "dialogPass": 53,
-    "settingsPass": 53,
-    "note": "170 paired surfaces.68 affected states recaptured for save cues, mixed Settings ownership, offline recovery, Git continuation and PR source visibility;272 unaffected states retained from52. Manifest records refreshed filenames and provenance. No errors/alerts; lossless exports/canvas/crop parity verified. Matching source53 frozen."
+    "corePass": 54,
+    "dialogPass": 54,
+    "settingsPass": 54,
+    "note": "170 paired surfaces fully recaptured;58 PR/work-list states refreshed after final source changes. No errors/alerts; lossless exports, exact #080808 canvas and image-editor source parity verified. Matching source54 frozen."
   },
   "unavailableReviews": [
     {
@@ -903,46 +966,46 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent53",
+      "round": "independent54",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent53_sol_a",
+      "id": "/root/independent54_sol_a",
       "status": "running",
-      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
+      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     },
     {
-      "round": "independent53",
+      "round": "independent54",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent53_sol_b",
+      "id": "/root/independent54_sol_b",
       "status": "running",
-      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
+      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     },
     {
-      "round": "independent53",
+      "round": "independent54",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent53_sol_c",
+      "id": "/root/independent54_sol_c",
       "status": "running",
-      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
+      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     },
     {
-      "round": "independent53",
+      "round": "independent54",
       "model": "Opus 5.5",
-      "id": "05ec982c-1273-4848-9131-daa20e8f2208",
+      "id": "f58f8fcf-35f1-4f64-b73b-4a208872f2a9",
       "status": "running",
-      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
+      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     },
     {
-      "round": "independent53",
+      "round": "independent54",
       "model": "Opus 5.5",
-      "id": "d1d45787-4a50-40d4-baa6-4a355b2ee734",
+      "id": "cffb8e67-3d8f-4e04-a62f-0aa120a7e31a",
       "status": "running",
-      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
+      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     },
     {
-      "round": "independent53",
+      "round": "independent54",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "bc90022b-9bfa-4eac-bc62-c84438ba9024",
+      "id": "c1926aa5-cdcf-49c4-9184-a33421161850",
       "status": "running",
-      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
+      "brief": "Fresh context; frozen gallery54/matching source54 and findings, no previous or target scores."
     }
   ],
   "queuedReviews": [
@@ -1017,6 +1080,11 @@
       "round": "pass53",
       "summary": "Initial explicit-save instructions for Computer use/CLI/titles, immediate/explicit boundaries for Device Hub/Memory and runtime summary. Device-local PR defaults render before the computer-specific target and immediate-save forms; Browser save explanation occurs once. Offline Agents links to Devices & runtime. Git inner list measures actual overflow, names continuation/end without shifting commit form. PR CI source named Repository CI in rows, separate bordered source on Checks; current failures visible before collapsed merge-source details, retaining acknowledgement identity/reset/guard/payload behavior.",
       "verification": "Production web/desktop builds, affected package types, scoped lint/format/diff passed. Managed Chromium; Computer use web/mobile, titles, Device Hub, runtime/memory, PR list/workspace, Settings/Agents and repository-actions browser suites passed. Covers overflow/no-overflow/resize/stationary commit form, ownership/order/local writes, offline navigation, CI separation and merge guard/payload regressions.68 affected frames refreshed in a340-frame gallery, no alerts/errors; pixel equality and #080808 verified."
+    },
+    {
+      "round": "pass54",
+      "summary": "PR action dialogs retain header and errors/actions outside a scrolling form body. Readable rem-based save guidance, offline Viewing context and opt-in recovery for Thread defaults/lifecycle preserve usable scope pickers and Agents recovery. Computer use differentiates executable/new-process and agent-access/new-turn effects. PR status columns consistently order repository CI, review decision and review request. Work-list separators use an explicit row border rule instead of overridden Tailwind divide styling.",
+      "verification": "Production web/desktop builds, affected types, scoped lint/format/diff passed. Managed Chromium; merge/auto-merge geometry and existing guard/payload regressions across1440x960/1100x960/1440x720, PR list desktop/mobile alignment, Settings target desktop/mobile navigation/save/draft guards, General/titles/Device Hub/runtime-Memory/Computer use and Pipeline lists passed. All340 captures refreshed;58 PR/work-list states superseded by final focused capture. Lossless pixel equality, #080808 and image source parity passed."
     }
   ],
   "designConsultations": [
@@ -1093,6 +1161,27 @@
       "round": "independent52",
       "finding": "CI names are three names for one signal",
       "result": "Partly valid. PR row and Checks both present provider CI summary and can use Repository CI consistently. Repository merge status is the provider merge verdict, which also considers review/mergeability; do not rename or conflate it with CI. Add separate source card and visible failure list while preserving existing independent source/acknowledgement guards."
+    },
+    {
+      "round": "independent53",
+      "finding": "Repository merge status headline conflates independent pipeline and CI sources",
+      "result": "Not reproduced as stated. Provider readiness is derived from pullMergeability(detail.pull), independently of linked pipeline runs/check reports; repository verdict can reflect reviews/mergeability as well as CI. Retain named source details and visible failure list, rather than replace provider verdict with a computed failure count."
+    },
+    {
+      "round": "independent53",
+      "finding": "Muse: no profile identity in compact dirty Agents, no Settings nav fade, add persistent Queue/Steer label",
+      "result": "Compact dirty Agent footer already names Runtime navigation reviewer and target in cited exact frames. Settings nav already has a scroll-position mask fade and thin scrollbar. Persistent composer button/mode labels conflict with explicit icon-only/hover-label user constraint. Retain existing mechanisms. Verified CI-line misalignment accepted for refinement."
+    },
+    {
+      "round": "independent54",
+      "finding": "Issues row separators absent despite divide-y",
+      "result": "Root confirmed actual cause: unlayered studio-collection-row border:1px solid transparent overrides the utility divider. Work-list-specific sibling top-border color restores real separators while preserving row height, hover and focus styles; production captures now show them."
     }
-  ]
+  ],
+  "previousApprovalTarget": {
+    "model": "Opus 5.5",
+    "reviewers": 2,
+    "minimumScore": 9,
+    "reason": "Dominic changed the target to Opus 9/10."
+  }
 }

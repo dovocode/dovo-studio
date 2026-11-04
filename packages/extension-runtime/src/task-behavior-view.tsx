@@ -41,6 +41,7 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
       saveInfo={(snapshot) =>
         snapshot?.taskBehaviorSupported === true ? 'Use Save changes to apply edits.' : undefined
       }
+      offlineRecovery
     >
       {({ scope, repository }) => (
         <>

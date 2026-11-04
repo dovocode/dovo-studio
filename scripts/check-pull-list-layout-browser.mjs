@@ -136,7 +136,7 @@ await mkdir('/tmp/dovo-pr-overhaul', { recursive: true })
 const browser = await chromium.launch()
 try {
   for (const isMobile of [false, true])
-    for (const width of [320, 390, 1280]) {
+    for (const width of isMobile ? [320, 390, 1280] : [320, 390, 1100, 1280, 1440]) {
       const page = await browser.newPage({ viewport: { width, height: 1000 } })
       page.setDefaultTimeout(5000)
       const errors = []
@@ -267,7 +267,55 @@ try {
             'Target branch stays within the row at narrow and wide sizes',
           )
         }
-        await assertReadinessBounds(width === 1280)
+        await assertReadinessBounds(width >= 1100)
+        if (width === 1100 || width === 1440) {
+          const originalPulls = await page.evaluate(() => {
+            const original = window.pulls
+            window.pulls = window.pulls.map((pull) =>
+              pull.number === 2
+                ? {
+                    ...window.pulls[0],
+                    number: pull.number,
+                    url: pull.url,
+                    title: pull.title,
+                    viewerReviewRequested: false,
+                  }
+                : pull,
+            )
+            window.render()
+            return original
+          })
+          const other = rows.filter({ hasText: 'Ready to ship' })
+          await other.getByText('Repository CI: failed', { exact: true }).waitFor()
+          const requested = readiness.getByText('Your review requested', { exact: true })
+          const review = readiness.getByText('Changes requested', { exact: true })
+          const firstBounds = await first.boundingBox()
+          const otherBounds = await other.boundingBox()
+          assert.ok(
+            Math.abs(firstBounds.height - otherBounds.height) < 1,
+            `${width}px: alignment fixture has matching row heights`,
+          )
+          const ciBounds = await failure.boundingBox()
+          const otherCiBounds = await other
+            .getByText('Repository CI: failed', { exact: true })
+            .boundingBox()
+          assert.ok(
+            Math.abs(ciBounds.x - otherCiBounds.x) < 1 &&
+              Math.abs(ciBounds.y - firstBounds.y - (otherCiBounds.y - otherBounds.y)) < 1,
+            `${width}px: CI aligns across rows with and without a viewer review request`,
+          )
+          assert.ok(ciBounds.y < (await review.boundingBox()).y, 'Repository CI appears first')
+          assert.ok(
+            (await review.boundingBox()).y < (await requested.boundingBox()).y,
+            'Review decision precedes the viewer request flag',
+          )
+          assert.equal(await other.getByText('Your review requested', { exact: true }).count(), 0)
+          await page.evaluate((pulls) => {
+            window.pulls = pulls
+            window.render()
+          }, originalPulls)
+          await other.getByText('Repository CI: passed', { exact: true }).waitFor()
+        }
         if (width === 1280) {
           const sidebar = page.getByRole('navigation', {
             name: 'Pull request sidebar',
@@ -503,7 +551,7 @@ try {
       await page.close()
     }
   console.log(
-    'PR lists: project/state hierarchy, visible search, clear-search focus, change metrics, source menus, deduplicated attention counts, zero-count recovery, offline search and narrow layouts passed.',
+    'PR lists: project/state hierarchy, visible search, clear-search focus, change metrics, CI-first status alignment at 1440/1100px, source menus, deduplicated attention counts, zero-count recovery, offline search and narrow layouts passed.',
   )
 } finally {
   await browser.close()

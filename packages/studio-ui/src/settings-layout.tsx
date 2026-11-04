@@ -59,7 +59,7 @@ export function SettingsPage({
               </p>
             )}
             {(local || storageInfo) && (
-              <div className="studio-settings-storage flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="studio-settings-storage flex flex-wrap items-center gap-2 text-[0.8125rem] leading-normal text-foreground/80">
                 {local && (
                   <span className="inline-flex items-center gap-1.5">
                     <Check className="size-3" aria-hidden="true" />

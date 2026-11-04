@@ -106,6 +106,94 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
     )
+  const checkActionFooter = async (dialog, submitName) => {
+    const originalViewport = page.viewportSize()
+    const body = dialog.locator('[data-pull-action-body]')
+    const disclosure = dialog.locator('details').filter({ hasText: 'Status sources' })
+    const summary = disclosure.locator('summary')
+    const writeCount = await page.evaluate(() => window.writes.length)
+    const measureFooter = async (state) => {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+      const geometry = await dialog.evaluate((element, name) => {
+        const body = element.querySelector('[data-pull-action-body]')
+        const form = element.querySelector('form')
+        const cancel = Array.from(form.querySelectorAll('button')).find(
+          (button) => button.textContent.trim() === 'Cancel',
+        )
+        const submit = form.querySelector('button[type="submit"]')
+        if (!body || !cancel || !submit || submit.textContent.trim() !== name) return null
+        const rect = (node) => {
+          const { top, right, bottom, left, width, height } = node.getBoundingClientRect()
+          return { top, right, bottom, left, width, height }
+        }
+        return {
+          dialog: rect(element),
+          body: rect(body),
+          cancel: rect(cancel),
+          submit: rect(submit),
+          viewport: { width: innerWidth, height: innerHeight },
+        }
+      }, submitName)
+      assert.ok(geometry, `${submitName}: footer controls exist (${state})`)
+      const label = `${submitName} ${geometry.viewport.width}×${geometry.viewport.height} ${state}`
+      for (const name of ['cancel', 'submit']) {
+        const button = geometry[name]
+        assert.ok(button.width > 0 && button.height > 0, `${label}: ${name} has area`)
+        assert.ok(
+          button.left >= Math.max(geometry.dialog.left, 0) - 1 &&
+            button.right <= Math.min(geometry.dialog.right, geometry.viewport.width) + 1 &&
+            button.top >= Math.max(geometry.dialog.top, 0) - 1 &&
+            button.bottom <= Math.min(geometry.dialog.bottom, geometry.viewport.height) + 1,
+          `${label}: ${name} is fully inside the visible dialog`,
+        )
+        assert.ok(
+          button.top >= geometry.body.bottom - 1,
+          `${label}: ${name} does not overlap the scrolling form body`,
+        )
+      }
+      assert.ok(
+        geometry.cancel.right <= geometry.submit.left + 1,
+        `${label}: Cancel and submit do not overlap`,
+      )
+    }
+    for (const viewport of [
+      { width: 1440, height: 960 },
+      { width: 1100, height: 960 },
+      { width: 1440, height: 720 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      assert.equal(await disclosure.getAttribute('open'), null)
+      await measureFooter('sources collapsed')
+      await summary.click()
+      assert.equal(await disclosure.getAttribute('open'), '')
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      await measureFooter('sources expanded, body at top')
+      const scroll = await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+        return {
+          overflow: element.scrollHeight - element.clientHeight,
+          position: element.scrollTop,
+        }
+      })
+      if (viewport.height === 720) {
+        assert.ok(scroll.overflow > 0, `${submitName}: short desktop exercises body overflow`)
+        assert.ok(scroll.position > 0, `${submitName}: short desktop form body actually scrolls`)
+      }
+      await measureFooter('sources expanded, body at bottom')
+      await summary.click()
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+      })
+    }
+    await page.setViewportSize(originalViewport)
+    assert.equal(await page.evaluate(() => window.writes.length), writeCount)
+    assert.equal(await dialog.getByRole('checkbox').isChecked(), false)
+  }
   const fullWidthList = async () =>
     assert.equal(
       await list.evaluate(
@@ -358,6 +446,7 @@ try {
     true,
     'Visible failures do not bypass the acknowledgement guard',
   )
+  await checkActionFooter(mergeDialog, 'Merge pull request')
   await mergeReadiness.getByRole('button', { name: 'Refresh checks', exact: true }).click()
   assert.equal(await page.evaluate(() => window.checkRefreshes), 1)
   assert.equal(await statusDisclosure.getByText('1 failed', { exact: true }).isVisible(), false)
@@ -933,6 +1022,7 @@ try {
     await autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true }).isDisabled(),
     true,
   )
+  await checkActionFooter(autoDialog, 'Enable auto-merge')
   await autoDialog.locator('summary').filter({ hasText: 'Status sources' }).click()
   for (const [name, value] of [
     ['Repository CI', 'failed'],
@@ -1002,7 +1092,7 @@ try {
   assert.equal((await page.evaluate(() => window.writes.at(-1).input)).enabled, false)
   assert.deepEqual(errors, [])
   console.log(
-    'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',
+    'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts, embedded previews and visible merge/auto-merge footers at 1440×960, 1100×960 and 1440×720 passed.',
   )
 } finally {
   await browser.close()

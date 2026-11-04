@@ -8,7 +8,7 @@ import {
   type SettingsScope,
   type RuntimeSnapshot,
 } from '@dovo/protocol'
-import { useSettingsTarget, WorkspaceScope } from '@dovo/studio-core'
+import { useSettingsTarget, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
 import { SettingsPage } from './settings-layout'
@@ -21,15 +21,18 @@ export function SettingsScopePage({
   children,
   wide = false,
   saveInfo,
+  offlineRecovery = false,
   localChildren,
 }: {
   localChildren?: ReactNode
   title: string
   wide?: boolean
   saveInfo?: string | ((snapshot?: RuntimeSnapshot | null) => string | undefined)
+  offlineRecovery?: boolean
   description: string
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
+  const host = useStudioHost()
   const { target, setTarget, sources, source, scope, repository } = useSettingsTarget()
   const saveHint = source?.connected
     ? typeof saveInfo === 'function'
@@ -66,15 +69,26 @@ export function SettingsScopePage({
           data-override={scope !== 'global' || undefined}
           aria-label="Settings target"
         >
-          <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <div className="mb-3 flex min-h-7 flex-wrap items-center gap-x-4 gap-y-1">
             <p className="studio-settings-target-context text-xs font-medium">
-              Editing {projectName} on {computerName}
+              {source && !source.connected ? 'Viewing' : 'Editing'} {projectName} on {computerName}
             </p>
-            {saveHint && <p className="text-xs text-muted-foreground">{saveHint}</p>}
+            {saveHint && (
+              <p className="text-[0.8125rem] leading-normal text-foreground/80">{saveHint}</p>
+            )}
             {source && !source.connected && (
-              <span role="status" className="text-xs text-muted-foreground">
+              <span role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
                 {source.name} is offline. Reconnect to edit or save.
               </span>
+            )}
+            {offlineRecovery && source && !source.connected && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => host.navigate({ viewId: 'runtime' })}
+              >
+                Open Devices & runtime
+              </Button>
             )}
           </div>
           <div className="studio-settings-target-inner flex flex-wrap items-end gap-x-4 gap-y-3 text-xs">

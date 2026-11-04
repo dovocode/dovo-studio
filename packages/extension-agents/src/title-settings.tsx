@@ -160,7 +160,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 .finally(() => setBusy(false))
             }}
           >
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[0.8125rem] leading-normal text-foreground/80">
               Use {selection ? 'Save selection model' : 'Save title settings'} to apply edits on
               this computer.
             </p>

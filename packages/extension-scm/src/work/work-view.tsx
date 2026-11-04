@@ -898,7 +898,7 @@ function WorkView({
                 />
               )
             ) : (
-              <div className="divide-y">
+              <div className="studio-work-list">
                 {rows.map(({ source, item, stale, provider }) => (
                   <button
                     type="button"

@@ -488,7 +488,7 @@ function PullActionDialog({
       }}
     >
       <DialogContent
-        className="max-h-[85vh] overflow-y-auto"
+        className="flex max-h-[85dvh] flex-col overflow-hidden"
         onEscapeKeyDown={(e) => {
           if (busy) e.preventDefault()
         }}
@@ -496,319 +496,323 @@ function PullActionDialog({
           if (busy) e.preventDefault()
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>{kind === 'edit' ? 'Edit pull request' : label}</DialogTitle>
           <DialogDescription>
             {provider} · #{scope.number} · commit {scope.headSha.slice(0, 8)}
           </DialogDescription>
         </DialogHeader>
         <form
-          className="grid gap-4"
+          className="flex min-h-0 flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault()
             void submit()
           }}
         >
-          {kind === 'edit' && (
-            <>
-              <FormField label="Title">
-                <Input
-                  aria-label="PR title"
-                  value={title}
-                  disabled={busy}
-                  maxLength={300}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </FormField>
-              <FormField label="Base branch">
-                <Input
-                  aria-label="PR base branch"
-                  value={base}
-                  disabled={busy}
-                  onChange={(e) => setBase(e.target.value)}
-                />
-              </FormField>
-            </>
-          )}
-          {kind === 'review' && (
-            <fieldset className="grid gap-3">
-              <legend className="mb-3 text-sm font-medium">Review decision</legend>
-              {detail.capabilities?.reviewDecisions.map((value) => (
-                <label
-                  key={value}
-                  className="flex items-start gap-3 rounded-lg p-2 hover:bg-muted/30"
-                >
-                  <input
-                    type="radio"
-                    name="review-decision"
-                    value={value}
-                    checked={event === value}
-                    disabled={busy}
-                    onChange={() => setEvent(value)}
-                    className="mt-1 accent-primary"
-                  />
-                  <span>
-                    <span className="block text-sm font-medium">
-                      {value === 'approve'
-                        ? 'Approve'
-                        : value === 'request-changes'
-                          ? 'Request changes'
-                          : 'Comment'}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {value === 'approve'
-                        ? 'Approve merging these changes.'
-                        : value === 'request-changes'
-                          ? 'Request changes before merging.'
-                          : 'Submit feedback without an approval decision.'}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {kind === 'reviewers' && (
-            <>
-              <FormField label="Reviewer action">
-                <ChoicePicker
-                  aria-label="Reviewer action"
-                  value={operation}
-                  disabled={busy}
-                  onValueChange={(value) => {
-                    if (value === 'add' || value === 'remove') setOperation(value)
-                  }}
-                >
-                  <option value="add">Request review</option>
-                  <option value="remove">Remove review request</option>
-                </ChoicePicker>
-              </FormField>
-              <FormField label="Reviewers">
-                <Input
-                  aria-label="Reviewers"
-                  placeholder="Usernames separated by commas"
-                  value={reviewers}
-                  disabled={busy}
-                  onChange={(e) => setReviewers(e.target.value)}
-                />
-              </FormField>
-              {(detail.pull.provider === 'github' || !detail.pull.provider) && (
-                <FormField label="Teams">
+          <div data-pull-action-body className="-mx-1 grid min-h-0 gap-4 overflow-y-auto px-1">
+            {kind === 'edit' && (
+              <>
+                <FormField label="Title">
                   <Input
-                    aria-label="Review teams"
-                    placeholder="Team slugs separated by commas"
-                    value={teams}
+                    aria-label="PR title"
+                    value={title}
                     disabled={busy}
-                    onChange={(e) => setTeams(e.target.value)}
+                    maxLength={300}
+                    onChange={(e) => setTitle(e.target.value)}
                   />
                 </FormField>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {operation === 'remove'
-                  ? 'Removes requests for the selected people'
-                  : 'Requests review from the selected people'}
-                {detail.pull.provider === 'github' ? ' and teams' : ''}. Other requests remain.
-              </p>
-            </>
-          )}
-          {(kind === 'merge' || (kind === 'auto-merge' && !detail.pull.autoMergeEnabled)) && (
-            <>
-              <p className="break-words text-sm">
-                {kind === 'auto-merge' ? 'Automatically merge' : 'Merge'}{' '}
-                <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
-              </p>
-              <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-medium">Repository merge status</h3>
-                  {mergeStatus?.headSha === scope.headSha && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={
-                        busy || mergeStatus.checks.busy || !mergeStatus.checks.readConnected
-                      }
-                      onClick={mergeStatus.checks.refresh}
-                    >
-                      <RefreshCw
-                        aria-hidden
-                        className={`size-3.5 ${mergeStatus.checks.busy ? 'animate-spin' : ''}`}
-                      />
-                      {mergeStatus.checks.busy
-                        ? 'Loading…'
-                        : mergeStatus.checks.error
-                          ? 'Retry checks'
-                          : mergeStatus.checks.ready
-                            ? 'Refresh checks'
-                            : 'Load checks'}
-                    </Button>
-                  )}
-                </div>
-                {mergeStatus?.headSha === scope.headSha ? (
-                  <>
-                    <Signal signal={mergeStatus.providerReadiness} />
-                    {currentFailures.length > 0 && (
-                      <ul
-                        aria-label="Current merge failures"
-                        className="space-y-1 text-xs text-status-error"
-                      >
-                        {failureLabels.map((failure) => (
-                          <li key={failure}>{failure}</li>
-                        ))}
-                      </ul>
-                    )}
-                    <Disclosure title="Status sources">
-                      <div className="pt-3">
-                        <PullStatusSources sources={mergeStatus.sources} />
-                      </div>
-                    </Disclosure>
-                    {mergeStatus.warnings.map((warning) => (
-                      <p
-                        key={warning}
-                        className="text-xs text-muted-foreground [overflow-wrap:anywhere]"
-                      >
-                        {warning}
-                      </p>
-                    ))}
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Status for reviewed commit {scope.headSha.slice(0, 8)} is not loaded. Close this
-                    dialog to review the current revision.
-                  </p>
+                <FormField label="Base branch">
+                  <Input
+                    aria-label="PR base branch"
+                    value={base}
+                    disabled={busy}
+                    onChange={(e) => setBase(e.target.value)}
+                  />
+                </FormField>
+              </>
+            )}
+            {kind === 'review' && (
+              <fieldset className="grid gap-3">
+                <legend className="mb-3 text-sm font-medium">Review decision</legend>
+                {detail.capabilities?.reviewDecisions.map((value) => (
+                  <label
+                    key={value}
+                    className="flex items-start gap-3 rounded-lg p-2 hover:bg-muted/30"
+                  >
+                    <input
+                      type="radio"
+                      name="review-decision"
+                      value={value}
+                      checked={event === value}
+                      disabled={busy}
+                      onChange={() => setEvent(value)}
+                      className="mt-1 accent-primary"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium">
+                        {value === 'approve'
+                          ? 'Approve'
+                          : value === 'request-changes'
+                            ? 'Request changes'
+                            : 'Comment'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {value === 'approve'
+                          ? 'Approve merging these changes.'
+                          : value === 'request-changes'
+                            ? 'Request changes before merging.'
+                            : 'Submit feedback without an approval decision.'}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {kind === 'reviewers' && (
+              <>
+                <FormField label="Reviewer action">
+                  <ChoicePicker
+                    aria-label="Reviewer action"
+                    value={operation}
+                    disabled={busy}
+                    onValueChange={(value) => {
+                      if (value === 'add' || value === 'remove') setOperation(value)
+                    }}
+                  >
+                    <option value="add">Request review</option>
+                    <option value="remove">Remove review request</option>
+                  </ChoicePicker>
+                </FormField>
+                <FormField label="Reviewers">
+                  <Input
+                    aria-label="Reviewers"
+                    placeholder="Usernames separated by commas"
+                    value={reviewers}
+                    disabled={busy}
+                    onChange={(e) => setReviewers(e.target.value)}
+                  />
+                </FormField>
+                {(detail.pull.provider === 'github' || !detail.pull.provider) && (
+                  <FormField label="Teams">
+                    <Input
+                      aria-label="Review teams"
+                      placeholder="Team slugs separated by commas"
+                      value={teams}
+                      disabled={busy}
+                      onChange={(e) => setTeams(e.target.value)}
+                    />
+                  </FormField>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {kind === 'auto-merge'
-                    ? 'Auto-merge waits for the provider’s requirements. Later commits may change these statuses.'
-                    : 'Review these statuses before confirming. The provider enforces repository requirements.'}
+                  {operation === 'remove'
+                    ? 'Removes requests for the selected people'
+                    : 'Requests review from the selected people'}
+                  {detail.pull.provider === 'github' ? ' and teams' : ''}. Other requests remain.
                 </p>
-              </section>
-              <FormField label="Merge method">
-                <ChoicePicker
-                  aria-label="Merge method"
-                  value={method}
-                  disabled={busy}
-                  onValueChange={(value) => {
-                    if (value === 'merge' || value === 'squash' || value === 'rebase')
-                      setMethod(value)
-                  }}
-                >
-                  {detail.capabilities?.mergeMethods.map((value) => (
-                    <option key={value} value={value}>
-                      {value === 'merge'
-                        ? 'Merge commit'
-                        : value === 'squash'
-                          ? 'Squash and merge'
-                          : 'Rebase and merge'}
-                    </option>
-                  ))}
-                </ChoicePicker>
-              </FormField>
-              <label className="flex items-start gap-2 text-xs leading-relaxed">
-                <Checkbox
-                  checked={confirmed}
-                  disabled={busy}
-                  onCheckedChange={(value) => setConfirmed(value === true)}
-                  aria-label={
-                    (detail.pull.provider === 'bitbucket'
-                      ? 'Confirm merge of current source branch'
-                      : 'Confirm merge of reviewed commit') +
-                    (currentFailures.length > 0
-                      ? `. Acknowledge current failures: ${failureLabels.join('; ')}`
-                      : '')
-                  }
-                />
-                <span>
-                  {kind === 'auto-merge' ? (
+              </>
+            )}
+            {(kind === 'merge' || (kind === 'auto-merge' && !detail.pull.autoMergeEnabled)) && (
+              <>
+                <p className="break-words text-sm">
+                  {kind === 'auto-merge' ? 'Automatically merge' : 'Merge'}{' '}
+                  <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
+                </p>
+                <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-medium">Repository merge status</h3>
+                    {mergeStatus?.headSha === scope.headSha && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={
+                          busy || mergeStatus.checks.busy || !mergeStatus.checks.readConnected
+                        }
+                        onClick={mergeStatus.checks.refresh}
+                      >
+                        <RefreshCw
+                          aria-hidden
+                          className={`size-3.5 ${mergeStatus.checks.busy ? 'animate-spin' : ''}`}
+                        />
+                        {mergeStatus.checks.busy
+                          ? 'Loading…'
+                          : mergeStatus.checks.error
+                            ? 'Retry checks'
+                            : mergeStatus.checks.ready
+                              ? 'Refresh checks'
+                              : 'Load checks'}
+                      </Button>
+                    )}
+                  </div>
+                  {mergeStatus?.headSha === scope.headSha ? (
                     <>
-                      I understand this PR will merge when GitHub’s requirements pass, including
-                      later commits pushed to this PR.
-                    </>
-                  ) : detail.pull.provider === 'bitbucket' ? (
-                    <>
-                      I confirm merging the current source branch. Studio checks viewed revision{' '}
-                      {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
-                      merged. Repository rules still apply.
+                      <Signal signal={mergeStatus.providerReadiness} />
+                      {currentFailures.length > 0 && (
+                        <ul
+                          aria-label="Current merge failures"
+                          className="space-y-1 text-xs text-status-error"
+                        >
+                          {failureLabels.map((failure) => (
+                            <li key={failure}>{failure}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <Disclosure title="Status sources">
+                        <div className="pt-3">
+                          <PullStatusSources sources={mergeStatus.sources} />
+                        </div>
+                      </Disclosure>
+                      {mergeStatus.warnings.map((warning) => (
+                        <p
+                          key={warning}
+                          className="text-xs text-muted-foreground [overflow-wrap:anywhere]"
+                        >
+                          {warning}
+                        </p>
+                      ))}
                     </>
                   ) : (
-                    <>
-                      I confirm merging reviewed commit {scope.headSha.slice(0, 8)}. Repository
-                      rules still apply.
-                    </>
+                    <p className="text-xs text-muted-foreground">
+                      Status for reviewed commit {scope.headSha.slice(0, 8)} is not loaded. Close
+                      this dialog to review the current revision.
+                    </p>
                   )}
-                  {currentFailures.length > 0 && (
-                    <> I also acknowledge the current failures: {failureLabels.join('; ')}.</>
-                  )}
-                </span>
-              </label>
-            </>
-          )}
-          {['comment', 'reply', 'review', 'edit', 'merge'].includes(kind) && (
-            <FormField
-              label={
-                kind === 'edit'
-                  ? 'Description'
-                  : kind === 'merge'
-                    ? 'Commit message (optional)'
-                    : kind === 'review' && !needsBody
-                      ? 'Review (optional)'
-                      : 'Comment'
-              }
-            >
-              {kind === 'merge' ? (
-                <Textarea
-                  placeholder="Optional commit message…"
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
-                  disabled={busy}
-                  rows={4}
-                />
-              ) : (
-                <PullMarkdownEditor
-                  placeholder={kind === 'edit' ? 'Describe this pull request…' : undefined}
-                  value={body}
-                  onChange={setBody}
-                  disabled={busy}
-                  baseURL={detail.pull.url}
-                />
-              )}
-            </FormField>
-          )}
-          {kind === 'close' && (
-            <p className="text-sm">Close this pull request without merging its changes?</p>
-          )}
-          {kind === 'draft' && (
-            <p className="text-sm">
-              {detail.pull.draft
-                ? 'Mark this pull request ready and notify its reviewers?'
-                : 'Return this pull request to draft while work continues?'}
-            </p>
-          )}
-          {kind === 'auto-merge' && detail.pull.autoMergeEnabled && (
-            <p className="text-sm">
-              Stop automatically merging this pull request when its requirements pass?
-            </p>
-          )}
-          {kind === 'reopen' && <p className="text-sm">Reopen this pull request for review?</p>}
-          {kind === 'resolve' && (
-            <p className="text-sm">
-              {comment?.resolved
-                ? 'Mark this review thread as needing attention again?'
-                : 'Mark this review thread as resolved?'}
-            </p>
-          )}
-          {error && (
-            <div role="alert" className="space-y-2 text-xs text-destructive">
-              <p>{error}</p>
-              <p>If the response was lost after submission, refresh the PR before retrying.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {kind === 'auto-merge'
+                      ? 'Auto-merge waits for the provider’s requirements. Later commits may change these statuses.'
+                      : 'Review these statuses before confirming. The provider enforces repository requirements.'}
+                  </p>
+                </section>
+                <FormField label="Merge method">
+                  <ChoicePicker
+                    aria-label="Merge method"
+                    value={method}
+                    disabled={busy}
+                    onValueChange={(value) => {
+                      if (value === 'merge' || value === 'squash' || value === 'rebase')
+                        setMethod(value)
+                    }}
+                  >
+                    {detail.capabilities?.mergeMethods.map((value) => (
+                      <option key={value} value={value}>
+                        {value === 'merge'
+                          ? 'Merge commit'
+                          : value === 'squash'
+                            ? 'Squash and merge'
+                            : 'Rebase and merge'}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                </FormField>
+                <label className="flex items-start gap-2 text-xs leading-relaxed">
+                  <Checkbox
+                    checked={confirmed}
+                    disabled={busy}
+                    onCheckedChange={(value) => setConfirmed(value === true)}
+                    aria-label={
+                      (detail.pull.provider === 'bitbucket'
+                        ? 'Confirm merge of current source branch'
+                        : 'Confirm merge of reviewed commit') +
+                      (currentFailures.length > 0
+                        ? `. Acknowledge current failures: ${failureLabels.join('; ')}`
+                        : '')
+                    }
+                  />
+                  <span>
+                    {kind === 'auto-merge' ? (
+                      <>
+                        I understand this PR will merge when GitHub’s requirements pass, including
+                        later commits pushed to this PR.
+                      </>
+                    ) : detail.pull.provider === 'bitbucket' ? (
+                      <>
+                        I confirm merging the current source branch. Studio checks viewed revision{' '}
+                        {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
+                        merged. Repository rules still apply.
+                      </>
+                    ) : (
+                      <>
+                        I confirm merging reviewed commit {scope.headSha.slice(0, 8)}. Repository
+                        rules still apply.
+                      </>
+                    )}
+                    {currentFailures.length > 0 && (
+                      <> I also acknowledge the current failures: {failureLabels.join('; ')}.</>
+                    )}
+                  </span>
+                </label>
+              </>
+            )}
+            {['comment', 'reply', 'review', 'edit', 'merge'].includes(kind) && (
+              <FormField
+                label={
+                  kind === 'edit'
+                    ? 'Description'
+                    : kind === 'merge'
+                      ? 'Commit message (optional)'
+                      : kind === 'review' && !needsBody
+                        ? 'Review (optional)'
+                        : 'Comment'
+                }
+              >
+                {kind === 'merge' ? (
+                  <Textarea
+                    placeholder="Optional commit message…"
+                    value={body}
+                    onChange={(event) => setBody(event.target.value)}
+                    disabled={busy}
+                    rows={4}
+                  />
+                ) : (
+                  <PullMarkdownEditor
+                    placeholder={kind === 'edit' ? 'Describe this pull request…' : undefined}
+                    value={body}
+                    onChange={setBody}
+                    disabled={busy}
+                    baseURL={detail.pull.url}
+                  />
+                )}
+              </FormField>
+            )}
+            {kind === 'close' && (
+              <p className="text-sm">Close this pull request without merging its changes?</p>
+            )}
+            {kind === 'draft' && (
+              <p className="text-sm">
+                {detail.pull.draft
+                  ? 'Mark this pull request ready and notify its reviewers?'
+                  : 'Return this pull request to draft while work continues?'}
+              </p>
+            )}
+            {kind === 'auto-merge' && detail.pull.autoMergeEnabled && (
+              <p className="text-sm">
+                Stop automatically merging this pull request when its requirements pass?
+              </p>
+            )}
+            {kind === 'reopen' && <p className="text-sm">Reopen this pull request for review?</p>}
+            {kind === 'resolve' && (
+              <p className="text-sm">
+                {comment?.resolved
+                  ? 'Mark this review thread as needing attention again?'
+                  : 'Mark this review thread as resolved?'}
+              </p>
+            )}
+          </div>
+          <div className="shrink-0 space-y-4 border-t pt-4">
+            {error && (
+              <div role="alert" className="space-y-2 text-xs text-destructive">
+                <p>{error}</p>
+                <p>If the response was lost after submission, refresh the PR before retrying.</p>
+              </div>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!valid || busy || !connected}>
+                {busy ? 'Submitting…' : label}
+              </Button>
             </div>
-          )}
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!valid || busy || !connected}>
-              {busy ? 'Submitting…' : label}
-            </Button>
           </div>
         </form>
       </DialogContent>

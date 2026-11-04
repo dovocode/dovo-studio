@@ -121,7 +121,7 @@ export function HostSettingsPage({
                 </ChoicePicker>
               )}
               {!source.connected && (
-                <span role="status" className="text-xs text-muted-foreground">
+                <span role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
                   Offline · edits kept here
                 </span>
               )}
@@ -131,14 +131,14 @@ export function HostSettingsPage({
       }
     >
       {!source ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[0.8125rem] leading-normal text-foreground/80">
           Connect a computer in Devices & runtime to change these settings.
         </p>
       ) : (
         <WorkspaceScope key={source.scope} profile={source.profile}>
           {!source.connected && (
             <div className="space-y-3">
-              <p role="status" className="text-xs text-muted-foreground">
+              <p role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
                 {source.name} is offline. Your unsaved edits are kept here. Reconnect to save
                 changes.
               </p>

@@ -241,9 +241,6 @@ export function PullRow({
                     aria-label="PR readiness"
                     title={pullNextStep(pull).label}
                   >
-                    {reviewRequested && (
-                      <span className="font-medium text-status-done">Your review requested</span>
-                    )}
                     {(pull.checksState !== undefined || pull.statusError) && (
                       <Signal
                         signal={{ ...ci, label: ci.label.replace(/^CI status:/, 'Repository CI:') }}
@@ -252,6 +249,9 @@ export function PullRow({
                     )}
                     {(pull.reviewDecision !== undefined || pull.statusError) && (
                       <Signal signal={pullReview(pull)} subtle />
+                    )}
+                    {reviewRequested && (
+                      <span className="font-medium text-status-done">Your review requested</span>
                     )}
                   </div>
                 )}

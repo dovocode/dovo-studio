@@ -161,7 +161,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           }}
         >
           {connected && baseline && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[0.8125rem] leading-normal text-foreground/80">
               Use Save changes to apply edits on this computer.
             </p>
           )}
@@ -243,7 +243,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               <SettingsGroup title="Agent access">
                 <SettingRow
                   label="Enable agent computer use on this computer"
-                  description="Writable agents share your desktop and app state. Read-only agents are excluded. Save changes to apply them to new turns."
+                  description="Writable agents share your desktop and app state. Read-only agents are excluded. Applies to new turns."
                 >
                   <Toggle
                     label="Enable agent computer use on this computer"
@@ -427,7 +427,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             saving={busy}
             disabled={!connected || !baseline}
             saved={saved}
-            description="Changes apply to new processes."
+            description={
+              computerUse
+                ? 'Executable changes apply to new processes; agent access applies to new turns.'
+                : 'Changes apply to new processes.'
+            }
             onSave={() => form.current?.requestSubmit()}
             onDiscard={() => {
               if (baseline) change(baseline)

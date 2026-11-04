@@ -3329,6 +3329,9 @@ a.studio-project-row:hover {
   border-radius: 10px;
   padding: 8px 12px;
 }
+.studio-work-list > .studio-collection-row + .studio-collection-row {
+  border-top-color: color-mix(in srgb, var(--border) 50%, transparent);
+}
 .studio-collection-row:not(.studio-selected-surface):not([aria-current='true']):not(
     :disabled
   ):hover {

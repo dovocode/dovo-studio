@@ -131,7 +131,7 @@ function DeviceHostSettings() {
   return (
     <div className="space-y-5">
       {connected && settings && !error && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[0.8125rem] leading-normal text-foreground/80">
           Device Hub and default host choices save immediately on this computer. Host edits use Save
           host.
         </p>
