@@ -169,6 +169,11 @@ function MemorySettings() {
   }
   return (
     <div className="space-y-5">
+      {ready && !error && (
+        <p className="text-xs text-muted-foreground">
+          Enable switches save automatically on this computer. Use Save note to apply note edits.
+        </p>
+      )}
       <SettingsGroup
         title="Agent memory"
         description="Each scope is enabled independently. Notes stay on this computer and survive thread deletion."

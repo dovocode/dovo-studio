@@ -850,9 +850,9 @@ function PullDetailContent({
                 detail={detail}
               >
                 {repositorySource && (
-                  <div className="mb-4">
+                  <section aria-label="Repository CI" className="mb-4 rounded-xl border px-4 py-3">
                     <PullStatusSources sources={[repositorySource]} />
-                  </div>
+                  </section>
                 )}
                 {checksOpened && repository && (
                   <PullPipelineRunsContent

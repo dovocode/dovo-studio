@@ -830,6 +830,25 @@ try {
     }
   }
   assert.equal(await page.evaluate(() => window.writes.length), writesBeforeGeometry)
+  const changedFiles = page.getByRole('region', { name: 'Changed files', exact: true })
+  const scrollCue = page.getByText('Scroll to view more files', { exact: true })
+  const endCue = page.getByText('End of changed files', { exact: true })
+  await state({}, [
+    { path: 'small.ts', gitStatus: { index: 'modified', workingTree: 'unchanged' } },
+  ])
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.waitForFunction(() => {
+    const region = document.querySelector('[aria-label="Changed files"]')
+    return region.scrollHeight <= region.clientHeight && !region.hasAttribute('aria-describedby')
+  })
+  assert.equal(await scrollCue.count(), 0, 'A list that fits does not invite unnecessary scrolling')
+  assert.equal(await endCue.count(), 0)
+  await page.setViewportSize({ width: 1440, height: 240 })
+  await scrollCue.waitFor()
+  assert.ok(await changedFiles.getAttribute('aria-describedby'))
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await scrollCue.waitFor({ state: 'detached' })
+  assert.equal(await changedFiles.getAttribute('aria-describedby'), null)
   // Both modest and dense change lists leave the entire commit form in view when the dialog
   // opens. Scrolling the shared file list never moves its message, target or submit actions.
   for (const count of [2, 40]) {
@@ -851,10 +870,11 @@ try {
         await page.locator('[data-repository-actions-viewport]').evaluate((element) => {
           element.scrollTop = 0
         })
-        const changedFiles = page.getByRole('region', { name: 'Changed files', exact: true })
         await changedFiles.evaluate((element) => {
           element.scrollTop = 0
         })
+        await scrollCue.waitFor()
+        const cueBox = await scrollCue.boundingBox()
         const viewport = await page.locator('[data-repository-actions-viewport]').boundingBox()
         const form = message.locator('xpath=ancestor::form')
         const formBox = await form.boundingBox()
@@ -870,6 +890,17 @@ try {
         await changedFiles.evaluate((element) => {
           element.scrollTop = element.scrollHeight
         })
+        await endCue.waitFor()
+        assert.deepEqual(
+          await endCue.boundingBox(),
+          cueBox,
+          'The continuation cue keeps a fixed footprint',
+        )
+        assert.deepEqual(await form.boundingBox(), formBox)
+        await changedFiles.evaluate((element) => {
+          element.scrollTop = 0
+        })
+        await scrollCue.waitFor()
         assert.deepEqual(await form.boundingBox(), formBox)
         await page
           .getByRole('checkbox', { name: `Select src/changed-${count - 1}.ts`, exact: true })

@@ -125,7 +125,7 @@ try {
   await list.getByRole('button', { name: 'Authored by me', exact: true }).waitFor()
   assert.equal(await list.getByText(/loaded pull requests?/).count(), 0)
   await row('Improve pull request reviews')
-    .getByText('CI status: passed', { exact: true })
+    .getByText('Repository CI: passed', { exact: true })
     .waitFor()
   const avatar = row('Improve pull request reviews').locator('img')
   assert.equal(await avatar.getAttribute('src'), 'https://avatars.example/dominic.png')
@@ -350,6 +350,14 @@ try {
   await mergeReadiness.getByText('Waiting for required reviews', { exact: true }).waitFor()
   const statusDisclosure = mergeReadiness.locator('details').filter({ hasText: 'Status sources' })
   assert.equal(await statusDisclosure.getAttribute('open'), null)
+  const currentMergeFailures = mergeReadiness.getByRole('list', { name: 'Current merge failures' })
+  await currentMergeFailures.getByText('Linked pipelines: 1 failed', { exact: true }).waitFor()
+  assert.equal(await currentMergeFailures.getByRole('listitem').count(), 1)
+  assert.equal(
+    await mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true }).isDisabled(),
+    true,
+    'Visible failures do not bypass the acknowledgement guard',
+  )
   await mergeReadiness.getByRole('button', { name: 'Refresh checks', exact: true }).click()
   assert.equal(await page.evaluate(() => window.checkRefreshes), 1)
   assert.equal(await statusDisclosure.getByText('1 failed', { exact: true }).isVisible(), false)
@@ -634,13 +642,15 @@ try {
   )
   await checksTab.click()
   const checkPanel = detail.locator('#pr-panel-checks')
-  const repositoryCI = checkPanel.getByLabel('Status sources', { exact: true })
+  const repositoryCI = checkPanel.getByRole('region', { name: 'Repository CI', exact: true })
   const pipelineSection = checkPanel.getByRole('region', { name: 'Pull request pipeline runs' })
   const reportsSection = checkPanel
     .locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Check reports 1', exact: true }) })
   await sourceValue(repositoryCI, 'Repository CI', 'passed').waitFor()
   assert.equal(await repositoryCI.locator('dt').count(), 1)
+  assert.equal(await repositoryCI.getByText('Tests', { exact: true }).count(), 0)
+  assert.equal(await repositoryCI.getByText('Pipeline build', { exact: true }).count(), 0)
   assert.equal(
     await checkPanel.getByRole('heading', { name: 'Status sources', exact: true }).count(),
     0,
@@ -648,6 +658,12 @@ try {
   await pipelineSection
     .getByRole('heading', { name: 'Linked pipeline runs', exact: true })
     .waitFor()
+  const repositoryCIBox = await repositoryCI.boundingBox()
+  const pipelineBox = await pipelineSection.boundingBox()
+  assert.ok(
+    repositoryCIBox.y + repositoryCIBox.height <= pipelineBox.y,
+    'Repository CI occupies its own section before linked pipeline runs',
+  )
   await pipelineSection.getByText('Pipeline build', { exact: true }).waitFor()
   await pipelineSection.getByText('Failed', { exact: true }).waitFor()
   await pipelineSection.getByRole('button', { name: 'Refresh runs', exact: true }).click()
@@ -696,6 +712,10 @@ try {
   const unavailableMerge = page.getByRole('dialog')
   await unavailableMerge.getByText('Reports unavailable', { exact: true }).waitFor()
   assert.equal(await unavailableMerge.locator('details').getAttribute('open'), null)
+  await unavailableMerge
+    .getByRole('list', { name: 'Current merge failures' })
+    .getByText('Linked pipelines: 1 failed', { exact: true })
+    .waitFor()
   await unavailableMerge.getByRole('button', { name: 'Retry checks', exact: true }).click()
   assert.equal(await page.evaluate(() => window.checkRefreshes), 2)
   await unavailableMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -900,6 +920,19 @@ try {
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
   const autoDialog = page.getByRole('dialog')
+  assert.equal(await autoDialog.locator('details').getAttribute('open'), null)
+  const autoFailures = autoDialog.getByRole('list', { name: 'Current merge failures' })
+  for (const failure of [
+    'Check reports: 1 failed',
+    'Linked pipelines: 1 failed',
+    'Repository CI: failed',
+  ])
+    await autoFailures.getByText(failure, { exact: true }).waitFor()
+  assert.equal(await autoFailures.getByRole('listitem').count(), 3)
+  assert.equal(
+    await autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true }).isDisabled(),
+    true,
+  )
   await autoDialog.locator('summary').filter({ hasText: 'Status sources' }).click()
   for (const [name, value] of [
     ['Repository CI', 'failed'],

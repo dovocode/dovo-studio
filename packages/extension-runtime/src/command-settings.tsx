@@ -160,6 +160,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               .finally(() => setBusy(false))
           }}
         >
+          {connected && baseline && (
+            <p className="text-xs text-muted-foreground">
+              Use Save changes to apply edits on this computer.
+            </p>
+          )}
           <fieldset disabled={busy || !connected} className="space-y-5">
             {(computerUse
               ? [{ title: 'Cua Driver', ids: ['cua'] }]

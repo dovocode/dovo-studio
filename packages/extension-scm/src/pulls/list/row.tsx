@@ -34,6 +34,7 @@ export function PullRow({
   selectionCount?: number
 }) {
   const [error, setError] = useApplicationState('')
+  const ci = pullChecks(pull)
   const hasStatus =
     pull.checksState !== undefined || pull.reviewDecision !== undefined || !!pull.statusError
   const reviewRequested = pull.state === 'open' && !pull.draft && pull.viewerReviewRequested
@@ -244,7 +245,10 @@ export function PullRow({
                       <span className="font-medium text-status-done">Your review requested</span>
                     )}
                     {(pull.checksState !== undefined || pull.statusError) && (
-                      <Signal signal={pullChecks(pull)} subtle />
+                      <Signal
+                        signal={{ ...ci, label: ci.label.replace(/^CI status:/, 'Repository CI:') }}
+                        subtle
+                      />
                     )}
                     {(pull.reviewDecision !== undefined || pull.statusError) && (
                       <Signal signal={pullReview(pull)} subtle />

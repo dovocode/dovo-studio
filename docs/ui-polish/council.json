@@ -652,7 +652,7 @@
       "round": "independent48",
       "model": "Muse muse-wonder-full-1.0",
       "id": "d454cc37-5975-40b0-b8d4-de5bdaae9258",
-      "score": 8.0,
+      "score": 8,
       "verdict": "ship; no visible blockers",
       "gallery": 48,
       "coverage": "All21 contact sheets inventoried; about40 full-size frames. Static visual review; interaction behavior not inferred from stills."
@@ -769,10 +769,64 @@
       "verdict": "ship",
       "coverage": "52 exact frames reported,26 per theme;correct318 ordinary and18 compact dimensions.",
       "summary": "No blockers; praises Settings and confirms previous fixes. Suggestions include disabled commit reason and persistent Agent identity. Merge-consent/check-count quotes do not match exact cited frames/source; branch-icon removal conflicts with KEEP requirements."
+    },
+    {
+      "round": "independent52",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent52_sol_a",
+      "score": 8.4,
+      "verdict": "ship",
+      "coverage": "60 full-size frames,30 per theme",
+      "summary": "Ship; save timing gaps on titles/commands/Device Hub, Git inner scroll cue and redundant scope/Browser wording."
+    },
+    {
+      "round": "independent52",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent52_sol_b",
+      "score": 8.4,
+      "verdict": "ship",
+      "coverage": "72 full-size frames,36 per theme;all18 compact frames",
+      "summary": "Ship; Computer use explicit-save guidance, Git inner overflow cue, offline Agent recovery and optional persistent profile identity."
+    },
+    {
+      "round": "independent52",
+      "model": "GPT-6.1 Sol high",
+      "id": "/root/independent52_sol_c",
+      "score": 8.5,
+      "verdict": "ship",
+      "coverage": "64 full-size frames,32 per theme;all22 contacts triaged",
+      "summary": "Ship; inner Git scroll differentiation, optional model-concept help and Computer use instruction scanability."
+    },
+    {
+      "round": "independent52",
+      "model": "Opus 5.5",
+      "id": "ee5b2dc2-f075-42c7-b81e-7bfe9583d4fe",
+      "score": 8.3,
+      "verdict": "ship",
+      "coverage": "46 full-size frames,21 dark/25 light",
+      "summary": "Ship; mixed PR local/computer target placement, inner Git scroll cue, Computer use save line and PR status source framing."
+    },
+    {
+      "round": "independent52",
+      "model": "Opus 5.5",
+      "id": "81b36911-9d3c-48ef-8d7f-b58d0b693813",
+      "score": 8.2,
+      "verdict": "ship",
+      "coverage": "52 full-size frames,26 per theme",
+      "summary": "Ship; remaining computer save cues, visible failure sources before acknowledgement, consistent Repository CI label and Git continuation."
+    },
+    {
+      "round": "independent52",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "c7b9ded0-6755-4d5c-a668-49718fc50125",
+      "score": 8,
+      "verdict": "ship",
+      "coverage": "60 full-size frames,30 per theme",
+      "summary": "Ship; Computer use/Device previews/runtime save summaries, Git continuation and preference for stronger legacy disabled treatment. Confirms scrim/dividers/crop dimming and prior fixes."
     }
   ],
   "remaining": [
-    "Complete independent gallery52 council review and verify material findings against matching evidence",
+    "Obtain fresh independent gallery53 approval",
     "Finish PR #50 after council quality gate"
   ],
   "approvalTarget": {
@@ -782,12 +836,12 @@
     "reason": "Dominic changed the target to Opus 9/10."
   },
   "gallery": {
-    "round": 52,
+    "round": 53,
     "captures": 340,
-    "corePass": 52,
-    "dialogPass": 52,
-    "settingsPass": 52,
-    "note": "170 paired surfaces, including9 compact1100x960 pairs and offline Agents/defaults.128 main entries and158 dialog entries,no capture errors/alerts. Source and exact screenshots frozen for fresh3Sol/2Opus/Muse reviews without earlier or target ratings."
+    "corePass": 53,
+    "dialogPass": 53,
+    "settingsPass": 53,
+    "note": "170 paired surfaces.68 affected states recaptured for save cues, mixed Settings ownership, offline recovery, Git continuation and PR source visibility;272 unaffected states retained from52. Manifest records refreshed filenames and provenance. No errors/alerts; lossless exports/canvas/crop parity verified. Matching source53 frozen."
   },
   "unavailableReviews": [
     {
@@ -849,46 +903,46 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent52",
+      "round": "independent53",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent52_sol_a",
+      "id": "/root/independent53_sol_a",
       "status": "running",
-      "gallery": 52
+      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
     },
     {
-      "round": "independent52",
+      "round": "independent53",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent52_sol_b",
+      "id": "/root/independent53_sol_b",
       "status": "running",
-      "gallery": 52
+      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
     },
     {
-      "round": "independent52",
+      "round": "independent53",
       "model": "GPT-6.1 Sol high",
-      "id": "/root/independent52_sol_c",
+      "id": "/root/independent53_sol_c",
       "status": "running",
-      "gallery": 52
+      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
     },
     {
-      "round": "independent52",
+      "round": "independent53",
       "model": "Opus 5.5",
-      "id": "ee5b2dc2-f075-42c7-b81e-7bfe9583d4fe",
+      "id": "05ec982c-1273-4848-9131-daa20e8f2208",
       "status": "running",
-      "gallery": 52
+      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
     },
     {
-      "round": "independent52",
+      "round": "independent53",
       "model": "Opus 5.5",
-      "id": "81b36911-9d3c-48ef-8d7f-b58d0b693813",
+      "id": "d1d45787-4a50-40d4-baa6-4a355b2ee734",
       "status": "running",
-      "gallery": 52
+      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
     },
     {
-      "round": "independent52",
+      "round": "independent53",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "c7b9ded0-6755-4d5c-a668-49718fc50125",
+      "id": "bc90022b-9bfa-4eac-bc62-c84438ba9024",
       "status": "running",
-      "gallery": 52
+      "brief": "Fresh context; frozen gallery53 and matching source53, constraints and findings only. No previous or target scores."
     }
   ],
   "queuedReviews": [
@@ -958,6 +1012,11 @@
       "round": "pass52",
       "summary": "Dense Git uses one bounded, keyboard-focusable changed-files region so commit target/message/actions remain discoverable at supported desktop sizes; selection and preview/staging semantics retained. Settings save hints use selected source capability/connection; one persistent offline context stays above aligned pickers, and offline Agent empty lists no longer claim loading. Mixed device pages name explicit-save exceptions; immediate computer forms explain autosave/text-field timing and show errors near first controls. Service URL reset remains draft-only with explicit save wording. Distinct navigation icons and Repositories & workspaces heading preserve all pages/groups. Added both-theme offline Agent/defaults evidence.",
       "verification": "Production web/desktop builds and all affected package types passed. Managed Chromium installed. Repository actions/project-panel/mobile Git, Settings target desktop/mobile, scoped Agents wide/compact/mobile, General Settings, runtime preferences and service URL browser suites passed, including failure/retry, explicit submit/draft/origin isolation, selected-source/legacy/offline/save and draft-navigation guards. Scoped lint/format and diff checks passed."
+    },
+    {
+      "round": "pass53",
+      "summary": "Initial explicit-save instructions for Computer use/CLI/titles, immediate/explicit boundaries for Device Hub/Memory and runtime summary. Device-local PR defaults render before the computer-specific target and immediate-save forms; Browser save explanation occurs once. Offline Agents links to Devices & runtime. Git inner list measures actual overflow, names continuation/end without shifting commit form. PR CI source named Repository CI in rows, separate bordered source on Checks; current failures visible before collapsed merge-source details, retaining acknowledgement identity/reset/guard/payload behavior.",
+      "verification": "Production web/desktop builds, affected package types, scoped lint/format/diff passed. Managed Chromium; Computer use web/mobile, titles, Device Hub, runtime/memory, PR list/workspace, Settings/Agents and repository-actions browser suites passed. Covers overflow/no-overflow/resize/stationary commit form, ownership/order/local writes, offline navigation, CI separation and merge guard/payload regressions.68 affected frames refreshed in a340-frame gallery, no alerts/errors; pixel equality and #080808 verified."
     }
   ],
   "designConsultations": [
@@ -1029,6 +1088,11 @@
       "round": "independent51",
       "finding": "Muse51 merge consent success/failure conflation",
       "result": "Not reproduced. Exact pr-merge-dark says I confirm merging reviewed commit… I also acknowledge the current failures: Linked pipelines:1 failed;Repository CI:failed. It contains no Succeeded clause. Source derives failureLabels only from currentFailures. Cited 6-report count also does not match exact fixture. No consent patch applied."
+    },
+    {
+      "round": "independent52",
+      "finding": "CI names are three names for one signal",
+      "result": "Partly valid. PR row and Checks both present provider CI summary and can use Repository CI consistently. Repository merge status is the provider merge verdict, which also considers review/mergeability; do not rename or conflate it with CI. Add separate source card and visible failure list while preserving existing independent source/acknowledgement guards."
     }
   ]
 }

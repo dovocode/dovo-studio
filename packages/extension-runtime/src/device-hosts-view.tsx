@@ -130,6 +130,12 @@ function DeviceHostSettings() {
   }
   return (
     <div className="space-y-5">
+      {connected && settings && !error && (
+        <p className="text-xs text-muted-foreground">
+          Device Hub and default host choices save immediately on this computer. Host edits use Save
+          host.
+        </p>
+      )}
       <SettingsGroup
         title="Device Hub"
         description="Optional device previews and controls on this runtime. Off by default."

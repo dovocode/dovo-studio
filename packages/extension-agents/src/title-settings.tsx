@@ -160,6 +160,10 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 .finally(() => setBusy(false))
             }}
           >
+            <p className="text-xs text-muted-foreground">
+              Use {selection ? 'Save selection model' : 'Save title settings'} to apply edits on
+              this computer.
+            </p>
             <fieldset disabled={busy || !connected} className="min-w-0 space-y-4">
               <FormField layout="settings" label="Provider">
                 <ChoicePicker

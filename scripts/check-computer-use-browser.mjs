@@ -109,6 +109,16 @@ createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><A
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByText('1. Install on this computer', { exact: true }).waitFor()
+    const saveGuidance = page.getByText('Use Save changes to apply edits on this computer.', {
+      exact: true,
+    })
+    if (!mobile) {
+      await saveGuidance.waitFor()
+      const guidanceBox = await saveGuidance.boundingBox()
+      const firstFieldBox = await page.getByLabel('Cua Driver executable').boundingBox()
+      assert.ok(guidanceBox && firstFieldBox)
+      assert.ok(guidanceBox.y + guidanceBox.height <= firstFieldBox.y)
+    }
     assert.equal(await page.getByLabel('Git executable').count(), 0)
     assert.equal(
       await page.getByRole('button', { name: 'Enable Computer History', exact: true }).count(),
@@ -234,7 +244,9 @@ createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><A
       await page
         .getByText('Reconnect this computer to change command settings.', { exact: true })
         .waitFor()
+      assert.equal(await saveGuidance.count(), 0)
       await page.evaluate(() => window.setConnection(true))
+      await saveGuidance.waitFor()
       await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
       assert.equal(
         await page.getByRole('button', { name: 'Save changes', exact: true }).isEnabled(),
@@ -297,6 +309,13 @@ createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><A
     }
     await page.getByRole('button', { name: 'Switch settings page', exact: true }).click()
     await page.getByLabel('Git executable').waitFor()
+    if (!mobile) {
+      await saveGuidance.waitFor()
+      const guidanceBox = await saveGuidance.boundingBox()
+      const firstFieldBox = await page.getByLabel('Terminal shell').boundingBox()
+      assert.ok(guidanceBox && firstFieldBox)
+      assert.ok(guidanceBox.y + guidanceBox.height <= firstFieldBox.y)
+    }
     assert.equal(
       await page.getByRole('button', { name: 'Enable Computer History', exact: true }).count(),
       0,

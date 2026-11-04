@@ -929,7 +929,7 @@ try {
   )
   await page
     .getByText(
-      'Preview defaults save automatically on this device. Save profile edits with each profile’s Save button. Remote profiles and logins stay on the selected computer.',
+      'Configure previews and browsing profiles. Remote profiles and logins stay on the selected computer.',
       { exact: true },
     )
     .waitFor()
@@ -990,13 +990,34 @@ try {
     '0px',
     'Computer target does not nest a second divider inside the toolbar',
   )
+  const localPullDefaults = page
+    .getByRole('heading', { name: 'Creating and merging · This device', exact: true })
+    .locator('xpath=ancestor::section[1]')
+  const localDefaultsBox = await localPullDefaults.boundingBox()
+  const hostToolbarBox = await page.locator('.studio-settings-toolbar').boundingBox()
+  assert.ok(
+    localDefaultsBox.y + localDefaultsBox.height <= hostToolbarBox.y,
+    'Device-local PR defaults precede the computer selector and its settings',
+  )
+  assert.equal(
+    await localPullDefaults.evaluate((node) =>
+      Boolean(
+        node.compareDocumentPosition(document.querySelector('.studio-settings-toolbar')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ),
+    true,
+    'Reading order preserves the same device/computer ownership boundary',
+  )
 
   assert.equal(
     await page.getByText('This device · saved automatically', { exact: true }).count(),
     0,
   )
+  const writesBeforeLocalPullDefaults = await page.evaluate(() => window.writes.length)
   await choose('Merge method', 'Squash and merge')
   assert.equal(await preference('mergeMethod'), 'squash')
+  assert.equal(await page.evaluate(() => window.writes.length), writesBeforeLocalPullDefaults)
   await openLocal('Review & diffs')
   await choose('Default diff layout', 'Split (side by side)')
   await choose('Changes within a line', 'Characters')

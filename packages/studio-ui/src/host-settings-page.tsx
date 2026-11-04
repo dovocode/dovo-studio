@@ -81,6 +81,7 @@ export function HostSettingsPage({
     <SettingsPage
       title={title}
       description={description}
+      beforeToolbar={localSettings}
       toolbar={
         source && (
           <div className="studio-settings-target">
@@ -129,7 +130,6 @@ export function HostSettingsPage({
         )
       }
     >
-      {localSettings}
       {!source ? (
         <p className="text-xs text-muted-foreground">
           Connect a computer in Devices & runtime to change these settings.

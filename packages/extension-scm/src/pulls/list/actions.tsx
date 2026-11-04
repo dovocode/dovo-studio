@@ -646,6 +646,16 @@ function PullActionDialog({
                 {mergeStatus?.headSha === scope.headSha ? (
                   <>
                     <Signal signal={mergeStatus.providerReadiness} />
+                    {currentFailures.length > 0 && (
+                      <ul
+                        aria-label="Current merge failures"
+                        className="space-y-1 text-xs text-status-error"
+                      >
+                        {failureLabels.map((failure) => (
+                          <li key={failure}>{failure}</li>
+                        ))}
+                      </ul>
+                    )}
                     <Disclosure title="Status sources">
                       <div className="pt-3">
                         <PullStatusSources sources={mergeStatus.sources} />

@@ -665,6 +665,16 @@ try {
         'Offline sources keep target navigation available',
       )
       assert.equal(await environment.isEnabled(), true)
+      await page.evaluate(() => {
+        window.navigation = null
+      })
+      const offlineRecovery = page.getByRole('button', {
+        name: 'Open Devices & runtime',
+        exact: true,
+      })
+      await assertUnobstructed(offlineRecovery)
+      await offlineRecovery.click()
+      assert.deepEqual(await page.evaluate(() => window.navigation), { viewId: 'runtime' })
       assert.equal(await page.evaluate(() => window.writes.length), writesBeforeUpgrade)
     }
     assert.deepEqual(errors, [])

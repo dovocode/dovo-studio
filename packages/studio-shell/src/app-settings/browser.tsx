@@ -451,7 +451,7 @@ export default function BrowserSettings() {
   return (
     <SettingsPage
       title="Browser"
-      description="Preview defaults save automatically on this device. Save profile edits with each profile’s Save button. Remote profiles and logins stay on the selected computer."
+      description="Configure previews and browsing profiles. Remote profiles and logins stay on the selected computer."
       storageInfo={<span>This device · preferences save automatically; profiles use Save</span>}
     >
       <DefaultBrowser />

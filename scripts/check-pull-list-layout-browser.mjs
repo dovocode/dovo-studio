@@ -213,7 +213,7 @@ try {
         await readiness.getByText('Your review requested', { exact: true }).waitFor()
         await readiness.getByText('Changes requested', { exact: true }).waitFor()
         await first.getByText('Stack 2/3 · #6', { exact: true }).waitFor()
-        const failure = readiness.getByText('CI status: failed', { exact: true })
+        const failure = readiness.getByText('Repository CI: failed', { exact: true })
         assert.notEqual(
           await failure.evaluate((node) => getComputedStyle(node).color),
           await failure.locator('svg').evaluate((node) => getComputedStyle(node).color),
@@ -396,7 +396,9 @@ try {
             )
             window.render()
           })
-          await first.getByText('CI status: failed', { exact: true }).waitFor({ state: 'detached' })
+          await first
+            .getByText('Repository CI: failed', { exact: true })
+            .waitFor({ state: 'detached' })
           assert.equal(
             await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns),
             columns,

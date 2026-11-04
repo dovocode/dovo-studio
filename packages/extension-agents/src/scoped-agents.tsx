@@ -443,6 +443,11 @@ export function ScopedAgents({
                     ? 'Check the error below, then reload.'
                     : 'Reading saved profiles for this level.'}
               </p>
+              {!connected && (
+                <Button variant="outline" size="sm" onClick={onOpenRuntime}>
+                  Open Devices & runtime
+                </Button>
+              )}
             </div>
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center gap-2 text-center">

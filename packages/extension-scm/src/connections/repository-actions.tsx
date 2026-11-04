@@ -3,7 +3,16 @@ import { RuntimeRequestError } from '@dovo/protocol'
 import type { Schema } from 'effect'
 import { CreateGithub } from './create-github'
 import { StagingFilePreview } from './staging-file-preview'
-import { useEffect, useEffectEvent, useId, useRef } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { branchesSchema, clientScopeKey, encodeWorkTarget } from '@dovo/studio-core'
 import { BranchPicker } from '@dovo/studio-ui'
@@ -102,6 +111,56 @@ function FileIdentity({ path, status }: { path: string; status: string }) {
       )}
       <span className="mt-0.5 block text-muted-foreground">{status}</span>
     </span>
+  )
+}
+
+function ChangedFiles({ children }: { children: ReactNode }) {
+  const viewport = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  const descriptionId = useId()
+  const [continuation, setContinuation] = useState<'none' | 'below' | 'end'>('none')
+  useLayoutEffect(() => {
+    const frame = viewport.current
+    const body = content.current
+    if (!frame || !body) return
+    const measure = () => {
+      const overflow = frame.scrollHeight - frame.clientHeight
+      setContinuation(overflow <= 2 ? 'none' : overflow - frame.scrollTop > 2 ? 'below' : 'end')
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(frame)
+    observer.observe(body)
+    frame.addEventListener('scroll', measure, { passive: true })
+    measure()
+    return () => {
+      observer.disconnect()
+      frame.removeEventListener('scroll', measure)
+    }
+  }, [])
+  return (
+    <div className="space-y-1">
+      <div
+        ref={viewport}
+        role="region"
+        aria-label="Changed files"
+        aria-describedby={continuation !== 'none' ? descriptionId : undefined}
+        tabIndex={0}
+        className="max-h-[min(26dvh,16rem)] overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div ref={content} className="space-y-3">
+          {children}
+        </div>
+      </div>
+      {continuation !== 'none' && (
+        <p
+          id={descriptionId}
+          className="flex h-5 items-center justify-center gap-1 text-xs text-muted-foreground"
+        >
+          {continuation === 'below' && <ChevronDown className="size-3" aria-hidden="true" />}
+          {continuation === 'below' ? 'Scroll to view more files' : 'End of changed files'}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -336,12 +395,7 @@ function CheckoutActions({
           </p>
         ) : files.length ? (
           <div className="space-y-3">
-            <div
-              role="region"
-              aria-label="Changed files"
-              tabIndex={0}
-              className="max-h-[min(26dvh,16rem)] space-y-3 overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
+            <ChangedFiles>
               <section aria-label="Staged" className="overflow-hidden rounded-lg border">
                 <h4 className="border-b bg-muted/30 px-3 py-2 text-xs font-medium">
                   Staged · {stagedCount}
@@ -517,7 +571,7 @@ function CheckoutActions({
                     </section>
                   ),
               )}
-            </div>
+            </ChangedFiles>
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {selected.length} {selected.length === 1 ? 'file' : 'files'} selected

@@ -35,12 +35,13 @@ control styles make the workspace and its secondary surfaces feel consistent.
   name their explicit-save exceptions, and computer forms explain automatic-save timing.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
-  desktop sizes. Commit controls show the inspected branch/checkout; readable filenames retain
-  full-path tooltips. Per-file comparisons are read-only, offer Previous/Next within their
-  comparison group, and preserve Back/draft/selection context. Push reflects branch tracking. PR
-  lists reserve a responsive readiness column and keep the target branch visible. Issues keep stable
-  Open/Closed filters. Merge readiness separates repository status, check reports and linked
-  pipelines; failure consent is visible, accessible and invalidated by status changes.
+  desktop sizes; its own continuation cue explains hidden files. Commit controls show the inspected
+  branch/checkout; readable filenames retain full-path tooltips. Per-file comparisons are read-only,
+  offer Previous/Next within their comparison group, and preserve Back/draft/selection context. Push
+  reflects branch tracking. PR lists reserve a responsive readiness column and keep the target
+  branch visible. Issues keep stable Open/Closed filters. Merge readiness separates repository
+  status, check reports and linked pipelines; failure consent is visible, accessible and invalidated
+  by status changes.
 - **Dialogs and images:** shared themed confirmations preserve Cancel/return focus, drafts and
   queued decisions, and reject stale runtime/caller/target decisions. MCP details scroll without
   losing consent. Project-deletion blockers provide a safe route to active work. Image
@@ -52,7 +53,9 @@ control styles make the workspace and its secondary surfaces feel consistent.
 The gallery contains **340 actual app captures across 170 surfaces**, each in dark and light,
 including 1100px compact layouts, dense lists, edited Agent forms, long Git comparisons, open
 controls and follow-up/image dialogs. Checked-in WebPs are lossless conversions, verified
-pixel-for-pixel against the PNGs. Six earlier comparisons remain below.
+pixel-for-pixel against the PNGs. The latest pass recaptures 68 affected states; 272 unaffected
+states remain from the preceding gallery. The frozen manifest lists refreshed filenames and
+provenance. Six earlier comparisons remain below.
 
 Captures use production components with schema-checked synthetic data and blocked account/runtime
 writes. Dense lists contain 14 rows; some other collections intentionally show empty states. The

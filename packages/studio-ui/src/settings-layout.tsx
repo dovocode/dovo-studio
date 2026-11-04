@@ -15,6 +15,7 @@ export function SettingsPage({
   children,
   local = false,
   storageInfo,
+  beforeToolbar,
   toolbar,
   wide = false,
 }: {
@@ -23,6 +24,7 @@ export function SettingsPage({
   children: ReactNode
   local?: boolean
   storageInfo?: ReactNode
+  beforeToolbar?: ReactNode
   toolbar?: ReactNode
   wide?: boolean
 }) {
@@ -68,6 +70,7 @@ export function SettingsPage({
               </div>
             )}
           </div>
+          {beforeToolbar}
           {toolbar && (
             <div className="studio-settings-toolbar sticky top-[calc(-1*var(--studio-settings-scroll-padding))] z-20 bg-background">
               {toolbar}

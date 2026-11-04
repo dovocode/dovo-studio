@@ -50,6 +50,9 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
     <SettingsPage
       title="Devices & runtime"
       description="Connect computers and phones, manage trusted devices and check runtime health."
+      storageInfo={
+        <span>Computer settings stay on each computer. Service URLs use Save on this device.</span>
+      }
     >
       {threadConnection && (
         <section className="studio-settings-group space-y-3 border-b border-border/50 pb-5">
