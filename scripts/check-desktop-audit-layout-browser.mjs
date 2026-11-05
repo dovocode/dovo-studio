@@ -376,7 +376,8 @@ try {
       await show('rows', { long: true, unread })
       await page.waitForFunction(
         (expected) =>
-          Number(getComputedStyle(document.querySelector('.studio-thread-card')).opacity) === expected,
+          Number(getComputedStyle(document.querySelector('.studio-thread-card')).opacity) ===
+          expected,
         unread ? 1 : 0.6,
       )
       const contrast = await page.locator('.group\\/task').evaluate((element) => {
