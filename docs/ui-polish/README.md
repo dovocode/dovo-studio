@@ -85,15 +85,25 @@ native Browser bridge is simulated. Terminal uses the production worker/renderer
 WebSocket replay. Long Git fixture patches include full-file context. These are verification limits,
 not evidence of live Electron, provider, account or terminal execution behavior.
 
-Independent council review is **in progress**, and the revised9/10 design approval target has not
-been met. Final reviewers receive frozen screenshots, matching source and
-[interaction evidence](interaction-evidence.md). The revised target is9/10, with honest scoring and
-no previous ratings supplied. [council.json](council.json) records assessments, coverage and
-provider limitations. Council60 returned9/10 from two Sol reviewers, one Opus reviewer and Muse; the
-other Sol reviewer scored8.8 for accessible merge consent, and the other Opus reviewer scored8.5 for
-Settings scope/save presentation. Those findings are addressed in the follow-up, pending fresh
-independent assessment. AGY lists `gemini-4-argon-high`, but its latest direct sandboxed review
-returned `503 auth_not_found`; no Gemini assessment is claimed.
+The final independent council is **unanimous at 9/10**, meeting Dominic’s revised shipping gate:
+
+| Reviewer                          | Score | Exact full-size frames inspected |
+| --------------------------------- | ----- | -------------------------------- |
+| Sol A · GPT-6.1                   | 9/10  | 96 (48 per theme)                |
+| Sol B · GPT-6.1                   | 9/10  | 100 (50 per theme)               |
+| Sol C · GPT-6.1                   | 9/10  | 84 (42 per theme)                |
+| Opus A · 5.5                      | 9/10  | 46 (23 per theme)                |
+| Opus B · 5.5                      | 9/10  | 50 (24 dark, 26 light)           |
+| Muse · supplementary consultation | 9/10  | 48 (26 dark, 22 light)           |
+
+All six recommend shipping with **no required changes**. Reviewers independently inspected frozen
+screenshots, matching source and [interaction evidence](interaction-evidence.md). The revised rubric
+was explicit; previous ratings were omitted. Their judgments cover sampled desktop/web evidence, not
+exhaustive live-provider, native-device or accessibility certification. Optional copy, spacing and
+secondary save-cue refinements remain. [council.json](council.json) records the reviewed commit,
+source digest, individual coverage, historical findings and provider limits. CI must pass separately
+from this design judgment. AGY’s exact Gemini retry returned `503 auth_not_found`; no Gemini
+assessment is claimed.
 
 A [generated Settings reference](../../output/imagegen/README.md) informed hierarchy and field
 alignment, responsive composition and quieter navigation. The [Opus direction](design-direction.md)
