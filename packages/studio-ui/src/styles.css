@@ -3462,3 +3462,16 @@ a.studio-project-row:hover {
 .studio-thread-card-context {
   line-height: var(--dovo-type-meta-line);
 }
+
+/* Read text dims independently so badges retain their own foreground/background contrast. */
+.studio-thread-card[data-read] [data-thread-copy] {
+  color: #000;
+  opacity: 0.6;
+}
+.dark .studio-thread-card[data-read] [data-thread-copy] {
+  color: #fff;
+}
+.studio-thread-row:hover .studio-thread-card[data-read] [data-thread-copy],
+.studio-thread-row:focus-within .studio-thread-card[data-read] [data-thread-copy] {
+  opacity: 1;
+}

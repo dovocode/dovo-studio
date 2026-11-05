@@ -588,8 +588,17 @@ try {
         tone === 'active' ? 'primary' : tone === 'success' ? 'status-success' : textToken
       element.append(probe)
       probe.style.color = `var(--${textToken})`
+      if (element.matches('[data-thread-copy]') && element.closest('[data-read]'))
+        probe.style.color = document.documentElement.classList.contains('dark') ? '#fff' : '#000'
       const expectedText = getComputedStyle(probe).color
       probe.style.color = `var(--${iconToken})`
+      if (
+        element.matches('[data-thread-copy]') &&
+        element.closest('[data-read]') &&
+        tone !== 'success' &&
+        tone !== 'active'
+      )
+        probe.style.color = expectedText
       const expectedIcon = getComputedStyle(probe).color
       probe.remove()
       return {
@@ -633,11 +642,8 @@ try {
   await readTitle.waitFor()
   await unreadTitle.waitFor()
   await page.mouse.move(1100, 650)
-  assert.notEqual(
-    await readTitle.evaluate((el) => getComputedStyle(el).color),
-    await unreadTitle.evaluate((el) => getComputedStyle(el).color),
-    'Read titles are visibly dimmer than unread titles',
-  )
+  assert.equal(await readTitle.evaluate((el) => Number(getComputedStyle(el).opacity)), 0.6)
+  assert.equal(await unreadTitle.evaluate((el) => Number(getComputedStyle(el).opacity)), 1)
   assert.equal(
     await unreadTitle.locator('xpath=ancestor::button[1]').getAttribute('data-unread'),
     'true',
@@ -950,6 +956,11 @@ try {
       .locator('.studio-thread-card')
       .filter({ has: page.getByText('State ' + status, { exact: true }) })
     const indicator = row.locator('.studio-thread-status')
+    if (status === 'review') {
+      await row.waitFor()
+      assert.equal(await indicator.count(), 0, 'Read review rows have no status text or icon')
+      continue
+    }
     await indicator.waitFor()
     assert.equal(await indicator.getAttribute('data-thread-state'), state)
     assert.equal(await indicator.getAttribute('data-tone'), tone)

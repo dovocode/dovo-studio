@@ -291,13 +291,11 @@ function TaskRowView({
               variant="ghost"
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
+              data-read={(!highlighted && !unread) || undefined}
               data-draft={draft || undefined}
               data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
-                !highlighted &&
-                  !unread &&
-                  'opacity-60 group-hover/task:opacity-100 group-has-[:focus-visible]/task:opacity-100',
                 !highlighted && !unread && '[&_svg]:grayscale [&_img]:grayscale',
                 compact
                   ? 'min-h-9 items-center py-1.5'
@@ -336,6 +334,7 @@ function TaskRowView({
                   >
                     <span
                       className="min-w-0 flex-1 truncate"
+                      data-thread-copy=""
                       title={`${statusDetail} · ${agentDetail}`}
                     >
                       {projectName}
@@ -344,6 +343,7 @@ function TaskRowView({
                     {!hideReviewStatus && (
                       <span
                         className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                        data-thread-copy=""
                         data-tone={statusTone}
                         data-thread-state={offline ? 'Offline' : presentation.state}
                         title={status}
@@ -367,7 +367,7 @@ function TaskRowView({
                     compact && editable && 'pr-24',
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate" data-thread-title>
+                  <span className="min-w-0 flex-1 truncate" data-thread-title data-thread-copy="">
                     {task.title}
                   </span>
                   {(general || (compact && !!childCount)) && executionIcons}
@@ -391,6 +391,7 @@ function TaskRowView({
                       className={cn('min-w-0 flex-1 truncate text-left', branch && 'font-mono')}
                       dir={branch ? 'rtl' : undefined}
                       data-thread-branch
+                      data-thread-copy=""
                     >
                       {/* Keep the branch tail visible without reversing its text or metadata. */}
                       <bdi dir="ltr">{branch || 'Local checkout'}</bdi>
