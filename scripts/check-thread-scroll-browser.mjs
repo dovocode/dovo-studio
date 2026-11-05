@@ -206,13 +206,18 @@ try {
   await page.waitForTimeout(50)
   await page.evaluate(() => window.setVisible(true))
   await bottom()
-  // The turn index remains usable when its list exceeds the viewport.
+  // The plain dash rail fits long conversations without a pill or list icon.
   await page.evaluate(() => window.setTurnCount(80))
   await bottom()
   const rail = page.getByRole('navigation', { name: 'Conversation turns', exact: true })
   const targets = rail.getByRole('button')
   assert.equal(await targets.count(), 80)
-  assert.ok(await rail.evaluate((element) => element.scrollHeight > element.clientHeight))
+  assert.ok(await rail.evaluate((element) => element.scrollHeight <= element.clientHeight))
+  assert.equal(await rail.locator('svg').count(), 0)
+  assert.equal(
+    await rail.evaluate((element) => getComputedStyle(element).backgroundColor),
+    'rgba(0, 0, 0, 0)',
+  )
   await targets.nth(39).focus()
   await page.getByRole('tooltip').filter({ hasText: 'Turn 40' }).waitFor()
   await page.keyboard.press('Escape')

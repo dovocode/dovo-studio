@@ -177,7 +177,6 @@
   padding-inline: calc(var(--studio-chat-gutter) + 12px);
 }
 .task-composer .studio-composer {
-  border-radius: 1.125rem;
   border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
   background: var(--card);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 2%, transparent);
@@ -452,9 +451,6 @@
   }
   .startup-draft .startup-project-selector > button:first-child {
     max-width: 9rem;
-  }
-  .task-composer .studio-composer {
-    border-radius: 1.375rem;
   }
   .task-composer [aria-label='Choose agent and model'] {
     max-width: 7.5rem;
@@ -2689,35 +2685,6 @@ a.studio-project-row:hover {
   [role='radio'][aria-checked='true'] {
     outline: 2px solid Highlight;
   }
-}
-
-/* Optional alternate-send actions share the send control's silhouette. */
-.task-composer .composer-send-group {
-  border-radius: 999px;
-}
-.task-composer .composer-send-group[data-options] {
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--primary);
-}
-.task-composer .composer-send-group[data-options] button[type='submit'] {
-  border-radius: 0;
-  box-shadow: none;
-}
-.task-composer .composer-send-group[data-options]:has([data-labeled]) {
-  background: var(--muted);
-}
-.task-composer .composer-send-group[data-options]:has([data-labeled]) .composer-send-options {
-  color: var(--muted-foreground);
-}
-
-.task-composer .composer-send-group[data-options]:has(button[type='submit']:disabled) {
-  background: var(--secondary);
-}
-.task-composer
-  .composer-send-group[data-options]:has(button[type='submit']:disabled)
-  .composer-send-options {
-  color: var(--muted-foreground);
 }
 
 /* Hover actions overlay the preview; touch panels retain their action row. */

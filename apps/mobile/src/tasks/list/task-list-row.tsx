@@ -391,7 +391,7 @@ function TaskListRowView({
 
   const groupedStatus =
     hideStatusLabel && row.online && (state === 'Working' || state === 'Waiting')
-  const statusIndicator = (
+  const statusIndicator = state !== 'Review' && (
     <View
       testID="Thread status"
       accessibilityLabel={groupedStatus ? status : undefined}

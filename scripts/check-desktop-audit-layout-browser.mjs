@@ -374,6 +374,11 @@ try {
     }, mode)
     for (const unread of [false, true]) {
       await show('rows', { long: true, unread })
+      await page.waitForFunction(
+        (expected) =>
+          Number(getComputedStyle(document.querySelector('.studio-thread-card')).opacity) === expected,
+        unread ? 1 : 0.6,
+      )
       const contrast = await page.locator('.group\\/task').evaluate((element) => {
         const button = element.querySelector('button')
         if (!button) throw new Error('Contrast checks require the thread row button')
@@ -411,12 +416,14 @@ try {
             b = luminance(rgba(background))
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
         }
+        const rowOpacity = Number(getComputedStyle(button).opacity)
         return {
-          title: ratio(getComputedStyle(title).color),
+          rowOpacity,
+          title: ratio(getComputedStyle(title).color, rowOpacity),
           titleAlpha: rgba(getComputedStyle(title).color)[3] / 255,
           metadata: ratio(
             getComputedStyle(context).color,
-            Number(getComputedStyle(context).opacity),
+            Number(getComputedStyle(context).opacity) * rowOpacity,
           ),
           metadataOpacity: [...button.querySelectorAll('.studio-thread-card-context')].map((row) =>
             Number(getComputedStyle(row).opacity),
@@ -424,9 +431,10 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
-      assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
+      assert.equal(contrast.rowOpacity, unread ? 1 : 0.6)
+      if (unread) assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
       assert.deepEqual(contrast.metadataOpacity, [1, 1])
-      assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
+      if (unread) assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
       contrasts.push({ mode, unread, ...contrast })
     }
   }
@@ -434,11 +442,7 @@ try {
     const read = contrasts.find((value) => value.mode === mode && !value.unread)
     const unread = contrasts.find((value) => value.mode === mode && value.unread)
     assert.ok(unread.title > read.title, 'Unread titles have stronger contrast than read titles')
-    assert.equal(
-      unread.metadata,
-      read.metadata,
-      'Metadata keeps the same secondary contrast for unread threads',
-    )
+    assert.ok(unread.metadata > read.metadata, 'Read rows dim their metadata with the title')
     assert.ok(unread.title > unread.metadata, 'Unread titles lead the visual hierarchy')
   }
   console.log(

@@ -117,15 +117,12 @@ export const ChatMessage = memo(function ChatMessage({
         </p>
       )}
       <div className="group/message flex min-w-0 flex-col gap-2">
-        {!watch && (
+        {!watch && message.role === 'assistant' && taskRunning && turn?.status === 'running' && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground group-[.is-user]:justify-end">
-            <span className="font-medium">{message.role === 'user' ? 'You' : 'Agent'}</span>
-            {message.role === 'assistant' && taskRunning && turn?.status === 'running' && (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
-                Working
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+              Working
+            </span>
           </div>
         )}
         {message.role === 'user' && message.source && message.source.kind !== 'user' && (

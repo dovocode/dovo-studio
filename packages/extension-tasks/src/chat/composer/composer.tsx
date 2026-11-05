@@ -1166,7 +1166,7 @@ export function Composer({
         'composer-plan-toggle',
         preferences.showPlanButton
           ? 'h-8 gap-1.5 rounded-full px-2.5 text-[0.6875rem]'
-          : 'h-9 w-full justify-start gap-2 rounded-md px-2 text-xs',
+          : 'h-10 w-full justify-start gap-2 rounded-md px-3 text-sm font-normal',
         plan && 'bg-primary/15 text-primary hover:bg-primary/20',
       )}
       disabled={sending || !!task.archivedAt || (!plan && !!planModeIssue(agent))}
@@ -1236,8 +1236,6 @@ export function Composer({
     !!task.archivedAt ||
     (!!connection && !connected) ||
     (firstMessage && (!connected || !task.repositoryId || !agent))
-  // Keep data-labeled on icon actions: it also opts out of legacy accent and glow styles.
-  const iconOnlySubmit = !editing && (stageFirst || task.status === 'running')
   const settingsContainer = projectSettings?.container ?? infoContainer
   const workspaceSettings = workspaceControls?.(accessSlot) ?? (
     <ComposerWorkspace
@@ -1433,26 +1431,12 @@ export function Composer({
             )}
             {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
               <div
-                className="composer-send-group flex shrink-0 items-center data-[ready]:bg-action!"
-                data-options={showSendOptions || undefined}
-                data-ready={!submitDisabled || undefined}
+                className="composer-send-group flex shrink-0 items-center gap-1"
                 role="group"
                 aria-label="Send message"
               >
                 <ComposerSubmit
                   busy={sending}
-                  data-labeled=""
-                  className={cn(
-                    'h-8 rounded-full text-[0.6875rem]',
-                    iconOnlySubmit ? 'w-8 p-0' : 'w-auto gap-1.5 px-3',
-                    !editing &&
-                      task.status !== 'running' &&
-                      !stageFirst &&
-                      'max-[360px]:w-8 max-[360px]:px-0',
-                    submitDisabled
-                      ? 'bg-muted text-muted-foreground hover:bg-muted'
-                      : 'bg-action text-action-foreground hover:bg-action/90',
-                  )}
                   title={
                     editing
                       ? 'Save changes (Enter)'
@@ -1492,11 +1476,6 @@ export function Composer({
                   ) : (
                     <ArrowUp className={cn('size-4', backgroundPreview && 'rotate-45')} />
                   )}
-                  {editing ? (
-                    'Save changes'
-                  ) : !iconOnlySubmit ? (
-                    <span className="max-[360px]:sr-only">Send</span>
-                  ) : null}
                 </ComposerSubmit>
                 {showSendOptions && (
                   <DropdownMenu.Root>
@@ -1506,10 +1485,7 @@ export function Composer({
                         variant="ghost"
                         aria-label="More message actions"
                         title="Other ways to send this message"
-                        className={cn(
-                          'composer-send-options h-8 w-5 rounded-none p-0 text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground',
-                          !submitDisabled && 'text-action-foreground!',
-                        )}
+                        className="composer-send-options h-8 w-5 rounded-full p-0 text-muted-foreground hover:bg-accent hover:text-foreground"
                         disabled={
                           !connected ||
                           sending ||

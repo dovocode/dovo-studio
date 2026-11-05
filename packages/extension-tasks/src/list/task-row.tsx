@@ -31,7 +31,6 @@ import {
   CloudOff,
   CircleX,
   CircleStop,
-  ClipboardCheck,
   FilePenLine,
   MessageCircleQuestion,
   MessageCircleDashed,
@@ -57,7 +56,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   Done: CircleCheck,
   Finished: CircleCheck,
-  Review: ClipboardCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -211,8 +209,13 @@ function TaskRowView({
   const unread = hasUnreadTaskActivity(task)
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
+  const hideReviewStatus = !offline && presentation.state === 'Review'
   const visibleStatus = offline ? 'Offline' : presentation.compactLabel
-  const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
+  const StatusIcon = hideReviewStatus
+    ? undefined
+    : offline
+      ? CloudOff
+      : (statusIcons[presentation.state] ?? CircleDashed)
   const statusTone = offline ? 'neutral' : presentation.tone
   const statusDetail = [
     status,
@@ -292,6 +295,10 @@ function TaskRowView({
               data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
+                !highlighted &&
+                  !unread &&
+                  'opacity-60 group-hover/task:opacity-100 group-has-[:focus-visible]/task:opacity-100',
+                !highlighted && !unread && '[&_svg]:grayscale [&_img]:grayscale',
                 compact
                   ? 'min-h-9 items-center py-1.5'
                   : cn('items-start py-2', general ? 'min-h-[48px]' : 'min-h-[68px]'),
@@ -304,7 +311,13 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              <span className={cn('studio-thread-project-icon shrink-0', !compact && 'pt-0.5')}>
+              <span
+                className={cn(
+                  'studio-thread-project-icon shrink-0',
+                  !compact && 'pt-0.5',
+                  !highlighted && !unread && 'grayscale',
+                )}
+              >
                 {projectIcon}
               </span>
               <span
@@ -328,29 +341,29 @@ function TaskRowView({
                       {projectName}
                     </span>
                     {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                    <span
-                      className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
-                      data-tone={statusTone}
-                      data-thread-state={offline ? 'Offline' : presentation.state}
-                      title={status}
-                    >
-                      {StatusIcon && (
-                        <StatusIcon
-                          className="studio-thread-status-icon size-3.5"
-                          aria-hidden="true"
-                        />
-                      )}
-                      {visibleStatus}
-                    </span>
+                    {!hideReviewStatus && (
+                      <span
+                        className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                        data-tone={statusTone}
+                        data-thread-state={offline ? 'Offline' : presentation.state}
+                        title={status}
+                      >
+                        {StatusIcon && (
+                          <StatusIcon
+                            className="studio-thread-status-icon size-3.5"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {visibleStatus}
+                      </span>
+                    )}
                   </span>
                 )}
                 <span
                   className={cn(
                     'studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
                     compact ? 'flex-1' : 'w-full',
-                    highlighted || unread
-                      ? 'text-foreground'
-                      : 'text-foreground/90 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
+                    'text-foreground',
                     compact && editable && 'pr-24',
                   )}
                 >

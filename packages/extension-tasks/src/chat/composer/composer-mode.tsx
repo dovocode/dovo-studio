@@ -60,7 +60,7 @@ export function ComposerModeToggle({
         type="button"
         variant="ghost"
         aria-pressed={!richTextComposer}
-        className="h-9 w-full justify-start gap-2 rounded-md px-2 text-xs"
+        className="h-10 w-full justify-start gap-2 rounded-md px-3 text-sm font-normal"
         disabled={disabled}
         onPointerDown={(event) => event.preventDefault()}
         onClick={() => {

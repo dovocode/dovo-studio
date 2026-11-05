@@ -324,9 +324,11 @@ export function TaskHeader({
                 <span className="truncate">{projectName}</span>
               </span>
             )}
-            <span className="studio-thread-status truncate" data-tone={presentation.tone}>
-              {presentation.label}
-            </span>
+            {presentation.state !== 'Review' && (
+              <span className="studio-thread-status truncate" data-tone={presentation.tone}>
+                {presentation.label}
+              </span>
+            )}
             {!projectPanelOpen && (
               <>
                 {task.forkedFrom && (
