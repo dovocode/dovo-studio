@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import { startRuntime } from '../index'
+import * as sessionCookies from '../previews/browser-session-cookies'
 import { RemoteBrowsers } from '../previews/browser'
 import { SocketTickets } from './support/socket-tickets'
 import { decodeBrowserFrame, remoteBrowserMessageSchema } from '@dovo/protocol'
@@ -603,7 +604,7 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
   ])
   const profiles = [
     { id: 'default', name: 'Default' },
-    { id: 'work', name: 'Remote Work' },
+    { id: 'work', name: 'Remote Work', keepSessionCookies: true },
   ]
   expect((await catalog('save', profiles)).status).toBe(200)
   expect((await (await catalog('read')).json()).profiles).toEqual(profiles)
@@ -892,8 +893,17 @@ it('bounds the entire selection operation, including frame evaluation and title 
 })
 
 it('keeps same-named shared and thread profiles in separate persistent directories and contexts', async () => {
+  const restoreCookies = vi
+    .spyOn(sessionCookies, 'restoreBrowserSessionCookies')
+    .mockResolvedValue()
+  const saveCookies = vi.spyOn(sessionCookies, 'saveBrowserSessionCookies').mockResolvedValue()
   const { browsers } = browserFixture()
+  Object.defineProperty(browsers, 'browserProfiles', {
+    value: () => [{ id: 'work', name: 'Work', keepSessionCookies: true }],
+  })
   const context = () => ({
+    isClosed: () => false,
+    newPage: async () => ({}),
     pages: () => [],
     route: vi.fn<() => Promise<void>>(async () => {}),
     close: vi.fn<() => Promise<void>>(async () => {}),
@@ -918,6 +928,11 @@ it('keeps same-named shared and thread profiles in separate persistent directori
       '/runtime/browser.profiles/work',
       '/runtime/browser.profiles/browser-workspace.profiles/work',
     ])
+    expect(restoreCookies).toHaveBeenCalledWith(threadContext, '/runtime/browser.profiles/work')
+    expect(restoreCookies).toHaveBeenCalledWith(
+      workspaceContext,
+      '/runtime/browser.profiles/browser-workspace.profiles/work',
+    )
     expect(thread.context).toBe(threadContext)
     expect(shared.context).toBe(workspaceContext)
     expect(shared.context).not.toBe(thread.context)
@@ -926,6 +941,10 @@ it('keeps same-named shared and thread profiles in separate persistent directori
     expect(workspaceContext.close).not.toHaveBeenCalled()
     await sharedAgain.release()
     expect(workspaceContext.close).toHaveBeenCalledOnce()
+    expect(saveCookies).toHaveBeenCalledWith(
+      workspaceContext,
+      '/runtime/browser.profiles/browser-workspace.profiles/work',
+    )
     expect(threadContext.close).not.toHaveBeenCalled()
   } finally {
     await Promise.all([thread.release(), shared.release(), sharedAgain.release()])

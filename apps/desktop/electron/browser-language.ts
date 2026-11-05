@@ -18,6 +18,14 @@ const preferences = Schema.Struct({
   browserWorkspaceEnabled: Schema.optional(Schema.Boolean),
   unifiedWorkspaceEnabled: Schema.optional(Schema.Boolean),
 })
+export function keepBrowserSessionCookies(profileId: string) {
+  const result = decodeResult(preferences, readLocalSettingsSection('app'))
+  return (
+    result.success &&
+    result.data.browserProfiles.find((profile) => profile.id === profileId)?.keepSessionCookies ===
+      true
+  )
+}
 export function websiteSearchUrl(profileId: string, text: string) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
   return browserSearchUrl(

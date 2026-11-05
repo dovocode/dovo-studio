@@ -128,6 +128,7 @@ function ProfileName({
   const [name, setName] = useState(profile.name)
   const [emoji, setEmoji] = useState(profile.emoji ?? '')
   const [language, setLanguage] = useState(profile.language ?? 'en-US')
+  const [keepSessionCookies, setKeepSessionCookies] = useState(profile.keepSessionCookies === true)
   const [engine, setEngine] = useState<BrowserSearchEngine['engine']>(
     profile.search?.engine ?? 'google',
   )
@@ -163,6 +164,7 @@ function ProfileName({
             linkDomains,
             emoji: emoji || undefined,
             search,
+            keepSessionCookies,
           })
       }}
     >
@@ -260,6 +262,21 @@ function ProfileName({
           />
         </label>
       )}
+      <label className="flex basis-full items-start gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          aria-label={`Keep signed in across restarts for ${profile.name}`}
+          checked={keepSessionCookies}
+          disabled={disabled}
+          onChange={(event) => setKeepSessionCookies(event.target.checked)}
+        />
+        <span>
+          Keep signed in across restarts
+          <span className="block">
+            Retain session cookies. Websites can still require you to sign in again.
+          </span>
+        </span>
+      </label>
       <Button
         title={`Save name for ${profile.name}`}
         size="sm"
@@ -273,6 +290,7 @@ function ProfileName({
           (name.trim() === profile.name &&
             emoji === (profile.emoji ?? '') &&
             language === (profile.language ?? 'en-US') &&
+            keepSessionCookies === (profile.keepSessionCookies === true) &&
             domains === (profile.linkDomains ?? []).join(', ') &&
             unchangedSearch)
         }
@@ -336,7 +354,7 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
+          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.keepSessionCookies}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
           profile={profile}
           routing={routing}
           disabled={disabled || busy}

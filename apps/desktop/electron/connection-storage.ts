@@ -10,7 +10,10 @@ import {
 } from '../../../packages/studio-core/src/workspace/runtime-registry.js'
 import { pathToFileURL } from 'node:url'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
-export function registerConnectionStorage(rendererPath: string) {
+export function registerConnectionStorage(
+  rendererPath: string,
+  onAppSettingsSaved: (settings: unknown) => void = () => {},
+) {
   let writes: Promise<unknown> = Promise.resolve()
   const readers = new Set<Electron.WebContents>()
   const appReaders = new Set<Electron.WebContents>()
@@ -80,6 +83,7 @@ export function registerConnectionStorage(rendererPath: string) {
       if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('Invalid app settings')
       writeLocalSettingsSection('app', () => value)
+      onAppSettingsSaved(value)
       for (const reader of appReaders) {
         if (reader.isDestroyed()) appReaders.delete(reader)
         else if (reader !== event.sender) reader.send('app:settings-changed')

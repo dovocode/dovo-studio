@@ -1,5 +1,10 @@
 import { Schema } from 'effect'
 import {
+  restoreBrowserSessionCookies,
+  clearBrowserSessionCookies,
+  saveBrowserSessionCookies,
+} from './browser-session-cookies.js'
+import {
   createBrowserFaviconLoader,
   fetchRemoteFavicon,
   observeBrowserFavicons,
@@ -194,6 +199,7 @@ export class RemoteBrowsers {
   private sessions = new Map<string, Promise<Session>>()
   private owners = new Map<string, string>()
   private profiles = new Map<string, { context: Promise<BrowserContext>; users: number }>()
+  private cookieDirectories = new WeakMap<BrowserContext, string>()
   private closingProfiles = new Map<string, Promise<void>>()
   private disposed = false
   private installation = new ChromiumInstallation()
@@ -565,24 +571,37 @@ export class RemoteBrowsers {
           serviceWorkers: 'block' as const,
           hasTouch: true,
         }
-        let context: BrowserContext
-        if (this.profileDirectory && !isolated && !isPrivateBrowserProfile(profileId)) {
-          const { chromium, executablePath } = await this.executable()
-          context = await chromium.launchPersistentContext(
-            workspace
+        const directory =
+          this.profileDirectory && !isolated && !isPrivateBrowserProfile(profileId)
+            ? workspace
               ? join(this.profileDirectory, WORKSPACE_PROFILES, profileId)
-              : join(this.profileDirectory, profileId),
-            {
-              ...options,
-              executablePath,
-              headless: true,
-              chromiumSandbox: true,
-            },
-          )
+              : join(this.profileDirectory, profileId)
+            : undefined
+        let context: BrowserContext
+        if (directory) {
+          const { chromium, executablePath } = await this.executable()
+          context = await chromium.launchPersistentContext(directory, {
+            ...options,
+            executablePath,
+            headless: true,
+            chromiumSandbox: true,
+          })
         } else context = await this.sharedContext(options)
         try {
+          // Chromium drops session cookies with its last window. Keep an internal blank tab
+          // until release saves the profile, including when the last user tab closes itself.
+          const keeper = directory ? await context.newPage() : undefined
           if (this.profileDirectory && !isolated)
-            for (const page of context.pages()) await page.close()
+            for (const page of context.pages()) if (page !== keeper) await page.close()
+          if (directory) {
+            if (
+              this.browserProfiles().find((profile) => profile.id === profileId)
+                ?.keepSessionCookies === true
+            )
+              await restoreBrowserSessionCookies(context, directory)
+            else await clearBrowserSessionCookies(directory)
+            this.cookieDirectories.set(context, directory)
+          }
           // No runtime credentials, personal browser profile, file access or native permissions
           // are exposed to the preview. Local HTTP services are intentionally reachable.
           await context.route('**/*', (route) => {
@@ -606,12 +625,26 @@ export class RemoteBrowsers {
         if (--current.users) return
         if (this.profiles.get(key) === current) this.profiles.delete(key)
         const closing = current.context.then(async (context) => {
+          const directory = this.cookieDirectories.get(context)
+          const close = async () => {
+            try {
+              await context.close()
+            } catch (error) {
+              // Renderer loss can finish closing the context before Playwright replies.
+              if (!context.isClosed()) throw error
+            }
+          }
           try {
-            await context.close()
-          } catch (error) {
-            // Renderer loss can finish closing the context before Playwright's
-            // close command replies. Only confirmed closure completes release.
-            if (!context.isClosed()) throw error
+            if (directory && !context.isClosed()) {
+              if (
+                this.browserProfiles().find((profile) => profile.id === profileId)
+                  ?.keepSessionCookies === true
+              )
+                await saveBrowserSessionCookies(context, directory)
+              else await clearBrowserSessionCookies(directory)
+            }
+          } finally {
+            await close()
           }
         })
         this.closingProfiles.set(key, closing)
@@ -1713,6 +1746,20 @@ export class RemoteBrowsers {
         }
       }
     }
+  }
+  async refreshSessionCookies() {
+    if (!this.profileDirectory) return
+    // Let an already-started save finish before removing a disabled profile's snapshot.
+    await Promise.all([...this.closingProfiles.values()])
+    const directory = this.profileDirectory
+    await Promise.all(
+      this.browserProfiles()
+        .filter((profile) => profile.keepSessionCookies !== true)
+        .flatMap((profile) => [
+          clearBrowserSessionCookies(join(directory, profile.id)),
+          clearBrowserSessionCookies(join(directory, WORKSPACE_PROFILES, profile.id)),
+        ]),
+    )
   }
   async dispose() {
     this.disposed = true

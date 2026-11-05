@@ -307,7 +307,12 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
     sound.
   - **Keyboard shortcuts**.
   - **Browser** — preview viewport, browser profiles and separate saved logins. Remote browser
-    profiles stay on their computer.
+    profiles stay on their computer. Enable **Keep signed in across restarts** and save a profile to
+    retain its session cookies. This is off by default; disabling it discards the saved
+    session-cookie copy. Explicit logout, cookie clearing and server-side session expiry still
+    apply. Desktop session cookies require OS credential storage and are saved encrypted. Remote
+    profiles retain them on a clean browser-context close in owner-readable files; an abrupt runtime
+    stop can lose them. Private profiles never retain cookies across restarts.
   - **Updates & about** — version, release channel, update preferences and open-source notices.
 - **Agents**:
   - **Agents** — built-in Codex, Claude Code and other provider profiles, plus custom

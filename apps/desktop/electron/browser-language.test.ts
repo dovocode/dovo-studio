@@ -5,7 +5,7 @@ vi.mock('electron', () => ({ app: { getPath: () => '' } }))
 vi.mock('@dovo/protocol/local-settings', () => ({
   readLocalSettingsSection: () => settings.value,
 }))
-import { websiteSearchUrl, websiteLinkProfile } from './browser-language'
+import { websiteSearchUrl, websiteLinkProfile, keepBrowserSessionCookies } from './browser-language'
 
 it('searches selected text using the clicked profile, including HTTP custom engines', () => {
   settings.value = {
@@ -51,4 +51,18 @@ it('applies website profile routing when only unified workspace is enabled', () 
     ],
   }
   expect(websiteLinkProfile('default', 'http://work.lan/page')).toBe('work')
+})
+
+it('only retains session cookies for profiles that explicitly opt in', () => {
+  settings.value = {
+    browserProfiles: [
+      { id: 'default', name: 'Default' },
+      { id: 'work', name: 'Work', keepSessionCookies: true },
+    ],
+  }
+  expect(keepBrowserSessionCookies('default')).toBe(false)
+  expect(keepBrowserSessionCookies('work')).toBe(true)
+  expect(keepBrowserSessionCookies('missing')).toBe(false)
+  settings.value = undefined
+  expect(keepBrowserSessionCookies('default')).toBe(false)
 })

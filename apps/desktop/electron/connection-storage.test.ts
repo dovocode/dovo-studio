@@ -275,3 +275,19 @@ it('allows validated browser-window workbenches and broadcasts app-setting chang
   f.listeners.get('app:settings-read')!(invalid)
   expect(invalid.returnValue).toHaveProperty('error')
 })
+
+it('notifies session persistence after app settings are saved and rejects untrusted writes', () => {
+  const saved = vi.fn<(settings: unknown) => void>()
+  registerConnectionStorage('/app/index.html', saved)
+  const settings = {
+    browserProfiles: [{ id: 'default', name: 'Default', keepSessionCookies: false }],
+  }
+  const trusted = event()
+  f.listeners.get('app:settings-write')?.(trusted, JSON.stringify(settings))
+  expect(trusted.returnValue).toEqual({ ok: true })
+  expect(saved).toHaveBeenCalledExactlyOnceWith(settings)
+  const untrusted = event('https://foreign.test/')
+  f.listeners.get('app:settings-write')?.(untrusted, JSON.stringify(settings))
+  expect(saved).toHaveBeenCalledTimes(1)
+  expect(untrusted.returnValue).toEqual({ error: expect.stringContaining('Untrusted') })
+})

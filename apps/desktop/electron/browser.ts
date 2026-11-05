@@ -1,3 +1,7 @@
+import {
+  createBrowserSessionCookies,
+  clearSavedBrowserSessionCookies,
+} from './browser-session-cookies.js'
 import { documentPipDisallowsReturn, isTeamsBrowserUrl } from './browser-document-pip-policy.js'
 import { createBrowserZoom, nextBrowserZoom } from './browser-zoom.js'
 import { browserDownloads, disposeBrowserDownloads } from './browser-downloads.js'
@@ -20,6 +24,8 @@ import {
   browserElementSnapshotSchema,
   browserElementSchema,
   browserDefaultKeepAwake,
+  browserProfilesResultSchema,
+  decodeResult,
   isPrivateBrowserProfile,
   type BrowserWorkspaceTab,
   type BrowserWorkspaceState,
@@ -44,6 +50,7 @@ import { createBrowserMedia, type MediaTab } from './browser-media.js'
 import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions.js'
 import {
   configureBrowserLanguage,
+  keepBrowserSessionCookies,
   websiteCustomization,
   websiteLinkProfile,
   websiteSearchUrl,
@@ -83,6 +90,7 @@ type Entry = {
   view: WebContentsView
   contents: Electron.WebContents
   browserSession: Electron.Session
+  cookiesReady?: Promise<void>
   url: string
   /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
   extensionUrl?: string
@@ -123,6 +131,7 @@ const isAborted = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED'
 /** A live renderer can be shown while images or other subresources are still loading. */
 async function loadUntilReady(entry: Entry, url: string) {
+  if (entry.cookiesReady) await entry.cookiesReady
   entry.routeNavigation = undefined
   const contents = entry.view.webContents
   let domReady = false
@@ -273,6 +282,7 @@ export function registerBrowser(
         else reject(new Error(reason || 'Printing failed.'))
       })
     })
+  const sessionCookies = createBrowserSessionCookies()
   const routingSessions = new Set<Electron.Session>()
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
@@ -776,6 +786,9 @@ export function registerBrowser(
       view,
       contents: view.webContents,
       browserSession: view.webContents.session,
+      cookiesReady: sessionCookies(view.webContents.session, () =>
+        keepBrowserSessionCookies(profileId),
+      ),
       url: '',
     }
     if (workspace) created.activity = createBrowserTabActivity(view.webContents)
@@ -2436,6 +2449,19 @@ export function registerBrowser(
       window.show()
       window.focus()
       return true
+    },
+    refreshSessionCookies: (settings: unknown) => {
+      const result = decodeResult(browserProfilesResultSchema, settings)
+      if (result.success)
+        for (const profile of result.data.profiles) {
+          if (profile.keepSessionCookies === true || isPrivateBrowserProfile(profile.id)) continue
+          for (const partition of [
+            workspacePartition(profile.id),
+            `persist:dovo-preview:${profile.id}`,
+          ])
+            clearSavedBrowserSessionCookies(session.fromPartition(partition))
+        }
+      sessionCookies.refresh()
     },
     dispose: async () => {
       disposed = true
