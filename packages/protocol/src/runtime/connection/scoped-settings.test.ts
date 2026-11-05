@@ -419,7 +419,7 @@ it('reviews scoped edits as labeled values without confusing explicit inheritanc
   ).toEqual([
     {
       key: 'taskBehavior.quotaResume',
-      label: 'Auto-resume limited tasks',
+      label: 'Auto-resume limited threads',
       before: 'Off',
       after: 'On',
     },

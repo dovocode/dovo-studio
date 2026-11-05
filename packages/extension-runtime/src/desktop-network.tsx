@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useEffect } from 'react'
 import { Effect, Schema } from 'effect'
 import { decode, decodeResult, mutableStruct } from '@dovo/protocol'
@@ -114,10 +115,10 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
   }
   return (
     <div className="space-y-2 rounded border bg-muted/30 p-3">
-      <details open>
-        <summary className="cursor-pointer text-sm font-medium">
-          {enabled ? 'LAN / VPN connections enabled' : 'Connections limited to this Mac'}
-        </summary>
+      <Disclosure
+        open
+        title={<>{enabled ? 'LAN / VPN connections enabled' : 'Connections limited to this Mac'}</>}
+      >
         <p className="mt-2 text-xs text-muted-foreground">
           Listening on {status.host}:{status.port}. Phones need LAN or VPN access. Pairing and
           device tokens are always required; HTTP is supported.
@@ -164,7 +165,7 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
             service.
           </p>
         )}
-      </details>
+      </Disclosure>
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

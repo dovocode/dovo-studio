@@ -228,7 +228,7 @@ try {
     window.messageError = ''
   })
   await input.press('Enter')
-  await page.getByRole('textbox', { name: 'Message task', exact: true }).waitFor()
+  await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.snapshot.workspace.tasks.length), 1)
   const messageIds = await page.evaluate(() =>
     window.calls
@@ -238,26 +238,26 @@ try {
   assert.equal(messageIds.length, 2)
   assert.equal(messageIds[0], messageIds[1], 'Retry uses the saved task and message receipt')
   await page
-    .getByRole('textbox', { name: 'Message task', exact: true })
+    .getByRole('textbox', { name: 'Message thread', exact: true })
     .fill('Retained first-thread draft')
   await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
   await page.getByRole('button', { name: 'Workspace destination', exact: true }).click()
   await page.getByRole('option', { name: 'Thread', exact: true }).click()
   await input.fill('Second retained thread')
   await input.press('Enter')
-  await page.getByRole('textbox', { name: 'Message task', exact: true }).waitFor()
+  await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.snapshot.workspace.tasks.length), 2)
   await page
-    .getByRole('textbox', { name: 'Message task', exact: true })
+    .getByRole('textbox', { name: 'Message thread', exact: true })
     .fill('Retained second-thread draft')
   await selectThread('Investigate the submit crash')
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task', exact: true }).innerText(),
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).innerText(),
     'Retained first-thread draft',
   )
   await selectThread('Second retained thread')
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task', exact: true }).innerText(),
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).innerText(),
     'Retained second-thread draft',
   )
   assert.equal(
@@ -270,7 +270,7 @@ try {
     .locator('.studio-task-sidebar')
     .getByRole('button', { name: 'New thread', exact: true })
     .click()
-  const starter = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const starter = page.getByRole('textbox', { name: 'Message thread', exact: true })
   await starter.fill('Draft from the empty thread starter')
   await page.waitForFunction(() => window.snapshot.workspace.tasks.length === 3)
   await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
@@ -287,7 +287,7 @@ try {
   await page.getByRole('option', { name: 'Thread', exact: true }).click()
   await input.fill('Third thread from Home')
   await input.press('Enter')
-  await page.getByRole('textbox', { name: 'Message task', exact: true }).waitFor()
+  await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.snapshot.workspace.tasks.length), 4)
   await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
   await page.getByRole('button', { name: 'Workspace destination', exact: true }).click()
@@ -412,7 +412,7 @@ try {
     .locator('.studio-task-sidebar')
     .getByRole('group', { name: 'Terminal: Submitted terminal', exact: true })
   const home = () => page.getByRole('button', { name: 'Workspace home', exact: true }).click()
-  const editor = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const editor = page.getByRole('textbox', { name: 'Message thread', exact: true })
   await home()
   await input.fill('Home draft survives repeated item swapping')
   await selectThread('Remote retained thread')

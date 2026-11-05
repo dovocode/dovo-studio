@@ -13,6 +13,8 @@ import { conversationPageSchema, taskTranscript, type ConversationPage } from '@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
+  useConfirmation,
+  clientScopeKey,
   generatedTitleSchema,
   hasUnviewedTaskCompletion,
   isSnoozed,
@@ -114,6 +116,30 @@ export function TaskContextMenu({
   const host = useStudioHost()
   const store = useTaskActionStore()
   const client = taskActionClient(store, source)
+  const actionScope = JSON.stringify([
+    store.activeRuntimeId,
+    clientScopeKey(store.connection),
+    source.runtimeId,
+    source.address,
+    clientScopeKey(client.profile?.connection ?? null),
+    task.id,
+  ])
+  const confirm = useConfirmation(
+    JSON.stringify([actionScope, task.pinned, task.archivedAt, task.status]),
+  )
+  const currentScope = useRef(actionScope)
+  currentScope.current = actionScope
+  const available = useRef(source.online)
+  available.current = source.online
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const isCurrent = () =>
+    mounted.current && available.current && currentScope.current === actionScope
   const { repository, branch } = taskRowValues(task, source.repositories)
   const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
@@ -137,21 +163,22 @@ export function TaskContextMenu({
   const canEdit = source.online && !blocked
   const turn = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
-  const run = async (action: () => Promise<void>) => {
+  const run = async <T,>(action: () => Promise<T>) => {
     if (pendingRef.current || busy) return
     pendingRef.current = true
     setPending(true)
     setError('')
     onError('')
     try {
-      await action()
+      return await action()
     } catch (failure) {
+      if (!isCurrent()) return
       const message = failure instanceof Error ? failure.message : String(failure)
       setError(message)
       onError(message)
     } finally {
       pendingRef.current = false
-      setPending(false)
+      if (mounted.current) setPending(false)
     }
   }
   const copyConversation = async () => {
@@ -247,13 +274,20 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit}
               onSelect={() => {
-                if (
-                  task.pinned &&
-                  readAppPreferences().confirmUnpin &&
-                  !window.confirm(`Unpin “${task.title}”?`)
-                )
-                  return
-                void run(() => patch({ pinned: !task.pinned }))
+                void run(async () => {
+                  if (
+                    task.pinned &&
+                    readAppPreferences().confirmUnpin &&
+                    !(await confirm({
+                      title: `Unpin “${task.title}”?`,
+                      description: 'This thread will return to its usual position in the list.',
+                      confirmLabel: 'Unpin thread',
+                    }))
+                  )
+                    return
+                  if (!isCurrent()) return
+                  await patch({ pinned: !task.pinned })
+                })
               }}
             >
               {task.pinned ? <PinOff /> : <Pin />}
@@ -398,7 +432,7 @@ export function TaskContextMenu({
                 onSelect={() => setDialog('transfer')}
               >
                 <Copy /> {task.execution === 'worktree' ? 'Copy worktree' : 'Copy project checkout'}{' '}
-                to another machine…
+                to another computer…
               </Menu.Item>
             )}
             <Menu.Sub>
@@ -703,16 +737,18 @@ export function TaskContextMenu({
               className={itemClass}
               disabled={!canEdit || task.status === 'running'}
               onSelect={() => {
-                // Settings → General → Confirm before archiving.
-                if (
-                  !task.archivedAt &&
-                  readAppPreferences().confirmArchive &&
-                  !window.confirm(
-                    `Archive “${task.title}”? You can restore it from Settings → Archived tasks.`,
-                  )
-                )
-                  return
                 void run(async () => {
+                  if (
+                    !task.archivedAt &&
+                    readAppPreferences().confirmArchive &&
+                    !(await confirm({
+                      title: `Archive “${task.title}”?`,
+                      description: 'You can restore it from Settings → Archived threads.',
+                      confirmLabel: 'Archive thread',
+                    }))
+                  )
+                    return
+                  if (!isCurrent()) return
                   await client.request(
                     '/api/tasks/lifecycle',
                     {
@@ -721,6 +757,7 @@ export function TaskContextMenu({
                     },
                     responses.ok,
                   )
+                  if (!isCurrent()) return
                   if (selected && !task.archivedAt) onDeselect()
                   await client.refresh()
                 })
@@ -735,12 +772,10 @@ export function TaskContextMenu({
               onSelect={() => {
                 setError('')
                 if (readAppPreferences().confirmDelete)
-                  void run(async () => {
-                    const preferences = await client.request(
-                      '/api/runtime/preferences/read',
-                      {},
-                      runtimePreferencesSchema,
-                    )
+                  void run(() =>
+                    client.request('/api/runtime/preferences/read', {}, runtimePreferencesSchema),
+                  ).then((preferences) => {
+                    if (!preferences) return
                     setRemoveWorktrees(preferences.removeWorktreesOnThreadDelete)
                     setDialog('delete')
                   })
@@ -764,7 +799,7 @@ export function TaskContextMenu({
       </Menu.Root>
       {pending && !dialog && (
         <p role="status" className="px-2.5 pb-2 text-[0.6875rem] text-muted-foreground">
-          Updating task…
+          Updating thread…
         </p>
       )}
       <Dialog
@@ -858,7 +893,7 @@ export function TaskContextMenu({
         <DialogContent className="max-w-md">
           <DialogTitle>Save as template</DialogTitle>
           <DialogDescription>
-            New tasks in {repository?.name ?? 'this project'} can start from this task’s first
+            New threads in {repository?.name ?? 'this project'} can start from this thread’s first
             request, agent, checkout choice and setup command. The conversation is not included.
           </DialogDescription>
           <form
@@ -928,9 +963,9 @@ export function TaskContextMenu({
         }}
       >
         <DialogContent className="max-w-md">
-          <DialogTitle>Rename task</DialogTitle>
+          <DialogTitle>Rename thread</DialogTitle>
           <DialogDescription>
-            {repository?.name ?? 'Task'} · {source.name}
+            {repository?.name ?? 'Thread'} · {source.name}
           </DialogDescription>
           <form
             className="grid gap-4"
@@ -1008,7 +1043,12 @@ export function TaskContextMenu({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" disabled={pending} onClick={() => setDialog(null)}>
+            <Button
+              data-dialog-cancel
+              variant="outline"
+              disabled={pending}
+              onClick={() => setDialog(null)}
+            >
               Cancel
             </Button>
             <Button

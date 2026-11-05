@@ -5,6 +5,14 @@ import type { ChangedFile, TaskTurn } from '../../workspace.js'
 /** Expanded text is loaded only on request, never embedded in workspace snapshots. */
 export const FULL_FILE_DIFF_LIMIT = 8 * 1024 * 1024
 
+export const stagingFilePreviewQuerySchema = mutableStruct({
+  path: Schema.String.pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(4096)),
+  ),
+  comparison: Schema.Literals(['staged', 'unstaged']),
+})
+
 const savedFileSchema = mutableStruct({
   hash: Schema.String,
   size: Schema.Number.pipe(

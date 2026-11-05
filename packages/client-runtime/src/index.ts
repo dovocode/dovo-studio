@@ -38,3 +38,5 @@ export {
   parseImageEditorResult,
   type ImageEditorResult,
 } from './images/image-editor.js'
+
+export { imageEditorFont as offlineEditorFont } from './images/image-editor-script.js'

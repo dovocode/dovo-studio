@@ -133,6 +133,7 @@ import {
   Popover,
   HeaderContent,
   SidebarHeader,
+  Toggle,
   useNavigationSidebar,
 } from '@dovo/studio-ui'
 import { useScreenshotAttachment } from './screenshot-attachment'
@@ -2172,6 +2173,23 @@ function BrowserContent({
                     : 'Embedded website preview'}
               </p>
             </div>
+            {shared && (
+              <div className="ml-auto">
+                {' '}
+                <Popover.Close asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs"
+                    onClick={() => setLibraryView('history')}
+                  >
+                    <History size={16} />
+                    History
+                  </Button>
+                </Popover.Close>
+              </div>
+            )}
           </div>
           {mode === 'remote' && (
             <div className="space-y-2">
@@ -2192,18 +2210,6 @@ function BrowserContent({
           )}
           {shared && (
             <div className="studio-browser-settings-section space-y-2">
-              <Popover.Close asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="studio-browser-action-row"
-                  onClick={() => setLibraryView('history')}
-                >
-                  <History size={16} />
-                  History
-                </Button>
-              </Popover.Close>
               <label htmlFor={`${controlsId}-links`} className="text-xs font-medium">
                 Open links in
               </label>
@@ -2225,16 +2231,14 @@ function BrowserContent({
                 </select>
                 <ChevronDown size={14} aria-hidden="true" />
               </div>
-              <label className="studio-browser-activity-toggle">
-                <input
-                  type="checkbox"
-                  checked={sortByActivity}
-                  onChange={(event) =>
-                    updateAppPreferences({ browserSortByActivity: event.target.checked })
-                  }
-                />
+              <div className="studio-browser-activity-toggle">
                 <span>Order tabs by activity</span>
-              </label>
+                <Toggle
+                  label="Order tabs by activity"
+                  checked={sortByActivity}
+                  onChange={(checked) => updateAppPreferences({ browserSortByActivity: checked })}
+                />
+              </div>
               <p className="studio-browser-activity-description text-xs text-muted-foreground">
                 Pinned tabs always keep their manual order. Turn this off to drag other tabs into
                 order.
@@ -2244,7 +2248,7 @@ function BrowserContent({
           {shared && (
             <div className="studio-browser-settings-section space-y-2">
               <p className="text-xs font-medium">Browser location</p>
-              <div className="studio-browser-setting-control">
+              <div className="studio-browser-setting-control studio-browser-location-summary">
                 <span className="studio-browser-setting-icon" aria-hidden="true">
                   <Monitor size={17} />
                 </span>
@@ -2253,7 +2257,7 @@ function BrowserContent({
                   title="Location stays with this tab. Open another tab to use a different computer."
                 >
                   {mode === 'web'
-                    ? 'Local · this device'
+                    ? 'Local · this computer'
                     : `Remote · ${selectedRuntime ? runtimeComputerName(selectedRuntime) : 'Unavailable computer'}`}
                 </p>
               </div>
@@ -2551,7 +2555,10 @@ function BrowserContent({
             </div>
           )}
           <details className="studio-browser-more-actions">
-            <summary>Tab & page actions</summary>
+            <summary>
+              <ChevronDown size={14} aria-hidden="true" />
+              Tab & page actions
+            </summary>
             <div className="studio-browser-secondary-actions">
               {mode === 'web' && browser && url && (
                 <Button
@@ -3241,13 +3248,13 @@ function BrowserContent({
         </div>
       )}
       {initialMode === 'devices' && (
-        <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
-          <span className="inline-flex flex-1 items-center gap-1.5">
-            <Smartphone size={14} /> Devices
+        <div className="studio-thread-tools-header flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs">
+          <span className="inline-flex flex-1 items-center gap-2 font-medium">
+            <Smartphone size={16} className="text-muted-foreground" aria-hidden /> Devices
           </span>
           {onClose && (
             <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>
-              <PanelRightClose size={15} />
+              <X size={14} />
             </IconButton>
           )}
         </div>
@@ -3482,7 +3489,7 @@ function BrowserContent({
                 {!browser && (
                   <iframe
                     key={reload}
-                    title="Task browser"
+                    title="Thread browser"
                     src={url}
                     className="h-full w-full border-0"
                     sandbox="allow-scripts allow-forms allow-same-origin"
@@ -3494,19 +3501,21 @@ function BrowserContent({
           )}
         </div>
       ) : mode === 'devices' ? (
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Choose a device</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy || !connected}
-              onClick={() => void act(loadDevices)}
-            >
-              Refresh
-            </Button>
-          </div>
+        <div className="min-h-0 flex-1 overflow-auto p-4 text-[13px]">
+          {hubEnabled !== false && (
+            <div className="mb-1 flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Choose a device</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy || !connected}
+                onClick={() => void act(loadDevices)}
+              >
+                Refresh
+              </Button>
+            </div>
+          )}
           {diagnostics.map((d) => (
             <p className="mb-3 text-xs text-muted-foreground" key={d}>
               {d}
@@ -3533,12 +3542,19 @@ function BrowserContent({
             </label>
           )}
           {hubEnabled === false && (
-            <p className="mb-3 text-sm text-muted-foreground">
-              Device Hub is off. Enable it in Settings → Computers → Device previews.
-            </p>
+            <div className="studio-panel-empty">
+              <Smartphone className="studio-panel-empty-icon" aria-hidden="true" />
+              <h3 className="text-sm font-medium">Device Hub is off</h3>
+              <p className="text-xs text-muted-foreground">
+                Enable device previews to connect a phone or simulator.
+              </p>
+              <Button size="sm" onClick={() => navigateStudio({ viewId: 'device-previews' })}>
+                Open device settings
+              </Button>
+            </div>
           )}
           {hubEnabled && !filteredDevices.length && !busy && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               No devices found. Connect a phone to the host or create a simulator.
             </p>
           )}

@@ -95,7 +95,7 @@ export function RunDetails({
       <div className="p-5 text-sm">
         <h2 className="font-medium">Ready when you are</h2>
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          Run this automation to follow each step here. Task results and review decisions stay
+          Run this automation to follow each step here. Thread results and review decisions stay
           attached to the run.
         </p>
       </div>
@@ -189,7 +189,7 @@ export function RunDetails({
         )}
         {!run.steps && (
           <p className="text-xs text-muted-foreground">
-            This older run has limited step history. Its tasks are listed below.
+            This older run has limited step history. Its threads are listed below.
           </p>
         )}
         {inputTaskId && (
@@ -199,7 +199,7 @@ export function RunDetails({
               {pendingTaskInput(snapshot, inputTaskId)}
             </p>
             <Button size="sm" className="mt-3" onClick={() => openTask(inputTaskId)}>
-              Open task
+              Open thread
             </Button>
           </div>
         )}
@@ -207,7 +207,7 @@ export function RunDetails({
           <div className="rounded-lg border border-status-warning/25 bg-status-warning/5 p-3">
             <p className="text-xs font-medium">{waiting?.label ?? 'Review needed'}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Open the completed tasks below and review their changes before continuing.
+              Open the completed threads below and review their changes before continuing.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
@@ -256,7 +256,7 @@ export function RunDetails({
           <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             {anotherActive
               ? 'Wait for the current run to finish before retrying.'
-              : 'Continues this run. Completed tasks will not run again.'}
+              : 'Continues this run. Completed threads will not run again.'}
           </p>
         )}
       </div>
@@ -327,7 +327,7 @@ export function RunDetails({
       </ol>
       {tasks.length > 0 && (
         <div className="space-y-2 border-t p-4">
-          <h3 className="text-xs font-medium">Tasks in this run</h3>
+          <h3 className="text-xs font-medium">Threads in this run</h3>
           {tasks.map((task) => (
             <button
               key={task.id}

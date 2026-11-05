@@ -1,3 +1,5 @@
+import { useConfirmation } from '@dovo/studio-core'
+import { Disclosure } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 import {
@@ -62,6 +64,7 @@ export function AcpRegistry({
     () => !agent.acpInstallationId && !agent.endpoint.trim(),
   )
 
+  const confirm = useConfirmation(JSON.stringify([installations, busyId, managedId]))
   useEffect(() => {
     if (!connected) return
     let active = true
@@ -133,7 +136,7 @@ export function AcpRegistry({
           <h3 className="text-sm font-medium">ACP agents</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             {management
-              ? 'Install agents from the ACP registry on this computer. To use one in tasks, add an agent profile for it.'
+              ? 'Install agents from the ACP registry on this computer. To use one in threads, add an agent profile for it.'
               : 'Choose an agent installed on this computer, or run your own ACP command.'}
           </p>
         </div>
@@ -300,8 +303,16 @@ export function AcpRegistry({
                             size="icon"
                             aria-label={`Remove ${entry.name}`}
                             disabled={isBusy || !connected}
-                            onClick={() => {
-                              if (!window.confirm(`Remove ${entry.name} from this computer?`))
+                            onClick={async () => {
+                              if (
+                                !(await confirm({
+                                  title: `Remove ${entry.name}?`,
+                                  description:
+                                    'This agent installation will be removed from this computer.',
+                                  confirmLabel: 'Remove agent',
+                                  destructive: true,
+                                }))
+                              )
                                 return
                               void mutate(
                                 installed.id,
@@ -399,6 +410,7 @@ function AcpAuthentication({
   > | null>(null)
   const [sessionsBusy, setSessionsBusy] = useApplicationState(false)
   const [sessionsError, setSessionsError] = useApplicationState('')
+  const confirm = useConfirmation(JSON.stringify([installation.id, sessionsBusy, disabled]))
   const refreshMethods = useCallback(async () => {
     const value = await request(
       '/api/agents/acp/inspect',
@@ -488,7 +500,15 @@ function AcpAuthentication({
     }
   }
   const deleteSession = async (sessionId: string) => {
-    if (!window.confirm('Permanently delete this ACP session and its saved context?')) return
+    if (
+      !(await confirm({
+        title: 'Delete ACP session?',
+        description: 'This permanently deletes the session and its saved context.',
+        confirmLabel: 'Delete session',
+        destructive: true,
+      }))
+    )
+      return
     setSessionsBusy(true)
     setSessionsError('')
     try {
@@ -712,8 +732,7 @@ function AcpAuthentication({
           Sign out
         </Button>
       )}
-      <details className="rounded border p-2 text-xs">
-        <summary className="cursor-pointer text-muted-foreground">Saved agent sessions</summary>
+      <Disclosure title={<> Saved agent sessions </>}>
         <div className="mt-2 grid gap-2">
           <p className="text-muted-foreground">
             Sessions this agent keeps on the computer, including their saved context.
@@ -776,7 +795,7 @@ function AcpAuthentication({
             </p>
           )}
         </div>
-      </details>
+      </Disclosure>
       {!!terminal && (
         <div className="grid gap-2">
           <p className="text-xs text-muted-foreground">

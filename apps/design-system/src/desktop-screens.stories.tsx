@@ -32,14 +32,28 @@ const meta = {
     docs: {
       description: {
         component:
-          'Every registered desktop extension route, rendered from the production page module with the real activity rail, title bar and settings navigation. This is an isolated composition of shell primitives, not the live Workbench/network provider. Page-owned sidebars remain real. Populated means the small synthetic workspace, not full fixtures for every remote integration. Unsupported reads display production unavailable/error states; mutations are blocked. Device-local appearance preferences affect this isolated catalog origin only. Specialized detail flows remain covered by component stories, not every page interaction.',
+          'Every registered desktop extension route, rendered from the production page module with the real activity rail, title bar and settings navigation. This is an isolated composition of shell primitives, not the live Workbench/network provider. Page-owned sidebars remain real. Populated means the small synthetic workspace, not full fixtures for every remote integration. Busy adds ten synthetic threads across three projects and a longer conversation for density and overflow review. Unsupported reads display production unavailable/error states; mutations are blocked. Device-local appearance preferences affect this isolated catalog origin only. Specialized detail flows remain covered by component stories, not every page interaction.',
       },
     },
   },
   args: { route: 'tasks', state: 'populated' },
   argTypes: {
     route: { control: 'select', options: desktopScreenViews.map((view) => view.id) },
-    state: { control: 'select', options: ['populated', 'empty', 'loading', 'error', 'offline'] },
+    state: {
+      control: 'select',
+      options: [
+        'populated',
+        'git-review-dense',
+        'lists-dense',
+        'busy',
+        'busy-long-draft',
+        'idle',
+        'empty',
+        'loading',
+        'error',
+        'offline',
+      ],
+    },
   },
   render: (args) => <DesktopScreen key={`${args.route}:${args.state}`} {...args} />,
 } satisfies Meta<{ route: string; state: DesktopScreenState }>
@@ -50,11 +64,13 @@ export function DesktopScreen({
   state,
   entityId,
   children,
+  overlay,
 }: {
   route: string
   state: DesktopScreenState
   entityId?: string
   children?: ReactNode
+  overlay?: ReactNode
 }) {
   const [activeId, setActiveId] = useState(route)
   const [collapsed, setCollapsed] = useState(false)
@@ -74,7 +90,7 @@ export function DesktopScreen({
   return (
     <DesktopScreenFixture state={state} navigate={setActiveId}>
       <SettingsTargetProvider>
-        <div style={{ height: 'min(900px, calc(100vh - 48px))', minHeight: 560 }}>
+        <div style={{ height: '100vh', minHeight: 560 }}>
           <SidebarHeaderLayout
             brand={title(true)}
             collapsed={collapsed}
@@ -129,6 +145,7 @@ export function DesktopScreen({
                   </div>
                 </main>
               </div>
+              <div className="absolute left-20 top-20 z-40">{overlay}</div>
             </div>
           </SidebarHeaderLayout>
         </div>
@@ -137,6 +154,13 @@ export function DesktopScreen({
   )
 }
 export const Tasks: Story = {}
+export const BusyWorkspace: Story = { args: { state: 'busy' } }
+export const BusyConversation: Story = {
+  render: () => <DesktopScreen route="tasks" entityId="preview-task" state="busy" />,
+}
+export const BusyLongDraft: Story = {
+  render: () => <DesktopScreen route="tasks" entityId="preview-task" state="busy-long-draft" />,
+}
 export const TasksEmpty: Story = { args: { state: 'empty' } }
 export const WorkspaceLoading: Story = { args: { state: 'loading' } }
 export const WorkspaceError: Story = { args: { route: 'activity', state: 'error' } }
@@ -144,10 +168,12 @@ export const WorkspaceOffline: Story = { args: { state: 'offline' } }
 export const Artifacts: Story = { args: { route: 'artifacts' } }
 export const ArchivedTasks: Story = { args: { route: 'archived-tasks' } }
 export const Issues: Story = { args: { route: 'issues' } }
+export const DenseIssues: Story = { args: { route: 'issues', state: 'lists-dense' } }
 export const Jira: Story = { args: { route: 'jira' } }
 export const Pipelines: Story = { args: { route: 'pipelines' } }
 export const SourceControl: Story = { args: { route: 'source-control' } }
 export const Pulls: Story = { args: { route: 'pulls' } }
+export const DensePulls: Story = { args: { route: 'pulls', state: 'lists-dense' } }
 export const Resources: Story = { args: { route: 'resources' } }
 export const TextGeneration: Story = { args: { route: 'text-generation' } }
 export const Agents: Story = { args: { route: 'agents' } }

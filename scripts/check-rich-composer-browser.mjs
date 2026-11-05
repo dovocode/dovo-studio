@@ -87,13 +87,28 @@ try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
+  const editorCSS = await readFile(
+    new URL('../packages/extension-tasks/src/styles.css', import.meta.url),
+    'utf8',
+  )
   await page.setContent('<div id="app"></div>')
+  await page.addStyleTag({ content: editorCSS.replace(/^@import.*$/gm, '') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const text = () => page.evaluate(() => window.controller.text)
   const setDraft = (value) => page.evaluate((value) => window.controller.update(value), value)
-  const editor = page.locator('[contenteditable="true"][aria-label="Message task"]')
-  const source = page.locator('textarea[aria-label="Message task"]')
+  const editor = page.locator('[contenteditable="true"][aria-label="Message thread"]')
+  const source = page.locator('textarea[aria-label="Message thread"]')
   await editor.waitFor()
+  assert.equal(
+    await editor.evaluate((el) => getComputedStyle(el, '::before').content),
+    '"Message"',
+    'An empty rich editor shows its writing prompt',
+  )
+  assert.equal(
+    await editor.evaluate((el) => getComputedStyle(el, '::before').whiteSpace),
+    'nowrap',
+    'The empty writing prompt cannot wrap into a clipped second line',
+  )
   const initialRenders = await page.evaluate(() => window.editorRenders)
   assert(initialRenders > 0)
   for (let index = 0; index < 10; index++)

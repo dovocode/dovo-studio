@@ -29,7 +29,11 @@ import { Button } from './components/ui/button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ComposerModelPicker } from './composer-model-picker'
 import { useHarnessCatalog } from './harness-catalog'
-import { ComposerEffortColumn, ComposerPickerSpeed } from './composer-model-options'
+import {
+  ComposerEffortColumn,
+  ComposerPickerDaybreak,
+  ComposerPickerSpeed,
+} from './composer-model-options'
 const accessIcon = {
   ask: LockKeyhole,
   'workspace-write': Pencil,
@@ -75,15 +79,18 @@ export function ComposerSettingsControls({
         <DropdownMenu.Trigger asChild>
           <Button
             type="button"
-            variant="ghost"
-            className="h-6 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal text-muted-foreground"
+            variant="outline"
+            className="h-7 w-52 min-w-0 max-w-[65%] gap-2 text-xs font-normal"
+            style={{ borderColor: 'var(--control-edge)' }}
             disabled={locked}
-            aria-label="Configure task permissions"
-            title="Agent access"
+            aria-label="Configure thread permissions"
+            title={`Agent access: ${permissionPolicyLabel(value)}`}
           >
             <AccessIcon className="size-3.5" />
-            {permissionPolicyLabel(value)}
-            <ChevronDown size={12} />
+            <span className="min-w-0 flex-1 truncate text-left">
+              {permissionPolicyLabel(value)}
+            </span>
+            <ChevronDown className="size-4 text-muted-foreground" />
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
@@ -312,17 +319,30 @@ export function ComposerSettingsControls({
           />
         }
         footer={
-          <>
-            {!modelOnly && !automatic && (
-              <ComposerPickerSpeed
-                value={value}
-                catalog={catalog}
-                onChange={onChange}
-                disabled={disabled}
-              />
-            )}
-            <div className="ml-auto">{access}</div>
-          </>
+          !modelOnly && (
+            <>
+              {!automatic && (
+                <ComposerPickerDaybreak
+                  value={value}
+                  catalog={catalog}
+                  onChange={onChange}
+                  disabled={disabled}
+                />
+              )}
+              {!automatic && (
+                <ComposerPickerSpeed
+                  value={value}
+                  catalog={catalog}
+                  onChange={onChange}
+                  disabled={disabled}
+                />
+              )}
+              <div className="flex min-h-7 items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">Access</span>
+                {access}
+              </div>
+            </>
+          )
         }
         effortLabel={
           automatic

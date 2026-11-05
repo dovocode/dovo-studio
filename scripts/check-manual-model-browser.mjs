@@ -12,7 +12,7 @@ const mocks = {
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';
@@ -48,10 +48,10 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogTitle=Box,DialogDescription=Box,DialogHeader=Box,ComposerWorkspaceBar=Box;
+    export const DialogContent=Box,DialogTitle=Box,DialogDescription=Box,DialogHeader=Box,DialogFooter=Box,ComposerWorkspaceBar=Box;
     export const ModelSettings=()=>null;
     export const ProjectIcon=()=>null;
-    export {Button} from '../studio-ui/src/components/ui/button';
+    export {SearchField} from '../studio-ui/src/search-field';export {Button} from '../studio-ui/src/components/ui/button';
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
@@ -67,7 +67,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,label})=><div data-sidebar={label} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task,onTools})=><header data-thread-header={task.id}>{task.title}<button onClick={onTools}>Toggle tools</button></header>;`,
+  './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
+  './detail/task-tools': `export const TaskTools=({onTools})=><button onClick={onTools}>Toggle tools</button>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
@@ -76,7 +77,6 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
 for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
   ['@dovo/extension-scm/projects', ['ProjectsMenu']],
-  ['./detail/task-tools', ['TaskTools']],
   ['./detail/task-agents', ['TaskAgents']],
   ['./detail/native-agent-thread', ['NativeAgentThread']],
   ['./detail/linked-projects', ['LinkedProjects']],
@@ -133,7 +133,7 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true},{id:'harness:claude',available:true}];
           if(path==='/api/agents/models/cached')return null;
           if(path==='/api/agents/models')return {models:[{id:'default',name:'Default (recommended)',isDefault:true},{id:'opus',name:'Opus 5.5'},{id:'sonnet',name:'Sonnet 5.5'}],reasoning:[]};
-          if(path==='/api/tasks/title')return {title:'New task'};
+          if(path==='/api/tasks/title')return {title:'New thread'};
           if(path==='/api/workspace'){setWorkspace(current=>({...current,tasks:[input.create,...current.tasks]}));return {revision:1};}
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',draft:'',providerLock:'claude',messages:[{id:input.messageId,role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
@@ -203,7 +203,7 @@ try {
       window.invalidRuntime = fixture.invalidRuntime
     }, fixture)
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    const editor = page.getByLabel(fixture.launcher ? 'Task prompt' : 'Message task', {
+    const editor = page.getByLabel(fixture.launcher ? 'Thread prompt' : 'Message thread', {
       exact: true,
     })
     if (fixture.autoProjects) {
@@ -268,7 +268,16 @@ try {
         await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
         'rgba(0, 0, 0, 0)',
       )
-      assert.match(await selectedMode.getAttribute('class'), /ring-primary/)
+      const unselectedMode = page.getByRole('button', {
+        name: mode === 'Inherit' ? 'Tune' : 'Inherit',
+        exact: true,
+      })
+      assert.equal(await unselectedMode.getAttribute('aria-pressed'), 'false')
+      assert.notEqual(
+        await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        await unselectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        'The selected mode has a distinct surface',
+      )
       await page.keyboard.press('Escape')
       if (mode === 'Tune' || mode === 'Maestro') {
         const difficulty = page.getByRole('button', { name: 'Choose agent and model', exact: true })
@@ -304,7 +313,7 @@ try {
           .getByRole('combobox', { name: 'Project', exact: true })
           .selectOption({ label: 'Project with Sonnet default' })
       else {
-        await page.getByRole('button', { name: 'Task project' }).click()
+        await page.getByRole('button', { name: 'Thread project' }).click()
         await page.getByRole('button', { name: 'Project with Sonnet default' }).click()
         await page.waitForFunction(() =>
           window.saved.some((task) => task.repositoryId === 'project'),
@@ -313,7 +322,7 @@ try {
       assert.match(await picker.textContent(), /Opus 5.5/)
     }
     if (fixture.launcher)
-      await page.getByRole('button', { name: 'Start task', exact: true }).click()
+      await page.getByRole('button', { name: 'Start thread', exact: true }).click()
     else await editor.press('Enter')
     await page.waitForFunction(() => typeof window.finishSend === 'function')
     assert.equal(

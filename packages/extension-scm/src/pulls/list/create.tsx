@@ -247,9 +247,9 @@ export function CreatePull({
             </ChoicePicker>
           </FormField>
           {sourceTasks.length > 0 && (
-            <FormField label="From task (optional)">
+            <FormField label="From thread (optional)">
               <ChoicePicker
-                aria-label="PR source task"
+                aria-label="PR source thread"
                 value={sourceTask}
                 disabled={busy}
                 onValueChange={(id) => {
@@ -261,7 +261,7 @@ export function CreatePull({
                   setBody(`Related ${task.workItem.kind}: ${task.workItem.url}\n\n`)
                 }}
               >
-                <option value="">Choose a linked task…</option>
+                <option value="">Choose a linked thread…</option>
                 {sourceTasks.map((task) => (
                   <option key={task.id} value={task.id}>
                     {task.title} · {task.checkoutBranch}
@@ -269,7 +269,7 @@ export function CreatePull({
                 ))}
               </ChoicePicker>
               <p className="text-xs text-muted-foreground">
-                Use the task branch and reference its source. Review the fields before submitting.
+                Use the thread branch and reference its source. Review the fields before submitting.
               </p>
             </FormField>
           )}
@@ -315,7 +315,7 @@ export function CreatePull({
                 variant="outline"
                 className="shrink-0 gap-1"
                 disabled={busy || describing || !connected || !head.trim() || !base.trim()}
-                title="Write the title and description from the branch’s changes and its task"
+                title="Write the title and description from the branch’s changes and its thread"
                 onClick={() => {
                   setDescribing(true)
                   setError('')

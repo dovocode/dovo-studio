@@ -47,7 +47,7 @@ createRoot(document.getElementById('app')).render(<TooltipProvider><App/></Toolt
         ? [
             {
               path: '@dovo/studio-ui',
-              contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {IconButton} from '${root}packages/studio-ui/src/components/icon-button';export {Dialog,DialogContent,DialogDescription,DialogTitle} from '${root}packages/studio-ui/src/components/ui/dialog';`,
+              contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {IconButton} from '${root}packages/studio-ui/src/components/icon-button';export {Dialog,DialogContent,DialogDescription,DialogTitle,DialogFooter} from '${root}packages/studio-ui/src/components/ui/dialog';`,
             },
           ]
         : [

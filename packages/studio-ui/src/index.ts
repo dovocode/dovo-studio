@@ -46,6 +46,7 @@ export { TaskDefaultSettings } from './task-default-settings'
 export { ProjectOrganizationSettings } from './project-organization'
 export {
   SettingsPage,
+  SettingsStorageInfo,
   SettingsGroup,
   SettingRow,
   SettingsSaveBar,
@@ -101,3 +102,7 @@ export { ChangeTypeFilters, ChangeTypeIndicator } from './review/change-types'
 export { ChangeSummary } from './review/change-summary'
 
 export { ImageViewer } from './image-viewer'
+
+export { Disclosure } from './disclosure'
+
+export { StudioConfirmationProvider } from './confirmation-provider'

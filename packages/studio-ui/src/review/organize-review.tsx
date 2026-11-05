@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { Disclosure } from '../disclosure'
 import {
   acpInstallationHarness,
   acpHarnessChoiceId,
@@ -37,11 +38,14 @@ export function OrganizeReview({
   const blocked =
     disabled || !review.ready || !connected || review.organizing || !review.progress?.files.length
   return (
-    <div className="max-h-[45%] shrink-0 overflow-y-auto border-b px-3 py-2 text-xs">
-      <details>
-        <summary className="cursor-pointer font-medium">
-          Organize review {review.featureGroups ? '· Feature groups active' : '· Harness & model'}
-        </summary>
+    <div className="max-h-[45%] shrink-0 overflow-y-auto px-0 py-2 text-xs">
+      <Disclosure
+        title={
+          <>
+            Organize review {review.featureGroups ? '· Feature groups active' : '· Harness & model'}
+          </>
+        }
+      >
         <div className="mt-2 space-y-3">
           <p className="text-muted-foreground">
             Group changes by feature and explain linked impact. The selected model reads the diff;
@@ -174,7 +178,7 @@ export function OrganizeReview({
             )}
           </div>
         </div>
-      </details>
+      </Disclosure>
       {review.progress?.guide && (
         <ReviewGuideCard
           guide={review.progress.guide}

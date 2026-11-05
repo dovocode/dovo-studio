@@ -9,17 +9,18 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog', 'tooltip']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
+  `export {Disclosure} from '${uiDir}/disclosure.tsx';export {IconButton} from '${uiDir}/components/icon-button.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:true,detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=(_repositoryId,_number,_connectionId,options)=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:key!=='checks'||!window.checksPending,busy:key==='checks'&&!!window.checksPending,enabled:true,readConnected:window.store.connected,error:key==='checks'?(window.checksError??''):'',detail:window.detail,refresh:()=>{window.checkRefreshes=(window.checkRefreshes??0)+1}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
-  './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
-  '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
+  './pipeline-runs': `export {PullPipelineRunsContent} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';export const usePullPipelineRuns=()=>({runs:(window.pipelineRuns??[]).map((run,index)=>({id:String(index),number:String(index+1),title:'Pipeline build',url:'https://github.com/team/project/actions/runs/'+index,updatedAt:'2026-10-04',...run})),connected:window.store.connected,busy:false,selected:null,setSelected:()=>{},load:()=>{window.pipelineRefreshes=(window.pipelineRefreshes??0)+1}});`,
+  '../../work/content': `export const WorkContent=()=>null;`,
+  '../list/start-task': `export const StartPullTask=()=> <button>New thread</button>;`,
   './create': `export const CreatePull=()=>null;`,
   '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[],loading:false,error:''});`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,
@@ -49,7 +50,7 @@ window.store.request = async (path, input, ...rest) => {
   if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
   return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
 };
-const rootView=createRoot(document.getElementById('app'));window.showBasicList=(complete=true,native=false)=>{window.pullError=undefined;window.source.repository.name='Project';const basic={number:7,title:'Base change',url:pull.url,state:'open',draft:false,author:pull.author,authorAvatarUrl:pull.authorAvatarUrl,updatedAt:pull.updatedAt,head:'feature',base:'main',labels:[]};window.pulls=[basic,{...basic,number:8,url:'https://github.com/team/project/pull/8',title:'Dependent change',head:'child',base:'feature'}];if(native)window.pulls=[{...window.pulls[1],stack:{nativeId:99,nativeNumber:12,position:3,size:5,baseRef:'main',complete:false}}];window.pulls=pullOverviewStacks(window.pulls,complete);rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><View key={'basic-'+complete+'-'+native}/></main></div></div>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showDestination=(tab,fragment)=>rootView.render(<main className="studio flex flex-col" style={{height:'100vh'}}><PullDetail key={tab+fragment} repositoryId="repo" number={7} initialTab={tab} initialFragment={fragment} onBack={()=>{}} onChanged={()=>{}}/></main>);window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
+const rootView=createRoot(document.getElementById('app'));window.showBasicList=(complete=true,native=false)=>{window.pullError=undefined;window.source.repository.name='Project';const basic={number:7,title:'Base change',url:pull.url,state:'open',draft:false,author:pull.author,authorAvatarUrl:pull.authorAvatarUrl,updatedAt:pull.updatedAt,head:'feature',base:'main',labels:[]};window.pulls=[basic,{...basic,number:8,url:'https://github.com/team/project/pull/8',title:'Dependent change',head:'child',base:'feature'}];if(native)window.pulls=[{...window.pulls[1],stack:{nativeId:99,nativeNumber:12,position:3,size:5,baseRef:'main',complete:false}}];window.pulls=pullOverviewStacks(window.pulls,complete);rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><View key={'basic-'+complete+'-'+native}/></main></div></div>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showDestination=(tab,fragment)=>rootView.render(<TooltipProvider><main className="studio flex flex-col" style={{height:'100vh'}}><PullDetail key={tab+fragment} repositoryId="repo" number={7} initialTab={tab} initialFragment={fragment} onBack={()=>{}} onChanged={()=>{}}/></main></TooltipProvider>);window.showEmbedded=()=>rootView.render(<TooltipProvider><main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main></TooltipProvider>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
   },
   bundle: true,
   write: false,
@@ -81,6 +82,8 @@ const browser = await chromium.launch()
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.setDefaultTimeout(8000)
+  const screenshot = (options) =>
+    process.env.DOVO_BROWSER_SCREENSHOTS === '0' ? Promise.resolve() : page.screenshot(options)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('https://avatars.example/**', (route) =>
@@ -103,6 +106,102 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
     )
+  const checkActionFooter = async (dialog, submitName) => {
+    const originalViewport = page.viewportSize()
+    const body = dialog.locator('[data-pull-action-body]')
+    const disclosure = dialog.locator('details').filter({ hasText: 'Status sources' })
+    const summary = disclosure.locator('summary')
+    const writeCount = await page.evaluate(() => window.writes.length)
+    const measureFooter = async (state) => {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+      const geometry = await dialog.evaluate((element, name) => {
+        const body = element.querySelector('[data-pull-action-body]')
+        const form = element.querySelector('form')
+        const cancel = Array.from(form.querySelectorAll('button')).find(
+          (button) => button.textContent.trim() === 'Cancel',
+        )
+        const submit = form.querySelector('button[type="submit"]')
+        if (!body || !cancel || !submit || submit.textContent.trim() !== name) return null
+        const rect = (node) => {
+          const { top, right, bottom, left, width, height } = node.getBoundingClientRect()
+          return { top, right, bottom, left, width, height }
+        }
+        return {
+          dialog: rect(element),
+          body: rect(body),
+          bodyContentRight:
+            body.getBoundingClientRect().right -
+            (body.offsetWidth - body.clientWidth) -
+            parseFloat(getComputedStyle(body).paddingRight),
+          cancel: rect(cancel),
+          submit: rect(submit),
+          viewport: { width: innerWidth, height: innerHeight },
+        }
+      }, submitName)
+      assert.ok(geometry, `${submitName}: footer controls exist (${state})`)
+      const label = `${submitName} ${geometry.viewport.width}×${geometry.viewport.height} ${state}`
+      for (const name of ['cancel', 'submit']) {
+        const button = geometry[name]
+        assert.ok(button.width > 0 && button.height > 0, `${label}: ${name} has area`)
+        assert.ok(
+          button.left >= Math.max(geometry.dialog.left, 0) - 1 &&
+            button.right <= Math.min(geometry.dialog.right, geometry.viewport.width) + 1 &&
+            button.top >= Math.max(geometry.dialog.top, 0) - 1 &&
+            button.bottom <= Math.min(geometry.dialog.bottom, geometry.viewport.height) + 1,
+          `${label}: ${name} is fully inside the visible dialog`,
+        )
+        assert.ok(
+          button.top >= geometry.body.bottom - 1,
+          `${label}: ${name} does not overlap the scrolling form body`,
+        )
+      }
+      assert.ok(
+        Math.abs(geometry.submit.right - geometry.bodyContentRight) <= 1,
+        `${label}: submit aligns with the scroll body's content edge`,
+      )
+      assert.ok(
+        geometry.cancel.right <= geometry.submit.left + 1,
+        `${label}: Cancel and submit do not overlap`,
+      )
+    }
+    for (const viewport of [
+      { width: 1440, height: 960 },
+      { width: 1100, height: 960 },
+      { width: 1440, height: 720 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      assert.equal(await disclosure.getAttribute('open'), null)
+      await measureFooter('sources collapsed')
+      await summary.click()
+      assert.equal(await disclosure.getAttribute('open'), '')
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      await measureFooter('sources expanded, body at top')
+      const scroll = await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+        return {
+          overflow: element.scrollHeight - element.clientHeight,
+          position: element.scrollTop,
+        }
+      })
+      if (viewport.height === 720) {
+        assert.ok(scroll.overflow > 0, `${submitName}: short desktop exercises body overflow`)
+        assert.ok(scroll.position > 0, `${submitName}: short desktop form body actually scrolls`)
+      }
+      await measureFooter('sources expanded, body at bottom')
+      await summary.click()
+      await body.evaluate((element) => {
+        element.scrollTop = 0
+      })
+    }
+    await page.setViewportSize(originalViewport)
+    assert.equal(await page.evaluate(() => window.writes.length), writeCount)
+    assert.equal(await dialog.getByRole('checkbox').isChecked(), false)
+  }
   const fullWidthList = async () =>
     assert.equal(
       await list.evaluate(
@@ -121,10 +220,13 @@ try {
     assert.equal(await list.getByRole('button', { name, exact: true }).isVisible(), false)
   await list.getByRole('button', { name: 'Authored by me', exact: true }).waitFor()
   assert.equal(await list.getByText(/loaded pull requests?/).count(), 0)
+  await row('Improve pull request reviews')
+    .getByText('Repository CI: passed', { exact: true })
+    .waitFor()
   const avatar = row('Improve pull request reviews').locator('img')
   assert.equal(await avatar.getAttribute('src'), 'https://avatars.example/dominic.png')
   await avatar.evaluate((element) => element.decode())
-  await page.screenshot({ path: '/tmp/dovo-pull-list-clean.png' })
+  await screenshot({ path: '/tmp/dovo-pull-list-clean.png' })
   // Failed profile images retain a compact author initial without breaking the row.
   await avatar.dispatchEvent('error')
   assert.equal(await row('Improve pull request reviews').locator('img').count(), 0)
@@ -150,7 +252,7 @@ try {
     await row('Improve pull request reviews').evaluate((element) => element.clientHeight < 90),
     true,
   )
-  await page.screenshot({ path: '/tmp/dovo-pull-list.png' })
+  await screenshot({ path: '/tmp/dovo-pull-list.png' })
   await list.getByRole('button', { name: 'Actions for PR #7', exact: true }).click()
   assert.equal(
     await page.getByRole('menuitem', { name: 'Open in browser', exact: true }).getAttribute('href'),
@@ -201,18 +303,24 @@ try {
   await page.getByText('Please add a test', { exact: true }).waitFor()
   const detail = page.locator('[aria-label="Pull request details"]')
   const content = detail.locator('[aria-label="Pull request content"]')
-  const heading = detail.getByRole('heading', { level: 1, name: /Improve pull request reviews/ })
+  const waitForCheckFailure = (label) =>
+    page.waitForFunction(
+      (expected) => document.querySelector('#pr-tab-checks')?.title === expected,
+      label,
+    )
+  const heading = detail.getByRole('heading', { level: 2, name: /Improve pull request reviews/ })
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
-    .locator('[aria-label="Pull request status"]')
-    .getByText('Waiting for required reviews', { exact: true })
+    .getByLabel('Pull request status', { exact: true })
+    .getByText('Repository merge status: Waiting for required reviews', { exact: true })
     .waitFor()
+  assert.equal(await detail.getByText('Mergeability', { exact: true }).count(), 0)
   assert.equal(
     (await detail.locator('.studio-pull-header').boundingBox()).y,
     (await page.locator('.studio-titlebar').boundingBox()).y,
     'PR and sidebar branding share one row',
   )
-  await page.screenshot({ path: '/tmp/dovo-pull-overview.png' })
+  await screenshot({ path: '/tmp/dovo-pull-overview.png' })
   await detail.getByRole('button', { name: 'Reviews 1', exact: true }).click()
   assert.equal(await detail.getByText('Please add a test', { exact: true }).isVisible(), false)
   await detail.getByText('Looks good to me', { exact: true }).waitFor()
@@ -226,6 +334,10 @@ try {
   assert.equal(await heading.evaluate((element) => element.getBoundingClientRect().top), headingTop)
   await detail.getByRole('button', { name: 'View pull request checks', exact: true }).click()
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).waitFor()
+  const neutralCheckCountColor = await detail
+    .getByRole('tab', { name: 'Checks (1)', exact: true })
+    .getByText('1', { exact: true })
+    .evaluate((node) => getComputedStyle(node).color)
   assert.equal(
     await detail
       .getByRole('tab', { name: 'Checks (1)', exact: true })
@@ -235,7 +347,7 @@ try {
   await detail.getByText('All tests passed', { exact: true }).waitFor()
   await detail.getByText('Check output', { exact: true }).click()
   await detail.getByText('2 tests completed', { exact: true }).waitFor()
-  await page.screenshot({ path: '/tmp/dovo-pull-checks.png' })
+  await screenshot({ path: '/tmp/dovo-pull-checks.png' })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).press('Home')
   assert.equal(
     await detail.getByRole('tab', { name: 'Overview', exact: true }).getAttribute('aria-selected'),
@@ -256,7 +368,7 @@ try {
     .getByRole('navigation', { name: 'Changed files' })
     .getByText('2 files', { exact: true })
     .waitFor()
-  await page.screenshot({ path: '/tmp/dovo-pull-summary-expanded.png' })
+  await screenshot({ path: '/tmp/dovo-pull-summary-expanded.png' })
   await changes.getByRole('button', { name: 'Filter Code: 2 files', exact: true }).click()
   assert.equal(
     await changes
@@ -273,7 +385,7 @@ try {
         .querySelector('[aria-label="Code changes"] [aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'true',
   )
-  await page.getByText('1 of 2 viewed', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '2 files · 1 viewed', exact: true }).waitFor()
   assert.equal(await heading.isVisible(), true)
   await page
     .getByRole('navigation', { name: 'Changed files' })
@@ -300,14 +412,99 @@ try {
       actions: ['comment', 'review', 'merge'],
       mergeMethods: ['squash'],
     }
+    window.pipelineRuns = [{ status: 'failure' }]
   })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  assert.equal(
+    await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).getAttribute('title'),
+    'Pipeline failed',
+  )
+  assert.equal(
+    await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).innerText(),
+    'Checks\n1',
+  )
+  assert.match(
+    await detail
+      .getByRole('tab', { name: 'Checks (1)', exact: true })
+      .getAttribute('aria-description'),
+    /Pipeline runs: 1 failed/,
+    'Failure badge explains which check source failed',
+  )
+  assert.equal(
+    await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
+    'outline',
+    'Failed pipelines and a missing review must not promote Merge as the primary action',
+  )
+  assert.equal(await detail.getByRole('button', { name: 'Merge', exact: true }).isEnabled(), true)
   await detail.getByRole('button', { name: 'Merge', exact: true }).click()
   const mergeDialog = page.getByRole('dialog')
+  const mergeReadiness = mergeDialog.getByRole('region', { name: 'Merge readiness' })
+  await mergeReadiness
+    .getByRole('heading', { name: 'Repository merge status', exact: true })
+    .waitFor()
+  assert.equal(
+    await mergeReadiness
+      .getByRole('heading')
+      .evaluate((element) => element === document.activeElement),
+    true,
+    'Merge opens on the readiness heading, without accepting consent or submitting',
+  )
+  await mergeReadiness.getByText('Waiting for required reviews', { exact: true }).waitFor()
+  const statusDisclosure = mergeReadiness.locator('details').filter({ hasText: 'Status sources' })
+  assert.equal(await statusDisclosure.getAttribute('open'), null)
+  const currentMergeFailures = mergeReadiness.getByRole('list', { name: 'Current merge failures' })
+  await currentMergeFailures.getByText('Linked pipelines: 1 failed', { exact: true }).waitFor()
+  assert.equal(await currentMergeFailures.getByRole('listitem').count(), 1)
+  assert.equal(
+    await mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true }).isDisabled(),
+    true,
+    'Visible failures do not bypass the acknowledgement guard',
+  )
+  await checkActionFooter(mergeDialog, 'Merge pull request')
+  await mergeReadiness.getByRole('button', { name: 'Refresh checks', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.checkRefreshes), 1)
+  assert.equal(await statusDisclosure.getByText('1 failed', { exact: true }).isVisible(), false)
+  await statusDisclosure.locator('summary').click()
+  const sourceValue = (scope, name, value) =>
+    scope.getByText(name, { exact: true }).locator('..').getByText(value, { exact: true })
+  for (const [name, value] of [
+    ['Repository CI', 'passed'],
+    ['Check reports', '1 check passed'],
+    ['Linked pipeline runs', '1 failed'],
+    ['Review status', 'Review required'],
+  ])
+    await sourceValue(statusDisclosure, name, value).waitFor()
+  const headerStatus = detail.getByLabel('Pull request status', { exact: true })
+  await headerStatus
+    .getByText('Repository merge status: Waiting for required reviews', { exact: true })
+    .waitFor()
+  await headerStatus.getByText('Review required', { exact: true }).waitFor()
+  for (const status of [
+    'Pipeline runs: 1 failed',
+    'Check reports: 1 check passed',
+    'CI status: passed',
+  ])
+    assert.equal(await headerStatus.getByText(status, { exact: true }).count(), 0)
+  await mergeDialog.getByText(/I acknowledge the failures listed above\./).waitFor()
   const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
+  assert.equal(
+    await mergeDialog
+      .getByRole('checkbox', {
+        name: 'Confirm merge of reviewed commit. Acknowledge current failures: Linked pipelines: 1 failed',
+        exact: true,
+      })
+      .count(),
+    1,
+    'Failure acknowledgement is part of the accessible consent label',
+  )
   assert.equal(await mergeConfirm.isDisabled(), true)
   await mergeDialog.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
+  assert.equal(
+    await mergeConfirm.isEnabled(),
+    true,
+    'Status warnings must preserve provider merge policy',
+  )
   await mergeConfirm.click()
   await mergeDialog.waitFor({ state: 'detached' })
   const merged = await page.evaluate(() =>
@@ -315,10 +512,13 @@ try {
   )
   assert.equal(merged.input.headSha, 'a'.repeat(40))
   assert.equal(merged.input.method, 'squash')
-  await page.screenshot({ path: '/tmp/dovo-pull-workspace.png' })
+  await page.evaluate(() => {
+    window.pipelineRuns = []
+  })
+  await screenshot({ path: '/tmp/dovo-pull-workspace.png' })
   await page.getByRole('tab', { name: /Changes/ }).click()
-  await page.getByText('1 of 2 viewed', { exact: true }).waitFor()
-  await page.screenshot({ path: '/tmp/dovo-pull-changes.png' })
+  await page.getByRole('button', { name: '2 files · 1 viewed', exact: true }).waitFor()
+  await screenshot({ path: '/tmp/dovo-pull-changes.png' })
   await page.setViewportSize({ width: 390, height: 844 })
   for (const name of ['Overview', 'Changes (2)', 'Checks (1)']) {
     await detail.getByRole('tab', { name, exact: true }).click()
@@ -334,13 +534,13 @@ try {
   await summaryToggle.click()
   await changes.getByRole('navigation', { name: 'Changed files' }).waitFor()
   await noOverflow()
-  await page.screenshot({ path: '/tmp/dovo-pull-summary-narrow.png' })
+  await screenshot({ path: '/tmp/dovo-pull-summary-narrow.png' })
   await summaryToggle.click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await content.evaluate((element) => {
     element.scrollTop = 0
   })
-  await page.screenshot({ path: '/tmp/dovo-pull-overview-narrow.png' })
+  await screenshot({ path: '/tmp/dovo-pull-overview-narrow.png' })
   await page.evaluate(() => {
     window.detail.pull.title = 'A very long pull request title '.repeat(12)
     window.detail.pull.head = 'feature/' + 'long-branch-name'.repeat(12)
@@ -363,7 +563,7 @@ try {
   await fullWidthList()
   await noOverflow()
   assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
-  await page.screenshot({ path: '/tmp/dovo-pull-list-narrow.png' })
+  await screenshot({ path: '/tmp/dovo-pull-list-narrow.png' })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => {
     window.store.connected = true
@@ -511,7 +711,179 @@ try {
       target.getBoundingClientRect().top < content.getBoundingClientRect().bottom
     )
   })
-  await page.evaluate(() => window.showDestination('checks', ''))
+  // Pipeline failures remain visible beside independently passed check reports.
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.evaluate(() => {
+    window.pipelineRuns = [{ status: 'failure' }]
+    window.pipelineTestChecks = window.detail.checks
+    window.pipelineTestPull = window.detail.pull
+    window.detail.pull = {
+      ...window.detail.pull,
+      checksState: 'SUCCESS',
+      reviewDecision: 'APPROVED',
+      mergeStateStatus: 'CLEAN',
+    }
+    window.detail.checks = [{ name: 'Tests', status: 'SUCCESS' }]
+    window.showDestination('overview', 'pipeline-failure')
+  })
+  const checksTab = page.getByRole('tab', { name: 'Checks (1)', exact: true })
+  await waitForCheckFailure('Pipeline failed')
+  assert.equal(
+    await checksTab
+      .getByText('1', { exact: true })
+      .evaluate((node) => getComputedStyle(node).color),
+    neutralCheckCountColor,
+    'Passed check-report count stays neutral when a linked pipeline fails',
+  )
+  assert.equal(await checksTab.locator('svg.lucide-circle-alert').count(), 1)
+  await headerStatus.getByText('Repository merge status: Ready to merge', { exact: true }).waitFor()
+  assert.equal(
+    await detail.getByRole('button', { name: 'Merge', exact: true }).getAttribute('data-variant'),
+    'outline',
+    'An independent pipeline failure still prevents primary-action promotion',
+  )
+  await checksTab.click()
+  const checkPanel = detail.locator('#pr-panel-checks')
+  const repositoryCI = checkPanel.getByRole('region', { name: 'Repository CI', exact: true })
+  const pipelineSection = checkPanel.getByRole('region', { name: 'Pull request pipeline runs' })
+  const reportsSection = checkPanel
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Check reports 1', exact: true }) })
+  await repositoryCI.getByRole('heading', { name: 'Repository CI', exact: true }).waitFor()
+  await repositoryCI.getByText('Passed', { exact: true }).waitFor()
+  assert.equal(await repositoryCI.getByText('Tests', { exact: true }).count(), 0)
+  assert.equal(await repositoryCI.getByText('Pipeline build', { exact: true }).count(), 0)
+  assert.equal(
+    await checkPanel.getByRole('heading', { name: 'Status sources', exact: true }).count(),
+    0,
+  )
+  await pipelineSection
+    .getByRole('heading', { name: 'Linked pipeline runs', exact: true })
+    .waitFor()
+  const repositoryCIBox = await repositoryCI.boundingBox()
+  const pipelineBox = await pipelineSection.boundingBox()
+  assert.ok(
+    repositoryCIBox.y + repositoryCIBox.height <= pipelineBox.y,
+    'Repository CI occupies its own section before linked pipeline runs',
+  )
+  await pipelineSection.getByText('Pipeline build', { exact: true }).waitFor()
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
+  await pipelineSection.getByRole('button', { name: 'Refresh runs', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.pipelineRefreshes), 1)
+  await reportsSection.getByText('Tests', { exact: true }).waitFor()
+  await reportsSection.getByText('Passed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.pipelineRuns = []
+    window.detail.pull = window.pipelineTestPull
+    window.detail.checks = [{ name: 'Tests', status: 'FAILURE' }]
+    window.showDestination('overview', 'report-failure')
+  })
+  await waitForCheckFailure('Checks failed')
+  await checksTab.click()
+  await reportsSection.getByText('Failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.pipelineRuns = [{ status: 'failure' }]
+    window.showDestination('overview', 'both-failed')
+  })
+  await waitForCheckFailure('CI failed')
+  await checksTab.click()
+  // Saved failures retain their source, and explicitly disclose offline data.
+  await page.evaluate(() => {
+    window.store.connected = false
+    window.showDestination('overview', 'offline-failures')
+  })
+  await waitForCheckFailure('CI failed')
+  await checksTab.click()
+  await reportsSection.getByText('Failed', { exact: true }).waitFor()
+  assert.match(
+    await checksTab.getAttribute('aria-description'),
+    /Check reports: 1 failed · offline/,
+  )
+  await page.getByText('Offline · reconnect to refresh.', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.store.connected = true
+    window.checksError = 'Reports unavailable'
+    window.showDestination('overview', 'unavailable-reports')
+  })
+  await checksTab.click()
+  await checkPanel.getByText('Check reports: Reports unavailable', { exact: true }).waitFor()
+  // A report read error cannot suppress an independently known pipeline failure.
+  await waitForCheckFailure('Pipeline failed')
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
+  const unavailableMerge = page.getByRole('dialog')
+  await unavailableMerge.getByText('Reports unavailable', { exact: true }).waitFor()
+  assert.equal(await unavailableMerge.locator('details').getAttribute('open'), null)
+  await unavailableMerge
+    .getByRole('list', { name: 'Current merge failures' })
+    .getByText('Linked pipelines: 1 failed', { exact: true })
+    .waitFor()
+  await unavailableMerge.getByRole('button', { name: 'Retry checks', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.checkRefreshes), 2)
+  await unavailableMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => {
+    window.checksError = ''
+    window.pipelineRuns = []
+    window.detail.checks = [{ name: 'Tests', status: 'UNKNOWN' }]
+    window.showDestination('overview', 'unknown-report')
+  })
+  await checksTab.click()
+  await reportsSection.getByText('Unknown', { exact: true }).waitFor()
+  assert.equal(await checksTab.getByText(/failed/i).count(), 0)
+  assert.equal(await checksTab.locator('svg.lucide-circle-alert').count(), 0)
+  await page.evaluate(() => {
+    window.detail.checks = window.pipelineTestChecks
+  })
+  // Overview loads check reports too, and never substitutes an aggregate passed state.
+  await page.evaluate(() => {
+    window.checksPending = true
+    window.savedChecksState = window.detail.pull.checksState
+    delete window.detail.pull.checksState
+    window.pipelineRuns = [{ status: 'failure' }]
+    window.showDestination('overview', 'checks-pending')
+  })
+  const checkSummary = page.getByRole('button', {
+    name: 'View pull request checks',
+    exact: true,
+  })
+  await checkSummary.click()
+  await checkPanel.getByText('Loading check reports…', { exact: true }).waitFor()
+  await repositoryCI.getByText('CI status not loaded', { exact: true }).waitFor()
+  assert.equal(await checkSummary.getByText(/checks? passed/i).count(), 0)
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Merge pull request', exact: true }).click()
+  const unloadedMerge = page.getByRole('dialog')
+  await unloadedMerge.locator('summary').filter({ hasText: 'Status sources' }).click()
+  await unloadedMerge.getByText('Loading checks…', { exact: true }).waitFor()
+  assert.equal(
+    await unloadedMerge.getByRole('button', { name: 'Loading…', exact: true }).isDisabled(),
+    true,
+  )
+  await sourceValue(unloadedMerge, 'Linked pipeline runs', '1 failed').waitFor()
+  assert.equal(await unloadedMerge.getByText(/checks? passed/i).count(), 0)
+  await unloadedMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await checkSummary.click()
+  await page.waitForFunction(
+    () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
+  )
+  await checkPanel.getByText('Loading check reports…', { exact: true }).waitFor()
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.checksPending = false
+    window.detail.pull.checksState = window.savedChecksState
+    window.detail.checks = [{ name: 'Tests', status: 'SUCCESS', summary: 'Checks loaded' }]
+    window.showDestination('checks', 'checks-loaded')
+  })
+  await reportsSection.getByText('Passed', { exact: true }).waitFor()
+  await page.getByText('Checks loaded', { exact: true }).waitFor()
+  assert.equal(await checkPanel.getByText('Loading check reports…', { exact: true }).count(), 0)
+  await pipelineSection.getByText('Failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.pipelineRuns = []
+    window.detail.checks = window.pipelineTestChecks
+    window.showDestination('checks', '')
+  })
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
   )
@@ -527,9 +899,9 @@ try {
   await row('Dependent change').getByText('#7 → #8', { exact: true }).waitFor()
   assert.doesNotMatch(await row('Dependent change').innerText(), /No checks|No review|approved/i)
   assert.equal(
-    await row('Dependent change')
-      .locator('div.grid')
-      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+    await row('Dependent change').evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    ),
     2,
     'Basic rows must not reserve an empty status column',
   )
@@ -537,7 +909,7 @@ try {
   const basicAvatar = row('Base change').locator('img')
   await basicAvatar.evaluate((element) => element.decode())
   await noOverflow()
-  await page.screenshot({ path: '/tmp/dovo-pull-basic-stacks-desktop.png' })
+  await screenshot({ path: '/tmp/dovo-pull-basic-stacks-desktop.png' })
   await page.evaluate(() => window.showBasicList(false))
   await row('Dependent change').getByText('Stack · partial · #7', { exact: true }).waitFor()
   for (const width of [760, 360]) {
@@ -551,7 +923,7 @@ try {
   await row('Dependent change').getByText('onto main', { exact: true }).waitFor()
   assert.doesNotMatch(await row('Dependent change').innerText(), /Base PR|undefined|#7 → #8/)
   await noOverflow()
-  await page.screenshot({ path: '/tmp/dovo-pull-native-stack-desktop.png' })
+  await screenshot({ path: '/tmp/dovo-pull-native-stack-desktop.png' })
   await page.evaluate(() => {
     window.detail.pull.provider = 'bitbucket'
     window.detail.capabilities = {
@@ -596,7 +968,9 @@ try {
   await page.getByRole('button', { name: 'Merge', exact: true }).click()
   const bitbucketMerge = page.getByRole('dialog')
   await bitbucketMerge
-    .getByRole('checkbox', { name: 'Confirm merge of current source branch' })
+    .getByRole('checkbox', {
+      name: /^Confirm merge of current source branch\. Studio checks viewed revision aaaaaaaa before submitting; later pushes may also be merged(?:\. Acknowledge current failures: .+)?$/,
+    })
     .waitFor()
   await bitbucketMerge
     .getByText(
@@ -642,18 +1016,51 @@ try {
   await page.evaluate(() => {
     window.detail.pull = { ...window.detail.pull, draft: false, mergeStateStatus: 'BLOCKED' }
     window.detail.capabilities.actions = ['draft', 'auto-merge']
+    window.detail.pull.checksState = 'FAILURE'
+    window.detail.checks = [{ name: 'Tests', status: 'FAILURE' }]
+    window.pipelineRuns = [{ status: 'failure' }]
     window.showDestination('overview', 'enable-auto-merge')
   })
   await page.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
   const autoDialog = page.getByRole('dialog')
+  assert.equal(await autoDialog.locator('details').getAttribute('open'), null)
+  const autoFailures = autoDialog.getByRole('list', { name: 'Current merge failures' })
+  for (const failure of [
+    'Check reports: 1 failed',
+    'Linked pipelines: 1 failed',
+    'Repository CI: failed',
+  ])
+    await autoFailures.getByText(failure, { exact: true }).waitFor()
+  assert.equal(await autoFailures.getByRole('listitem').count(), 3)
+  assert.equal(
+    await autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true }).isDisabled(),
+    true,
+  )
+  await checkActionFooter(autoDialog, 'Enable auto-merge')
+  await autoDialog.locator('summary').filter({ hasText: 'Status sources' }).click()
+  for (const [name, value] of [
+    ['Repository CI', 'failed'],
+    ['Check reports', '1 failed'],
+    ['Linked pipeline runs', '1 failed'],
+    ['Review status', 'Review required'],
+  ])
+    await sourceValue(autoDialog, name, value).waitFor()
+  await autoDialog.getByText(/I acknowledge the failures listed above\./).waitFor()
+  assert.equal(await autoDialog.getByRole('checkbox').count(), 1)
+  await autoDialog
+    .getByRole('checkbox', {
+      name: 'Confirm automatic merge when GitHub’s requirements pass, including later commits pushed to this PR. Acknowledge current failures: Check reports: 1 failed; Linked pipelines: 1 failed; Repository CI: failed',
+      exact: true,
+    })
+    .waitFor()
   const autoSubmit = autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true })
   await page.evaluate(() => {
     window.detail = { ...window.detail, pull: { ...window.detail.pull, autoMergeEnabled: true } }
     window.showDestination('overview', 'enable-auto-merge')
   })
   assert.equal(await autoSubmit.isDisabled(), true)
-  await autoDialog.getByText(/also applies to later commits/).waitFor()
+  await autoDialog.getByText(/including later commits/).waitFor()
   await autoDialog.getByRole('checkbox').check()
   await page.evaluate(() => {
     window.detail = { ...window.detail, stale: true }
@@ -667,6 +1074,15 @@ try {
     window.detail = { ...window.detail, stale: false }
     window.showDestination('overview', 'enable-auto-merge')
   })
+  await page.waitForFunction(
+    () => document.querySelector('[role="dialog"] button[type="submit"]')?.disabled,
+  )
+  assert.equal(
+    await autoDialog.getByRole('checkbox').isChecked(),
+    false,
+    'Changed readiness invalidates prior consent',
+  )
+  await autoDialog.getByRole('checkbox').check()
   await autoSubmit.click()
   await autoDialog.waitFor({ state: 'detached' })
   const autoWrite = await page.evaluate(() => window.writes.at(-1).input)
@@ -687,7 +1103,7 @@ try {
   assert.equal((await page.evaluate(() => window.writes.at(-1).input)).enabled, false)
   assert.deepEqual(errors, [])
   console.log(
-    'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',
+    'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts, embedded previews and visible merge/auto-merge footers at 1440×960, 1100×960 and 1440×720 passed.',
   )
 } finally {
   await browser.close()

@@ -30,7 +30,7 @@ const Rows = memo(function Rows({ rows }: { rows: UsageRow[] }) {
   if (!rows.length)
     return (
       <p className="p-4 text-xs text-muted-foreground">
-        No turns in this period. Try the last 30 days or run a new task.
+        No turns in this period. Try the last 30 days or start a new thread.
       </p>
     )
   return (

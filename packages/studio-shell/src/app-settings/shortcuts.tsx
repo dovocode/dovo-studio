@@ -32,7 +32,7 @@ export default function KeyboardShortcuts() {
         ...(taskLauncherShortcut
           ? ([
               [
-                'Open task launcher (desktop)',
+                'Open thread launcher (desktop)',
                 taskLauncherShortcut.replace('CommandOrControl', mod),
               ],
             ] as [string, string][])
@@ -51,23 +51,23 @@ export default function KeyboardShortcuts() {
       ],
     ],
     [
-      'Tasks',
+      'Threads',
       [
-        ['New task', `${mod}+N`],
-        ['Go to a task', `${mod}+P`],
+        ['New thread', `${mod}+N`],
+        ['Go to a thread', `${mod}+P`],
         ['Search this thread', `${mod}+F`],
         ['Search all conversations', `${mod}+Shift+F`],
-        ['Next task', 'Ctrl+Tab'],
-        ['Previous task', 'Ctrl+Shift+Tab'],
+        ['Next thread', 'Ctrl+Tab'],
+        ['Previous thread', 'Ctrl+Shift+Tab'],
         ...(mac
           ? ([
-              ['Next task', '⌘+Shift+]'],
-              ['Previous task', '⌘+Shift+['],
+              ['Next thread', '⌘+Shift+]'],
+              ['Previous thread', '⌘+Shift+['],
             ] as [string, string][])
           : []),
         ['Stop the running agent', 'Esc'],
         ['Ask a side question', `${mod}+;`],
-        ['Close the side-by-side task', `${mod}+\\`],
+        ['Close the side-by-side thread', `${mod}+\\`],
         ['Show or hide changes', `${mod}+Shift+D`],
         ['Cycle tool activity views', 'Ctrl+O'],
         ['Show or hide the terminal', 'Ctrl+`'],
@@ -84,7 +84,7 @@ export default function KeyboardShortcuts() {
   return (
     <SettingsPage
       title="Keyboard shortcuts"
-      description="Shortcuts for this device. Message shortcuts follow your Conversation settings; the desktop task launcher follows General."
+      description="Shortcuts for this device. Message shortcuts follow your Conversation settings; the desktop thread launcher follows General."
     >
       {groups.map(([title, rows]) => (
         <SettingsGroup key={title} title={title}>

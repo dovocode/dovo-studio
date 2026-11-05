@@ -228,6 +228,7 @@ export function TaskConversation({
         <div
           data-task-conversation={task.id}
           data-startup-draft={welcome ? '' : undefined}
+          data-conversation-pane
           className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
         >
           {temporary ? (
@@ -287,7 +288,7 @@ export function TaskConversation({
               role="status"
               className="mx-auto w-full max-w-[var(--chat-max)] px-5 py-2 text-xs text-status-warning"
             >
-              Task budget reached ·{' '}
+              Thread budget reached ·{' '}
               {budget.tokens !== undefined
                 ? `${budget.tokens.toLocaleString()} tokens`
                 : 'tokens unavailable'}{' '}

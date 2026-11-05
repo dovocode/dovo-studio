@@ -45,8 +45,8 @@ export function TaskLifecycleActions({
               size="icon"
               className="size-6"
               disabled={pending}
-              aria-label="Snooze task"
-              title="Snooze task"
+              aria-label="Snooze thread"
+              title="Snooze thread"
             >
               <AlarmClock className="size-3.5" />
             </Button>
@@ -83,7 +83,7 @@ export function TaskLifecycleActions({
         type="button"
         variant="ghost"
         className="h-6 gap-1 px-1 text-[0.6875rem]"
-        aria-label={task.archived ? 'Reopen task' : 'Settle task'}
+        aria-label={task.archived ? 'Reopen thread' : 'Settle thread'}
         disabled={pending || task.status === 'running'}
         onClick={() => void change({ archived: !task.archived, snoozedUntil: null })}
       >

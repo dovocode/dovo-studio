@@ -567,7 +567,7 @@ try {
         toolActivity,
       )
       assert.equal(await tiles.count(), 2)
-      assert.equal(await page.locator('[aria-label="Task tool activity"]').count(), 0)
+      assert.equal(await page.locator('[aria-label="Thread tool activity"]').count(), 0)
       assert.equal(
         await page.getByRole('button', { name: /tools? used|commands used/ }).count(),
         0,

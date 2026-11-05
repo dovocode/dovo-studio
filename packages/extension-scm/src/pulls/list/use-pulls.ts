@@ -341,7 +341,7 @@ export function usePulls(state: string, repositoryId = '') {
         source: { ...page.source, connected: false },
         reader: { ...page.reader, connected: false },
         error:
-          'The selected PR account is unavailable or changed. Choose a project source explicitly to continue; no other machine will take over.',
+          'The selected PR account is unavailable or changed. Choose a project source explicitly to continue; no other computer will take over.',
       })),
   ]
   for (const source of eligible) {

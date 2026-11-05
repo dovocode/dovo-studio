@@ -140,7 +140,7 @@ try {
       JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadInfoSections.usage ===
       false,
   )
-  await page.getByRole('switch', { name: 'Project scripts', exact: true }).uncheck()
+  await page.getByRole('switch', { name: 'Project actions', exact: true }).uncheck()
   assert.equal(
     await page.getByRole('button', { name: 'Add project script', exact: true }).count(),
     0,
@@ -167,7 +167,7 @@ try {
     savedOrder,
   )
   assert.equal(
-    await page.getByRole('switch', { name: 'Project scripts', exact: true }).isChecked(),
+    await page.getByRole('switch', { name: 'Project actions', exact: true }).isChecked(),
     false,
   )
   assert.equal(

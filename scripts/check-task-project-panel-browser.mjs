@@ -10,8 +10,8 @@ const mocks = {
     'export const ThreadSharing=({taskId})=><button data-share-task={taskId}>Share thread</button>;',
   // Snapshot previews have their own browser suite; this fixture exercises thread navigation.
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
-  '@dovo/studio-core/state': `import {useState} from 'react';export const useApplicationState=useState;`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core/state': `import {useState,useRef} from 'react';export const useApplicationState=useState;`,
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export * from '@dovo/protocol';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const updateTask=async()=>{};
@@ -55,8 +55,7 @@ const mocks = {
   `,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectSettings=()=> <p>Project defaults</p>;',
-  '@dovo/extension-scm/repository-actions':
-    'export const RepositoryActions=()=> <p>Advanced Git actions</p>;',
+  '@dovo/extension-scm/repository-actions': `import {useState} from 'react';export function RepositoryActions({onReviewChange}){const [fixture,setFixture]=useState({dirty:true,long:false});window.setGitFixture=changes=>setFixture(previous=>({...previous,...changes}));return <div data-git-changes={fixture.dirty} style={{minHeight:fixture.long?1400:undefined}}><p>Advanced Git actions</p><button onClick={()=>onReviewChange(true)}>Review fixture file</button><button onClick={()=>onReviewChange(false)}>Back to staging fixture</button></div>}`,
   '../dialogs/task-pull-link-dialog': 'export const TaskPullLinkDialog=()=>null;',
   '../dialogs/task-templates-dialog': 'export const TaskTemplatesDialog=()=>null;',
   '../dialogs/saved-prompts-dialog': 'export const SavedPromptsDialog=()=>null;',
@@ -68,7 +67,7 @@ const built = await build({
     loader: 'tsx',
     contents: `
     import {createRoot} from 'react-dom/client';
-    import {useState} from 'react';
+    import {useState,useRef} from 'react';
     import {SidebarHeaderLayout,SidebarHeader,HeaderFallback} from './src/sidebar-header';
     import {TooltipProvider} from './src/components/ui/tooltip';
     import {ActivityBar} from '../studio-shell/src/activity-bar';
@@ -76,26 +75,27 @@ const built = await build({
     import {TaskRow} from '../extension-tasks/src/list/task-row';
     import {TaskHeader} from '../extension-tasks/src/detail/task-header';
     import {TaskProjectPanel} from '../extension-tasks/src/detail/task-project-panel';
-    import {TaskProjectPopover} from '../extension-tasks/src/detail/task-project-popover';
+    import {TaskProjectPopover,TaskProjectPanelRoot} from '../extension-tasks/src/detail/task-project-popover';
     import {Popover} from '@dovo/studio-ui';
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
-    window.preferences={confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
+    window.gitState={branch:'fix/reconnection',dirty:true,ahead:0,behind:0,tracking:true,canPush:true};window.setGitState=state=>{window.gitState={branch:'fix/reconnection',...state};document.dispatchEvent(new Event('visibilitychange'))};window.preferences={confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
     const repo={id:'repo',name:'Project',path:'/project',branch:'main'};
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
     window.lineage=[];
     function App(){
-      const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0);window.generalProject=()=>{repo.kind='scratch';repo.name='No project';setPanel(true)};window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
+      const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0),[bottomTerminal,setBottomTerminal]=useState(false);const lastTool=useRef('files');const selectSurface=next=>{window.surface=next;if(next!=='chat'&&next!=='terminal')lastTool.current=next;setSurface(next)};window.generalProject=()=>{repo.kind='scratch';repo.name='No project';setPanel(true)};window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
       window.setLineage=enabled=>{window.lineage=enabled?[{...task,id:'child-review',title:'Review browser',spawnParent:{runtimeId:'runtime',threadId:task.id},subagents:[{id:'native-review',name:'Native reviewer',provider:'codex',status:'working'}]},{...task,id:'grandchild',title:'Check page menus',spawnParent:{runtimeId:'runtime',threadId:'child-review'}}]:[];setTask(task=>({...task}))};
-      window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'waiting':'done'}))};
+      window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'draft':'done'}))};
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
-      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
+      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));window.clearFiles=()=>setTask(task=>({...task,files:[]}));window.setProjectActions=actions=>{repo.actions=actions;setTask(task=>({...task}))};
       const request=async(path,input)=>{
         window.calls.push({path,input});
         if(path==='/api/scm/open-location')return {path:'/remote/worktree',runtimeId:'remote',sshAddress:'ssh://dominic@runtime',kind:'folder'};
         if(path==='/api/artifacts/list')return {artifacts:window.savedArtifacts??[],links:[]};
-        if(path==='/api/scm/action-state')return {dirty:true,ahead:0,behind:0,tracking:true,canPush:true};
+        if(path==='/api/scm/action-state')return window.gitState;
+        if(path==='/api/terminals/run')return {id:'project-action-terminal'};
         if(path==='/api/tasks/waiting')return {dependencies:window.stopped?[]:[{kind:'pipeline',repositoryId:'repo',target:'8',label:'Pipeline run 8',project:'Project',url:'https://github.com/test/project/actions/runs/8',status:'in_progress',checkedAt:''}],related:[{label:'PR #7',project:'Project',url:'https://github.com/test/project/pull/7'}]};
         if(path==='/api/workspace'){const updates=Object.fromEntries(Object.entries(input.changes).map(([key,change])=>[key,change.after??undefined]));setTask(t=>({...t,...updates}));return {revision:2,outcome:'applied'};}
         if(path==='/api/tasks/worktree-thread')return {id:'new-thread'};
@@ -106,15 +106,15 @@ const built = await build({
       window.store={workspace:{tasks:[task,...window.lineage],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
       if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},subagents:i===1?[{id:'native',name:'Native reviewer',provider:'claude',status:'working'}]:[],title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} thread={i===0?{key:name,runtimeId:'runtime',threadId:name,title:'Fix reconnection across Wi-Fi switches',computerName:'Dominic Mac',phase:'completed',online:true,paused:false,children:[{key:'child',runtimeId:'runtime',threadId:'child',title:'Review implementation',computerName:'Dominic Mac',phase:'running',online:true,paused:false,children:[]}]}:undefined} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false}/>)}</div>;
-      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<Popover.Root open={panel} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
+      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<TaskProjectPanelRoot open={panel} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={selectSurface} sidebarVisible={true} hasDiff={false} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
         <div data-thread-workspace style={{position:'relative',display:'flex',minHeight:0,flex:1,marginRight:window.mobile?0:56}}>
-        <div data-project-panel-frame style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
+        <div data-project-panel-frame data-info-open={panel||undefined} style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
         <TaskProjectPopover><TaskProjectPanel task={task} onSurface={next=>{window.surface=next;setPanel(false)}} onTerminal={()=>{}}/></TaskProjectPopover>
         </div>
         {!window.mobile&&<aside data-tools-sidebar style={{width:toolsWidth,flexShrink:0}}/>}
-        {!window.mobile&&<TaskTools task={task} artifactsEnabled surface={surface} onSelect={setSurface} hasDiff={false} hasLinkedPulls={!!task.linkedPullRequests?.length}/>}
+        {!window.mobile&&<TaskTools task={task} artifactsEnabled surface={surface} onSelect={next=>selectSurface(next===surface?'chat':next)} hasDiff={task.files.length>0} hasLinkedPulls={!!task.linkedPullRequests?.length} onTools={()=>selectSurface(surface==='chat'?lastTool.current:'chat')} bottomTerminalOpen={bottomTerminal} onBottomTerminal={()=>setBottomTerminal(value=>!value)}/>}
         {surface==='linked-pulls'&&<TaskLinkedPullPanel task={task} onPullLink={url=>{window.selectedPull=url;return true}} onClose={()=>setSurface('chat')}/>}
-        </div></div></Popover.Root></div></div></SidebarHeaderLayout>;
+        </div></div></TaskProjectPanelRoot></div></div></SidebarHeaderLayout>;
     }
     window.render=()=>root.render(<TooltipProvider><App/></TooltipProvider>);window.render();
   `,
@@ -187,6 +187,13 @@ try {
         ),
       )
       await tools.getByRole('button', { name: 'Agents', exact: true }).waitFor()
+      assert.equal(
+        await tools
+          .getByRole('button', { name: 'Agents', exact: true })
+          .locator('[data-tool-count]')
+          .textContent(),
+        '1',
+      )
       await tools.getByRole('button', { name: 'Artifacts', exact: true }).waitFor()
       await page.evaluate(() =>
         window.setToolContent(
@@ -220,10 +227,14 @@ try {
             fill: style.backgroundColor,
           }
         })
-        assert.equal(style.radius, '12px')
-        assert.notEqual(style.shadow, 'none')
-        assert.notEqual(style.fill, 'rgba(0, 0, 0, 0)')
-        assert.equal((await tools.boundingBox()).width, 48)
+        assert.equal(style.radius, '6px')
+        assert.equal(style.shadow, 'none')
+        assert.equal(style.fill, 'rgba(0, 0, 0, 0)')
+        assert.notEqual(
+          await files.evaluate((button) => getComputedStyle(button, '::before').backgroundColor),
+          'rgba(0, 0, 0, 0)',
+        )
+        assert.equal((await tools.boundingBox()).width, 44)
         const previews = await tools.getByRole('group', { name: 'Previews' }).boundingBox()
         const rail = await tools.boundingBox()
         assert.ok(
@@ -275,8 +286,8 @@ try {
           .getByRole('button', { name: 'Artifacts', exact: true })
           .waitFor({ state: 'detached' })
       }
-      await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
-      await page.getByRole('menuitem', { name: 'Chat', exact: true }).click()
+      await tools.getByRole('button', { name: 'Hide tools pane', exact: true }).click()
+      await page.waitForFunction(() => window.surface === 'chat')
     }
     assert.equal(await page.locator('.studio-titlebar').count(), 1)
     if (!mobile) {
@@ -304,33 +315,82 @@ try {
           .innerText()
       ).includes('Project'),
     )
-    // Tool navigation is available directly from the first thread menu in both layouts.
+    // The visible desktop rail owns tool navigation; compact layouts retain the title menu.
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
     const firstMenu = page.getByRole('menu').first()
-    assert.equal(
-      await firstMenu
+    if (mobile) {
+      assert.equal(
+        await firstMenu
+          .getByRole('menuitem', { name: 'Chat', exact: true })
+          .getAttribute('aria-current'),
+        'page',
+      )
+      for (const name of ['Files', 'Devices', 'Terminal', 'Side chats'])
+        assert.equal(await firstMenu.getByRole('menuitem', { name, exact: true }).count(), 1)
+      await firstMenu.getByRole('menuitem', { name: 'Devices', exact: true }).click()
+      await page.waitForFunction(() => window.surface === 'devices')
+      await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+      await page
+        .getByRole('menu')
+        .first()
         .getByRole('menuitem', { name: 'Chat', exact: true })
-        .getAttribute('aria-current'),
-      'page',
-    )
-    for (const name of ['Files', 'Devices', 'Terminal', 'Side chats']) {
-      assert.equal(await firstMenu.getByRole('menuitem', { name, exact: true }).count(), 1)
+        .click()
+      await page.waitForFunction(() => window.surface === 'chat')
+    } else {
+      for (const name of ['Chat', 'Files', 'Devices', 'Terminal', 'Side chats'])
+        assert.equal(await firstMenu.getByRole('menuitem', { name, exact: true }).count(), 0)
+      await firstMenu.getByRole('menuitem', { name: 'Rename…', exact: true }).waitFor()
+      await page.keyboard.press('Escape')
+      const header = page.locator('.studio-task-thread-header')
+      assert.equal(
+        await header.getByRole('button').count(),
+        2,
+        'Header contains title actions and thread info',
+      )
+      assert.equal(
+        await header.locator('[data-thread-info-branch]').textContent(),
+        'fix/reconnection',
+      )
+      assert.ok((await header.locator('[data-thread-info-state]').textContent()).length > 0)
+      assert.equal(await header.getByRole('button', { name: 'Show tools pane' }).count(), 0)
+      assert.equal(await header.getByRole('button', { name: 'Show bottom terminal' }).count(), 0)
+      const tools = page.getByRole('navigation', { name: 'Thread tools' })
+      assert.equal(
+        await tools
+          .getByRole('button', { name: 'Linked PRs', exact: true })
+          .locator('[data-tool-count]')
+          .textContent(),
+        '2',
+      )
+      assert.equal(
+        await tools
+          .getByRole('button', { name: 'Diff', exact: true })
+          .locator('[data-tool-count]')
+          .textContent(),
+        '1',
+      )
+      await tools.getByRole('button', { name: 'Devices', exact: true }).click()
+      await tools.getByRole('button', { name: 'Hide tools pane', exact: true }).click()
+      await page.waitForFunction(() => window.surface === 'chat')
+      await tools.getByRole('button', { name: 'Show tools pane', exact: true }).click()
+      await page.waitForFunction(() => window.surface === 'devices')
+      await tools.getByRole('button', { name: 'Hide tools pane', exact: true }).click()
+      await tools.getByRole('button', { name: 'Show bottom terminal', exact: true }).click()
+      assert.equal(
+        await tools
+          .getByRole('button', { name: 'Hide bottom terminal', exact: true })
+          .getAttribute('aria-pressed'),
+        'true',
+      )
+      await tools.getByRole('button', { name: 'Hide bottom terminal', exact: true }).click()
+      await page.waitForFunction(() => window.surface === 'chat')
     }
-    await firstMenu.getByRole('menuitem', { name: 'Devices', exact: true }).click()
-    await page.waitForFunction(() => window.surface === 'devices')
-    await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
-    await page
-      .getByRole('menu')
-      .first()
-      .getByRole('menuitem', { name: 'Chat', exact: true })
-      .click()
-    await page.waitForFunction(() => window.surface === 'chat')
     const chatWidth = (await page.locator('[data-thread-content]').boundingBox()).width
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
     const info = page.getByRole('dialog', { name: 'Thread info', exact: true })
     await info.getByRole('button', { name: 'Share thread', exact: true }).waitFor()
-    await info.getByText('Not reported', { exact: true }).waitFor()
+    assert.equal(await info.getByRole('region', { name: 'Context usage', exact: true }).count(), 0)
     await page.evaluate(() =>
       window.setContextUsage({ used: 170000, limit: 200000, updatedAt: new Date().toISOString() }),
     )
@@ -339,7 +399,19 @@ try {
       await info.getByRole('meter', { name: 'Agent context used' }).getAttribute('aria-valuenow'),
       '85',
     )
+    const infoBounds = await info.boundingBox()
     await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
+    const customization = page.getByRole('menu', { name: 'Customize thread info', exact: true })
+    await customization.waitFor()
+    const customizationBounds = await customization.boundingBox()
+    assert.ok(infoBounds && customizationBounds)
+    for (const dimension of ['x', 'y', 'width'])
+      assert.ok(
+        Math.abs(infoBounds[dimension] - customizationBounds[dimension]) <= 1,
+        JSON.stringify({ dimension, infoBounds, customizationBounds, mobile }),
+      )
+    assert.ok(customizationBounds.height >= infoBounds.height - 1)
+    assert.equal(await customization.getByRole('menuitemcheckbox').count(), 13)
     await page.getByRole('menuitem', { name: 'Move Context usage up', exact: true }).click()
     await page.waitForFunction(() => {
       const nodes = Array.from(document.querySelectorAll('[data-thread-info-section]')).map(
@@ -366,6 +438,12 @@ try {
     await contextChoice.click()
     assert.equal(await contextChoice.getAttribute('aria-checked'), 'false')
     await page.keyboard.press('Escape')
+    assert.equal(
+      await info
+        .getByRole('button', { name: 'Customize thread info', exact: true })
+        .evaluate((button) => button === document.activeElement),
+      true,
+    )
     await info
       .getByRole('region', { name: 'Context usage', exact: true })
       .waitFor({ state: 'hidden' })
@@ -388,6 +466,30 @@ try {
     assert.equal(await info.getByRole('region', { name: 'Context usage', exact: true }).count(), 0)
     await info.getByRole('button', { name: 'Customize thread info', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Reset to default', exact: true }).click()
+    const customizeTrigger = info.getByRole('button', {
+      name: 'Customize thread info',
+      exact: true,
+    })
+    await customizeTrigger.focus()
+    await page.keyboard.press('Enter')
+    await customization.waitFor()
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('aria-label') === 'Done customizing thread info',
+    )
+    await page.keyboard.press('ArrowDown')
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('role') === 'menuitemcheckbox',
+    )
+    await page.keyboard.press('Escape')
+    await customization.waitFor({ state: 'hidden' })
+    await customizeTrigger.click()
+    await page.getByRole('menuitem', { name: 'Done customizing thread info', exact: true }).click()
+    await customization.waitFor({ state: 'hidden' })
+    await customizeTrigger.click()
+    const threadBounds = await page.locator('[data-thread-content]').boundingBox()
+    await page.mouse.click(threadBounds.x + 10, threadBounds.y + 100)
+    await customization.waitFor({ state: 'hidden' })
+    await info.waitFor()
     await page.evaluate(() => window.setLineage(true))
     const lineage = page.getByRole('region', { name: 'Agent lineage', exact: true })
     await lineage.getByText('Check page menus', { exact: true }).waitFor()
@@ -398,26 +500,51 @@ try {
     const popover = await page
       .getByRole('dialog', { name: 'Thread info', exact: true })
       .boundingBox()
-    assert.ok(popover && popover.width <= 304 && popover.width > 0)
+    assert.ok(popover && popover.width <= 376 && popover.width > 0)
     const frame = await page.locator('[data-project-panel-frame]').boundingBox()
-    assert.ok(Math.abs(popover.y - frame.y - 32) < 1)
-    assert.ok(Math.abs(frame.x + frame.width - popover.x - popover.width - 32) < 1)
-    assert.ok(popover.y + popover.height <= frame.y + frame.height - 32 + 1)
+    const inset = 32
+    assert.ok(
+      Math.abs(popover.y - frame.y - inset) < 1,
+      JSON.stringify({ popover, frame, inset, mobile }),
+    )
+    assert.ok(Math.abs(frame.x + frame.width - popover.x - popover.width - inset) < 1)
+    assert.ok(popover.y + popover.height <= frame.y + frame.height - inset + 1)
     assert.equal((await page.locator('[data-thread-content]').boundingBox()).width, chatWidth)
     if (!mobile) {
       for (const width of [280, 380, 0]) {
         await page.evaluate((width) => window.setToolsWidth(width), width)
-        await page.waitForFunction((width) => {
-          const chat = document.querySelector('[data-project-panel-frame]').getBoundingClientRect()
-          const panel = document.querySelector('[aria-label="Thread info"]').getBoundingClientRect()
-          const workspace = document
-            .querySelector('[data-thread-workspace]')
-            .getBoundingClientRect()
-          return (
-            Math.abs(chat.right - panel.right - 32) < 1 &&
-            Math.round(workspace.width - chat.width) === width
-          )
-        }, width)
+        await page
+          .waitForFunction((width) => {
+            const chat = document
+              .querySelector('[data-project-panel-frame]')
+              .getBoundingClientRect()
+            const panel = document
+              .querySelector('[aria-label="Thread info"]')
+              .getBoundingClientRect()
+            const workspace = document
+              .querySelector('[data-thread-workspace]')
+              .getBoundingClientRect()
+            return (
+              Math.abs(chat.right - panel.right - 32) < 1 &&
+              Math.round(workspace.width - chat.width) === width
+            )
+          }, width)
+          .catch(async (error) => {
+            console.error(
+              await page.evaluate(() => {
+                const frame = document.querySelector('[data-project-panel-frame]')
+                const panel = document.querySelector('[role="dialog"][aria-label="Thread info"]')
+                const workspace = document.querySelector('[data-thread-workspace]')
+                return {
+                  frame: frame.getBoundingClientRect().toJSON(),
+                  panel: panel.getBoundingClientRect().toJSON(),
+                  workspace: workspace.getBoundingClientRect().toJSON(),
+                  docked: frame.dataset.infoDocked,
+                }
+              }),
+            )
+            throw error
+          })
         const chat = await page.locator('[data-project-panel-frame]').boundingBox()
         const workspace = await page.locator('[data-thread-workspace]').boundingBox()
         assert.equal(Math.round(workspace.width - chat.width), width)
@@ -433,7 +560,15 @@ try {
       .waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.keyboard.press('Escape')
-    await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
+    await page
+      .getByRole('region', { name: 'Thread info', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
+    await page.getByRole('button', { name: 'Close thread info', exact: true }).click()
+    await page
+      .getByRole('region', { name: 'Thread info', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.locator('[data-thread-content]').click({ position: { x: 10, y: 100 } })
     await page.getByRole('region', { name: 'Thread info', exact: true }).waitFor()
     await page.evaluate(() => window.switchThread())
@@ -445,11 +580,37 @@ try {
     await page.getByRole('heading', { name: 'Project', exact: true }).waitFor()
     assert.equal(await page.locator('.studio-project-path').getAttribute('title'), '/project')
     await page.getByText('Uncommitted changes · Synced', { exact: true }).waitFor()
+    await info
+      .locator('.studio-thread-primary-action')
+      .getByText('Commit & push', { exact: true })
+      .waitFor()
     await page.getByRole('button', { name: /^Changes · 1 file/ }).waitFor()
-    await page.getByRole('button', { name: 'Git actions and pull requests', exact: true }).click()
+    await info.getByRole('button', { name: 'Project actions', exact: true }).click()
+    const runActions = page.getByRole('group', { name: 'Run actions', exact: true })
+    const projectSetup = page.getByRole('group', { name: 'Project setup', exact: true })
+    await runActions.getByText('No actions for Project yet.', { exact: true }).waitFor()
+    assert.equal(await projectSetup.getByRole('menuitem').count(), 5)
+    await projectSetup.getByRole('menuitem', { name: 'Edit project actions…', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Project actions', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await page.evaluate(() =>
+      window.setProjectActions([{ id: 'tests', name: 'Run tests', command: 'pnpm test' }]),
+    )
+    await info.getByRole('button', { name: 'Project actions', exact: true }).click()
+    await runActions.getByRole('menuitem', { name: 'Run tests pnpm test', exact: true }).click()
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) =>
+          call.path === '/api/terminals/run' &&
+          call.input.taskId === 'thread' &&
+          call.input.command === 'pnpm test',
+      ),
+    )
+    await page.evaluate(() => window.setProjectActions([]))
+    await page.getByRole('button', { name: 'Git actions', exact: true }).click()
     if (stylesheet) {
-      const menu = page.getByRole('menu').filter({ hasText: 'Advanced Git actions…' })
-      const advanced = menu.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true })
+      const menu = page.getByRole('menu').filter({ hasText: 'Stage, commit & push…' })
+      const advanced = menu.getByRole('menuitem', { name: 'Stage, commit & push…', exact: true })
       assert.equal(
         await menu.evaluate((element) => element.classList.contains('studio-menu-surface')),
         true,
@@ -482,8 +643,87 @@ try {
         document.documentElement.style.removeProperty('--studio-glow-strength')
       })
     }
-    await page.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Stage, commit & push…', exact: true }).click()
     await page.getByRole('dialog', { name: 'Git & project actions', exact: true }).waitFor()
+    const gitDialog = page.getByRole('dialog', { name: 'Git & project actions', exact: true })
+    const stagingBounds = await gitDialog.boundingBox()
+    const continuation = gitDialog.locator('[data-git-scroll-continuation]')
+    const gitScroll = gitDialog.locator('[data-git-actions-scroll]')
+    assert.equal(await continuation.count(), 0, 'Fitting content needs no continuation cue')
+    await page.evaluate(() => window.setGitFixture({ long: true }))
+    await continuation.waitFor()
+    assert.equal(await continuation.innerText(), 'More Git & project actions below')
+    assert.ok(
+      await continuation.evaluate((element) => {
+        const viewport = element.parentElement.querySelector('[data-git-actions-scroll]')
+        const contentRight =
+          viewport.getBoundingClientRect().right - (viewport.offsetWidth - viewport.clientWidth)
+        return Math.abs(element.firstElementChild.getBoundingClientRect().right - contentRight) <= 1
+      }),
+      'The Git continuation divider shares the scroll body content edge',
+    )
+    assert.ok(
+      (await continuation.boundingBox()).y >=
+        (await gitScroll.boundingBox()).y + (await gitScroll.boundingBox()).height - 1,
+      'The Git continuation occupies its own strip below the content viewport',
+    )
+    for (const scheme of ['light', 'dark']) {
+      const colors = await continuation.evaluate((element, scheme) => {
+        const html = document.documentElement
+        const previousClass = html.className
+        const previousTheme = html.dataset.theme
+        try {
+          html.classList.toggle('dark', scheme === 'dark')
+          html.dataset.theme = scheme
+          const dialog = element.closest('[role="dialog"]')
+          return {
+            cue: getComputedStyle(element.firstElementChild).backgroundColor,
+            surface: getComputedStyle(dialog).backgroundColor,
+          }
+        } finally {
+          html.className = previousClass
+          if (previousTheme === undefined) delete html.dataset.theme
+          else html.dataset.theme = previousTheme
+        }
+      }, scheme)
+      assert.equal(
+        colors.cue,
+        colors.surface,
+        `${scheme} Git continuation matches its dialog surface`,
+      )
+    }
+    await gitScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    await continuation.waitFor({ state: 'detached' })
+    await gitScroll.evaluate((element) => {
+      element.scrollTop = 0
+    })
+    await continuation.waitFor()
+    await page.evaluate(() => window.setGitFixture({ long: false, dirty: false }))
+    await continuation.waitFor({ state: 'detached' })
+    assert.ok(
+      (await gitDialog.boundingBox()).height < stagingBounds.height,
+      'Clean Git stays compact',
+    )
+    await page.evaluate(() => window.setGitFixture({ dirty: true }))
+    assert.deepEqual(await gitDialog.boundingBox(), stagingBounds)
+    await gitDialog.getByRole('button', { name: 'Review fixture file', exact: true }).click()
+    const reviewBounds = await gitDialog.boundingBox()
+    assert.equal(reviewBounds.height, stagingBounds.height, 'Review keeps the Git workspace height')
+    if (!mobile) assert.ok(reviewBounds.width > stagingBounds.width + 300)
+    await page.evaluate(() => window.setGitFixture({ long: true }))
+    assert.equal(
+      await continuation.count(),
+      0,
+      'Review uses its own scrolling without the staging cue',
+    )
+    await page.evaluate(() => window.setGitFixture({ long: false }))
+    assert.ok(
+      reviewBounds.x >= 0 && reviewBounds.x + reviewBounds.width <= page.viewportSize().width,
+    )
+    await gitDialog.getByRole('button', { name: 'Back to staging fixture', exact: true }).click()
+    assert.deepEqual(await gitDialog.boundingBox(), stagingBounds)
     await page.keyboard.press('Escape')
     await page
       .getByRole('dialog', { name: 'Git & project actions', exact: true })
@@ -491,7 +731,7 @@ try {
     await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
     assert.equal(
       await page
-        .locator('.studio-project-card')
+        .locator('.studio-thread-info-content')
         .getByRole('region', { name: 'Related items and watchers' })
         .count(),
       1,
@@ -541,11 +781,11 @@ try {
         path: `/tmp/dovo-project-panel-${mobile ? 'compact' : 'desktop'}.png`,
       })
       await page
-        .locator('.studio-project-card')
+        .locator('.studio-thread-info-content')
         .screenshot({ path: `/tmp/dovo-project-card-${mobile ? 'compact' : 'desktop'}.png` })
       assert.equal(
         await page
-          .locator('.studio-project-card')
+          .locator('.studio-thread-info-content')
           .evaluate((element) => getComputedStyle(element).borderRadius),
         '0px',
       )
@@ -553,13 +793,16 @@ try {
         await page
           .locator('.studio-project-path')
           .evaluate((element) => getComputedStyle(element).fontSize),
-        '12px',
+        '11px',
       )
     }
     if (stylesheet) {
       const totals = await page.locator('.studio-project-diff').boundingBox()
-      const card = await page.locator('.studio-project-card').boundingBox()
-      assert.ok(totals && card && card.x + card.width - (totals.x + totals.width) < 30)
+      const card = await page.locator('.studio-project-diff').evaluate((node) => {
+        const bounds = node.closest('.studio-thread-info-links').getBoundingClientRect()
+        return { x: bounds.x, width: bounds.width }
+      })
+      assert.ok(totals && card && card.x + card.width - (totals.x + totals.width) <= 16)
     }
     const linkedRow = page.getByLabel('Linked pull requests', { exact: true })
     await linkedRow.getByRole('link', { name: /Open PR #7/ }).waitFor()
@@ -655,9 +898,53 @@ try {
     }
     await page.getByRole('button', { name: 'Close linked pull requests', exact: true }).click()
     assert.equal(await pulls.count(), 0)
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
+    await page.evaluate(() =>
+      window.setGitState({ dirty: false, ahead: 0, behind: 0, tracking: true, canPush: true }),
+    )
+    await info
+      .locator('.studio-thread-primary-action')
+      .getByText('Open PR', { exact: true })
+      .waitFor()
+    await page.getByRole('button', { name: 'Hide thread info', exact: true }).click()
     await page.evaluate(() => window.clearPulls())
     await page.getByRole('button', { name: 'Linked PRs', exact: true }).waitFor({ state: 'hidden' })
     assert.equal(await page.getByRole('button', { name: 'Linked PRs', exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
+    await page.evaluate(() =>
+      window.setGitState({ dirty: false, ahead: 0, behind: 0, tracking: true, canPush: true }),
+    )
+    await info.getByText('Clean · Synced', { exact: true }).waitFor()
+    await info.getByRole('button', { name: 'Git actions', exact: true }).waitFor()
+    assert.equal(await info.getByText('No changes to commit', { exact: true }).count(), 0)
+    await page.evaluate(() => window.clearFiles())
+    await info.getByRole('button', { name: 'Changes', exact: true }).waitFor()
+    assert.equal(await info.getByText('No changes', { exact: true }).count(), 0)
+    assert.equal(
+      await info.locator('.studio-thread-primary-action').count(),
+      0,
+      'Clean checkout has no disabled commit action',
+    )
+    await page.evaluate(() =>
+      window.setGitState({ dirty: false, ahead: 2, behind: 0, tracking: true, canPush: true }),
+    )
+    await info
+      .locator('.studio-thread-primary-action')
+      .getByText('Push branch', { exact: true })
+      .waitFor()
+    await page.evaluate(() =>
+      window.setGitState({ dirty: true, ahead: 0, behind: 0, tracking: true, canPush: true }),
+    )
+    await info
+      .locator('.studio-thread-primary-action')
+      .getByText('Commit & push', { exact: true })
+      .waitFor()
+    await info
+      .locator('.studio-thread-info-actions')
+      .getByRole('button', { name: 'Terminal', exact: true })
+      .click()
+    await page.waitForFunction(() => window.surface === 'terminal')
+    await info.waitFor({ state: 'hidden' })
     if (!mobile) {
       const brandBeforeCollapse = await page.locator('.studio-titlebar-brand').boundingBox()
       await page.getByRole('button', { name: 'Threads', exact: true }).click()
@@ -801,11 +1088,11 @@ try {
       await page.locator('.studio-thread-card-context').first().waitFor()
       assert.equal(await page.locator('.studio-thread-card-context').count(), 8)
       assert.equal(
-        await page.locator('.studio-thread-card-context > span.flex.text-status-success').count(),
-        2,
+        await page.locator('.studio-thread-card-context > span.flex[data-tone="success"]').count(),
+        4,
       )
-      // Only unread completions keep Done and its success icon. Read rows retain
-      // their age without an equivalent green checkmark under another label.
+      // Unread completions say Done; read completions remain explicit as Finished.
+      // Both retain a quiet success icon, with age available in the tooltip.
       for (const [project, unread] of [
         ['Project', true],
         ['Mobile app', false],
@@ -818,11 +1105,9 @@ try {
         const status = context.locator(':scope > span.flex')
         assert.equal(await status.count(), 1)
         assert.equal(await status.getByText('Done', { exact: true }).count(), Number(unread))
-        assert.equal(await status.locator('svg').count(), Number(unread))
-        assert.equal(
-          await status.evaluate((element) => element.classList.contains('text-status-success')),
-          unread,
-        )
+        assert.equal(await status.getByText('Finished', { exact: true }).count(), Number(!unread))
+        assert.equal(await status.locator('svg').count(), 1)
+        assert.equal(await status.getAttribute('data-tone'), 'success')
       }
       const toggle = page.getByRole('button', {
         name: 'Subthreads for Fix reconnection across Wi-Fi switches',

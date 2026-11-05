@@ -42,6 +42,7 @@ import {
   Button,
   ErrorBoundary,
   TooltipProvider,
+  StudioConfirmationProvider,
   SidebarHeaderLayout,
   HeaderFallback,
   HeaderMainSlot,
@@ -154,13 +155,15 @@ export function Workbench(props: WorkbenchProps) {
   return (
     <ApplicationStateProvider>
       <WorkspaceProvider runtimeId={props.threadWindow?.runtimeId}>
-        <SettingsTargetProvider>
-          <TooltipProvider delayDuration={350}>
-            <WorkbenchErrorBoundary appInfo={props.appInfo}>
-              <WorkbenchContent {...props} />
-            </WorkbenchErrorBoundary>
-          </TooltipProvider>
-        </SettingsTargetProvider>
+        <StudioConfirmationProvider>
+          <SettingsTargetProvider>
+            <TooltipProvider delayDuration={350}>
+              <WorkbenchErrorBoundary appInfo={props.appInfo}>
+                <WorkbenchContent {...props} />
+              </WorkbenchErrorBoundary>
+            </TooltipProvider>
+          </SettingsTargetProvider>
+        </StudioConfirmationProvider>
       </WorkspaceProvider>
     </ApplicationStateProvider>
   )
@@ -269,6 +272,9 @@ function WorkbenchContent({
       : visibleWorkspaceTarget({ viewId: extensions[0]?.views[0]?.id ?? '' }, workspaceModes),
   )
   const confirmSettingsNavigation = useConfirmSettingsNavigation()
+  // Confirmation changes with computer scope; host navigation always uses the current guard.
+  const settingsConfirmation = useRef(confirmSettingsNavigation)
+  settingsConfirmation.current = confirmSettingsNavigation
   const threadSelections = useRef(new Map<string | null, string>())
   const settingsNavigation = useRef({ target, extensions })
   settingsNavigation.current = { target, extensions }
@@ -291,31 +297,29 @@ function WorkbenchContent({
   const currentProfiles = useRef(runtimeRegistry.profiles)
   currentProfiles.current = runtimeRegistry.profiles
   const [navigationKey, setNavigationKey] = useState(0)
-  const canLeave = useCallback(() => {
+  const canLeave = useCallback(async () => {
     const { target, extensions } = settingsNavigation.current
     return (
       !extensions.some((extension) =>
         extension.views.some(
           (view) => view.navigationGroup === 'settings' && view.id === target.viewId,
         ),
-      ) || confirmSettingsNavigation()
+      ) || settingsConfirmation.current()
     )
-  }, [confirmSettingsNavigation])
-  const navigate = useCallback(
+  }, [])
+  const commitNavigation = useCallback(
     (next: StudioNavigation, options?: { replace?: boolean }) => {
-      if (browserWindowId && next.viewId !== 'browser') return
+      if (browserWindowId && next.viewId !== 'browser') return false
       // Keep existing links to the former device-only PR page working.
       if (next.viewId === 'pull-request-settings')
         next = { ...next, viewId: 'pull-request-monitoring-settings' }
       const { target } = settingsNavigation.current
-      if (!canLeave()) return
       if (next.viewId === 'tasks' && next.entityId) {
         const profile = currentProfiles.current.find(
           (profile) => profile.id === currentRuntime.current,
         )
         if (profile) prepareRuntimeTask(profile.connection, next.entityId)
       }
-      navigationAttempt.current++
       if (
         !options?.replace &&
         (target.viewId !== next.viewId ||
@@ -328,34 +332,55 @@ function WorkbenchContent({
       settingsNavigation.current.target = next
       updateTarget(next)
       setNavigationKey((key) => key + 1)
+      return true
     },
-    [updateTarget, canLeave, browserWindowId],
+    [updateTarget, browserWindowId],
   )
-  const goBack = useCallback(() => {
+  const navigate = useCallback(
+    async (next: StudioNavigation, options?: { replace?: boolean }) => {
+      const attempt = ++navigationAttempt.current
+      const runtimeId = currentRuntime.current
+      if (
+        !(await canLeave()) ||
+        !mounted.current ||
+        attempt !== navigationAttempt.current ||
+        runtimeId !== currentRuntime.current
+      )
+        return false
+      return commitNavigation(next, options)
+    },
+    [canLeave, commitNavigation],
+  )
+  const goBack = useCallback(async () => {
     const previous = history.current.at(-1)
-    if (!previous || !canLeave()) return false
     const attempt = ++navigationAttempt.current
-    history.current.pop()
-    const restore = () => {
-      if (attempt !== navigationAttempt.current) return
+    const runtimeId = currentRuntime.current
+    if (!previous) return false
+    if (
+      !(await canLeave()) ||
+      !mounted.current ||
+      attempt !== navigationAttempt.current ||
+      runtimeId !== currentRuntime.current
+    )
+      return true
+    try {
+      if (
+        previous.target.viewId === 'tasks' &&
+        previous.runtimeId &&
+        previous.runtimeId !== currentRuntime.current
+      )
+        await switchRuntime(previous.runtimeId)
+      if (!mounted.current || attempt !== navigationAttempt.current) return true
+      history.current.pop()
       settingsNavigation.current.target = previous.target
       updateTarget(previous.target)
       setNavigationKey((key) => key + 1)
+      return true
+    } catch (cause) {
+      if (attempt === navigationAttempt.current)
+        setSwitchError(cause instanceof Error ? cause.message : String(cause))
+      return true
     }
-    if (
-      previous.target.viewId === 'tasks' &&
-      previous.runtimeId &&
-      previous.runtimeId !== currentRuntime.current
-    ) {
-      void switchRuntime(previous.runtimeId)
-        .then(restore)
-        .catch((cause: unknown) => {
-          if (attempt !== navigationAttempt.current) return
-          history.current.push(previous)
-          setSwitchError(cause instanceof Error ? cause.message : String(cause))
-        })
-    } else restore()
-    return true
   }, [canLeave, updateTarget, switchRuntime, setSwitchError])
   // Hiding normal modes moves a section landing there to the unified workspace. Pop-out windows
   // keep their dedicated view, and explicit item links still open.
@@ -395,7 +420,7 @@ function WorkbenchContent({
       void browser({ action: 'focus-detached-browser', key: 'studio:browser:main' })
         .then((result) => {
           if (mounted.current && attempt === navigationAttempt.current && !result?.focusedWindowId)
-            open()
+            void open()
         })
         .catch((cause) => {
           if (mounted.current && attempt === navigationAttempt.current)
@@ -403,7 +428,7 @@ function WorkbenchContent({
         })
       return
     }
-    open()
+    void open()
   }
   // Section history is local to this session and computer; explicit navigation
   // to a fresh composer still clears it. Ignore an old computer's pending target.
@@ -421,17 +446,25 @@ function WorkbenchContent({
     (destination: NotificationTarget | (StudioNavigation & { runtimeId: string })) => {
       const attempt = ++navigationAttempt.current
       setSwitchError('')
+      const runtimeId = currentRuntime.current
       void (async () => {
-        if (destination.runtimeId !== runtimeRegistry.activeId)
+        if (
+          !(await canLeave()) ||
+          !mounted.current ||
+          attempt !== navigationAttempt.current ||
+          runtimeId !== currentRuntime.current
+        )
+          return
+        if (destination.runtimeId !== currentRuntime.current)
           await switchRuntime(destination.runtimeId)
-        if (attempt !== navigationAttempt.current) return
-        navigate({ viewId: destination.viewId, entityId: destination.entityId })
+        if (!mounted.current || attempt !== navigationAttempt.current) return
+        commitNavigation({ viewId: destination.viewId, entityId: destination.entityId })
       })().catch((error: unknown) => {
         if (attempt === navigationAttempt.current)
           setSwitchError(error instanceof Error ? error.message : String(error))
       })
     },
-    [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
+    [canLeave, switchRuntime, commitNavigation, setSwitchError],
   )
   // Runtime snapshots change frequently. Keep the host API (and extension catalog) stable
   // while resolving navigation against the latest paired computers.
@@ -446,7 +479,7 @@ function WorkbenchContent({
     activeIdentity: snapshot?.runtimeId,
   }
   const openThread = useCallback<NonNullable<StudioHostApi['openThread']>>(
-    (destination) => {
+    async (destination) => {
       if (browserWindowId) {
         if (!popOutThread || !destination.runtimeId) {
           setSwitchError('Open this draft in the main Studio window.')
@@ -459,13 +492,20 @@ function WorkbenchContent({
         }).catch((cause: unknown) => setSwitchError(String(cause)))
         return
       }
-      if (!canLeave()) return
+      const attempt = ++navigationAttempt.current
+      const capturedRuntime = currentRuntime.current
+      if (
+        !(await canLeave()) ||
+        !mounted.current ||
+        attempt !== navigationAttempt.current ||
+        capturedRuntime !== currentRuntime.current
+      )
+        return
       const previous = {
         target: settingsNavigation.current.target,
         runtimeId: currentRuntime.current,
       }
       const { profiles, runtimes, activeIdentity } = threadRuntimes.current
-      const attempt = ++navigationAttempt.current
       setSwitchError('')
       const profile = resolveThreadRuntime(destination, profiles, runtimes)
       // A direct local connection may have no saved profile, but still has a stable identity.
@@ -474,7 +514,7 @@ function WorkbenchContent({
         currentRuntime.current === null &&
         (!destination.runtimeIdentity || destination.runtimeIdentity === activeIdentity)
       if (!profile && !local) {
-        navigate({ viewId: 'runtime', threadConnection: destination })
+        commitNavigation({ viewId: 'runtime', threadConnection: destination })
         return
       }
       const runtimeId = profile?.id ?? null
@@ -486,7 +526,7 @@ function WorkbenchContent({
         if (!mounted.current || attempt !== navigationAttempt.current) return
         history.current.push(previous)
         if (history.current.length > 50) history.current.shift()
-        navigate(
+        commitNavigation(
           {
             viewId: 'tasks',
             entityId: destination.threadId,
@@ -500,11 +540,11 @@ function WorkbenchContent({
           setSwitchError(error instanceof Error ? error.message : String(error))
       })
     },
-    [canLeave, switchRuntime, navigate, setSwitchError, browserWindowId, popOutThread],
+    [canLeave, switchRuntime, commitNavigation, setSwitchError, browserWindowId, popOutThread],
   )
   const openLinkTarget = (destination: LinkTarget) => {
     if (destination.kind === 'pull') {
-      navigate({
+      void navigate({
         viewId: 'pulls',
         entityId: destination.navigationUrl,
         pullTarget: {
@@ -517,7 +557,7 @@ function WorkbenchContent({
         },
       })
     } else
-      navigate({
+      void navigate({
         viewId:
           destination.kind === 'pipeline'
             ? 'pipelines'
@@ -558,7 +598,7 @@ function WorkbenchContent({
     )
   const openSharedBrowserLink = useCallback(
     async (url: string) => {
-      navigate({ viewId: 'browser', entityId: previewUrl(url) })
+      await navigate({ viewId: 'browser', entityId: previewUrl(url) })
     },
     [navigate],
   )
@@ -616,7 +656,7 @@ function WorkbenchContent({
         // page focus must stay with the workspace currently hosting that surface.
         if (settingsNavigation.current.target.viewId === 'workspace') return
         updateAppPreferences({ browserWorkspaceEnabled: true })
-        navigate({ viewId: 'browser' })
+        void navigate({ viewId: 'browser' })
       }),
     [onBrowserWorkspaceFocus, navigate],
   )
@@ -668,11 +708,10 @@ function WorkbenchContent({
       refreshCommands((n) => n + 1)
     }
   }, [])
-  const detachBrowser = () => {
+  const detachBrowser = async () => {
     const command = commands.current.get('browser.detach')
     if (command) return command.run()
-    navigate({ viewId: 'browser' })
-    if (settingsNavigation.current.target.viewId === 'browser') setDetachBrowserRequested(true)
+    if (await navigate({ viewId: 'browser' })) setDetachBrowserRequested(true)
   }
   useEffect(() => {
     if (!detachBrowserRequested) return
@@ -783,7 +822,10 @@ function WorkbenchContent({
           )
         )
       ) {
-        if (goBack()) event.preventDefault()
+        if (history.current.length) {
+          event.preventDefault()
+          void goBack()
+        }
         return
       }
       if (
@@ -819,7 +861,7 @@ function WorkbenchContent({
       ) {
         event.preventDefault()
         setPalette(false)
-        navigate({ viewId: 'shortcuts' })
+        void navigate({ viewId: 'shortcuts' })
       }
     }
     window.addEventListener('keydown', key)
@@ -925,7 +967,7 @@ function WorkbenchContent({
                 online={runtimes.filter((runtime) => runtime.connected).length}
                 devices={runtimeRegistry.profiles.length}
                 onDevices={() =>
-                  navigate({
+                  void navigate({
                     viewId: 'runtime',
                   })
                 }
@@ -1001,7 +1043,7 @@ function WorkbenchContent({
                   <SettingsNav
                     views={settingsViews}
                     activeId={target.viewId}
-                    onSelect={navigateSection}
+                    onSelect={(viewId) => navigate({ viewId })}
                   />
                 )}
                 <div
@@ -1041,7 +1083,7 @@ function WorkbenchContent({
                 target.viewId !== 'agents' && (
                   <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 border-t bg-card px-4 py-2">
                     <p className="text-xs text-muted-foreground">
-                      Make this workspace yours: choose default models for tasks and titles.
+                      Make this workspace yours: choose default models for threads and titles.
                     </p>
                     <Button size="sm" onClick={() => navigate({ viewId: 'agents' })}>
                       Set up defaults
@@ -1078,7 +1120,7 @@ function WorkbenchContent({
                         size="sm"
                         variant="ghost"
                         onClick={() =>
-                          navigate({
+                          void navigate({
                             viewId: 'runtime',
                           })
                         }

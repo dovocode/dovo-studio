@@ -124,7 +124,8 @@ export interface StudioHostApi {
   repositoryOpener?: import('@dovo/protocol').RepositoryOpenerBridge
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   openThread?: (target: StudioThreadReference & { parent?: StudioThreadReference }) => void
-  goBack?: () => boolean
+  /** False means there is no history. A canceled Back request is handled. */
+  goBack?: () => Promise<boolean>
   navigate: (target: StudioNavigation, options?: { replace?: boolean }) => void
   registerCommand: (command: StudioCommand) => () => void
 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
+  './workspace/context': 'export const useWorkspace=()=>window.store;',
   '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const useStudioHost=()=>window.host;`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
@@ -16,7 +17,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId="" temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId={window.selectedId??""} temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
     loader: 'tsx',
     resolveDir: root + 'packages/extension-tasks/',
   },
@@ -94,7 +95,11 @@ try {
         agents: [],
       },
     }
-    window.host = {}
+    window.host = {
+      navigate: (target) => {
+        window.lastNavigation = target
+      },
+    }
     window.store = {
       request: async () => {
         throw Error('Reordering must not send runtime mutations')
@@ -196,9 +201,33 @@ try {
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.collapsedSections().includes('working'))
   await chevron(workingSummary, false)
+  // Collapsing the open thread keeps a location cue without changing the user's section choice.
+  await page.evaluate(() => {
+    window.selectedId = JSON.stringify(['runtime', 'working'])
+    window.render()
+  })
+  await workingSummary.getByText('Current', { exact: true }).waitFor()
+  assert.equal(await workingSummary.locator('..').getAttribute('open'), null)
+  await workingSummary.click()
+  await workingSummary.getByText('Current', { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByText('Working thread', { exact: true }).waitFor()
+  await workingSummary.click()
+  await workingSummary.getByText('Current', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.selectedId = ''
+    window.render()
+  })
+  await workingSummary.getByText('Current', { exact: true }).waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
+  const resetOrder = dialog.getByRole('button', { name: 'Reset section order', exact: true })
+  assert.equal(await resetOrder.isDisabled(), true, 'Reset is disabled at the default order')
+  assert.match(
+    await dialog.innerText(),
+    /Needs input appears automatically below it and cannot be moved/,
+  )
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+  assert.equal(await resetOrder.isEnabled(), true, 'Reset is available after reordering')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
   assert.deepEqual(await names(), ['Waiting', 'Open', 'Working'])
   assert.equal(
@@ -270,16 +299,35 @@ try {
     'Collapsed sections retain their state across cold starts',
   )
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).waitFor()
-  assert.equal(
-    await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).isDisabled(),
-    true,
-  )
+  const pinnedOrderRow = dialog.getByRole('listitem').filter({ hasText: 'Pinned' })
+  await pinnedOrderRow.getByText('Fixed first', { exact: true }).waitFor()
+  assert.equal(await pinnedOrderRow.getByRole('button').count(), 0)
+  assert.equal(await pinnedOrderRow.locator('svg.lucide-lock-keyhole').count(), 1)
   assert.equal(
     await dialog.getByRole('button', { name: 'Move settled down', exact: true }).isDisabled(),
     true,
   )
-  await dialog.getByRole('button', { name: 'Reset section order', exact: true }).click()
+  const orderBeforeSettings = await page.evaluate(() => window.savedOrder())
+  const collapsedBeforeSettings = await page.evaluate(() => window.collapsedSections())
+  await page.evaluate(() => {
+    window.host.navigate = (target) => {
+      window.lastNavigation = target
+    }
+  })
+  await dialog.getByRole('button', { name: 'Grouping and sorting…', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(await page.evaluate(() => window.lastNavigation), {
+    viewId: 'task-list-settings',
+  })
+  assert.deepEqual(await page.evaluate(() => window.savedOrder()), orderBeforeSettings)
+  assert.deepEqual(await page.evaluate(() => window.collapsedSections()), collapsedBeforeSettings)
+  await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
+  await resetOrder.click()
+  assert.equal(
+    await resetOrder.isDisabled(),
+    true,
+    'Reset becomes disabled after restoring defaults',
+  )
   assert.deepEqual(await page.evaluate(() => window.savedOrder()), [
     'pinned',
     'active',

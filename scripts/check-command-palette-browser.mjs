@@ -15,8 +15,8 @@ import {CommandPalette} from '../studio-shell/src/command-palette';
 window.executed=[];
 const definitions=[
   {id:'workspace',title:'Open workspace',aliases:['thread','thread']},
-  {id:'new',title:'New thread',aliases:['new task','new chat','thread']},
-  {id:'switch',title:'Go to task…',aliases:['go to thread','switch thread']},
+  {id:'new',title:'New thread',aliases:['new thread','new chat','thread']},
+  {id:'switch',title:'Go to thread…',aliases:['go to thread','switch thread']},
   {id:'search',title:'Search conversations…',aliases:['search messages','find message','thread']},
   {id:'history',title:'Thread history',aliases:['thread']},
   {id:'terminal',title:'Toggle terminal',aliases:['shell','console']},
@@ -110,9 +110,9 @@ try {
   await input.fill('  ThReAd  ')
   assert.deepEqual(await titles(), [
     'New thread',
+    'Go to thread…',
     'Thread history',
     'Open workspace',
-    'Go to task…',
     'Search conversations…',
   ])
   assert.equal(await options.filter({ hasText: /^New thread$/ }).count(), 1)
@@ -122,7 +122,7 @@ try {
   await input.press('Home')
   await input.press('ArrowDown')
   assert.equal(
-    await options.filter({ hasText: /^Thread history$/ }).getAttribute('aria-selected'),
+    await options.filter({ hasText: /^Go to thread…$/ }).getAttribute('aria-selected'),
     'true',
   )
   await input.press('ArrowUp')
@@ -131,7 +131,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.executed), ['new'])
   await page.waitForFunction(() => document.activeElement?.matches('.studio-main'))
   await opener.click()
-  await input.fill('  NEW TASK  ')
+  await input.fill('  NEW THREAD  ')
   assert.deepEqual(await titles(), ['New thread'])
   await input.evaluate((element) => {
     element.dispatchEvent(

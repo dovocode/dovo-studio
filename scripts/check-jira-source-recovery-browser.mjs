@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const ui = root + 'packages/studio-ui/src'
 const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const WorkspaceRuntimeScope=({children})=>children;export const useRuntimeSources=()=>window.store.runtimes;export const useWorkspace=()=>window.store;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export {useConfirmation,ConfirmationContext} from '${root}packages/studio-core/src/confirmation';export const WorkspaceRuntimeScope=({children})=>children;export const useRuntimeSources=()=>window.store.runtimes;export const useWorkspace=()=>window.store;`,
   '@dovo/studio-ui':
     ['button', 'input', 'dialog']
       .map((name) => `export * from '${ui}/components/ui/${name}';`)
@@ -17,10 +17,10 @@ const bundle = await build({
   stdin: {
     loader: 'tsx',
     resolveDir: root,
-    contents: `import {createRoot} from 'react-dom/client';import {JiraSourcesDialog} from '${root}packages/extension-scm/src/connections/jira-binding';
-window.calls=[];window.saved=0;window.closed=0;const source={id:'jira',name:'Team backlog',site:'https://team.atlassian.net',project:'TEAM'};
-const profile={id:'owner',name:'Owner',connection:{address:'http://owner',token:'paired'}};window.store={activeRuntimeId:'owner',connected:true,workspace:{jiraSources:[source]},runtimes:[{name:'Owner',profile,connected:true,snapshot:{workspace:{jiraSources:[source]}}}],refreshRuntime:async()=>{throw new Error('Disconnected after saving')},request:async(path,input)=>{window.calls.push({path,input});if(path.endsWith('/projects/read'))return{site:source.site,projects:[{key:'TEAM',name:'Team'}],truncated:false};if(path.endsWith('/sources/save'))return source;if(path.endsWith('/sources/remove'))return{ok:true};throw new Error(path)}};
-const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<JiraSourcesDialog key={window.mount??0} onClose={()=>window.closed++} onSaved={()=>window.saved++}/>);window.render();`,
+    contents: `import {StudioConfirmationProvider} from '${ui}/confirmation-provider';import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context';import {createRoot} from 'react-dom/client';import {JiraSourcesDialog} from '${root}packages/extension-scm/src/connections/jira-binding';
+window.calls=[];window.saved=0;window.closedCount=0;const source={id:'jira',name:'Team backlog',site:'https://team.atlassian.net',project:'TEAM'};
+const profile={id:'owner',name:'Owner',connection:{address:'http://owner',token:'paired'}};window.store={activeRuntimeId:'owner',connection:profile.connection,connected:true,workspace:{jiraSources:[source]},runtimes:[{name:'Owner',profile,connected:true,snapshot:{workspace:{jiraSources:[source]}}}],refreshRuntime:async()=>{throw new Error('Disconnected after saving')},request:async(path,input)=>{window.calls.push({path,input});if(path.endsWith('/projects/read'))return{site:source.site,projects:[{key:'TEAM',name:'Team'}],truncated:false};if(path.endsWith('/sources/save'))return source;if(path.endsWith('/sources/remove'))return{ok:true};throw new Error(path)}};
+const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<WorkspaceContext.Provider value={window.store}><StudioConfirmationProvider><JiraSourcesDialog key={window.mount??0} onClose={()=>window.closedCount++} onSaved={()=>window.saved++}/></StudioConfirmationProvider></WorkspaceContext.Provider>);window.render();`,
   },
   bundle: true,
   write: false,
@@ -56,12 +56,32 @@ try {
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
   await page.getByRole('button', { name: /Team backlog/ }).click()
   await page.getByLabel('Source name (optional)').fill('Keep this edited name')
-  page.once('dialog', (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: '← All issue sources', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard Jira changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
+  await page
+    .getByRole('dialog', { name: 'Discard Jira changes?', exact: true })
+    .waitFor({ state: 'hidden' })
   assert.equal(
     await page.getByLabel('Source name (optional)').inputValue(),
     'Keep this edited name',
   )
+  await page.getByRole('button', { name: '← All issue sources', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Discard Jira changes?', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.store = { ...window.store, activeRuntimeId: 'other' }
+    window.render()
+  })
+  await page
+    .getByRole('dialog', { name: 'Discard Jira changes?', exact: true })
+    .waitFor({ state: 'hidden' })
+  assert.equal(
+    await page.getByLabel('Source name (optional)').inputValue(),
+    'Keep this edited name',
+  )
+  assert.equal(await page.evaluate(() => window.closedCount), 0)
   await page.getByRole('button', { name: 'Save connection', exact: true }).click()
   await page
     .getByText('Saved successfully. Reconnect this computer to refresh its issue sources.', {
@@ -90,6 +110,15 @@ try {
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path.endsWith('/sources/remove')).length === 1,
   )
+  await page.getByRole('button', { name: /Team backlog/ }).click()
+  await page.getByLabel('Source name (optional)').fill('Discard this edited name')
+  await page.getByRole('button', { name: '← All issue sources', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard Jira changes?', exact: true })
+    .getByRole('button', { name: 'Discard changes', exact: true })
+    .click()
+  await page.getByRole('button', { name: /Team backlog/ }).waitFor()
+  assert.equal(await page.getByLabel('Source name (optional)').count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Jira source recovery: dirty-close preservation, successful write with failed refresh, no resubmission and confirmed removal passed.',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   useSettingsTarget,
   type SettingsSection,
@@ -23,30 +23,36 @@ import {
 } from '@dovo/studio-ui'
 import {
   Archive,
+  Activity,
+  Timer,
   Brain,
   Shapes,
   Bell,
   Bot,
   ChartNoAxesCombined,
-  ChevronRight,
-  Command,
+  ChevronDown,
+  FileDiff,
+  FileClock,
   GitBranch,
   GitPullRequest,
   HardDrive,
   Keyboard,
   ListTodo,
+  ListStart,
   Layers,
   MessagesSquare,
   Download,
   Globe,
   Mic,
   Monitor,
+  MousePointer2,
   MonitorSmartphone,
   Palette,
   Search,
   Settings2,
   Smartphone,
   Terminal,
+  Puzzle,
   Wrench,
   X,
 } from 'lucide-react'
@@ -60,7 +66,7 @@ const icons: Record<string, typeof Search> = {
   'text-generation': Mic,
   notifications: Bell,
   appearance: Palette,
-  diffs: GitBranch,
+  diffs: FileDiff,
   shortcuts: Keyboard,
   usage: ChartNoAxesCombined,
   agents: Bot,
@@ -68,29 +74,28 @@ const icons: Record<string, typeof Search> = {
   'source-control': GitBranch,
   'pull-request-settings': GitPullRequest,
   'pull-request-monitoring-settings': GitPullRequest,
-  'task-defaults': ListTodo,
-  'task-behavior': ListTodo,
+  'task-defaults': ListStart,
+  'task-behavior': Timer,
   commands: Terminal,
   worktrees: HardDrive,
   memory: Brain,
   'artifact-settings': Shapes,
-  'computer-use': Monitor,
+  'computer-use': MousePointer2,
   'remote-desktop': Monitor,
   'device-previews': Smartphone,
-  'studio-tools-settings': Wrench,
+  'studio-tools-settings': Puzzle,
   runtime: MonitorSmartphone,
-  'running-tasks': ListTodo,
-  activity: Command,
+  'running-tasks': Activity,
+  activity: FileClock,
   'archived-tasks': Archive,
 }
 
-type NavigationSection = SettingsSection | 'more' | 'new-tasks' | 'running-tasks'
+type NavigationSection = SettingsSection | 'more' | 'tasks'
 const headings: readonly [NavigationSection, string][] = [
   ['app', 'App preferences'],
-  ['new-tasks', 'New task defaults'],
-  ['running-tasks', 'Running task behavior'],
+  ['tasks', 'Thread defaults & behavior'],
   ['agents', 'Agents & tools'],
-  ['coding', 'Tasks & projects'],
+  ['coding', 'Repositories & workspaces'],
   ['computers', 'Computers'],
   ['archived', 'History'],
   ['more', 'More'],
@@ -103,7 +108,7 @@ const storage: Record<SettingsStorage, { icon: typeof Search; label: string }> =
   inherited: { icon: Layers, label: 'Computer & project' },
 }
 
-const mixedPages = new Set(['browser-settings', 'pull-request-monitoring-settings'])
+const mixedPages = new Set(['browser-settings', 'pull-request-monitoring-settings', 'runtime'])
 
 function pageStorage(view?: StudioView) {
   if (view?.id === 'usage') return { icon: ChartNoAxesCombined, label: 'Across computers' }
@@ -116,7 +121,7 @@ function storageDescription(view?: StudioView) {
   if (view?.id === 'usage')
     return 'Usage and account limits come from paired computers. Choose a computer on this page to filter them.'
   if (!view?.settingsScope)
-    return 'Browse archived tasks from paired computers and restore them when needed.'
+    return 'Browse archived threads from paired computers and restore them when needed.'
   if (view.settingsScope === 'inherited')
     return 'Choose where defaults apply at the top of the page.'
   if (mixedPages.has(view.id))
@@ -134,15 +139,26 @@ export function SettingsNav({
 }: {
   views: readonly StudioView[]
   activeId: string
-  onSelect: (viewId: string) => void
+  onSelect: (viewId: string) => boolean | void | Promise<boolean | void>
 }) {
   const input = useRef<HTMLInputElement>(null)
   const navigation = useRef<HTMLElement>(null)
+  const links = useRef<HTMLDivElement>(null)
+  const linksId = useId()
+  const [moreSections, setMoreSections] = useState(false)
+  const selectionAttempt = useRef(0)
   const [query, setQuery] = useApplicationState('')
   const [jump, setJump] = useState<{ viewId: string; label: string } | null>(null)
   const [searchStatus, setSearchStatus] = useState('')
   const { target, scope, source, repository } = useSettingsTarget()
+  useEffect(
+    () => () => {
+      selectionAttempt.current++
+    },
+    [],
+  )
   const clearSearch = () => {
+    selectionAttempt.current++
     setQuery('')
     setJump(null)
     setSearchStatus('')
@@ -168,7 +184,7 @@ export function SettingsNav({
             element.textContent?.trim()) === jump.label,
       )
       if (!element) return false
-      let parent = element.parentElement
+      let parent: HTMLElement | null = element
       while (parent && parent !== root) {
         if (parent instanceof HTMLDetailsElement) parent.open = true
         parent = parent.parentElement
@@ -202,18 +218,20 @@ export function SettingsNav({
       highlighted?.classList.remove('bg-accent')
     }
   }, [jump, activeId, target.environmentId, target.projectId])
-  const select = (id: string) => {
-    if (id !== activeId) onSelect(id)
+  const select = async (id: string) => {
+    const attempt = ++selectionAttempt.current
+    const accepted = id === activeId || (await onSelect(id)) !== false
+    return accepted && attempt === selectionAttempt.current
   }
   const needle = query.trim().toLowerCase()
   const sectionFor = (view: StudioView): NavigationSection => {
-    if (view.id === 'task-defaults') return 'new-tasks'
+    if (view.id === 'task-defaults') return 'tasks'
     if (
       view.id === 'task-behavior' ||
       view.id === 'running-tasks' ||
       view.id === 'pull-request-monitoring-settings'
     )
-      return 'running-tasks'
+      return 'tasks'
     if (view.settingsScope === 'device') return 'app'
     return view.settingsSection ?? 'more'
   }
@@ -243,9 +261,13 @@ export function SettingsNav({
       view.title.toLowerCase().includes(needle)
     )
   })
-  const openSetting = (viewId: string, label: string) => {
+  const openSetting = async (viewId: string, label: string) => {
+    const attempt = selectionAttempt.current + 1
     setSearchStatus(`Opening ${label}…`)
-    select(viewId)
+    if (!(await select(viewId))) {
+      if (attempt === selectionAttempt.current) setSearchStatus('')
+      return
+    }
     setJump({ viewId, label })
   }
   const firstField = ordered.flatMap((view) =>
@@ -267,9 +289,32 @@ export function SettingsNav({
   )
   const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
   const activeView = views.find((view) => view.id === activeId)
-  const inherited = activeView?.settingsScope === 'inherited'
   const scopeLabel = pageStorage(activeView)?.label ?? 'History on paired computers'
   const [sidebarVisible] = useLeftSidebar()
+  useEffect(() => {
+    if (sidebarVisible)
+      navigation.current
+        ?.querySelector('[aria-current="page"]')
+        ?.scrollIntoView({ block: 'nearest' })
+  }, [activeId, sidebarVisible])
+  useEffect(() => {
+    const region = links.current
+    if (!region) return
+    const updateEdges = () => {
+      const moreBelow = region.scrollHeight - region.clientHeight - region.scrollTop > 1
+      setMoreSections(moreBelow)
+      region.style.setProperty('--settings-nav-fade-top', region.scrollTop > 1 ? '14px' : '0px')
+      region.style.setProperty('--settings-nav-fade-bottom', moreBelow ? '18px' : '0px')
+    }
+    updateEdges()
+    const observer = new ResizeObserver(updateEdges)
+    observer.observe(region)
+    region.addEventListener('scroll', updateEdges, { passive: true })
+    return () => {
+      observer.disconnect()
+      region.removeEventListener('scroll', updateEdges)
+    }
+  }, [query, sidebarVisible, views])
   return (
     <nav
       ref={navigation}
@@ -289,7 +334,7 @@ export function SettingsNav({
       }}
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-64"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col bg-background md:w-52 md:overflow-hidden lg:w-[280px]"
     >
       <SidebarHeader />
       <div className="studio-overview-pane flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sidebar px-4 py-3 md:px-3 md:py-4">
@@ -325,7 +370,7 @@ export function SettingsNav({
           <div className="relative text-[0.8125rem]">
             <Search
               aria-hidden="true"
-              className="absolute left-2 top-2 size-3.5 text-muted-foreground"
+              className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
             />
             <Input
               ref={input}
@@ -333,6 +378,7 @@ export function SettingsNav({
               placeholder="Search settings"
               value={query}
               onChange={(event) => {
+                selectionAttempt.current++
                 setQuery(event.target.value)
                 setJump(null)
                 setSearchStatus('')
@@ -343,8 +389,9 @@ export function SettingsNav({
                   moveResult(null, event.key === 'ArrowDown' ? 1 : 0)
                 }
                 if (event.key === 'Enter') {
-                  if (firstField) openSetting(firstField.viewId, firstField.label)
-                  else if (matches[0]) select(matches[0].id)
+                  event.preventDefault()
+                  if (firstField) void openSetting(firstField.viewId, firstField.label)
+                  else if (matches[0]) void select(matches[0].id)
                 }
                 if (event.key === 'Escape') clearSearch()
               }}
@@ -368,8 +415,16 @@ export function SettingsNav({
           </p>
         )}
         <div
+          ref={links}
+          id={linksId}
           role="region"
           aria-label="Settings navigation"
+          style={{
+            scrollbarWidth: 'thin',
+            maskImage:
+              'linear-gradient(transparent, #000 var(--settings-nav-fade-top, 0px), #000 calc(100% - var(--settings-nav-fade-bottom, 18px)), transparent)',
+            paddingBottom: 20,
+          }}
           tabIndex={0}
           className={`${needle ? 'flex max-h-64 md:max-h-none' : 'hidden'} min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex`}
         >
@@ -378,7 +433,7 @@ export function SettingsNav({
             if (!items.length) return null
             return (
               <div key={section} className="text-sm">
-                <h2 className="flex min-h-8 items-center px-2 text-[0.8125rem] font-semibold text-foreground/90">
+                <h2 className="flex min-h-10 items-center px-2 pt-2 text-[0.6875rem] font-medium text-muted-foreground">
                   {label}
                 </h2>
                 <div className="space-y-0.5">
@@ -393,7 +448,7 @@ export function SettingsNav({
                         <div
                           className={`group flex min-h-8 w-full items-center gap-1 rounded-xl border border-transparent pr-1 text-[0.8125rem] transition-colors ${
                             active
-                              ? 'studio-selected-surface font-medium'
+                              ? 'studio-nav-selected font-medium'
                               : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                           }`}
                         >
@@ -403,24 +458,17 @@ export function SettingsNav({
                             aria-current={active ? 'page' : undefined}
                             aria-label={view.title}
                             onClick={() => select(view.id)}
-                            className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-xl py-1 pl-2 text-left"
+                            className="flex min-h-8 min-w-0 flex-1 scroll-my-6 items-center gap-2 rounded-xl py-1 pl-2 text-left"
                           >
                             <Icon
                               size={16}
                               strokeWidth={1.7}
                               aria-hidden="true"
-                              className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
+                              className={`shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground/70'}`}
                             />
                             <span className="min-w-0 flex-1 break-words leading-snug">
                               {view.title}
                             </span>
-                            {active && (
-                              <ChevronRight
-                                size={13}
-                                aria-hidden="true"
-                                className="shrink-0 text-muted-foreground"
-                              />
-                            )}
                           </button>
                           {Storage && label && (
                             <Popover.Root>
@@ -429,7 +477,7 @@ export function SettingsNav({
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="size-7 shrink-0 p-0 text-muted-foreground"
+                                  className="size-7 shrink-0 p-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                                   aria-label={`Settings scope for ${view.title}`}
                                   title={label}
                                 >
@@ -491,24 +539,26 @@ export function SettingsNav({
             </p>
           )}
         </div>
+        {moreSections && (
+          <button
+            type="button"
+            aria-controls={linksId}
+            onClick={() => {
+              const region = links.current
+              if (!region) return
+              region.focus({ preventScroll: true })
+              region.scrollBy({ top: Math.max(160, region.clientHeight * 0.7) })
+            }}
+            className="hidden h-7 shrink-0 items-center justify-center gap-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex"
+          >
+            More sections <ChevronDown size={13} aria-hidden="true" />
+          </button>
+        )}
         {searchStatus && (
           <p role="status" className="px-2 text-xs text-muted-foreground">
             {searchStatus}
           </p>
         )}
-        <aside
-          aria-label={inherited ? 'Inherited settings target' : 'Settings storage'}
-          className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
-        >
-          <p className="font-medium">
-            {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : scopeLabel}
-          </p>
-          {inherited && (
-            <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
-              {project} · {computer}
-            </p>
-          )}
-        </aside>
       </div>
     </nav>
   )

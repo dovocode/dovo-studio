@@ -112,6 +112,7 @@ import {createContext,createElement,useContext,useState,useSyncExternalStore} fr
 import {resolveSettingsTarget,decode,browserCommandSchema} from '@dovo/protocol';
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
@@ -2203,6 +2204,13 @@ try {
     'Changing profiles loads the current redirected URL',
   )
   const sourceBeforeOpen = await selected()
+  assert.equal(
+    await page
+      .locator(`[data-browser-tab-id="${sourceBeforeOpen.id}"] .studio-browser-tab-profile`)
+      .textContent(),
+    'This computer · Local Work',
+    'Regular tabs show readable names for nondefault profiles',
+  )
   await page.evaluate(async () => {
     window.openedLinks.push('http://localhost:3000/new-window')
     await window.pollBrowser()
@@ -3515,6 +3523,23 @@ try {
     'Home stays in the URL bar, not the pinned-tab panel',
   )
   await pins.first().getByLabel('This computer · Local Default').waitFor()
+  assert.equal(
+    await pins.first().getByLabel('This computer · Local Default').textContent(),
+    '',
+    'Default pins retain machine identity without cryptic profile initials',
+  )
+  assert.equal(
+    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
+    'LW',
+    'Nondefault pins retain compact profile identity',
+  )
+  assert.equal(
+    await compactSidebar
+      .locator('[data-browser-tab-id="compact-4"] .studio-browser-tab-profile')
+      .textContent(),
+    'This computer',
+    'Default regular tabs show readable machine identity without redundant profile initials',
+  )
   await controlsPage.evaluate(() =>
     window.setCleanup({
       browserProfiles: [
@@ -3992,7 +4017,7 @@ try {
     'Selecting a pin must not reorder it',
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.equal(await row('normal-b').getAttribute('draggable'), 'true')
   await row('normal-c').dragTo(row('normal-a'), { targetPosition: { x: 30, y: 3 } })
@@ -4010,7 +4035,7 @@ try {
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.map((tab) => tab.id),
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).check()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).check()
   await orderPage.keyboard.press('Escape')
   await row('normal-b').getByRole('button').first().click()
   assert.equal((await visibleOrder())[2], 'normal-a', 'Activity mode ignores selection')
@@ -4022,7 +4047,7 @@ try {
   )
   assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows navigation')
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.deepEqual(await visibleOrder(), savedOrder, 'Returning to manual mode restores its order')
   await loadOrderPage()

@@ -8,7 +8,7 @@ import {
   type McpAppReference,
   type McpApp,
 } from '@dovo/protocol'
-import { startMcpAppTools } from '@dovo/studio-core'
+import { startMcpAppTools, useConfirmation, clientScopeKey } from '@dovo/studio-core'
 import { memo, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ConversationVisibilityContext } from './conversation-visibility'
 import { useWorkspace, useResolvedTheme, useStudioHost } from '@dovo/studio-core'
@@ -30,6 +30,18 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
   const visible = paneVisible && documentIsVisible
   const { request, connected, activeRuntimeId, connection, workspace } = useWorkspace()
   const { openLink } = useStudioHost()
+  const [app, setApp] = useState<McpApp>()
+  const operationScope = JSON.stringify([
+    activeRuntimeId,
+    clientScopeKey(connection),
+    reference.taskId,
+    reference.id,
+    connected,
+    app?.connected,
+  ])
+  const confirm = useConfirmation(operationScope)
+  const currentScope = useRef(operationScope)
+  currentScope.current = operationScope
   const linkOrigin = useRef<{ runtimeId?: string; repositoryId?: string }>({})
   linkOrigin.current = {
     runtimeId: activeRuntimeId ?? undefined,
@@ -40,10 +52,9 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     const controller = new AbortController()
     linkOperation.current = controller
     return () => controller.abort()
-  }, [activeRuntimeId, reference.taskId, reference.id])
+  }, [operationScope])
   const theme = useResolvedTheme()
   const frame = useRef<HTMLIFrameElement>(null)
-  const [app, setApp] = useState<McpApp>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [height, setHeight] = useState(320)
@@ -70,7 +81,13 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     )
       .then(({ app }) => {
         if (!disposed)
-          setApp((previous) => (previous ? { ...previous, connected: app.connected } : app))
+          setApp((previous) =>
+            previous
+              ? previous.connected === app.connected
+                ? previous
+                : { ...previous, connected: app.connected }
+              : app,
+          )
       })
       .catch((cause: unknown) => {
         if (!disposed) setError(String(cause))
@@ -164,31 +181,49 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
         return
       const requestId = value.requestId,
         key = nonce.current
+      // Listener updates do not invalidate requests; their captured app scope does.
+      const operation = linkOperation.current
+      const isCurrent = () =>
+        operation !== null &&
+        !operation.signal.aborted &&
+        key === nonce.current &&
+        currentScope.current === operationScope
+      const assertCurrent = () => {
+        if (!isCurrent()) throw new Error('This app interaction is no longer active')
+      }
       const perform = async () => {
+        assertCurrent()
         if (!connected || !app?.connected)
           throw new Error('Reconnect the runtime before interacting with this app')
         if (value.method === 'ui/download-file') {
-          if (!window.confirm('Download files offered by this MCP App?'))
-            throw new Error('Download declined')
-          let resourceIndex = 0
-          const files = await mcpAppDownloads(
-            value.params,
-            async (uri) =>
-              (
-                await request(
-                  '/api/mcp-apps/rpc',
-                  {
-                    taskId: reference.taskId,
-                    id: reference.id,
-                    requestId: `${key}_${requestId}_read_${resourceIndex++}`,
-                    method: 'resources/read',
-                    params: { uri },
-                  },
-                  mcpAppRpcResponseSchema,
-                )
-              ).result,
+          if (
+            !(await confirm({
+              title: 'Download MCP App files?',
+              description: `Allow “${reference.title}” to download the files it offers to this device.`,
+              confirmLabel: 'Download files',
+            }))
           )
+            throw new Error('Download declined')
+          assertCurrent()
+          let resourceIndex = 0
+          const files = await mcpAppDownloads(value.params, async (uri) => {
+            assertCurrent()
+            const response = await request(
+              '/api/mcp-apps/rpc',
+              {
+                taskId: reference.taskId,
+                id: reference.id,
+                requestId: `${key}_${requestId}_read_${resourceIndex++}`,
+                method: 'resources/read',
+                params: { uri },
+              },
+              mcpAppRpcResponseSchema,
+            )
+            assertCurrent()
+            return response.result
+          })
           for (const file of files) {
+            assertCurrent()
             const bytes =
               file.text !== undefined
                 ? file.text
@@ -206,8 +241,16 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           const url = object(value.params).url
           if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
             throw new Error('Unsupported app URL')
-          if (!window.confirm(`Load an external MCP UI from ${new URL(url).origin}?`))
+          if (
+            !(await confirm({
+              title: 'Load external MCP UI?',
+              description: `Allow this app to load an external interface from ${new URL(url).origin}.`,
+              confirmLabel: 'Load interface',
+              details: url,
+            }))
+          )
             throw new Error('External app declined')
+          assertCurrent()
           return {}
         }
         if (value.method === 'ui/open-link') {
@@ -218,13 +261,19 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           openLink(url, { origin: linkOrigin.current, signal: linkOperation.current?.signal })
           return {}
         }
-        if (
-          (value.method === 'ui/message' || value.method === 'ui/intent') &&
-          !window.confirm(
-            `Send this MCP App message to the thread?\n\n${JSON.stringify(value.params).slice(0, 500)}`,
+        if (value.method === 'ui/message' || value.method === 'ui/intent') {
+          const intent = value.method === 'ui/intent'
+          if (
+            !(await confirm({
+              title: intent ? 'Send MCP App intent?' : 'Send MCP App message?',
+              description: `Review the complete ${intent ? 'intent' : 'message'} from “${reference.title}” before sending it to this thread.`,
+              confirmLabel: intent ? 'Send intent' : 'Send message',
+              details: JSON.stringify(value.params, null, 2),
+            }))
           )
-        )
-          throw new Error('Message declined')
+            throw new Error('Message declined')
+        }
+        assertCurrent()
         const result = await request(
           '/api/mcp-apps/rpc',
           {
@@ -243,14 +292,14 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
       }
       void perform()
         .then((result) => {
-          if (key === nonce.current)
+          if (isCurrent())
             frame.current?.contentWindow?.postMessage(
               { type: 'reply', nonce: key, requestId, result },
               '*',
             )
         })
         .catch((cause: unknown) => {
-          if (key === nonce.current)
+          if (isCurrent())
             frame.current?.contentWindow?.postMessage(
               { type: 'reply', nonce: key, requestId, error: String(cause) },
               '*',
@@ -259,7 +308,17 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
-  }, [app, theme, connected, request, openLink, reference.id, reference.taskId])
+  }, [
+    app,
+    connected,
+    request,
+    openLink,
+    reference.id,
+    reference.taskId,
+    reference.title,
+    confirm,
+    operationScope,
+  ])
   return (
     <div
       className={

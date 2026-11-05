@@ -3,6 +3,7 @@ import { contextMeter, type Task } from '@dovo/protocol'
 export function ThreadInfoUsage({ task }: { task: Task }) {
   const meter = contextMeter(task)
   const usage = task.contextUsage
+  if (!meter) return null
   return (
     <section
       aria-label="Context usage"

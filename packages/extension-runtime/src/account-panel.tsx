@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useAppPreferences } from '@dovo/studio-core'
 import { useState } from 'react'
 import { SharingPeoplePanel } from '@dovo/studio-ui/sharing-people'
@@ -64,7 +65,7 @@ function AccountPanelContent({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [selected, setSelected] = useState<Record<string, string>>({})
   return (
-    <section className="space-y-3 rounded-md border p-4" aria-label="Dovo account">
+    <section className="studio-settings-group space-y-3" aria-label="Dovo account">
       <div>
         <h2 className="text-sm font-medium">
           {directory ? `Signed in as ${directory.user.name}` : 'Your computers, across devices'}
@@ -75,14 +76,11 @@ function AccountPanelContent({
         </p>
       </div>
       {directory && !deletionPending && (
-        <details className="border-t pt-3">
-          <summary className="cursor-pointer text-sm font-medium">
-            Friends and organisations
-          </summary>
+        <Disclosure className="border-t pt-3" title={<>Friends and organisations</>}>
           <div className="pt-4">
             <SharingPeoplePanel key={client.sessionId()} client={client} />
           </div>
-        </details>
+        </Disclosure>
       )}
       {snapshot?.owner && snapshot.internet && (
         <div className="space-y-2 border-t pt-3">
@@ -179,8 +177,7 @@ function AccountPanelContent({
         </div>
       )}
       {directory && !deletionPending && (
-        <details className="space-y-3 border-t pt-3">
-          <summary className="cursor-pointer text-sm font-medium">Manage linked computers</summary>
+        <Disclosure className="space-y-3 border-t pt-3" title={<>Manage linked computers</>}>
           {directory.servers.length === 0 && (
             <p className="text-xs text-muted-foreground">
               No computers linked yet. Enable Dovo Connect on a computer or link a separately paired
@@ -278,7 +275,7 @@ function AccountPanelContent({
                 </div>
               )
             })}
-        </details>
+        </Disclosure>
       )}
     </section>
   )

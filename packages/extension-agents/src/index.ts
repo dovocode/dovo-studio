@@ -29,7 +29,7 @@ export const agentsExtension = defineStudioExtension(
     },
     {
       id: 'agents',
-      settingsFields: ['Default agent for new tasks', 'Installations & sign-in'],
+      settingsFields: ['Default agent for new threads', 'Installations & sign-in'],
       navigationGroup: 'settings',
       settingsScope: 'inherited',
       title: 'Agents',

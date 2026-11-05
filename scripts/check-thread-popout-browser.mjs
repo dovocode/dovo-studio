@@ -176,10 +176,10 @@ try {
   // The thread menu scopes copy inspection to the row's owner, even on another active computer.
   await main.getByRole('button', { name: 'Remote task actions', exact: true }).click()
   await main
-    .getByRole('menuitem', { name: 'Copy worktree to another machine…', exact: true })
+    .getByRole('menuitem', { name: 'Copy worktree to another computer…', exact: true })
     .click()
   await main
-    .getByRole('dialog', { name: 'Copy worktree to another machine', exact: true })
+    .getByRole('dialog', { name: 'Copy worktree to another computer', exact: true })
     .waitFor()
   await main.waitForFunction(
     () => document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
@@ -291,7 +291,12 @@ try {
   assert.equal(
     await main.evaluate(() => window.initialHost === window.host),
     true,
-    'Saved connection changes must preserve the host API and extension catalog',
+    'Saved connection changes must preserve the host API and extension catalog: ' +
+      (await main.evaluate(() =>
+        Object.keys(window.host)
+          .filter((key) => window.host[key] !== window.initialHost[key])
+          .join(', '),
+      )),
   )
   await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
   await detached.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()

@@ -1,8 +1,8 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { LinuxSetupGuide } from './linux-setup-guide'
 import {
   connectionProgress,
   runtimePeerAddress,
-  runtimeTransportAddress,
   runtimeReachability,
   workspaceRecoveriesSchema,
   type WorkspaceRecovery,
@@ -18,7 +18,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import type { RuntimeProfile } from '@dovo/studio-core'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { Plus, Circle } from 'lucide-react'
+import { Plus, Circle, ChevronDown } from 'lucide-react'
 import { responses, runtimeRequest, useWorkspace, startPolling } from '@dovo/studio-core'
 import {
   Button,
@@ -28,6 +28,7 @@ import {
   DialogTitle,
   FormField,
   Input,
+  DropdownMenu,
   cn,
 } from '@dovo/studio-ui'
 export function PairingClient({
@@ -187,18 +188,18 @@ export function PairingClient({
     setOpen(true)
   }
   return (
-    <article className="space-y-4 rounded-md border bg-card/40 p-3">
+    <section className="studio-settings-group space-y-4" aria-label="Your computers">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium">Your computers</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Tasks and projects from these computers appear in your workspace.
+          <h2 className="text-sm font-semibold tracking-tight">Your computers</h2>
+          <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">
+            Threads and projects from these computers appear in your workspace.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <ComputerUpdates />
           <LinuxSetupGuide onConnect={openNewConnection} />
-          <Button size="sm" variant="outline" onClick={openNewConnection}>
+          <Button size="sm" onClick={openNewConnection}>
             <Plus size={14} className="mr-1.5" />
             Connect computer
           </Button>
@@ -211,7 +212,7 @@ export function PairingClient({
         </p>
       )}
       {pendingSync && (
-        <div className="space-y-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3">
+        <div className="space-y-3 border-y border-status-warning/30 py-4">
           <div>
             <h3 className="text-xs font-medium">Unsent changes</h3>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -234,19 +235,22 @@ export function PairingClient({
           </div>
         </div>
       )}
-      <div className="divide-y">
+      <div className="divide-y divide-border/50">
         {runtimes.map((entry) => {
           return (
-            <div key={entry.profile.id} className="flex flex-wrap items-center gap-3 py-3">
+            <div
+              key={entry.profile.id}
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+            >
               <RuntimeIcon
                 icon={entry.snapshot?.runtimeIcon}
                 aria-hidden="true"
                 size={17}
-                className="shrink-0 text-muted-foreground"
+                className="mt-0.5 shrink-0 text-muted-foreground"
               />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="min-w-0 break-words">{entry.profile.name}</span>
+                  <span className="min-w-0 break-words font-medium">{entry.profile.name}</span>
                   <span
                     className={cn(
                       'inline-flex items-center gap-1 text-[0.6875rem]',
@@ -267,39 +271,41 @@ export function PairingClient({
                           : 'Offline'}
                   </span>
                 </p>
-                <ol
-                  aria-label="Connection stages"
-                  className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-                >
-                  {connectionProgress(entry).map((step) => (
-                    <li
-                      key={step.label}
-                      aria-current={
-                        step.state === 'current' || step.state === 'failed' ? 'step' : undefined
-                      }
-                      className={cn(
-                        'flex items-center gap-1',
-                        step.state === 'failed'
-                          ? 'text-status-error'
-                          : step.state === 'current'
-                            ? 'text-foreground'
-                            : 'text-muted-foreground',
-                      )}
-                    >
-                      <span aria-hidden="true">
-                        {step.state === 'done'
-                          ? '✓'
-                          : step.state === 'failed'
-                            ? '×'
+                {!entry.connected && (
+                  <ol
+                    aria-label="Connection stages"
+                    className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+                  >
+                    {connectionProgress(entry).map((step) => (
+                      <li
+                        key={step.label}
+                        aria-current={
+                          step.state === 'current' || step.state === 'failed' ? 'step' : undefined
+                        }
+                        className={cn(
+                          'flex items-center gap-1 whitespace-nowrap',
+                          step.state === 'failed'
+                            ? 'text-status-error'
                             : step.state === 'current'
-                              ? '◉'
-                              : '○'}
-                      </span>
-                      {step.label}
-                      <span className="sr-only"> · {step.state}</span>
-                    </li>
-                  ))}
-                </ol>
+                              ? 'text-foreground'
+                              : 'text-muted-foreground',
+                        )}
+                      >
+                        <span aria-hidden="true">
+                          {step.state === 'done'
+                            ? '✓'
+                            : step.state === 'failed'
+                              ? '×'
+                              : step.state === 'current'
+                                ? '◉'
+                                : '○'}
+                        </span>
+                        {step.label}
+                        <span className="sr-only"> · {step.state}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
                 {entry.connected && (
                   <p className="text-xs text-muted-foreground">
                     {runtimePeerAddress(entry.profile.connection)
@@ -308,7 +314,7 @@ export function PairingClient({
                     ·{' '}
                     {runtimePeerAddress(entry.profile.connection)
                       ? 'Encrypted peer connection'
-                      : runtimeTransportAddress(entry.profile.connection)}
+                      : 'LAN / VPN'}
                   </p>
                 )}
                 <p className="truncate text-xs text-muted-foreground">
@@ -323,61 +329,7 @@ export function PairingClient({
                   <p className="break-words text-xs text-destructive">{entry.error}</p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1">
-                {mutationStatus(entry.profile).pending > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => {
-                      setError('')
-                      setDiscardTarget(entry.profile)
-                    }}
-                  >
-                    Discard saved actions ({mutationStatus(entry.profile).pending})
-                  </Button>
-                )}
-                {!entry.snapshot?.owner && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    aria-label={`Update address for ${entry.profile.name}`}
-                    onClick={() => {
-                      setReplaceId(entry.profile.id)
-                      setAddress('')
-                      setCode('')
-                      setError('')
-                      setOpen(true)
-                    }}
-                  >
-                    Update address
-                  </Button>
-                )}
-                {entry.connected && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy || !entry.connected}
-                    onClick={() =>
-                      void act(async () => {
-                        const value = await readRuntime(
-                          entry.profile,
-                          '/api/workspace/recovered-edits',
-                          undefined,
-                          workspaceRecoveriesSchema,
-                          'GET',
-                        )
-                        setRecoveries(value.edits)
-                        setRecoveryCursor(value.nextCursor)
-                        setRecoveryOwner(entry.profile)
-                        setRecoveryWarnings(value.warnings ?? [])
-                      })
-                    }
-                  >
-                    Recovered edits
-                  </Button>
-                )}
+              <div className="col-start-2 flex items-center gap-1 sm:col-start-3 sm:row-start-1">
                 <Button
                   size="sm"
                   variant="outline"
@@ -387,30 +339,101 @@ export function PairingClient({
                 >
                   Manage
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Reconnect ${entry.profile.name}`}
-                  disabled={busy}
-                  onClick={() =>
-                    void act(() => {
-                      retryRuntimeSync(entry.profile.connection)
-                      return refreshRuntime(entry.profile)
-                    })
-                  }
-                >
-                  Reconnect
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Forget ${entry.profile.name}`}
-                  title="Remove this saved connection from this device"
-                  disabled={busy}
-                  onClick={() => void act(() => forgetRuntime(entry.profile.id))}
-                >
-                  Forget
-                </Button>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`More actions for ${entry.profile.name}`}
+                      title={`More actions for ${entry.profile.name}`}
+                      disabled={busy}
+                    >
+                      More <ChevronDown className="size-3" aria-hidden="true" />
+                    </Button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      align="end"
+                      sideOffset={6}
+                      className="studio-menu-surface z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
+                    >
+                      {!entry.snapshot?.owner && (
+                        <DropdownMenu.Item
+                          className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                          disabled={busy}
+                          aria-label={`Update address for ${entry.profile.name}`}
+                          onSelect={() => {
+                            setReplaceId(entry.profile.id)
+                            setAddress('')
+                            setCode('')
+                            setError('')
+                            setOpen(true)
+                          }}
+                        >
+                          Update address
+                        </DropdownMenu.Item>
+                      )}
+                      {entry.connected && (
+                        <DropdownMenu.Item
+                          className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                          disabled={busy || !entry.connected}
+                          onSelect={() =>
+                            void act(async () => {
+                              const value = await readRuntime(
+                                entry.profile,
+                                '/api/workspace/recovered-edits',
+                                undefined,
+                                workspaceRecoveriesSchema,
+                                'GET',
+                              )
+                              setRecoveries(value.edits)
+                              setRecoveryCursor(value.nextCursor)
+                              setRecoveryOwner(entry.profile)
+                              setRecoveryWarnings(value.warnings ?? [])
+                            })
+                          }
+                        >
+                          Recovered edits
+                        </DropdownMenu.Item>
+                      )}
+                      <DropdownMenu.Item
+                        className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                        aria-label={`Reconnect ${entry.profile.name}`}
+                        disabled={busy}
+                        onSelect={() =>
+                          void act(() => {
+                            retryRuntimeSync(entry.profile.connection)
+                            return refreshRuntime(entry.profile)
+                          })
+                        }
+                      >
+                        Reconnect
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                      {mutationStatus(entry.profile).pending > 0 && (
+                        <DropdownMenu.Item
+                          className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
+                          disabled={busy}
+                          onSelect={() => {
+                            setError('')
+                            setDiscardTarget(entry.profile)
+                          }}
+                        >
+                          Discard saved actions ({mutationStatus(entry.profile).pending})
+                        </DropdownMenu.Item>
+                      )}
+                      <DropdownMenu.Item
+                        className="cursor-default rounded px-3 py-2 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10 data-[disabled]:opacity-40"
+                        aria-label={`Forget ${entry.profile.name}`}
+                        title="Remove this saved connection from this device"
+                        disabled={busy}
+                        onSelect={() => void act(() => forgetRuntime(entry.profile.id))}
+                      >
+                        Forget
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             </div>
           )
@@ -432,7 +455,7 @@ export function PairingClient({
           <DialogTitle>Discard unsent edits?</DialogTitle>
           <DialogDescription>
             This replaces this device’s unsent workspace edits with the current host version. A
-            local backup is saved first. Files and running tasks on the host are unchanged.
+            local backup is saved first. Files and running threads on the host are unchanged.
           </DialogDescription>
           {error && (
             <p role="alert" className="text-xs text-destructive">
@@ -629,14 +652,18 @@ export function PairingClient({
           <div className="max-h-96 overflow-auto space-y-3">
             {recoveries?.length === 0 && <p>No recovered edits.</p>}
             {recoveries?.map((edit) => (
-              <details key={edit.id}>
-                <summary>
-                  {edit.createdAt} · {edit.patch.collection}/{edit.patch.id}
-                </summary>
+              <Disclosure
+                key={edit.id}
+                title={
+                  <>
+                    {edit.createdAt} · {edit.patch.collection}/{edit.patch.id}
+                  </>
+                }
+              >
                 <pre className="whitespace-pre-wrap break-all text-xs select-text">
                   {JSON.stringify(edit, null, 2)}
                 </pre>
-              </details>
+              </Disclosure>
             ))}
           </div>
           {recoveryCursor && recoveryOwner && (
@@ -665,6 +692,6 @@ export function PairingClient({
           )}
         </DialogContent>
       </Dialog>
-    </article>
+    </section>
   )
 }

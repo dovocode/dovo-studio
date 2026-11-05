@@ -2,9 +2,9 @@ import { useVerifiedRead } from '../connections/verified-read'
 import { integrationMutationError } from '../connections/mutation-error'
 import { useWorkDraftText, clearWorkDraft } from './work-drafts'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode } from '@dovo/protocol'
+import { decode, runtimeComputerName } from '@dovo/protocol'
 import { issueEditInput, issueLabel } from '@dovo/studio-core'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useId, useMemo, useRef } from 'react'
 import { Schema } from 'effect'
 import {
   useWorkspace,
@@ -56,7 +56,17 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
-  const { request, connected: online, activeRuntimeId, connection, workspace } = useWorkspace()
+  const refHelpId = useId()
+  const inputsHelpId = useId()
+  const {
+    request,
+    connected: online,
+    activeRuntimeId,
+    connection,
+    workspace,
+    runtimes,
+    snapshot,
+  } = useWorkspace()
   const connected = online && available
   const draftKey = JSON.stringify([
     activeRuntimeId,
@@ -86,6 +96,22 @@ export function WorkForm({
   const [expectedDestination] = useApplicationState(
     initialIssue?.destination ?? options.destination,
   )
+  const [targetDescription] = useApplicationState(() => {
+    const repository = workspace.repositories.find((item) => item.id === repositoryId)
+    const source = workspace.jiraSources?.find((item) => item.id === jiraSourceId)
+    const project = jiraSourceId
+      ? source
+        ? `${source.name || 'Jira'} · ${source.project}`
+        : jiraSourceId
+      : repository?.name || repositoryId || 'Unknown project'
+    const remote = jiraSourceId
+      ? source?.site
+      : repository?.forge?.repository || repository?.gitIdentity
+    const computer = runtimeComputerName(
+      runtimes.find((item) => item.profile.id === activeRuntimeId) ?? { snapshot },
+    )
+    return `${project}${remote ? ` (${remote})` : ''} using ${computer}`
+  })
   const [issue] = useApplicationState(initialIssue)
   const [title, setTitle] = useWorkDraftText(
     draftKey,
@@ -319,14 +345,14 @@ export function WorkForm({
                     ? 'Edit issue'
                     : 'New issue'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="break-words">
             {issue
               ? `${issueLabel(issue.id)} · ${issue.title}`
               : kind === 'run'
-                ? 'Run a pipeline on the selected project’s server.'
+                ? `Run a pipeline for ${targetDescription}.`
                 : options.provider === 'jira'
-                  ? 'Create an issue in this Jira source. Linking it to a Dovo project is optional.'
-                  : 'Create an issue in the selected project.'}
+                  ? `Create an issue in ${targetDescription}. Linking it to a Dovo project is optional.`
+                  : `Create an issue in ${targetDescription}.`}
           </DialogDescription>
         </DialogHeader>
         {!connected && (
@@ -404,10 +430,32 @@ export function WorkForm({
                   </Button>
                 )}
                 <FormField label="Branch or ref">
-                  <Input required value={ref} onChange={(e) => setRef(e.target.value)} />
+                  <Input
+                    aria-label="Branch or ref"
+                    aria-describedby={refHelpId}
+                    required
+                    value={ref}
+                    placeholder="main or refs/heads/release"
+                    onChange={(e) => setRef(e.target.value)}
+                  />
+                  <p id={refHelpId} className="text-xs text-muted-foreground">
+                    Starts with the selected run’s ref or the project branch when available. Choose
+                    the branch, tag or ref to run; this field is required.
+                  </p>
                 </FormField>
-                <FormField label="Inputs (JSON string values)">
-                  <Textarea value={inputs} onChange={(e) => setInputs(e.target.value)} />
+                <FormField label="Inputs (optional JSON)">
+                  <Textarea
+                    aria-label="Inputs (optional JSON)"
+                    aria-describedby={inputsHelpId}
+                    rows={3}
+                    value={inputs}
+                    onChange={(e) => setInputs(e.target.value)}
+                  />
+                  <p id={inputsHelpId} className="text-xs text-muted-foreground">
+                    Use input names defined by this pipeline and string values, for example{' '}
+                    <code>{'{"input_name": "value"}'}</code>. Keep <code>{'{}'}</code> to send no
+                    inputs. The pipeline validates required inputs.
+                  </p>
                 </FormField>
               </>
             ) : (

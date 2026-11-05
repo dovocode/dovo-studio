@@ -10,7 +10,7 @@ import {
   GitBranchPlus,
   PanelRight,
   Trash2,
-  MessageCircleQuestion,
+  MessagesSquare,
   X,
 } from 'lucide-react'
 import {
@@ -462,13 +462,9 @@ export function SideThreadsPanel({
           onClose && 'pr-12',
         )}
       >
-        <MessageCircleQuestion
-          size={16}
-          className="shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <h2 className="min-w-16 flex-1 truncate text-sm font-medium">Side chats</h2>
-        {view === 'threads' && (
+        <MessagesSquare size={16} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+        <h2 className="min-w-16 flex-1 truncate text-xs font-medium">Side chats</h2>
+        {view === 'threads' && (children.length > 0 || nested) && (
           <Button
             size="sm"
             variant="outline"
@@ -516,9 +512,9 @@ export function SideThreadsPanel({
             aria-selected={view === id}
             onClick={() => setView(id)}
             className={cn(
-              'rounded-md px-2 py-1 text-xs',
+              'rounded-md border border-transparent px-2 py-1 text-xs',
               view === id
-                ? 'bg-muted font-medium text-foreground'
+                ? 'studio-selected-surface font-medium text-foreground'
                 : 'text-muted-foreground hover:bg-accent',
             )}
           >
@@ -542,15 +538,28 @@ export function SideThreadsPanel({
             </p>
           )}
           {!children.length && (
-            <div className="space-y-3 py-6 text-center">
-              <p className="text-sm text-muted-foreground">No agent side chats yet.</p>
+            <div className="studio-panel-empty">
+              <MessagesSquare className="studio-panel-empty-icon" aria-hidden="true" />
+              <h3 className="text-sm font-medium">No agent side chats yet.</h3>
               {!nested && (
                 <p className="mx-auto max-w-sm text-xs leading-relaxed text-muted-foreground">
-                  A side chat is a full agent in its own checkout, starting with a copy of this
-                  thread’s conversation, model and permissions. Review its settings before you send.
-                  Bring its results back to add them to this thread’s draft; nothing is merged or
-                  sent automatically.
+                  Explore in a separate checkout, then bring the results back to this thread’s
+                  draft.
                 </p>
+              )}
+              {!nested && (
+                <Button
+                  size="sm"
+                  disabled={!connected || readOnly || busy}
+                  onClick={() =>
+                    void create().then((id) => {
+                      if (id) onOpen(id)
+                    })
+                  }
+                >
+                  <GitBranchPlus className="size-3.5" />
+                  {busy ? 'Creating…' : 'New side chat'}
+                </Button>
               )}
             </div>
           )}

@@ -4,7 +4,10 @@ import { SettingRow, SettingsGroup, Toggle, ChoicePicker } from '@dovo/studio-ui
 export function PullRequestCreationDefaults() {
   const preferences = useAppPreferences()
   return (
-    <SettingsGroup title="Creating and merging · This device">
+    <SettingsGroup
+      title="Creating and merging · This device"
+      description="These defaults save automatically on this device."
+    >
       <SettingRow
         label="Create pull requests as drafts"
         description="Preselect Draft when your code host supports it. You can change this for each pull request."

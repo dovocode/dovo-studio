@@ -12,7 +12,7 @@ import {
   type EditorFactory,
   type FileOptions,
 } from '@pierre/diffs/react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, FolderOpen, FileText, Maximize2, Minimize2, X } from 'lucide-react'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button, IconButton } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
@@ -321,11 +321,17 @@ export function TaskFiles({
   reveal,
   onReference,
   onEditingChange,
+  onClose,
+  onExpand,
+  expanded = false,
 }: {
   task: Task
   reveal?: { path: string; line: number; checkoutId?: string; requestId: string }
   onEditingChange?: (editing: boolean) => void
   onReference?: (text: string) => void
+  onClose?: () => void
+  onExpand?: () => void
+  expanded?: boolean
 }) {
   const { request, connected, connection } = useWorkspace()
   const { openExternalLink } = useStudioHost()
@@ -511,8 +517,9 @@ export function TaskFiles({
   }
   return (
     <section className="flex h-full min-w-0 flex-col bg-background" aria-label="Project files">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs font-medium">
-        Files
+      <header className="studio-thread-tools-header flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs font-medium">
+        <FolderOpen size={16} className="text-muted-foreground" aria-hidden />
+        <h2 className="min-w-0 flex-1 truncate">Project files</h2>
         {checkoutId && (
           <Button
             size="sm"
@@ -535,6 +542,21 @@ export function TaskFiles({
         >
           <RefreshCw size={14} />
         </IconButton>
+        {onExpand && (
+          <IconButton
+            label={expanded ? 'Restore side panel' : 'Expand viewer'}
+            aria-pressed={expanded}
+            className="size-7"
+            onClick={onExpand}
+          >
+            {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </IconButton>
+        )}
+        {onClose && (
+          <IconButton label="Close viewer" className="size-7" onClick={onClose}>
+            <X size={14} />
+          </IconButton>
+        )}
       </header>
       {drafts.entries().length > 0 && (
         <div
@@ -556,7 +578,7 @@ export function TaskFiles({
                   Recover draft: {path}
                 </Button>
               ) : (
-                <span>Draft from another task or checkout: {path}</span>
+                <span>Draft from another thread or checkout: {path}</span>
               )}
               {draft.saving && <span>Saving…</span>}
               {draft.error && <span role="alert">{draft.error}</span>}
@@ -589,7 +611,7 @@ export function TaskFiles({
         </div>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className={selected ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'hidden'}>
           {selected ? (
             <>
               {readError && !drafts.get(draftKey) ? (
@@ -692,17 +714,28 @@ export function TaskFiles({
               )}
             </>
           ) : (
-            <p className="p-4 text-xs text-muted-foreground">Choose a file to preview.</p>
+            <div className="studio-panel-empty my-auto">
+              <FileText className="studio-panel-empty-icon" aria-hidden="true" />
+              <h3 className="text-sm font-medium">No file selected</h3>
+              <p className="text-xs text-muted-foreground">
+                Pick a file from the tree to preview it.
+              </p>
+            </div>
           )}
         </div>
         <ResizableSidebar
           preference="projectFilesSidebarWidth"
-          side="right"
+          resizable={!!selected}
+          side="left"
           label="project file tree"
           maxFraction={0.4}
           maxWidth={640}
           aria-label="Project file tree"
-          className="studio-thread-tools-panel flex min-h-0 flex-col bg-sidebar"
+          className={
+            selected
+              ? 'order-first flex min-h-0 flex-col border-r bg-background'
+              : 'order-first flex min-h-0 flex-1 flex-col bg-background'
+          }
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
             <ProjectFileBrowser

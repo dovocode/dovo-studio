@@ -154,7 +154,7 @@ it('persists glow intensity and gradients independently of the palette', async (
   const local = storage()
   vi.stubGlobal('localStorage', local)
   const { readAppPreferences, updateAppPreferences } = await import('./preferences')
-  expect(readAppPreferences()).toMatchObject({ themeGlow: 0.5, themeGradients: true })
+  expect(readAppPreferences()).toMatchObject({ themeGlow: 0, themeGradients: false })
   updateAppPreferences({ themeGlow: 0.35, themeGradients: false, themePalette: 'iris' })
   vi.resetModules()
   const reopened = await import('./preferences')
@@ -175,7 +175,7 @@ it.each([0, 1, -0.1, 1.1])('validates saved glow intensity %s', async (themeGlow
     }),
   )
   const { readAppPreferences } = await import('./preferences')
-  expect(readAppPreferences().themeGlow).toBe(themeGlow < 0 || themeGlow > 1 ? 0.5 : themeGlow)
+  expect(readAppPreferences().themeGlow).toBe(themeGlow < 0 || themeGlow > 1 ? 0 : themeGlow)
 })
 
 it('preserves the previous effects-off preference', async () => {

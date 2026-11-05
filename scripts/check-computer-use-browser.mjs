@@ -15,7 +15,7 @@ export const Platform={OS:'ios'};export const StyleSheet={create:value=>value,ha
 export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/></label>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`
-const core = `export {commandFields,commandSettingsResponse,cuaCheckResponse} from '${root}/packages/protocol/src/shared/commands.ts';export const useSettingsDraft=()=>{};export const useWorkspace=()=>({request:window.request,connected:window.online!==false});`
+const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export {commandFields,commandSettingsResponse,cuaCheckResponse} from '${root}/packages/protocol/src/shared/commands.ts';export const useSettingsDraft=()=>{};export const useWorkspace=()=>({request:window.request,connected:window.online!==false});`
 const ui = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Toggle,SettingRow,SettingsGroup,SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';`
 const runtime = `import {Effect} from 'effect';export const useRuntime=()=>({connected:window.online!==false,read:window.request,readEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error}),callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`
 const browser = await chromium.launch()
@@ -23,6 +23,7 @@ try {
   for (const mobile of [false, true]) {
     const mocks = {
       '@dovo/studio-core': core,
+      './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
       '@dovo/studio-core/state': state,
       '@dovo/studio-ui': ui,
       './settings-target': 'export const useSettingsDraft=()=>{};',
@@ -46,7 +47,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {useState,createContext,useContext} from 'react';import {createRoot} from 'react-dom/client';
+        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState,createContext,useContext} from 'react';import {createRoot} from 'react-dom/client';
 import {decode,commandsSchema} from '@dovo/protocol';
 import {CommandSettings} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/extension-runtime/src'}/command-settings.tsx';
 window.commands=decode(commandsSchema,{git:'/custom/git',shellArgs:['-l',''],cuaEnabled:false});
@@ -71,7 +72,7 @@ window.request=async(path,input)=>{
   throw Error(path);
 };
 function App(){const [,render]=useState(0);window.setConnection=online=>{window.online=online;render(value=>value+1)};const [computerUse,setComputerUse]=useState(true);return <main style={{maxWidth:740,margin:'auto',padding:16}}><button onClick={()=>setComputerUse(!computerUse)}>Switch settings page</button><CommandSettings key={String(computerUse)} computerUse={computerUse}/></main>}
-createRoot(document.getElementById('app')).render(<App/>);`,
+createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -108,6 +109,16 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByText('1. Install on this computer', { exact: true }).waitFor()
+    const saveGuidance = page.getByText('Edits apply on this computer after saving.', {
+      exact: true,
+    })
+    if (!mobile) {
+      await saveGuidance.waitFor()
+      const guidanceBox = await saveGuidance.boundingBox()
+      const firstFieldBox = await page.getByLabel('Cua Driver executable').boundingBox()
+      assert.ok(guidanceBox && firstFieldBox)
+      assert.ok(guidanceBox.y + guidanceBox.height <= firstFieldBox.y)
+    }
     assert.equal(await page.getByLabel('Git executable').count(), 0)
     assert.equal(
       await page.getByRole('button', { name: 'Enable Computer History', exact: true }).count(),
@@ -166,8 +177,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         fullPage: true,
       })
     }
-    page.once('dialog', (dialog) => dialog.dismiss())
+    if (mobile) page.once('dialog', (dialog) => dialog.dismiss())
     await page.getByRole('button', { name: 'Delete recorded history', exact: true }).click()
+    if (!mobile)
+      await page
+        .getByRole('dialog', { name: 'Delete Computer History?', exact: true })
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
     assert.equal(
       await page.evaluate(() =>
         window.calls.some((call) => call.input?.action === 'history-delete'),
@@ -228,7 +244,9 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       await page
         .getByText('Reconnect this computer to change command settings.', { exact: true })
         .waitFor()
+      assert.equal(await saveGuidance.count(), 0)
       await page.evaluate(() => window.setConnection(true))
+      await saveGuidance.waitFor()
       await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
       assert.equal(
         await page.getByRole('button', { name: 'Save changes', exact: true }).isEnabled(),
@@ -291,6 +309,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     }
     await page.getByRole('button', { name: 'Switch settings page', exact: true }).click()
     await page.getByLabel('Git executable').waitFor()
+    if (!mobile) {
+      await saveGuidance.waitFor()
+      const guidanceBox = await saveGuidance.boundingBox()
+      const firstFieldBox = await page.getByLabel('Terminal shell').boundingBox()
+      assert.ok(guidanceBox && firstFieldBox)
+      assert.ok(guidanceBox.y + guidanceBox.height <= firstFieldBox.y)
+    }
     assert.equal(
       await page.getByRole('button', { name: 'Enable Computer History', exact: true }).count(),
       0,

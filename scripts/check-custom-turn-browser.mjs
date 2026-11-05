@@ -34,8 +34,7 @@ window.reset=kind=>{window.round++;window.kind=kind;window.target='Server B';win
     { path: '@dovo/studio-core', contents: 'export const useWorkspace=()=>window.scope();' },
     {
       path: '@dovo/studio-ui',
-      contents:
-        'export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select {...props} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;',
+      contents: `export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select {...props} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;`,
     },
     {
       path: './provider',

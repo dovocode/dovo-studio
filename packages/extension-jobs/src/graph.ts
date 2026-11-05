@@ -17,7 +17,7 @@ export function newNode(
     position: { x: 80 + index * 320, y: 80 },
     data: {
       kind,
-      label: kind === 'trigger' ? 'Trigger' : kind === 'task' ? 'Agent task' : 'Human review',
+      label: kind === 'trigger' ? 'Trigger' : kind === 'task' ? 'Agent thread' : 'Human review',
       trigger: 'manual',
       schedule: '0 9 * * 1-5',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,

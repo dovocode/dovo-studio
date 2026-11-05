@@ -84,6 +84,7 @@ export function BrowserTabRow({
 }) {
   const { runtimes } = useWorkspace()
   const { name: profile, emoji } = useBrowserProfileDetails(tab)
+  const showProfile = tab.profileId !== 'default'
   const words = profile.trim().split(/\s+/)
   const initials = (
     words.length > 1
@@ -134,8 +135,10 @@ export function BrowserTabRow({
   const identity = (
     <span
       className={cn(
-        'studio-browser-tab-profile flex min-w-0 shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground',
-        tab.pinned && 'absolute inset-x-0 bottom-0 justify-center',
+        'studio-browser-tab-profile flex min-w-0 items-center text-muted-foreground',
+        tab.pinned
+          ? 'absolute inset-x-0 bottom-0 justify-center gap-0.5 text-[8px] leading-none'
+          : 'gap-1 text-xs leading-4',
       )}
       aria-label={`${computer} · ${profile}`}
     >
@@ -146,12 +149,20 @@ export function BrowserTabRow({
           aria-hidden="true"
         />
       </span>
-      <span
-        className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
-        title={`${profile} · ${computer}`}
-      >
-        {emoji ?? initials}
-      </span>
+      {(emoji || (tab.pinned && showProfile)) && (
+        <span
+          className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+          title={`${profile} · ${computer}`}
+        >
+          {emoji ?? initials}
+        </span>
+      )}
+      {!tab.pinned && (
+        <span className="min-w-0 truncate" title={`${computer} · ${profile}`}>
+          {computer}
+          {showProfile && ` · ${profile}`}
+        </span>
+      )}
     </span>
   )
   return (

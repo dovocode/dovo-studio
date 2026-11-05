@@ -24,7 +24,7 @@ const built = await bundleBrowser(
   [
     {
       path: '@dovo/studio-core',
-      contents: `export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.studio;export const useSettingsDraft=()=>{};`,
+      contents: `export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.studio;export const useStudioHost=()=>({navigate:()=>{throw new Error('Unexpected Settings navigation in Studio tools fixture')}});export const useSettingsDraft=()=>{};`,
     },
     {
       path: '@dovo/studio-core/state',
@@ -32,7 +32,7 @@ const built = await bundleBrowser(
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export const Input='input';export const Select=({children})=><div>{children}</div>;export const SelectContent=Select,SelectItem=Select,SelectTrigger=Select,SelectValue=Select;export const SettingsGroup=({title,description,children})=><section><h2>{title}</h2><p>{description}</p>{children}</section>;export const SettingRow=({label,description,children})=><div><span>{label}</span><p>{description}</p>{children}</div>;export const Toggle=({label,checked,disabled,onChange})=><button role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={()=>onChange(!checked)}>{label}</button>;`,
+      contents: `export {Button} from '${root}packages/web-ui/src/button';export const Input='input';export const Select=({children})=><div>{children}</div>;export const SelectContent=Select,SelectItem=Select,SelectTrigger=Select,SelectValue=Select;export const SettingsGroup=({title,description,children})=><section><h2>{title}</h2><p>{description}</p>{children}</section>;export const SettingRow=({label,description,children})=><div><span>{label}</span><p>{description}</p>{children}</div>;export const Toggle=({label,checked,disabled,onChange})=><button role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={()=>onChange(!checked)}>{label}</button>;`,
     },
   ],
 )

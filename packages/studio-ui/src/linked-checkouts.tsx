@@ -9,15 +9,20 @@ import { useWorkspace } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
+import { FolderSymlink } from 'lucide-react'
 
 export function LinkedCheckoutEditor({
   value,
   onChange,
   disabled = false,
+  showTitle = true,
+  emptyDescription = 'Add another checkout as context for this thread.',
 }: {
   value: readonly LinkedCheckout[]
   onChange: (links: LinkedCheckout[]) => void
   disabled?: boolean
+  showTitle?: boolean
+  emptyDescription?: string
 }) {
   const latest = useRef({ value, onChange })
   useLayoutEffect(() => {
@@ -31,10 +36,23 @@ export function LinkedCheckoutEditor({
   const projects = workspace.repositories.filter((repo) => repo.kind !== 'scratch')
   return (
     <section className="min-w-0 space-y-3" aria-label="Linked projects">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium">Linked projects</h3>
+      <div
+        className={
+          !showTitle && !value.length
+            ? 'studio-panel-empty'
+            : 'flex items-center justify-between gap-2'
+        }
+      >
+        {!showTitle && !value.length && (
+          <>
+            <FolderSymlink className="studio-panel-empty-icon" aria-hidden="true" />
+            <h3 className="text-sm font-medium">No linked projects</h3>
+            <p className="text-xs text-muted-foreground">{emptyDescription}</p>
+          </>
+        )}
+        {showTitle && <h3 className="text-sm font-medium">Linked projects</h3>}
         <Button
-          variant="outline"
+          variant={value.length ? 'outline' : 'default'}
           size="sm"
           disabled={disabled || !projects.length || value.length >= 12}
           onClick={() =>
@@ -52,10 +70,12 @@ export function LinkedCheckoutEditor({
           Add checkout
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Projects on this computer. New worktrees are created when the thread runs, with separate
-        branches and checkpoints.
-      </p>
+      {(showTitle || !!value.length) && (
+        <p className="text-xs text-muted-foreground">
+          Projects on this computer. New worktrees are created when the thread runs, with separate
+          branches and checkpoints.
+        </p>
+      )}
       {value.map((link) => (
         <LinkedCheckoutFields
           key={link.id}

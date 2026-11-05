@@ -162,7 +162,7 @@ try {
   await chooseFolder('Scope mode')
   await autoCheckout.click()
   await page.getByRole('option', { name: 'New worktrees', exact: true }).click()
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.getByRole('button', { name: 'Remote machine', exact: true }).click()
   assert.match(
     await page.getByRole('button', { name: 'Start in Scope', exact: true }).innerText(),

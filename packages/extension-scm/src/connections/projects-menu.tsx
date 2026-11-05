@@ -228,7 +228,7 @@ export function ProjectsMenu({
                 `${repository.source.name}${repository.source.online ? '' : ' · Offline'}`,
             )
             .join(', ')}
-          aria-label={`${machines} ${machines === 1 ? 'machine' : 'machines'}`}
+          aria-label={`${machines} ${machines === 1 ? 'computer' : 'computers'}`}
           className="px-1 text-muted-foreground"
         >
           {machines > 1 ? <Server className="size-3.5" /> : <Monitor className="size-3.5" />}

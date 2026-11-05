@@ -24,6 +24,11 @@ const mocks = {
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
   '../connections/source-picker': `export const SourcePicker=()=>null;`,
 }
+mocks['@dovo/studio-ui'] += `
+export {Disclosure} from '${root}packages/studio-ui/src/disclosure.tsx';
+export {Textarea} from '${root}packages/web-ui/src/textarea.tsx';
+export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state.tsx';
+`
 const built = await build({
   stdin: {
     resolveDir: root,
@@ -402,7 +407,7 @@ try {
       'A newly opened row retains its original runtime scope',
     )
     const action = mode === 'issues' ? 'Issue actions' : 'Pipeline actions'
-    const task = mode === 'issues' ? 'Start task from issue' : 'Investigate run'
+    const task = mode === 'issues' ? 'Start thread from issue' : 'Investigate run'
     assert.equal(await rows.getByRole('button', { name: action, exact: true }).isDisabled(), true)
     assert.equal(await rows.getByRole('button', { name: task, exact: true }).isDisabled(), true)
     if (mode === 'issues')

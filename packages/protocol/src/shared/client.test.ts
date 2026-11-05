@@ -931,6 +931,7 @@ it.each([
   '/api/scm/pulls/options/read',
   '/api/scm/inspect',
   '/api/scm/changes',
+  '/api/scm/file-preview',
   '/api/scm/work/options',
   '/api/scm/work/issues/list',
   '/api/scm/work/issues/detail',

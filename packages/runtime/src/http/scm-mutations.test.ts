@@ -41,13 +41,79 @@ async function setup() {
   return { ...f, s: runtime.services, cwd: await realpath(f.directory), request, post }
 }
 
-it('rejects save, stage and commit during exclusive checkout operations, then allows recovery', async () => {
+it('guards read-only staging previews by repository and task without changing drafts or the index', async () => {
+  const f = await setup()
+  await writeFile(join(f.cwd, 'hello.txt'), 'indexed\n')
+  await f.s.git.stage(f.cwd, ['hello.txt'])
+  await writeFile(join(f.cwd, 'hello.txt'), 'working\n')
+  const index = await readFile(join(f.cwd, '.git/index'))
+  for (const comparison of ['staged', 'unstaged']) {
+    const response = await f.request('file-preview', { path: 'hello.txt', comparison })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject(
+      comparison === 'staged'
+        ? { before: { text: 'original\n' }, after: { text: 'indexed\n' } }
+        : { before: { text: 'indexed\n' }, after: { text: 'working\n' } },
+    )
+  }
+  expect(await readFile(join(f.cwd, '.git/index'))).toEqual(index)
+  expect(await readFile(join(f.cwd, 'hello.txt'), 'utf8')).toBe('working\n')
+  const scoped = f.s.tasks.create({
+    title: 'Scoped review',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Review',
+    execution: 'main',
+  })
+  const scopedResponse = await f.request('file-preview', {
+    taskId: scoped.id,
+    path: 'hello.txt',
+    comparison: 'unstaged',
+  })
+  expect(scopedResponse.status).toBe(200)
+  expect(await scopedResponse.json()).toMatchObject({
+    before: { text: 'indexed\n' },
+    after: { text: 'working\n' },
+  })
+  expect(
+    (await f.request('file-preview', { path: '../escape', comparison: 'staged' })).status,
+  ).toBe(400)
+  expect(
+    (await f.request('file-preview', { path: 'hello.txt', comparison: 'combined' })).status,
+  ).toBe(400)
+  expect(
+    (
+      await f.request('file-preview', {
+        repositoryId: 'missing',
+        path: 'hello.txt',
+        comparison: 'staged',
+      })
+    ).status,
+  ).toBe(404)
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [...workspace.repositories, { ...workspace.repositories[0], id: 'other' }],
+  }))
+  const task = f.s.tasks.create({
+    title: 'Other project',
+    repositoryId: 'other',
+    agentId: 'agent',
+    objective: 'Review',
+  })
+  expect(
+    (await f.request('file-preview', { taskId: task.id, path: 'hello.txt', comparison: 'staged' }))
+      .status,
+  ).toBe(400)
+})
+
+it('rejects save, stage, unstage and commit during exclusive checkout operations, then allows recovery', async () => {
   const f = await setup()
   const head = await f.s.git.command(f.cwd, ['rev-parse', 'HEAD'])
   const save = { path: 'hello.txt', expected: 'original\n', contents: 'edited\n' }
   await f.s.tasks.withCheckoutMutation(f.cwd, async () => {
     expect((await f.request('apply', save)).status).toBe(409)
     expect((await f.request('stage', { paths: ['hello.txt'] })).status).toBe(409)
+    expect((await f.request('unstage', { paths: ['hello.txt'] })).status).toBe(409)
     expect((await f.request('commit', { message: 'Blocked commit' })).status).toBe(409)
     expect(await readFile(join(f.cwd, 'hello.txt'), 'utf8')).toBe('original\n')
     expect(await f.s.git.command(f.cwd, ['diff', '--cached'])).toBe('')
@@ -56,10 +122,32 @@ it('rejects save, stage and commit during exclusive checkout operations, then al
   expect((await f.request('apply', save)).status).toBe(200)
   expect((await f.request('apply', save)).status).toBe(409)
   expect((await f.request('stage', { paths: ['hello.txt'] })).status).toBe(200)
+  expect((await f.request('unstage', { paths: ['hello.txt'] })).status).toBe(200)
+  expect(await f.s.git.command(f.cwd, ['diff', '--cached'])).toBe('')
+  expect(await readFile(join(f.cwd, 'hello.txt'), 'utf8')).toBe('edited\n')
+  expect((await f.request('unstage', { paths: ['../escape'] })).status).toBe(400)
+  expect(
+    (await f.request('unstage', { paths: Array.from({ length: 201 }, () => 'hello.txt') })).status,
+  ).toBe(400)
+  expect((await f.request('stage', { paths: ['hello.txt'] })).status).toBe(200)
   const committed = await f.request('commit', { message: 'Allowed commit' })
   expect(committed.status).toBe(200)
   expect(await f.s.git.command(f.cwd, ['show', 'HEAD:hello.txt'])).toBe('edited\n')
   expect(await f.s.git.command(f.cwd, ['rev-parse', 'HEAD'])).not.toBe(head)
+})
+
+it('unstages a partially staged path before the first commit without touching other index or working contents', async () => {
+  const f = await setup()
+  await f.s.git.command(f.cwd, ['checkout', '--orphan', 'unborn-route'])
+  await writeFile(join(f.cwd, 'added.txt'), 'staged\n')
+  await f.s.git.stage(f.cwd, ['added.txt'])
+  await writeFile(join(f.cwd, 'added.txt'), 'working\n')
+  expect((await f.request('unstage', { paths: [] })).status).toBe(200)
+  expect(await f.s.git.command(f.cwd, ['show', ':added.txt'])).toBe('staged\n')
+  expect((await f.request('unstage', { paths: ['added.txt'] })).status).toBe(200)
+  expect((await f.s.git.command(f.cwd, ['ls-files'])).trim()).toBe('hello.txt')
+  expect(await f.s.git.command(f.cwd, ['show', ':hello.txt'])).toBe('original\n')
+  expect(await readFile(join(f.cwd, 'added.txt'), 'utf8')).toBe('working\n')
 })
 
 it('keeps explicit editing available during an agent run while excluding branch operations', async () => {

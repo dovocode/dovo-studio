@@ -21,6 +21,10 @@ export function imageEditorRuntime(source: string) {
     pointer: number | null = null,
     loaded = false,
     finished = false
+  let zoom: number | null = null
+  let scale = 1
+  let panning = false
+  let panStart: { x: number; y: number; left: number; top: number } | null = null
   const image = new Image()
   const send = (result: { type: string; data?: string }) => {
     if (finished) return
@@ -53,7 +57,12 @@ export function imageEditorRuntime(source: string) {
     context.lineJoin = 'round'
     if (step.tool === 'crop') {
       const r = rect(step)
-      context.strokeStyle = '#67e8f9'
+      context.fillStyle = '#0009'
+      context.beginPath()
+      context.rect(0, 0, context.canvas.width, context.canvas.height)
+      context.rect(r.x, r.y, r.width, r.height)
+      context.fill('evenodd')
+      context.strokeStyle = '#fff'
       context.lineWidth = 2
       context.setLineDash([8, 5])
       context.strokeRect(r.x, r.y, r.width, r.height)
@@ -84,13 +93,47 @@ export function imageEditorRuntime(source: string) {
     context.restore()
   }
   const fit = () => {
-    const scale = Math.min(
-      (stage.clientWidth - 20) / canvas.width,
-      (stage.clientHeight - 20) / canvas.height,
-      1,
-    )
+    scale =
+      zoom ??
+      Math.min(
+        (stage.clientWidth - 20) / canvas.width,
+        (stage.clientHeight - 20) / canvas.height,
+        1,
+      )
     canvas.style.width = `${Math.max(1, canvas.width * scale)}px`
     canvas.style.height = `${Math.max(1, canvas.height * scale)}px`
+    element('zoom-level').textContent = `${Math.round(scale * 100)}%`
+    element('zoom-fit').setAttribute('aria-pressed', String(zoom === null))
+    element('zoom-actual').setAttribute('aria-pressed', String(zoom === 1))
+  }
+  const changeZoom = (value: number | null) => {
+    if (pointer !== null) return
+    const viewport = stage.getBoundingClientRect()
+    const before = canvas.getBoundingClientRect()
+    const center = {
+      x: (viewport.left + stage.clientWidth / 2 - before.left) / scale,
+      y: (viewport.top + stage.clientHeight / 2 - before.top) / scale,
+    }
+    zoom = value === null ? null : Math.max(0.1, Math.min(4, value))
+    fit()
+    const after = canvas.getBoundingClientRect()
+    stage.scrollLeft += after.left + center.x * scale - viewport.left - stage.clientWidth / 2
+    stage.scrollTop += after.top + center.y * scale - viewport.top - stage.clientHeight / 2
+  }
+  element('zoom-in').onclick = () => changeZoom(scale * 1.25)
+  element('zoom-out').onclick = () => changeZoom(scale / 1.25)
+  element('zoom-fit').onclick = () => changeZoom(null)
+  element('zoom-actual').onclick = () => changeZoom(1)
+  const panButton = element<HTMLButtonElement>('pan')
+  panButton.onclick = () => {
+    if (pointer !== null || finished) return
+    panning = true
+    panButton.setAttribute('aria-pressed', 'true')
+    canvas.style.cursor = 'grab'
+    for (const other of document.querySelectorAll('[data-tool]'))
+      other.setAttribute('aria-pressed', 'false')
+    element('hint').textContent =
+      'Drag to move around the image. Zoom controls do not change the attached image.'
   }
   const preview = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -135,18 +178,41 @@ export function imageEditorRuntime(source: string) {
     event.preventDefault()
     pointer = event.pointerId
     canvas.setPointerCapture(pointer)
+    if (panning) {
+      panStart = {
+        x: event.clientX,
+        y: event.clientY,
+        left: stage.scrollLeft,
+        top: stage.scrollTop,
+      }
+      canvas.style.cursor = 'grabbing'
+      return
+    }
     draft = { tool, points: [point(event)], color: color.value, size: Number(size.value) }
     preview()
   }
   canvas.onpointermove = (event) => {
-    if (event.pointerId !== pointer || !draft) return
+    if (event.pointerId !== pointer) return
+    if (panStart) {
+      stage.scrollLeft = panStart.left + panStart.x - event.clientX
+      stage.scrollTop = panStart.top + panStart.y - event.clientY
+      return
+    }
+    if (!draft) return
     const p = point(event)
     if (tool === 'pen' || tool === 'highlighter') draft.points.push(p)
     else draft.points = [draft.points[0], p]
     preview()
   }
   canvas.onpointerup = (event) => {
-    if (event.pointerId !== pointer || !draft) return
+    if (event.pointerId !== pointer) return
+    if (panStart) {
+      panStart = null
+      pointer = null
+      canvas.style.cursor = 'grab'
+      return
+    }
+    if (!draft) return
     if (tool !== 'pen' && tool !== 'highlighter') draft.points = [draft.points[0], point(event)]
     if (tool !== 'crop' || (rect(draft).width >= 8 && rect(draft).height >= 8)) {
       steps.push(draft)
@@ -157,19 +223,24 @@ export function imageEditorRuntime(source: string) {
     render()
   }
   canvas.onpointercancel = () => {
+    panStart = null
+    canvas.style.cursor = panning ? 'grab' : 'crosshair'
     draft = null
     pointer = null
     preview()
   }
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]'))
     button.onclick = () => {
-      if (draft || finished) return
+      if (pointer !== null || finished) return
+      panning = false
+      panButton.setAttribute('aria-pressed', 'false')
+      canvas.style.cursor = 'crosshair'
       tool = button.dataset.tool as Tool
       for (const other of document.querySelectorAll('[data-tool]'))
         other.setAttribute('aria-pressed', String(other === button))
       element('hint').textContent =
         tool === 'crop'
-          ? 'Drag a rectangle to crop. Undo restores the previous image.'
+          ? 'Drag to select the area to keep. Release to crop; Undo restores the previous image.'
           : 'Draw on the image. Changes stay here until you attach it.'
     }
   undo.onclick = () => {
@@ -192,6 +263,7 @@ export function imageEditorRuntime(source: string) {
     render()
   }
   element('cancel').onclick = () => send({ type: 'cancel' })
+  element('close').onclick = () => send({ type: 'cancel' })
   element('original').onclick = () => send({ type: 'original' })
   element('attach').onclick = () => {
     if (!loaded) return
@@ -213,6 +285,11 @@ export function imageEditorRuntime(source: string) {
     )
       return
     const key = event.key.toLowerCase()
+    if (key === 'v' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault()
+      panButton.click()
+      return
+    }
     let button: HTMLElement | undefined
     if (event.ctrlKey || event.metaKey) {
       if (key === 'z') button = event.shiftKey ? redo : undo
@@ -254,7 +331,10 @@ export function imageEditorRuntime(source: string) {
     loaded = true
     render()
     element<HTMLButtonElement>('attach').disabled = false
-    canvas.focus()
+    // Enter the frame for shortcuts without painting a keyboard ring around the image.
+    // Tab still reaches the toolbar and canvas in document order.
+    document.body.tabIndex = -1
+    document.body.focus()
   }
   image.onerror = () => {
     element('error').textContent =

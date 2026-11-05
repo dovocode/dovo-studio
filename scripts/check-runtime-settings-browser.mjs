@@ -12,19 +12,20 @@ runtime.services.store.update(() => f.workspace)
 const ui = `${root}/packages/studio-ui/src`
 // Exercise actual Radix controls. Only runtime context and the surrounding host shell are adapted.
 const mocks = {
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({});export const useWorkspace=()=>window.runtime;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useAppPreferences=()=>({themePalette:'dovo',...window.localPreferences});export const updateAppPreferences=changes=>{Object.assign(window.localPreferences,changes);window.show('creation')};export const useResolvedTheme=()=> 'dark';export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
+  './workspace/context': `export {useWorkspace} from '@dovo/studio-core';`,
+  '@dovo/studio-core': `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const useWorkspace=()=>window.runtime;export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useAppPreferences=()=>({themePalette:'dovo',...window.localPreferences});export const updateAppPreferences=changes=>{Object.assign(window.localPreferences,changes);window.show('creation')};export const useResolvedTheme=()=> 'dark';export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui':
     ['button', 'input', 'textarea', 'dialog', 'select', 'checkbox']
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
-    `\nexport {cn} from '${ui}/lib/utils.ts';export {IconButton} from '${ui}/components/icon-button.tsx';export * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
-  './host-page': `export const HostPage=({children})=>children;`,
+    `\nexport {Disclosure} from '${ui}/disclosure.tsx';export {SearchField} from '${ui}/search-field.tsx';export {cn} from '${ui}/lib/utils.ts';export {IconButton} from '${ui}/components/icon-button.tsx';export * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
+  './host-page': `export const HostPage=({children,saveInfo})=><>{saveInfo&&<p>{saveInfo}</p>}{children}</>;`,
 }
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';import {RuntimeDiagnosticsPanel} from '${root}/packages/extension-runtime/src/runtime-diagnostics.tsx';window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={diagnostics:RuntimeDiagnosticsPanel,creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={runtimeRegistry:{profiles:[]},connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
+      contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import RunningTasksView from '${root}/packages/extension-runtime/src/running-tasks-view.tsx';import {PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';import {RuntimeDiagnosticsPanel} from '${root}/packages/extension-runtime/src/runtime-diagnostics.tsx';window.navigations=[];window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={diagnostics:RuntimeDiagnosticsPanel,creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTasksView,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={activeRuntimeId:'computer',runtimeRegistry:{profiles:[]},connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>{if(path==='/api/runtime/preferences/save'&&window.preferenceSaveFailure)throw new Error(window.preferenceSaveFailure);return decode(schema,await window.callRuntime(path,input))},requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<StudioConfirmationProvider><Component key={name}/></StudioConfirmationProvider>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -43,7 +44,14 @@ const built = await bundleBrowser(
   Object.entries(mocks).map(([path, contents]) => ({
     path,
     contents,
-    ...(path.startsWith('.') ? { importer: `${root}/packages/extension-runtime/src/` } : {}),
+    ...(path.startsWith('.')
+      ? {
+          importer:
+            path === './workspace/context'
+              ? `${root}/packages/studio-core/src/confirmation.tsx`
+              : `${root}/packages/extension-runtime/src/`,
+        }
+      : {}),
   })),
 )
 
@@ -53,8 +61,7 @@ try {
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  let discard = true
-  page.on('dialog', (dialog) => (discard ? dialog.accept() : dialog.dismiss()))
+
   await page.exposeFunction('callRuntime', async (path, input) => {
     const response = await fetch(`http://127.0.0.1:${runtime.port}${path}`, {
       method: 'POST',
@@ -91,8 +98,11 @@ try {
   await page.getByLabel('Key', { exact: true }).fill('testing')
   await page.getByLabel('Note', { exact: true }).fill('Use pnpm')
   await page.waitForFunction(() => window.dirty === true)
-  discard = false
   await chooseScope('No project')
+  await page
+    .getByRole('dialog', { name: 'Discard memory changes?', exact: true })
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click()
   assert.equal(await page.getByLabel('Note', { exact: true }).inputValue(), 'Use pnpm')
   assert.equal(await enabled.isChecked(), true)
   await page.getByRole('button', { name: 'Save note', exact: true }).click()
@@ -115,8 +125,11 @@ try {
   await page.getByLabel('Note', { exact: true }).fill('My stale edit')
   await page.getByRole('button', { name: 'Save note', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: 'Memory changed' }).waitFor()
-  discard = true
   await page.getByRole('button', { name: 'Cancel edit' }).click()
+  await page
+    .getByRole('dialog', { name: 'Discard memory changes?', exact: true })
+    .getByRole('button', { name: 'Discard changes', exact: true })
+    .click()
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await page.getByText('Concurrent edit', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Delete testing', exact: true }).click()
@@ -142,14 +155,63 @@ try {
   await page.getByRole('button', { name: 'Edit note-00', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Edit note-/ }).count(), 50)
   await page.evaluate(() => window.show('running'))
-  await page.locator('summary[data-setting-label="Model modes (experimental)"]').click()
-  await page.locator('summary[data-setting-label="Project mode (experimental)"]').click()
+  await page.locator('[data-setting-label="Model modes (experimental)"] > summary').click()
+  await page.locator('[data-setting-label="Project mode (experimental)"] > summary').click()
   const linkedTool = page.getByRole('switch', { name: 'Linked projects tool', exact: true })
   await linkedTool.waitFor()
   await page.waitForFunction(
     () => !document.querySelector('[aria-label="Linked projects tool"]').disabled,
   )
   assert.equal(await linkedTool.isChecked(), true)
+  await page
+    .getByText('Saved automatically. Text fields save on Enter or when you leave the field.', {
+      exact: true,
+    })
+    .waitFor()
+  assert.equal(
+    await page
+      .getByText('Saved automatically. Text fields save on Enter or when you leave the field.', {
+        exact: true,
+      })
+      .evaluate((element) =>
+        Boolean(
+          element.compareDocumentPosition(
+            [...document.querySelectorAll('p')].find((node) =>
+              node.textContent.startsWith('These are computer defaults.'),
+            ),
+          ) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      ),
+    true,
+    'Running-thread save feedback precedes its scope explanation and navigation',
+  )
+  await page.getByRole('button', { name: 'Open scoped thread lifecycle', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+    viewId: 'task-behavior',
+    entityId: 'computer',
+  })
+  await page.evaluate(() => {
+    window.preferenceSaveFailure = 'Could not save computer preferences'
+  })
+  await linkedTool.click()
+  const saveError = page
+    .getByRole('alert')
+    .filter({ hasText: 'Could not save computer preferences' })
+  await saveError.waitFor()
+  assert.equal(runtime.services.preferences.get().enableLinkedProjectsTool, true)
+  assert.equal(
+    await saveError.evaluate((element) =>
+      Boolean(
+        element.compareDocumentPosition(document.querySelector('[data-setting-label]')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ),
+    true,
+    'Save feedback stays before the form controls',
+  )
+  await page.evaluate(() => {
+    window.preferenceSaveFailure = ''
+  })
   await linkedTool.click()
   await page.waitForFunction(
     () =>
@@ -283,6 +345,7 @@ try {
     return toggle.getAttribute('aria-checked') === 'true' && !toggle.disabled
   })
   assert.equal(runtime.services.preferences.get().enableCodeReviews, true)
+  await page.getByText('Changes save automatically on this computer.', { exact: true }).waitFor()
   const watcher = page.getByRole('switch', {
     name: 'Pipeline watcher (experimental)',
     exact: true,
@@ -306,6 +369,13 @@ try {
     name: 'Create pull requests as drafts',
     exact: true,
   })
+  await page
+    .getByText('These defaults save automatically on this device.', { exact: true })
+    .waitFor()
+  assert.equal(
+    await page.getByText('Changes save automatically on this computer.', { exact: true }).count(),
+    0,
+  )
   await draftDefault.click()
   assert.equal(await page.evaluate(() => window.localPreferences.pullDraft), true)
   await page.getByRole('button', { name: 'Merge method', exact: true }).click()

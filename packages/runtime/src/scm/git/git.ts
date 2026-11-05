@@ -2,6 +2,7 @@ import { githubRead } from '../../retrieval/request.js'
 import { retrievalContext, retrievalLocal, type RetrievalHook } from '../../retrieval/context.js'
 import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
 import { worktreeRecords } from './worktree-records.js'
+import { workingGitStatus } from './working-status.js'
 import {
   stopOwnedChild,
   OwnedProcessShutdownError,
@@ -1266,16 +1267,18 @@ export class GitService {
   async changes(path: string): Promise<ChangedFile[]> {
     const { path: root } = await this.inspect(path)
     const tracked = (await this.command(root, ['ls-files', '-z'])).split('\0').filter(Boolean)
-    const changed = (
-      await this.command(
-        root,
-        ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
-        { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+    const changed = new Map(
+      (
+        await this.command(
+          root,
+          ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
+          { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+        )
       )
+        .split('\0')
+        .filter(Boolean)
+        .map((line) => [line.slice(3), workingGitStatus(line.slice(0, 2))] as const),
     )
-      .split('\0')
-      .filter(Boolean)
-      .map((line) => line.slice(3))
     let hasHead = true
     try {
       await this.command(root, ['rev-parse', '--verify', 'HEAD'])
@@ -1287,13 +1290,13 @@ export class GitService {
         hasHead = false
       else throw error
     }
-    const names = [...new Set(changed)]
+    const names = [...changed.keys()]
     const old = hasHead
       ? await this.treeFiles(root, 'HEAD', names)
       : new Map<string, NonNullable<FilePreviewMetadata['before']>>()
     const files: ChangedFile[] = []
     let remaining = 1024 * 1024
-    for (const name of names) {
+    for (const [name, gitStatus] of changed) {
       const before = old.get(name)
       let unreadable = false
       const after = await this.workingFile(root, name).catch(() => {
@@ -1332,6 +1335,7 @@ export class GitService {
               after: text,
               diskContents: text,
               viewed: false,
+              gitStatus,
             })
             remaining -= entries.reduce((sum, side) => sum + side.size, 0)
             continue
@@ -1341,7 +1345,14 @@ export class GitService {
           // Keep an unreadable or concurrently removed path visible; opening it reports the error.
         }
       }
-      files.push({ path: name, before: '', after: '', viewed: false, preview: { kind, ...sides } })
+      files.push({
+        path: name,
+        before: '',
+        after: '',
+        viewed: false,
+        gitStatus,
+        preview: { kind, ...sides },
+      })
     }
     return files
   }
@@ -1414,7 +1425,7 @@ export class GitService {
             ? join(root, basename(name))
             : join(await safeFile(root, parent), basename(name))
         const info = await lstat(file)
-        if (full && info.size !== sides.after?.size)
+        if (info.size !== sides.after?.size)
           throw new HttpError(409, 'The file changed while loading its diff. Reload and try again.')
         if (info.isSymbolicLink()) return Buffer.from(await readlink(file)).subarray(0, limit)
         const handle = await open(await safeFile(root, name), 'r')
@@ -1426,14 +1437,12 @@ export class GitService {
             if (!result.bytesRead) break
             offset += result.bytesRead
           }
-          if (full) {
-            const current = await handle.stat()
-            if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
-              throw new HttpError(
-                409,
-                'The file changed while loading its diff. Reload and try again.',
-              )
-          }
+          const current = await handle.stat()
+          if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
+            throw new HttpError(
+              409,
+              'The file changed while loading its diff. Reload and try again.',
+            )
           return bytes.subarray(0, offset)
         } finally {
           await handle.close()
@@ -1442,6 +1451,76 @@ export class GitService {
       full,
       includePatch,
     )
+  }
+
+  /** Read commit-dialog comparisons without writing an index, tree, or working file. */
+  async stagingFilePreview(cwd: string, name: string, comparison: 'staged' | 'unstaged') {
+    const { path: root } = await this.inspect(cwd)
+    await safeFile(root, name, { followFinalSymlink: false })
+    if (name.includes('\\') || name.split('/').some((part) => part === '..' || part === '.'))
+      throw new HttpError(400, 'Invalid file path')
+    const indexEntries = () =>
+      this.readCommand(root, ['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', name], {
+        maxBuffer: 64 * 1024,
+      })
+    const head = async () => {
+      try {
+        return (await this.command(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).trim()
+      } catch (error) {
+        if (!(error instanceof ProcessError) || error.code !== 1) throw error
+        const ref = (await this.command(root, ['symbolic-ref', '-q', 'HEAD'])).trim()
+        // Only an absent branch is unborn. Do not hide corrupt refs or Git read errors.
+        if ((await this.command(root, ['for-each-ref', '--format=%(refname)', ref])).trim())
+          throw error
+        return undefined
+      }
+    }
+    const [entries, revision] = await Promise.all([indexEntries(), head()])
+    let indexed: FilePreviewMetadata['before']
+    for (const entry of entries.split('\0').filter(Boolean)) {
+      const tab = entry.indexOf('\t')
+      if (entry.slice(tab + 1) !== name) continue
+      const [mode, hash, stage] = entry.slice(0, tab).split(' ')
+      if (stage !== '0')
+        throw new HttpError(
+          409,
+          'This file has unresolved conflicts. Resolve them before reviewing its staged comparison.',
+        )
+      const size =
+        mode === '160000' ? 0 : Number((await this.command(root, ['cat-file', '-s', hash])).trim())
+      indexed = { mode, hash, size }
+    }
+    const preview =
+      comparison === 'staged'
+        ? await this.workingFilePreview(
+            root,
+            name,
+            {
+              before: revision
+                ? (await this.treeFiles(root, revision, [name])).get(name)
+                : undefined,
+              after: indexed,
+            },
+            false,
+            true,
+          )
+        : await this.workingFilePreview(
+            root,
+            name,
+            {
+              before: indexed,
+              after: await this.workingFile(root, name),
+            },
+            false,
+            true,
+          )
+    const [currentEntries, currentHead] = await Promise.all([indexEntries(), head()])
+    if (entries !== currentEntries || revision !== currentHead)
+      throw new HttpError(
+        409,
+        'Git changed while loading this comparison. Return to staging, refresh Git, and try again.',
+      )
+    return preview
   }
 
   // An alternate index captures staged and unstaged contents without touching the user's index.
@@ -1852,6 +1931,14 @@ export class GitService {
     for (const name of names) await safeFile(root, name)
     // Literal names: a path such as a[1].txt must not stage every glob match.
     if (names.length) await this.command(root, ['--literal-pathspecs', 'add', '--', ...names])
+  }
+  async unstage(path: string, names: string[]) {
+    const { path: root } = await this.inspect(path)
+    for (const name of names) await safeFile(root, name)
+    // A path-scoped reset changes only the index. Git also uses the empty tree for
+    // an unborn HEAD, so newly added files remain on disk as untracked files.
+    if (names.length)
+      await this.command(root, ['--literal-pathspecs', 'reset', '-q', '--', ...names])
   }
   async commit(path: string, message: string) {
     const { path: root } = await this.inspect(path)

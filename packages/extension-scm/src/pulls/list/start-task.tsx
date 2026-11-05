@@ -92,12 +92,12 @@ export function StartPullTask({
             size="sm"
             variant="outline"
             className="@max-sm/pr-detail:hidden"
-            aria-label="New task"
-            title="Start a task from this PR"
+            aria-label="New thread"
+            title="Start a thread from this PR"
             disabled={!connected || busy}
           >
             <Plus className="size-3.5" />
-            <span className="hidden @lg/pr-detail:inline">{busy ? 'Creating…' : 'New task'}</span>
+            <span className="hidden @lg/pr-detail:inline">{busy ? 'Creating…' : 'New thread'}</span>
             <ChevronDown className="size-3" />
           </Button>
         </DropdownMenu.Trigger>
@@ -134,7 +134,7 @@ export function StartPullTask({
             })
           }
         >
-          Open created task
+          Open created thread
         </Button>
       )}
       {error && (

@@ -27,8 +27,15 @@ const built = await bundleBrowser(
       import {PageHeader} from './src/page-header';
       import {SettingsGroup,Segmented} from './src/settings-layout';
       import {ChangeTypeFilters} from './src/review/change-types';
-      import {Dialog,DialogTrigger,DialogContent,DialogTitle,DialogDescription} from './src/components/ui/dialog';
+      import {Dialog,DialogTrigger,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './src/components/ui/dialog';
       import {Dialog as WebDialog,DialogTrigger as WebTrigger,DialogContent as WebContent,DialogTitle as WebTitle,DialogDescription as WebDescription} from '../web-ui/src/dialog';
+      function Confirmation({kind}){const [open,setOpen]=useState(false);const heading=<><DialogTitle>Delete thread?</DialogTitle><DialogDescription>“Improve the project landing page” and its conversation will be permanently deleted.</DialogDescription></>;return <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger>{kind} dialog</DialogTrigger><DialogContent onOpenAutoFocus={kind==='Custom focus'?event=>{event.preventDefault();event.target.querySelector('input').focus()}:undefined}>
+          {kind==='Header confirmation'?<DialogHeader>{heading}</DialogHeader>:heading}
+          <Input aria-label="Confirmation note"/><div className="flex justify-end gap-2">
+            <Button data-dialog-cancel disabled={kind==='Disabled cancel'} hidden={kind==='Hidden cancel'} variant="outline" onClick={()=>setOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={()=>window.deleteActivations=(window.deleteActivations??0)+1}>Delete thread</Button>
+          </div></DialogContent></Dialog>}
       function App(){const [value,setValue]=useState('theme-0'),[density,setDensity]=useState('comfortable'),[filter,setFilter]=useState(),[searchMode,setSearchMode]=useState(null);window.openedThreads??=[];return <main style={{padding:24}}>
         <button onClick={()=>setSearchMode('tasks')}>Search threads</button>
         <TaskSearchDialog mode={searchMode} onModeChange={setSearchMode} entries={[{key:'test-thread',projectName:'Studio',source:{name:'Mac Studio'},task:{id:'test-thread',title:'Repair connection',createdAt:'2026-10-23',messages:[]}}]} onSelect={entry=>window.openedThreads.push(entry.key)} onClose={()=>setSearchMode(null)}/>
@@ -50,6 +57,7 @@ const built = await bundleBrowser(
         <WebDialog><WebTrigger>Hosted dialog</WebTrigger><WebContent><WebTitle>Hosted content</WebTitle><WebDescription>Scroll test</WebDescription>{Array.from({length:40},(_,i)=><p key={i}>Paragraph {i}</p>)}</WebContent></WebDialog>
         <Dialog><DialogTrigger>Editor dialog</DialogTrigger><DialogContent className="flex h-[400px] flex-col gap-0 overflow-hidden p-0"><DialogTitle>Editor</DialogTitle><DialogDescription>Fixed editor layout</DialogDescription><div className="min-h-0 flex-1 overflow-y-auto">{Array.from({length:40},(_,i)=><p key={i}>Line {i}</p>)}</div></DialogContent></Dialog>
         <Dialog><DialogTrigger>Custom close dialog</DialogTrigger><DialogContent className="gap-0 [&_[data-dialog-close]]:hidden"><DialogTitle>Custom editor</DialogTitle><DialogDescription>Editor owns its close button</DialogDescription><DialogTrigger>Finish editing</DialogTrigger></DialogContent></Dialog>
+        {['Confirmation','Header confirmation','Custom focus','Disabled cancel','Hidden cancel'].map(kind=><Confirmation key={kind} kind={kind}/>)}
         <SettingsGroup title="Display"><Segmented label="Density" value={density} options={[['comfortable','Comfortable'],['compact','Compact']]} onChange={setDensity}/></SettingsGroup>
         <SettingsGroup title="Advanced display" advanced description="Optional display settings"><Input aria-label="Advanced option"/></SettingsGroup>
         <ChangeTypeFilters files={[{path:'src/app.ts',changeKind:'normal'},{path:'app.test.ts',changeKind:'tests'},{path:'mock.ts',changeKind:'mocks'},{path:'README.md',changeKind:'docs'},{path:'generated.ts',changeKind:'generated'}]} value={filter} onChange={setFilter}/>
@@ -254,17 +262,20 @@ try {
       })
     }
     await page.getByRole('button', { name: 'Search threads', exact: true }).click()
-    const threadSearch = page.getByRole('combobox', { name: 'Go to task', exact: true })
+    const threadSearch = page.getByRole('combobox', { name: 'Go to thread', exact: true })
     await threadSearch.waitFor()
     const closeBox = await page
       .getByRole('dialog')
       .getByRole('button', { name: 'Close', exact: true })
       .boundingBox()
     const scopes = page.getByRole('group', { name: 'Search scope', exact: true })
-    const taskScope = scopes.getByRole('button', { name: 'Tasks', exact: true })
+    const taskScope = scopes.getByRole('button', { name: 'Threads', exact: true })
     const messageScope = scopes.getByRole('button', { name: 'Messages', exact: true })
     const inputBox = await threadSearch.boundingBox()
-    assert.ok(inputBox.x + inputBox.width <= closeBox.x, 'Search input stays clear of close')
+    assert.ok(
+      inputBox.x + inputBox.width <= closeBox.x,
+      `Search input stays clear of close: ${JSON.stringify({ inputBox, closeBox })}`,
+    )
     const dialogBox = await page.getByRole('dialog').boundingBox()
     for (const scope of [taskScope, messageScope]) {
       const box = await scope.boundingBox()
@@ -324,9 +335,18 @@ try {
         .evaluate((el) => getComputedStyle(el).fontWeight),
       '500',
     )
+    const triggerWidth = (await page.getByRole('combobox', { name: 'Theme' }).boundingBox()).width
     await page.getByRole('combobox', { name: 'Theme' }).click()
     const menu = page.getByRole('listbox')
     await menu.waitFor()
+    await menu.evaluate((node) =>
+      Promise.all(node.getAnimations().map((animation) => animation.finished)),
+    )
+    const menuWidth = (await menu.boundingBox()).width
+    assert.ok(
+      Math.abs(menuWidth - triggerWidth) <= 2,
+      `Select menu aligns with its trigger width: ${menuWidth} / ${triggerWidth}`,
+    )
     // Wait for Radix positioning and opening animation before measuring.
     await page.waitForFunction(() => {
       const el = document.querySelector('[role="listbox"]')
@@ -430,6 +450,85 @@ try {
       )
     }
     await page.keyboard.press('Escape')
+    for (const kind of [
+      'Confirmation',
+      'Header confirmation',
+      'Custom focus',
+      'Disabled cancel',
+      'Hidden cancel',
+    ]) {
+      const trigger = page.getByRole('button', { name: kind + ' dialog', exact: true })
+      await trigger.focus()
+      await trigger.press('Enter')
+      const dialog = page.getByRole('dialog', { name: 'Delete thread?', exact: true })
+      const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true })
+      const safeConfirmation = kind === 'Confirmation' || kind === 'Header confirmation'
+      const initial = safeConfirmation ? cancel : dialog.getByRole('textbox')
+      await initial.evaluate(
+        (element) =>
+          new Promise((resolve, reject) => {
+            let frames = 0
+            const check = () => {
+              if (document.activeElement === element) resolve()
+              else if (++frames > 60) reject(new Error('Dialog initial focus did not settle'))
+              else requestAnimationFrame(check)
+            }
+            check()
+          }),
+      )
+      if (safeConfirmation) {
+        await page.keyboard.press('Tab')
+        assert.equal(
+          await dialog
+            .getByRole('button', { name: 'Delete thread', exact: true })
+            .evaluate((element) => element === document.activeElement),
+          true,
+        )
+        await page.keyboard.press('Tab')
+        const close = dialog.getByRole('button', { name: 'Close', exact: true })
+        assert.equal(await close.evaluate((element) => element === document.activeElement), true)
+        const closeBounds = await close.boundingBox()
+        const description = await dialog.locator('[data-slot="dialog-description"]').boundingBox()
+        const focusOutset = await close.evaluate((element) => {
+          const style = getComputedStyle(element)
+          return parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset)
+        })
+        assert.ok(
+          description.y >= closeBounds.y + closeBounds.height + focusOutset,
+          `Focused close must clear description: ${JSON.stringify({ closeBounds, description, focusOutset })}`,
+        )
+        await page.keyboard.press('Tab')
+        assert.equal(
+          await dialog
+            .getByRole('textbox')
+            .evaluate((element) => element === document.activeElement),
+          true,
+          'Tab wraps within the dialog',
+        )
+        await page.keyboard.press('Shift+Tab')
+        assert.equal(await close.evaluate((element) => element === document.activeElement), true)
+        await page.keyboard.press('Escape')
+        assert.equal(await dialog.count(), 0)
+        await trigger.press('Enter')
+        await cancel.press('Enter')
+        assert.equal(await dialog.count(), 0, 'Enter on initial Cancel dismisses the confirmation')
+        assert.equal(await page.evaluate(() => window.deleteActivations), undefined)
+      } else {
+        await page.keyboard.press('Escape')
+      }
+      await trigger.evaluate(
+        (element) =>
+          new Promise((resolve, reject) => {
+            let frames = 0
+            const check = () => {
+              if (document.activeElement === element) resolve()
+              else if (++frames > 60) reject(new Error('Dialog did not restore trigger focus'))
+              else requestAnimationFrame(check)
+            }
+            check()
+          }),
+      )
+    }
     for (const name of ['Long dialog', 'Hosted dialog', 'Editor dialog']) {
       await page.getByRole('button', { name, exact: true }).click()
       const dialog = page.getByRole('dialog')

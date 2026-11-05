@@ -36,7 +36,7 @@ function App(){const [visible,setVisible]=useState(true);window.setVisible=setVi
     },
     {
       path: '@dovo/studio-ui',
-      contents: `import {createContext,useContext} from 'react';const C=createContext(()=>{});export const Dialog=({open,onOpenChange,children})=>open?<C.Provider value={onOpenChange}>{children}</C.Provider>:null;export const DialogContent=({children})=>{const close=useContext(C);return <div role="dialog">{children}<button onClick={()=>close(false)}>Close</button></div>};export const DialogTitle=({children})=><h1>{children}</h1>;export const DialogDescription=({children})=><p>{children}</p>;export const Button=({children,...props})=><button {...props}>{children}</button>;`,
+      contents: `import {createContext,useContext} from 'react';const C=createContext(()=>{});export const Dialog=({open,onOpenChange,children})=>open?<C.Provider value={onOpenChange}>{children}</C.Provider>:null;export const DialogContent=({children})=>{const close=useContext(C);return <div role="dialog">{children}<button onClick={()=>close(false)}>Close</button></div>};export const DialogFooter=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h1>{children}</h1>;export const DialogDescription=({children})=><p>{children}</p>;export const Button=({children,...props})=><button {...props}>{children}</button>;`,
     },
   ],
 )

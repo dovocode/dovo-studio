@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Grip, Maximize2, Minimize2, PanelRight, PictureInPicture2, X } from 'lucide-react'
+import { Grip, Globe, Maximize2, Minimize2, PanelRight, PictureInPicture2, X } from 'lucide-react'
 import { cn, IconButton } from '@dovo/studio-ui'
 
 export type PreviewPlacement = 'inline' | 'floating' | 'expanded'
@@ -140,8 +140,8 @@ export function FloatingPreview({
           hideInlineHeader && placement === 'inline'
             ? 'hidden'
             : cn(
-                'flex shrink-0 items-center gap-1 rounded-t-[inherit] border-b bg-sidebar px-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]',
-                minimalFrame ? 'h-9' : 'h-10',
+                'studio-thread-tools-header flex shrink-0 items-center gap-2 rounded-t-[inherit] border-b bg-background px-3',
+                minimalFrame ? 'h-9' : 'h-12',
               )
         }
       >
@@ -201,9 +201,14 @@ export function FloatingPreview({
           </button>
         )}
         {!(minimalFrame && floating) && (
-          <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium" title={displayTitle}>
-            {displayTitle}
-          </span>
+          <>
+            {title === 'Browser' && (
+              <Globe size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+            )}
+            <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium" title={displayTitle}>
+              {displayTitle}
+            </span>
+          </>
         )}
         {actions}
         {!minimalFrame && (

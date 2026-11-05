@@ -324,7 +324,7 @@ export const ComposerEditor = memo(function ComposerEditor({
     mentions.track()
   }
   const attributes = {
-    'aria-label': 'Message task',
+    'aria-label': 'Message thread',
     'data-task-id': taskId,
     'aria-autocomplete': 'list' as const,
     'aria-controls': mentions.open ? mentions.menuId : undefined,

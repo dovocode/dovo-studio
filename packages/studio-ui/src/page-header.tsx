@@ -8,12 +8,14 @@ export function PageHeader({
   children,
   leading,
   embedded = false,
+  heading = true,
 }: {
   title: ReactNode
   description?: ReactNode
   leading?: ReactNode
   children?: ReactNode
   embedded?: boolean
+  heading?: boolean
 }) {
   return (
     <HeaderContent enabled={!embedded}>
@@ -25,7 +27,7 @@ export function PageHeader({
       >
         {leading}
         <div className="studio-page-heading">
-          <h1>{title}</h1>
+          {heading ? <h1>{title}</h1> : <span>{title}</span>}
           {description && <p className="studio-page-description">{description}</p>}
         </div>
         {children && (

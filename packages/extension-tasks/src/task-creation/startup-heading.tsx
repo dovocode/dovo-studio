@@ -11,9 +11,25 @@ export function StartupHeading({
       {...props}
       className={`flex min-h-0 flex-col items-center justify-center px-5 text-center ${welcome ? 'mt-auto shrink-0 gap-6 pb-6 pt-8' : 'flex-1 gap-2 py-6'}`}
     >
-      <h2 className="startup-heading max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl">
+      {welcome && (
+        <span className="startup-eyebrow text-xs font-medium tracking-wide text-muted-foreground">
+          Your workspace, ready when you are
+        </span>
+      )}
+      <h2
+        className={
+          welcome
+            ? 'startup-heading text-balance text-2xl font-medium tracking-tight sm:text-3xl'
+            : 'startup-heading max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl'
+        }
+      >
         What would you like to work on?
       </h2>
+      {welcome && (
+        <p className="startup-description max-w-md text-sm leading-relaxed text-muted-foreground">
+          Start with an idea, a question, or something you want to build.
+        </p>
+      )}
       {children}
     </div>
   )

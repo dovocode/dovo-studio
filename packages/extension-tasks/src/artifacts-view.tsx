@@ -31,6 +31,7 @@ import {
   List,
   LoaderCircle,
   RotateCw,
+  SlidersHorizontal,
   WifiOff,
 } from 'lucide-react'
 import { ArtifactSnapshot } from './chat/artifact-snapshot'
@@ -90,6 +91,7 @@ const savedTime = (value: string) =>
   })
 
 export default function ArtifactsView() {
+  const host = useStudioHost()
   const { transition, style: detailStyle } = useDetailTransition()
   const { runtimes, readRuntime, runtimeReadCache } = useWorkspace()
   const [sidebarVisible] = useLeftSidebar()
@@ -97,6 +99,7 @@ export default function ArtifactsView() {
   const [state, setState] = useState(remembered.state)
   const [format, setFormat] = useState(remembered.format)
   const [sort, setSort] = useState(remembered.sort)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [layout, setLayout] = useState(remembered.layout)
   const [selection, setSelection] = useState(remembered.selection)
   const [reload, setReload] = useState(0)
@@ -257,21 +260,17 @@ export default function ArtifactsView() {
     </IconButton>
   )
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col" aria-label="All artifacts">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col" aria-label="All artifacts">
       {!selection && (
-        <PageHeader
-          title="Your artifacts"
-          description="A home for the things you create with your agents."
-        >
-          <Button
-            variant="ghost"
-            size="sm"
+        <PageHeader title="Artifacts">
+          <IconButton
+            label="Refresh"
+            className="size-8"
             onClick={() => setReload((value) => value + 1)}
             disabled={loading}
           >
             <RotateCw className={cn('size-3.5', loading && 'animate-spin')} />
-            Refresh
-          </Button>
+          </IconButton>
         </PageHeader>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -284,70 +283,100 @@ export default function ArtifactsView() {
           )}
         >
           <SidebarHeader enabled={!!selection} />
-          <div className="studio-overview-pane min-h-0 flex-1 overflow-auto bg-sidebar">
-            <div
-              className={cn(
-                'flex flex-col',
-                selection ? 'p-3' : 'mx-auto min-h-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10',
-              )}
-            >
-              <div className={cn('flex flex-wrap items-center gap-3', selection ? 'mb-3' : 'mb-5')}>
+          <div
+            className={cn(
+              'min-h-0 flex-1 overflow-auto',
+              selection ? 'studio-overview-pane bg-sidebar' : 'bg-background',
+            )}
+          >
+            <div className={cn('flex flex-col', selection ? 'p-3' : 'min-h-full pb-3')}>
+              <div
+                className={cn(
+                  'shrink-0',
+                  selection ? 'mb-3' : 'border-b border-border/70 px-3 py-2',
+                )}
+              >
                 <SearchField
-                  containerClassName="min-w-0 flex-1 basis-48"
+                  containerClassName="w-full min-w-0"
                   aria-label="Search artifacts"
                   placeholder="Search artifacts, threads or computers…"
                   value={search}
                   onValueChange={setSearch}
                   className="bg-card"
                 />
-                <ChoicePicker
-                  aria-label="Artifact thread state"
-                  className="w-auto max-w-full bg-card"
-                  value={state}
-                  onValueChange={(value) =>
-                    setState(threadStates.find((item) => item.value === value)?.value ?? 'all')
-                  }
-                >
-                  {threadStates.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </ChoicePicker>
               </div>
               <div
-                className={cn('flex flex-wrap items-center gap-1.5', selection ? 'mb-3' : 'mb-6')}
-                aria-label="Artifact formats"
+                className={cn(
+                  'min-w-0',
+                  selection ? 'mb-3' : 'mb-3 shrink-0 border-b border-border/70 px-3 py-1',
+                )}
+                aria-label="Artifact filters"
               >
-                {formats.map((value) => (
+                <div className="studio-list-toolbar">
+                  <div className="studio-list-quick-views" aria-label="Artifact formats">
+                    {formats.map((value) => (
+                      <Button
+                        key={value}
+                        aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
+                        variant="ghost"
+                        size="sm"
+                        aria-pressed={format === value}
+                        onClick={() => setFormat(value)}
+                        className="studio-list-quick-filter"
+                      >
+                        {value === 'all' ? 'All' : artifactFormatLabels[value]}
+                        <span className="studio-list-filter-count">
+                          {
+                            matching.filter(
+                              ({ artifact }) => value === 'all' || artifact.format === value,
+                            ).length
+                          }
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
                   <Button
-                    key={value}
-                    aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
-                    variant="ghost"
                     size="sm"
-                    aria-pressed={format === value}
-                    onClick={() => setFormat(value)}
-                    className={cn(
-                      'studio-filter-chip',
-                      format === value ? 'text-foreground' : 'text-muted-foreground',
-                    )}
+                    variant="ghost"
+                    className="studio-list-filter-trigger"
+                    aria-label="Filters"
+                    aria-expanded={filtersOpen}
+                    aria-controls="artifact-list-filters"
+                    data-active={state !== 'all' || undefined}
+                    onClick={() => setFiltersOpen((value) => !value)}
                   >
-                    {value === 'all' ? 'All' : artifactFormatLabels[value]}
-                    <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
-                      {
-                        matching.filter(
-                          ({ artifact }) => value === 'all' || artifact.format === value,
-                        ).length
-                      }
-                    </span>
+                    <SlidersHorizontal className="size-3.5" />
+                    Filters
+                    {state !== 'all' && <span className="studio-list-filter-count">1</span>}
                   </Button>
-                ))}
+                </div>
+                <div id="artifact-list-filters" hidden={!filtersOpen}>
+                  <div className="studio-list-filter-fields">
+                    <ChoicePicker
+                      aria-label="Artifact thread state"
+                      className="h-8 w-auto max-w-full text-xs"
+                      value={state}
+                      onValueChange={(value) =>
+                        setState(threadStates.find((item) => item.value === value)?.value ?? 'all')
+                      }
+                    >
+                      {threadStates.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </ChoicePicker>
+                  </div>
+                </div>
               </div>
               {failed.map(({ source, current }) => (
                 <p
                   key={source.owner}
                   role="alert"
-                  className="mb-3 break-words rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs text-destructive"
+                  className={cn(
+                    'mb-3 break-words rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs text-destructive',
+                    !selection && 'mx-3',
+                  )}
                 >
                   {source.computerName}: {current.error}
                   {current.saved && ` Showing artifacts saved ${savedTime(current.saved.savedAt)}.`}
@@ -357,7 +386,10 @@ export default function ArtifactsView() {
                 <p
                   key={source.owner}
                   role="status"
-                  className="mb-3 flex items-start gap-2 rounded-lg bg-muted/50 px-4 py-3 text-xs text-muted-foreground"
+                  className={cn(
+                    'mb-3 flex items-start gap-2 rounded-lg bg-muted/50 px-4 py-3 text-xs text-muted-foreground',
+                    !selection && 'mx-3',
+                  )}
                 >
                   <WifiOff aria-hidden="true" className="mt-px size-3.5 shrink-0" />
                   <span>
@@ -403,7 +435,7 @@ export default function ArtifactsView() {
                           : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
                   }
                   action={
-                    (failed.length > 0 || filtered) && (
+                    failed.length > 0 || filtered ? (
                       <>
                         {failed.length > 0 && (
                           <Button
@@ -421,12 +453,29 @@ export default function ArtifactsView() {
                           </Button>
                         )}
                       </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          host.navigate({
+                            viewId: unavailable || !sources.length ? 'runtime' : 'tasks',
+                          })
+                        }
+                      >
+                        {unavailable || !sources.length ? 'Devices & runtime' : 'Open threads'}
+                      </Button>
                     )
                   }
                 />
               )}
               {!!visible.length && (
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <div
+                  className={cn(
+                    'mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground',
+                    !selection && 'mx-3',
+                  )}
+                >
                   <p role="status" aria-live="polite">
                     {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'}
                     {filtered && ` of ${entries.length}`}
@@ -434,7 +483,7 @@ export default function ArtifactsView() {
                   <div className="flex flex-wrap items-center gap-2">
                     <ChoicePicker
                       aria-label="Sort artifacts"
-                      className="w-auto max-w-full bg-card"
+                      className="h-8 w-auto max-w-full text-xs"
                       value={sort}
                       onValueChange={(value) =>
                         setSort(
@@ -447,17 +496,13 @@ export default function ArtifactsView() {
                       <option value="title">Title A–Z</option>
                     </ChoicePicker>
                     {!selection && (
-                      <div
-                        role="group"
-                        aria-label="Artifact layout"
-                        className="flex rounded-lg bg-muted/40 p-0.5"
-                      >
+                      <div role="group" aria-label="Artifact layout" className="flex gap-1">
                         <IconButton
                           label="Preview view"
                           aria-pressed={layout === 'preview'}
                           onClick={() => setLayout('preview')}
                           className={cn(
-                            'size-8 rounded-xl border border-transparent',
+                            'studio-list-quick-filter size-8 px-0',
                             layout === 'preview' && 'studio-selected-surface',
                           )}
                         >
@@ -468,7 +513,7 @@ export default function ArtifactsView() {
                           aria-pressed={layout === 'list'}
                           onClick={() => setLayout('list')}
                           className={cn(
-                            'size-8 rounded-xl border border-transparent',
+                            'studio-list-quick-filter size-8 px-0',
                             layout === 'list' && 'studio-selected-surface',
                           )}
                         >
@@ -497,28 +542,31 @@ export default function ArtifactsView() {
                         aria-current={current ? 'true' : undefined}
                         onClick={() => open(entry)}
                         className={cn(
-                          'flex w-full min-w-0 items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'studio-collection-row w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           current && 'studio-selected-surface',
                         )}
                       >
-                        <ArtifactIcon
-                          format={artifact.format}
-                          className="size-4 shrink-0 text-muted-foreground"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
+                        <span className="studio-collection-body">
+                          <span className="studio-collection-meta">
+                            <ArtifactIcon format={artifact.format} className="size-3.5 shrink-0" />
+                            <span>
+                              {artifactLabel(artifact)} · v{artifact.revision}
+                            </span>
+                            <span className="capitalize">{artifact.threadState}</span>
+                          </span>
+                          <span className="studio-collection-title line-clamp-2">
                             {artifact.title}
                           </span>
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                            {artifact.threadTitle} · {source.computerName}
-                            {!source.connected &&
-                              (source.connecting ? ' · Connecting…' : ' · Offline')}
+                          <span className="studio-collection-context">
+                            <span className="min-w-0 truncate">{artifact.threadTitle}</span>
+                            <span className="min-w-0 truncate">
+                              {source.computerName}
+                              {!source.connected &&
+                                (source.connecting ? ' · Connecting…' : ' · Offline')}
+                            </span>
                           </span>
                         </span>
-                        <time
-                          dateTime={artifact.updatedAt}
-                          className="shrink-0 text-[0.6875rem] text-muted-foreground"
-                        >
+                        <time dateTime={artifact.updatedAt} className="studio-collection-date">
                           {shortDate(artifact.updatedAt)}
                         </time>
                       </button>
@@ -528,10 +576,10 @@ export default function ArtifactsView() {
               ) : (
                 <div
                   className={cn(
-                    'grid',
+                    'grid px-3',
                     layout === 'preview'
                       ? 'grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-4'
-                      : 'grid-cols-1 gap-2',
+                      : 'grid-cols-1 gap-0.5 divide-y divide-border/50',
                   )}
                 >
                   {visible.map((entry) => {
@@ -541,7 +589,8 @@ export default function ArtifactsView() {
                         key={`${source.owner}:${artifact.taskId}:${artifact.id}`}
                         className={cn(
                           'min-w-0 overflow-hidden rounded-xl border border-border/50 bg-card',
-                          layout === 'list' && 'flex flex-wrap items-center',
+                          layout === 'list' &&
+                            'flex flex-wrap items-center border-transparent bg-transparent',
                         )}
                       >
                         <button
@@ -550,81 +599,121 @@ export default function ArtifactsView() {
                           onClick={() => open(entry)}
                           className={cn(
                             'group flex w-full min-w-0 overflow-hidden text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                            layout === 'preview' ? 'flex-col' : 'flex-1 items-center gap-3 p-3',
+                            layout === 'preview' ? 'flex-col' : 'studio-collection-row flex-1',
                           )}
                         >
                           {layout === 'list' ? (
-                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40">
-                              <ArtifactIcon format={artifact.format} className="size-5" />
-                            </span>
-                          ) : (
-                            <ArtifactSnapshot
-                              profile={source.profile}
-                              artifact={artifact}
-                              connected={source.connected}
-                              connecting={source.connecting}
-                              refreshKey={reload}
-                            />
-                          )}
-                          <div
-                            className={cn(
-                              'flex min-w-0 flex-1 flex-col',
-                              layout === 'preview' ? 'gap-2.5 p-4' : 'gap-1',
-                            )}
-                          >
-                            <div className="flex items-start gap-2">
-                              <h2
-                                className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-semibold leading-5"
-                                title={artifact.title}
-                              >
-                                {artifact.title}
-                              </h2>
-                              {layout === 'preview' && (
-                                <ArrowUpRight
-                                  aria-hidden="true"
-                                  className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
-                                />
-                              )}
-                            </div>
-                            <ArtifactSharedBadge artifact={artifact} />
-                            <p
-                              className="truncate text-xs text-muted-foreground"
-                              title={artifact.threadTitle}
-                            >
-                              {artifact.threadTitle}
-                            </p>
-                            <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
-                              <span className="flex items-center gap-1.5">
-                                {layout === 'preview' && (
-                                  <ArtifactIcon format={artifact.format} className="size-3.5" />
+                            <>
+                              <span className="studio-collection-body">
+                                <span className="studio-collection-meta">
+                                  <ArtifactIcon
+                                    format={artifact.format}
+                                    className="size-3.5 shrink-0"
+                                  />
+                                  <span>
+                                    {artifactLabel(artifact)} · v{artifact.revision}
+                                  </span>
+                                  <span className="capitalize">{artifact.threadState}</span>
+                                  <ArtifactSharedBadge artifact={artifact} />
+                                </span>
+                                <span className="studio-collection-title line-clamp-2">
+                                  {artifact.title}
+                                </span>
+                                <span className="studio-collection-context">
+                                  <span className="min-w-0 truncate" title={artifact.threadTitle}>
+                                    {artifact.threadTitle}
+                                  </span>
+                                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                                    <RuntimeIcon
+                                      icon={source.icon}
+                                      aria-hidden="true"
+                                      className="size-3 shrink-0"
+                                    />
+                                    <span className="truncate">
+                                      {source.computerName}
+                                      {!source.connected &&
+                                        (source.connecting ? ' · Connecting…' : ' · Offline')}
+                                    </span>
+                                  </span>
+                                </span>
+                                {artifact.deleteAt && (
+                                  <span className="mt-1 block text-[0.6875rem] text-destructive">
+                                    Scheduled deletion:{' '}
+                                    {new Date(artifact.deleteAt).toLocaleString()}
+                                  </span>
                                 )}
-                                {artifactLabel(artifact)} · v{artifact.revision}
                               </span>
-                              <time className="shrink-0" dateTime={artifact.updatedAt}>
+                              <time
+                                className="studio-collection-date"
+                                dateTime={artifact.updatedAt}
+                              >
                                 {shortDate(artifact.updatedAt)}
                               </time>
-                            </div>
-                            <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <RuntimeIcon
-                                  icon={source.icon}
-                                  aria-hidden="true"
-                                  className="size-3 shrink-0"
-                                />
-                                <span className="truncate">
-                                  {source.computerName}
-                                  {!source.connected &&
-                                    (source.connecting ? ' · Connecting…' : ' · Offline')}
-                                </span>
-                              </span>
-                              <span className="shrink-0 capitalize">{artifact.threadState}</span>
-                            </div>
-                            {artifact.deleteAt && (
-                              <p className="text-[0.6875rem] text-destructive">
-                                Scheduled deletion: {new Date(artifact.deleteAt).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
+                            </>
+                          ) : (
+                            <>
+                              <ArtifactSnapshot
+                                profile={source.profile}
+                                artifact={artifact}
+                                connected={source.connected}
+                                connecting={source.connecting}
+                                refreshKey={reload}
+                              />
+                              <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-4">
+                                <div className="flex items-start gap-2">
+                                  <h2
+                                    className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-semibold leading-5"
+                                    title={artifact.title}
+                                  >
+                                    {artifact.title}
+                                  </h2>
+                                  <ArrowUpRight
+                                    aria-hidden="true"
+                                    className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
+                                  />
+                                </div>
+                                <ArtifactSharedBadge artifact={artifact} />
+                                <p
+                                  className="truncate text-xs text-muted-foreground"
+                                  title={artifact.threadTitle}
+                                >
+                                  {artifact.threadTitle}
+                                </p>
+                                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+                                  <span className="flex items-center gap-1.5">
+                                    <ArtifactIcon format={artifact.format} className="size-3.5" />
+                                    {artifactLabel(artifact)} · v{artifact.revision}
+                                  </span>
+                                  <time className="shrink-0" dateTime={artifact.updatedAt}>
+                                    {shortDate(artifact.updatedAt)}
+                                  </time>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    <RuntimeIcon
+                                      icon={source.icon}
+                                      aria-hidden="true"
+                                      className="size-3 shrink-0"
+                                    />
+                                    <span className="truncate">
+                                      {source.computerName}
+                                      {!source.connected &&
+                                        (source.connecting ? ' · Connecting…' : ' · Offline')}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 capitalize">
+                                    {artifact.threadState}
+                                  </span>
+                                </div>
+                                {artifact.deleteAt && (
+                                  <p className="text-[0.6875rem] text-destructive">
+                                    Scheduled deletion:{' '}
+                                    {new Date(artifact.deleteAt).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </button>
                         <ArtifactLibraryActions
                           profile={source.profile}

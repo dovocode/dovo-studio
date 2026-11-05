@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
   ModelSettings,
   FormField,
   ChoicePicker,
@@ -110,11 +111,11 @@ export function HarnessDialog({
     >
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Task harness</DialogTitle>
+          <DialogTitle>Thread harness</DialogTitle>
           <DialogDescription>
             {onSave
               ? 'Settings for this message only.'
-              : 'Model, reasoning and access for this task. Saved agents stay unchanged.'}
+              : 'Model, reasoning and access for this thread. Saved agents stay unchanged.'}
           </DialogDescription>
         </DialogHeader>
         <fieldset
@@ -177,18 +178,23 @@ export function HarnessDialog({
               lockedInstallationId={installationLock}
             />
           )}
-          <Button
-            disabled={
-              !!permissionPolicyUIIssue(value, snapshot?.permissionPolicySupported === true) ||
-              !supportsAccess(value.provider, value.permission) ||
-              (!!providerLock && value.provider !== providerLock) ||
-              (installationLock !== undefined &&
-                (value.acpInstallationId ?? '') !== installationLock)
-            }
-            onClick={() => void save()}
-          >
-            Save harness
-          </Button>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                !!permissionPolicyUIIssue(value, snapshot?.permissionPolicySupported === true) ||
+                !supportsAccess(value.provider, value.permission) ||
+                (!!providerLock && value.provider !== providerLock) ||
+                (installationLock !== undefined &&
+                  (value.acpInstallationId ?? '') !== installationLock)
+              }
+              onClick={() => void save()}
+            >
+              Save harness
+            </Button>
+          </DialogFooter>
         </fieldset>
         {!onSave && task.status === 'running' && (
           <p className="text-xs text-muted-foreground">

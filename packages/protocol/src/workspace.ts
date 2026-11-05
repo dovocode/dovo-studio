@@ -308,6 +308,18 @@ const reviewVersionSchema = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
   Schema.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
 )
+const gitFileChangeSchema = Schema.Literals([
+  'unchanged',
+  'added',
+  'modified',
+  'deleted',
+  'type-changed',
+  'renamed',
+  'copied',
+  'unmerged',
+  'untracked',
+  'unknown',
+])
 export const fileSchema = mutableStruct({
   path: Schema.String,
   before: Schema.String,
@@ -315,6 +327,10 @@ export const fileSchema = mutableStruct({
   viewed: Schema.Boolean,
   diskContents: Schema.optional(Schema.String),
   preview: Schema.optional(filePreviewMetadataSchema),
+  // Working scans only. Older runtimes and historical reviews may omit this metadata.
+  gitStatus: Schema.optional(
+    mutableStruct({ index: gitFileChangeSchema, workingTree: gitFileChangeSchema }),
+  ),
 })
 export const diffCommentSchema = mutableStruct({
   side: Schema.Literals(['additions', 'deletions']),

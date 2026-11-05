@@ -1,5 +1,16 @@
-import { useState } from 'react'
-import { ChevronRight, Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
+import {
+  Hash,
+  LayoutTemplate,
+  Play,
+  Plus,
+  Settings2,
+  Trash2,
+  ChevronDown,
+  FileText,
+  ShieldCheck,
+} from 'lucide-react'
+import { useConfirmDiscardChanges } from '../dialogs/unsaved-changes'
 import { TaskTemplatesDialog } from '../dialogs/task-templates-dialog'
 import { SavedPromptsDialog } from '../dialogs/saved-prompts-dialog'
 import { ProjectInstructionsDialog } from '../dialogs/project-instructions-dialog'
@@ -36,9 +47,12 @@ export function TaskProjectActions({
   const [rules, setRules] = useState(false)
   const [instructions, setInstructions] = useState(false)
   const [error, setError] = useState('')
+  const runActionsLabel = useId()
+  const projectSetupLabel = useId()
   const repository = workspace.repositories.find((item) => item.id === task.repositoryId)
   if (!repository) return null
   const actions = repository.actions ?? []
+  const firstAction = actions[0]
   // A worktree task gets its checkout with the first message; before that there is nowhere to run.
   const ready =
     connected &&
@@ -55,71 +69,115 @@ export function TaskProjectActions({
   }
   return (
     <>
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
+      <div className={panel ? 'flex min-w-0 items-center gap-1' : undefined}>
+        {panel && firstAction && (
           <Button
-            variant={panel ? 'ghost' : 'outline'}
+            variant="ghost"
             size="sm"
-            className={panel ? 'studio-project-row w-full' : 'h-7 gap-1 px-2 text-[0.6875rem]'}
-            title={error || 'Project actions'}
-            aria-label="Project actions"
+            className="studio-project-row min-w-0 flex-1"
+            disabled={!ready}
+            title={error || firstAction.command}
+            onClick={() => run(firstAction)}
           >
-            <Plus className="size-3.5" />
-            <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
-              {actions.length ? 'Project scripts' : 'Add project script'}
-            </span>
-            {panel && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
+            <Play className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">{firstAction.name}</span>
           </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            sideOffset={4}
-            align="end"
-            className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
-          >
-            {actions.map((action) => (
-              <DropdownMenu.Item
-                key={action.id}
-                className={item}
-                disabled={!ready}
-                onSelect={() => run(action)}
-              >
-                <Play className="size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{action.name}</span>
-                <code className="max-w-32 truncate text-[0.625rem] text-muted-foreground">
-                  {action.command.split('\n')[0]}
-                </code>
-              </DropdownMenu.Item>
-            ))}
-            {!actions.length && (
-              <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-                No actions for {repository.name} yet.
-              </p>
-            )}
-            {!ready && !!actions.length && (
-              <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
-                {connected ? 'Available after the first message.' : 'Connect to run actions.'}
-              </p>
-            )}
-            <DropdownMenu.Separator className="my-1 h-px bg-border" />
-            <DropdownMenu.Item className={item} onSelect={() => setEditing(true)}>
-              <Settings2 className="size-3.5" /> Edit project actions…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setPrompts(true)}>
-              <Hash className="size-3.5" /> Edit saved prompts…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
-              <LayoutTemplate className="size-3.5" /> Manage task templates…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
-              <Settings2 className="size-3.5" /> Manage approval rules…
-            </DropdownMenu.Item>
-            <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
-              <Settings2 className="size-3.5" /> Edit project instructions…
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+        )}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              variant={panel ? 'ghost' : 'outline'}
+              size="sm"
+              className={
+                panel
+                  ? actions.length
+                    ? 'size-8 shrink-0 p-0'
+                    : 'studio-project-row w-full'
+                  : 'h-7 gap-1 px-2 text-[0.6875rem]'
+              }
+              title={error || 'Project actions'}
+              aria-label="Project actions"
+            >
+              {(!panel || !actions.length) && <Play className="size-3.5" />}
+              {(!panel || !actions.length) && (
+                <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
+                  Project actions
+                </span>
+              )}
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              sideOffset={4}
+              align="end"
+              className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
+            >
+              <DropdownMenu.Group aria-labelledby={runActionsLabel}>
+                <DropdownMenu.Label
+                  id={runActionsLabel}
+                  className="px-2 py-1.5 text-[0.6875rem] font-medium text-muted-foreground"
+                >
+                  Run actions
+                </DropdownMenu.Label>
+                {actions.map((action) => (
+                  <DropdownMenu.Item
+                    key={action.id}
+                    className={item}
+                    disabled={!ready}
+                    onSelect={() => run(action)}
+                  >
+                    <Play className="size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{action.name}</span>
+                    <code className="max-w-32 truncate text-[0.625rem] text-muted-foreground">
+                      {action.command.split('\n')[0]}
+                    </code>
+                  </DropdownMenu.Item>
+                ))}
+                {!actions.length && (
+                  <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
+                    No actions for {repository.name} yet.
+                  </p>
+                )}
+                {!ready && !!actions.length && (
+                  <p className="px-2 py-1.5 text-[0.6875rem] text-muted-foreground">
+                    {connected ? 'Available after the first message.' : 'Connect to run actions.'}
+                  </p>
+                )}
+              </DropdownMenu.Group>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <DropdownMenu.Group aria-labelledby={projectSetupLabel}>
+                <DropdownMenu.Label
+                  id={projectSetupLabel}
+                  className="px-2 py-1.5 text-[0.6875rem] font-medium text-muted-foreground"
+                >
+                  Project setup
+                </DropdownMenu.Label>
+                <DropdownMenu.Item className={item} onSelect={() => setEditing(true)}>
+                  <Settings2 className="size-3.5" /> Edit project actions…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setPrompts(true)}>
+                  <Hash className="size-3.5" /> Edit saved prompts…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setTemplates(true)}>
+                  <LayoutTemplate className="size-3.5" /> Manage thread templates…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setRules(true)}>
+                  <ShieldCheck className="size-3.5" /> Manage approval rules…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={item} onSelect={() => setInstructions(true)}>
+                  <FileText className="size-3.5" /> Edit project instructions…
+                </DropdownMenu.Item>
+              </DropdownMenu.Group>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+      {panel && error && (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {error}
+        </p>
+      )}
       {templates && (
         <TaskTemplatesDialog repositoryId={repository.id} onClose={() => setTemplates(false)} />
       )}
@@ -170,7 +228,7 @@ function ApprovalRulesDialog({
             {!webRulesSupported
               ? 'Update Dovo on this computer to use web approval rules.'
               : snapshot?.allowWebRequests
-                ? 'Web requests are always allowed on this computer. Change that in Running tasks settings before changing the project rule.'
+                ? 'Web requests are always allowed on this computer. Change that in Running threads settings before changing the project rule.'
                 : `Web browsing and search ${repository?.approvedWebRequests ? 'are always allowed.' : 'ask for approval.'}`}
           </p>
           <Button
@@ -193,7 +251,14 @@ function ApprovalRulesDialog({
               : 'Always allow web requests'}
           </Button>
         </div>
-        <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+        <div
+          className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
+          aria-hidden="true"
+        >
+          <span className="w-36 shrink-0">Name</span>
+          <span className="flex-1">Command</span>
+        </div>
+        <div className="-m-1 max-h-[50vh] space-y-2 overflow-y-auto p-1">
           {rules.map((command) => (
             <div key={command} className="flex items-center gap-2">
               <code className="min-w-0 flex-1 break-all rounded bg-muted p-2 text-xs">
@@ -241,15 +306,31 @@ function ProjectActionsDialog({
   const [rows, setRows] = useState<ProjectAction[]>(() =>
     actions.length ? actions : [{ id: randomUUID(), name: 'Run tests', command: '' }],
   )
+  const [initialRows] = useState(rows)
+  const confirmDiscardChanges = useConfirmDiscardChanges(
+    repositoryId,
+    'project action',
+    JSON.stringify(rows),
+  )
+  const close = async () => {
+    if (await confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
+  }
   const [error, setError] = useState('')
+  const [attempted, setAttempted] = useState(false)
+  const errorId = useId()
+  const inputs = useRef(new Map<string, HTMLInputElement>())
   const change = (id: string, changes: Partial<ProjectAction>) =>
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...changes } : row)))
   const save = () => {
     const cleaned = rows
       .map((row) => ({ ...row, name: row.name.trim(), command: row.command.trim() }))
       .filter((row) => row.name || row.command)
-    if (cleaned.some((row) => !row.name || !row.command)) {
-      setError('Give every action a name and a command, or remove it.')
+    const invalid = cleaned.find((row) => !row.name || !row.command)
+    setAttempted(true)
+    if (invalid) {
+      const field = !invalid.name ? 'name' : 'command'
+      setError(`Enter a ${field} for this action, or remove it.`)
+      inputs.current.get(`${invalid.id}:${field}`)?.focus()
       return
     }
     try {
@@ -267,16 +348,31 @@ function ProjectActionsDialog({
     }
   }
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent className="max-w-xl">
         <DialogTitle>Project actions</DialogTitle>
         <DialogDescription>
-          One-click commands for {name}. They run in the task’s terminal, in its checkout.
+          One-click commands for {name}. They run in the thread’s terminal, in its checkout.
         </DialogDescription>
-        <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+        <div
+          className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
+          aria-hidden="true"
+        >
+          <span className="w-36 shrink-0">Name</span>
+          <span className="flex-1">Command</span>
+        </div>
+        <div className="-m-1 max-h-[50vh] space-y-2 overflow-y-auto p-1">
           {rows.map((row) => (
             <div key={row.id} className="flex items-start gap-2">
               <Input
+                ref={(node) => {
+                  if (node) inputs.current.set(`${row.id}:name`, node)
+                  else inputs.current.delete(`${row.id}:name`)
+                }}
+                aria-invalid={
+                  attempted && !!(row.name.trim() || row.command.trim()) && !row.name.trim()
+                }
+                aria-describedby={attempted && !row.name.trim() ? errorId : undefined}
                 aria-label="Action name"
                 placeholder="Name"
                 value={row.name}
@@ -285,6 +381,14 @@ function ProjectActionsDialog({
                 className="h-8 w-36 text-xs"
               />
               <Input
+                ref={(node) => {
+                  if (node) inputs.current.set(`${row.id}:command`, node)
+                  else inputs.current.delete(`${row.id}:command`)
+                }}
+                aria-invalid={
+                  attempted && !!(row.name.trim() || row.command.trim()) && !row.command.trim()
+                }
+                aria-describedby={attempted && !row.command.trim() ? errorId : undefined}
                 aria-label="Command"
                 placeholder="pnpm test"
                 value={row.command}
@@ -302,6 +406,11 @@ function ProjectActionsDialog({
             </div>
           ))}
         </div>
+        {error && (
+          <p id={errorId} role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -313,13 +422,8 @@ function ProjectActionsDialog({
         >
           <Plus className="size-3.5" /> Add action
         </Button>
-        {error && (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        )}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <Button onClick={save}>Save</Button>

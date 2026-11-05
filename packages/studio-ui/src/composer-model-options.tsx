@@ -9,11 +9,12 @@ import {
   type ModelCatalog,
   type TaskHarness,
 } from '@dovo/protocol'
-import { Check, Zap } from 'lucide-react'
+import { Check, CircleHelp, Zap } from 'lucide-react'
 import { cn } from './lib/utils'
 import { Schema } from 'effect'
 import { ChoicePicker } from './choice-picker'
 import { Input } from './components/ui/input'
+import { useId, useState } from 'react'
 
 export function ComposerEffortColumn({
   value,
@@ -55,97 +56,79 @@ export function ComposerEffortColumn({
   const tabStop = choices.some((effort) => effort.id === current) ? current : choices[0]?.id
   return (
     <>
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
-        <span>{automatic ? 'Difficulty' : 'Effort'}</span>
-        <span className="ml-auto min-w-0 truncate" title={selected?.name || value.model}>
-          {automatic ? 'Automatic' : selected?.name || value.model}
-        </span>
+      <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5 text-[0.6875rem] font-medium text-muted-foreground">
+        <span>{automatic ? 'Task difficulty' : 'Reasoning effort'}</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
-        <div
-          role="radiogroup"
-          aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
-          className="grid gap-0.5"
-          onKeyDown={(event) => {
-            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-            const rows = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
-            )
-            const index = rows.findIndex((row) => row === document.activeElement)
-            const next =
-              event.key === 'Home'
-                ? 0
-                : event.key === 'End'
-                  ? rows.length - 1
-                  : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
-            event.preventDefault()
-            event.stopPropagation()
-            rows[next]?.focus()
-          }}
-        >
-          {choices.map((effort) => (
-            <button
-              key={effort.id}
-              type="button"
-              role="radio"
-              aria-checked={effort.id === current}
-              disabled={disabled || (automatic && !onSelectDifficulty)}
-              tabIndex={effort.id === tabStop ? 0 : -1}
-              title={
-                'description' in effort && typeof effort.description === 'string'
-                  ? effort.description
-                  : undefined
-              }
-              className="flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
-              onClick={() =>
-                void (automatic
-                  ? onSelectDifficulty?.(effort.id)
-                  : onChange({ ...value, reasoning: effort.id }))
-              }
-            >
-              <span className="min-w-0 flex-1 truncate">{effort.name}</span>
-              {effort.id === current ? (
-                <Check className="size-3.5 shrink-0" />
-              ) : !automatic && effort.id === selected?.defaultReasoning ? (
-                <span className="text-xs text-muted-foreground">Default</span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-        {modes && !automatic && value.provider === 'codex' && (
-          <label className="mt-2 grid gap-1 border-t px-2 pt-2 text-xs text-muted-foreground">
-            Daybreak
-            <ChoicePicker
-              aria-label="Daybreak mode"
-              value={value.cyberAccessProgram ?? ''}
-              disabled={disabled}
-              onValueChange={(program) =>
-                void onChange({
-                  ...value,
-                  cyberAccessProgram: program
-                    ? decode(
-                        Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema),
-                        program,
-                      )
-                    : undefined,
-                })
-              }
-            >
-              {daybreakChoices(catalog, value.cyberAccessProgram).map((choice) => (
-                <option
-                  key={choice.id}
-                  value={choice.id}
-                  disabled={
-                    choice.id !== '' &&
-                    choice.id !== 'standard' &&
-                    !catalog?.codex?.daybreakPrograms.some((program) => program === choice.id)
-                  }
-                >
-                  {choice.name}
-                </option>
-              ))}
-            </ChoicePicker>
-          </label>
+      <div className="px-3 pb-2.5 pt-2">
+        {choices.length > 6 ? (
+          <ChoicePicker
+            aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
+            value={current}
+            disabled={disabled || (automatic && !onSelectDifficulty)}
+            onValueChange={(reasoning) =>
+              void (automatic ? onSelectDifficulty?.(reasoning) : onChange({ ...value, reasoning }))
+            }
+          >
+            {choices.map((effort) => (
+              <option key={effort.id} value={effort.id}>
+                {effort.name}
+              </option>
+            ))}
+          </ChoicePicker>
+        ) : (
+          <div
+            role="radiogroup"
+            aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
+            className="flex flex-wrap gap-1"
+            onKeyDown={(event) => {
+              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+              const rows = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+              )
+              const index = rows.findIndex((row) => row === document.activeElement)
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? rows.length - 1
+                    : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
+              event.preventDefault()
+              event.stopPropagation()
+              rows[next]?.focus()
+            }}
+          >
+            {choices.map((effort) => (
+              <button
+                key={effort.id}
+                type="button"
+                role="radio"
+                aria-checked={effort.id === current}
+                disabled={disabled || (automatic && !onSelectDifficulty)}
+                tabIndex={effort.id === tabStop ? 0 : -1}
+                title={
+                  'description' in effort && typeof effort.description === 'string'
+                    ? effort.description
+                    : undefined
+                }
+                className={cn(
+                  'flex min-h-7 items-center gap-1 rounded-md border border-transparent px-2 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+                  effort.id === current && 'bg-accent text-foreground',
+                )}
+                onClick={() =>
+                  void (automatic
+                    ? onSelectDifficulty?.(effort.id)
+                    : onChange({ ...value, reasoning: effort.id }))
+                }
+              >
+                <span className="min-w-0 flex-1 truncate">{effort.name}</span>
+                {effort.id === current ? (
+                  <Check className="size-3.5 shrink-0" />
+                ) : !automatic && effort.id === selected?.defaultReasoning ? (
+                  <span className="text-xs text-muted-foreground">Default</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
         )}
         {modes && !automatic && value.provider === 'acp' && catalog?.acp && (
           <div className="mt-2 grid gap-2 border-t px-2 pt-2 text-xs text-muted-foreground">
@@ -227,6 +210,83 @@ export function ComposerEffortColumn({
   )
 }
 
+export function ComposerPickerDaybreak({
+  value,
+  catalog,
+  onChange,
+  disabled,
+}: {
+  value: TaskHarness
+  catalog: ModelCatalog | null
+  onChange: (value: TaskHarness) => Promise<boolean>
+  disabled: boolean
+}) {
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpId = useId()
+  if (value.provider !== 'codex') return null
+  return (
+    <div className="space-y-2 text-xs text-muted-foreground">
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <span className="flex items-center gap-1">
+          <span>Daybreak</span>
+          <button
+            type="button"
+            aria-label="About Daybreak"
+            aria-expanded={helpOpen}
+            aria-controls={helpId}
+            onClick={() => setHelpOpen((open) => !open)}
+            className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <CircleHelp className="size-3" aria-hidden="true" />
+          </button>
+        </span>
+        <ChoicePicker
+          aria-label="Daybreak mode"
+          aria-description="Optional Codex Daybreak access program. Automatic uses the provider default."
+          className="h-7 w-52 max-w-[65%]"
+          value={value.cyberAccessProgram ?? ''}
+          disabled={disabled}
+          onValueChange={(program) =>
+            void onChange({
+              ...value,
+              cyberAccessProgram: program
+                ? decode(
+                    Schema.required(taskHarnessSchema.fields.cyberAccessProgram.schema),
+                    program,
+                  )
+                : undefined,
+            })
+          }
+        >
+          {daybreakChoices(catalog, value.cyberAccessProgram).map((choice) => (
+            <option
+              key={choice.id}
+              value={choice.id}
+              disabled={
+                choice.id !== '' &&
+                choice.id !== 'standard' &&
+                !catalog?.codex?.daybreakPrograms.some((program) => program === choice.id)
+              }
+            >
+              {choice.name}
+            </option>
+          ))}
+        </ChoicePicker>
+      </div>
+      <p
+        id={helpId}
+        role="region"
+        aria-label="About Daybreak"
+        hidden={!helpOpen}
+        className="leading-relaxed"
+      >
+        Optional Codex access program. Automatic uses the provider default; Off disables it.
+        Available programs depend on your account.
+      </p>
+    </div>
+  )
+}
+
 export function ComposerPickerSpeed({
   value,
   catalog,
@@ -240,39 +300,44 @@ export function ComposerPickerSpeed({
 }) {
   if (value.provider !== 'codex') return null
   const selected = selectedCatalogModel(catalog, value.model)
+  const tiers = modelServiceTiers(catalog, value.model, value.serviceTier)
+  if (tiers.length < 2) return null
   return (
     <div
       role="radiogroup"
       aria-label="Service tier"
-      className="flex flex-wrap rounded-lg bg-accent/40 p-0.5"
+      className="flex min-h-7 flex-wrap items-center justify-between gap-1"
     >
-      {modelServiceTiers(catalog, value.model, value.serviceTier).map((tier) => {
-        const checked = serviceTierValue(value.serviceTier) === tier.id
-        return (
-          <button
-            type="button"
-            key={tier.id}
-            role="radio"
-            aria-checked={checked}
-            title={tier.description}
-            data-value={tier.id}
-            disabled={
-              disabled ||
-              (tier.id !== 'default' &&
-                (!selected?.serviceTiers?.some((item) => item.id === tier.id) ||
-                  catalog?.codex?.fastModeBlocked === true))
-            }
-            className={cn(
-              'flex min-h-7 items-center gap-1 rounded-md px-2 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
-              checked ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-            onClick={() => void onChange({ ...value, serviceTier: tier.id })}
-          >
-            {['priority', 'fast'].includes(tier.id) && <Zap className="size-3" />}
-            {tier.name}
-          </button>
-        )
-      })}
+      <span className="text-xs text-muted-foreground">Speed</span>
+      <div className="flex flex-wrap rounded-lg bg-accent/40 p-0.5">
+        {tiers.map((tier) => {
+          const checked = serviceTierValue(value.serviceTier) === tier.id
+          return (
+            <button
+              type="button"
+              key={tier.id}
+              role="radio"
+              aria-checked={checked}
+              title={tier.description}
+              data-value={tier.id}
+              disabled={
+                disabled ||
+                (tier.id !== 'default' &&
+                  (!selected?.serviceTiers?.some((item) => item.id === tier.id) ||
+                    catalog?.codex?.fastModeBlocked === true))
+              }
+              className={cn(
+                'flex min-h-7 items-center gap-1 rounded-md px-2 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
+                checked ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
+              )}
+              onClick={() => void onChange({ ...value, serviceTier: tier.id })}
+            >
+              {['priority', 'fast'].includes(tier.id) && <Zap className="size-3" />}
+              {tier.name}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

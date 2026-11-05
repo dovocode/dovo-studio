@@ -51,15 +51,20 @@
 
 /* Rich text composer: Markdown formatting shown in place, sized for chat. */
 .dovo-rich-composer {
+  position: relative;
   outline: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.5;
 }
-.dovo-rich-composer[data-empty] > :first-child::before {
+.dovo-rich-composer[data-empty]::before {
   content: attr(data-placeholder);
-  float: left;
-  height: 0;
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   pointer-events: none;
   color: var(--muted-foreground);
 }

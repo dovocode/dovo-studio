@@ -13,7 +13,7 @@ const mocks = {
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@xyflow/react': `export const Handle=()=>null;export const Position={Left:'left',Right:'right'};export const ReactFlowProvider=({children})=>children;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={codex:{short:'Codex',name:'OpenAI Codex'}};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const acpHarnessName=()=>'';export const formatDateTime=String;`,
+  '@dovo/studio-core': `export const useConfirmation=()=>async()=>true;export {isActiveRuntime} from '${root}/packages/studio-core/src/runtime/ownership';export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={codex:{short:'Codex',name:'OpenAI Codex'}};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const acpHarnessName=()=>'';export const formatDateTime=String;`,
   '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {IconButton} from '${ui}/components/icon-button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {ProjectIcon} from '${ui}/project-icon';export * from '${ui}/components/ui/tooltip';export * as Popover from '@radix-ui/react-popover';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {EmptyState} from '${ui}/components/empty-state';export {useCompactLayout} from '${ui}/use-compact-layout';export const useModelLabel=()=>'';export const AgentAvatar=({className})=><span data-agent-avatar className={className}/>;export const PullRequestIcon=()=>null;export const pullRequestIconTone=()=>'';`,
   './task-context-menu': `export const TaskContextMenu=({children})=>children;`,
   './task-branch-menu': `export const TaskBranchMenu=({label})=><button className="min-w-0 max-w-48 truncate">{label}</button>;`,
@@ -95,7 +95,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 976, height: 700 } })
   page.setDefaultTimeout(5000)
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error.message)
+  })
   await page.setContent('<div id="app"></div>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
@@ -124,7 +127,7 @@ try {
       await show('header', { long })
       const header = page.locator('#fixture > header')
       const title = page.getByRole('button', { name: 'Thread actions', exact: true })
-      const tools = page.getByRole('group', { name: 'Task workspace' })
+      const tools = page.getByRole('group', { name: 'Thread workspace' })
       await contained(title, header)
       await contained(tools, header)
       const titleBox = await title.boundingBox(),
@@ -150,7 +153,7 @@ try {
   const title = await page
     .getByRole('button', { name: 'Thread actions', exact: true })
     .boundingBox()
-  const tools = await page.getByRole('group', { name: 'Task workspace' }).boundingBox()
+  const tools = await page.getByRole('group', { name: 'Thread workspace' }).boundingBox()
   assert.ok(title.y + title.height <= tools.y)
   await page.screenshot({ path: '/tmp/dovo-desktop-audit-task-pane-320.png' })
   for (const width of [240, 320, 390, 976]) {
@@ -260,7 +263,7 @@ try {
     await setWidth(width)
     await show('host')
     const picker = page.getByRole('button', { name: 'Computer', exact: true })
-    const actions = page.locator('.studio-page-actions')
+    const actions = page.locator('.studio-settings-target-inner')
     await contained(picker, actions)
     await contained(picker.locator('svg'), picker)
     assert.equal(
@@ -276,7 +279,7 @@ try {
       await show('scope', { wide })
       const controls = await page
         .getByLabel('Settings target', { exact: true })
-        .locator(':scope > div')
+        .locator('.studio-settings-target-inner')
         .boundingBox()
       const body = await page.getByTestId('body-start').boundingBox()
       assert.ok(Math.abs(controls.x - body.x) <= 1, JSON.stringify({ width, wide, controls, body }))

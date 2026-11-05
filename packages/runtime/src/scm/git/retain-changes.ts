@@ -5,13 +5,18 @@ export function retainChangedFiles(previous: ChangedFile[], incoming: ChangedFil
   const byPath = new Map(previous.map((file) => [file.path, file]))
   const files = incoming.map((file) => {
     const prior = byPath.get(file.path)
-    return prior &&
+    const sameContent =
+      prior &&
       prior.before === file.before &&
       prior.after === file.after &&
       filePreviewIdentity(prior.preview) === filePreviewIdentity(file.preview) &&
       prior.diskContents === file.diskContents
+    if (!sameContent) return file
+    // Staging can change without changing the reviewed HEAD-to-working contents.
+    return prior.gitStatus?.index === file.gitStatus?.index &&
+      prior.gitStatus?.workingTree === file.gitStatus?.workingTree
       ? prior
-      : file
+      : { ...file, viewed: prior.viewed }
   })
   return files.length === previous.length && files.every((file, index) => file === previous[index])
     ? previous

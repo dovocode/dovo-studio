@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Children, isValidElement, useId, type ReactNode } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { SearchField } from './search-field'
 import {
@@ -108,6 +108,7 @@ export function ChoicePicker({
           aria-label={label}
           aria-describedby={`${id}-value`}
           data-value={value}
+          data-choice-picker=""
           className={cn('h-9 w-full min-w-0 justify-between text-xs font-normal', className)}
         >
           {icons?.[value] && (
@@ -118,7 +119,7 @@ export function ChoicePicker({
           <span id={`${id}-value`} className="min-w-0 flex-1 truncate text-left">
             {options.find((option) => option.value === value)?.label ?? (value || 'Choose…')}
           </span>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
         </Button>
       </DialogTrigger>
       <DialogContent className="gap-3 p-4 sm:max-w-md">

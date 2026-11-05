@@ -235,7 +235,7 @@ function WindowsRuntimeControl({
     }
   }
   return (
-    <article className="space-y-3 rounded-md border p-4" aria-label="Windows execution environment">
+    <article className="studio-settings-group space-y-3" aria-label="Windows execution environment">
       <h2 className="text-sm font-medium">Run locally with Native Windows or WSL</h2>
       <p className="text-sm text-muted-foreground">
         Choose where your projects, agents, Git and terminals run. Each environment keeps its own

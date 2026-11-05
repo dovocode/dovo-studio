@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   createRuntimeUpgradeManager,
@@ -147,14 +148,13 @@ export function ComputerUpdates() {
                           : ''}
                     </p>
                     {update.available && (
-                      <details className="text-xs">
-                        <summary className="cursor-pointer text-primary">What’s new</summary>
+                      <Disclosure className="text-xs" title={<>What’s new</>}>
                         <div className="my-2 max-h-40 overflow-y-auto">
                           <MessageResponse baseURL={update.latest?.url}>
                             {update.latest?.notes || 'Release notes are unavailable.'}
                           </MessageResponse>
                         </div>
-                      </details>
+                      </Disclosure>
                     )}
                     {blocked && <p className="text-xs text-muted-foreground">{blocked}</p>}
                     {running && (

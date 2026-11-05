@@ -119,7 +119,8 @@ export function ProjectFileBrowser({
         <div className="flex gap-1" aria-label="Project search mode">
           <Button
             size="sm"
-            variant={mode === 'files' ? 'secondary' : 'ghost'}
+            variant="ghost"
+            className={`h-7 rounded-md border px-2 text-xs ${mode === 'files' ? 'studio-selected-surface font-medium' : 'border-transparent text-muted-foreground'}`}
             aria-pressed={mode === 'files'}
             onClick={() => setMode('files')}
           >
@@ -127,7 +128,8 @@ export function ProjectFileBrowser({
           </Button>
           <Button
             size="sm"
-            variant={mode === 'content' ? 'secondary' : 'ghost'}
+            variant="ghost"
+            className={`h-7 rounded-md border px-2 text-xs ${mode === 'content' ? 'studio-selected-surface font-medium' : 'border-transparent text-muted-foreground'}`}
             aria-pressed={mode === 'content'}
             onClick={() => setMode('content')}
           >

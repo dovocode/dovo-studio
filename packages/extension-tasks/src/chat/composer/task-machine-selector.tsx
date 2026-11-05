@@ -13,8 +13,8 @@ export async function moveTaskDraft(
   const profile = store.runtimeRegistry.profiles.find((item) => item.id === source.runtimeId)
   const origin = store.runtimeRegistry.profiles.find((item) => item.id === store.activeRuntimeId)
   const repository = store.workspace.repositories.find((item) => item.id === task.repositoryId)
-  if (!profile || !repository) throw new Error('This machine or project is no longer available.')
-  if (!source.online) throw new Error('This machine is offline.')
+  if (!profile || !repository) throw new Error('This computer or project is no longer available.')
+  if (!source.online) throw new Error('This computer is offline.')
   if (
     store.snapshot?.checkedDraftMoveSupported !== true ||
     source.snapshot?.checkedDraftMoveSupported !== true
