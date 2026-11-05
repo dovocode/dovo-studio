@@ -64,7 +64,7 @@ export async function checkPeerPairing(browser, root) {
       },
       {
         path: '@dovo/studio-ui',
-        contents: `export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const FormField=({label,children})=><label>{label}{children}</label>;`,
+        contents: `export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const FormField=({label,children})=><label>{label}{children}</label>;`,
       },
       {
         path: 'react-native',

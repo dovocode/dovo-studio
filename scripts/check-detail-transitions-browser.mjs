@@ -172,8 +172,12 @@ try {
         assert.equal(layout.height, 1)
         assert.equal(layout.color, layout.headerColor)
         assert.equal(layout.pointerEvents, 'none')
-        assert.equal(layout.leftGap, 4)
-        assert.equal(layout.leftGap, layout.rightGap, 'Floating panes must use matching rail gaps')
+        assert.equal(layout.leftGap, 6)
+        assert.equal(
+          layout.rightGap,
+          mode === 'light' ? 8 : 6,
+          'Tool pane clearance follows the theme rail margins',
+        )
         if (platform === 'linux' && collection === 'Thread sidebar')
           await page.screenshot({ path: root + 'work/detail-transitions/' + mode + '.png' })
         // The fallback header retains the same brand origin with the sidebar hidden.
@@ -191,7 +195,7 @@ try {
     }
   }
   console.log(
-    'Detail transitions: opening, switching, closing, rapid selection, retained drafts, immediate unmount, reduced motion, unsupported-browser fallback and full-width light/dark header dividers, matched pane gaps and fixed header brands passed.',
+    'Detail transitions: opening, switching, closing, rapid selection, retained drafts, immediate unmount, reduced motion, unsupported-browser fallback and full-width light/dark header dividers, theme rail clearances and fixed header brands passed.',
   )
 } finally {
   await browser.close()

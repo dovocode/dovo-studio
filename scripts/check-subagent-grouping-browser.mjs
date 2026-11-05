@@ -19,6 +19,7 @@ export const cn=(...values)=>values.filter(Boolean).join(' ');
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon.tsx';export const AgentAvatar=()=>null;export const ProjectIcon=()=>null;export const useModelLabel=()=>'';
 export const MessageResponse=({children})=><div>{children}</div>;
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=Tooltip;export const TooltipContent=()=>null;
+export const SettingsPage=({title,description,children})=><section><h1>{title}</h1><p>{description}</p>{children}</section>;
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const ContextMenu={Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;

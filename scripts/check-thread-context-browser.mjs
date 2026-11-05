@@ -60,7 +60,7 @@ try {
             },
             {
               path: '@dovo/studio-ui',
-              contents: `export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Dialog=({children,open})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
+              contents: `export {SearchField} from '${root}packages/studio-ui/src/search-field';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Dialog=({children,open})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
             },
           ]),
     ]
@@ -237,7 +237,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       },
       {
         path: '@dovo/studio-ui',
-        contents: `export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Dialog=({children,open,onOpenChange})=>open?<div role="dialog">{children}<button onClick={()=>onOpenChange(false)}>Cancel</button></div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
+        contents: `export {SearchField} from '${root}packages/studio-ui/src/search-field';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Dialog=({children,open,onOpenChange})=>open?<div role="dialog">{children}<button onClick={()=>onOpenChange(false)}>Cancel</button></div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;`,
       },
     ],
   )

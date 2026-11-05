@@ -34,7 +34,7 @@ createRoot(document.getElementById('app')).render(<Usage/>);`,
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           contents:
             path === 'usage-ui'
-              ? `export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}packages/studio-ui/src/components/ui/input.tsx';export * from '${root}packages/studio-ui/src/components/ui/select.tsx';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker.tsx';`
+              ? `export {Disclosure} from '${root}packages/studio-ui/src/disclosure.tsx';export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}packages/studio-ui/src/components/ui/input.tsx';export * from '${root}packages/studio-ui/src/components/ui/select.tsx';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker.tsx';`
               : path === './reset-credits'
                 ? 'export const ResetCredits=()=>null;'
                 : `

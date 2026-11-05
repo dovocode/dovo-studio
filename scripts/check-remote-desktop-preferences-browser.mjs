@@ -9,7 +9,7 @@ const built = await bundleBrowser(
       resolveDir: root,
       loader: 'tsx',
       contents: `
-        import {createRoot} from 'react-dom/client';
+        import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
         import {Effect} from 'effect';
         import {decode,runtimePreferencesSchema} from '@dovo/protocol';
         import RemoteDesktop from '${root}packages/extension-runtime/src/remote-desktop-view.tsx';
@@ -21,7 +21,7 @@ const built = await bundleBrowser(
           return Effect.succeed({...window.preferences});
         }};
         const app=createRoot(document.getElementById('app'));
-        window.show=enabled=>{window.runtime.snapshot=enabled===null?{}:{remoteDesktopEnabled:enabled};window.preferences.enableRemoteDesktop=enabled===true;app.render(<RemoteDesktop key={String(enabled)}/>)};
+        window.show=enabled=>{window.runtime.snapshot=enabled===null?{}:{remoteDesktopEnabled:enabled};window.preferences.enableRemoteDesktop=enabled===true;flushSync(()=>app.render(<RemoteDesktop key={String(enabled)}/>))};
       `,
     },
     bundle: true,

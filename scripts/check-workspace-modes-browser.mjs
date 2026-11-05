@@ -113,13 +113,13 @@ try {
   )
   await page.goto('http://workspace.lan')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await view(page.getByRole('textbox', { name: 'Message task', exact: true }))
+  await view(page.getByRole('textbox', { name: 'Message thread', exact: true }))
   const creations = await page.evaluate(() => window.extensionCreations)
   const mode = (name) => page.getByRole('button', { name, exact: true })
   for (let i = 0; i < 12; i++) {
     await page.evaluate((open) => window.setPreferences({ projectPanelOpen: open }), i % 2 === 0)
     await page.setViewportSize({ width: i % 3 === 2 ? 900 : 1280, height: 900 })
-    for (const name of ['Workspace', 'Browser', 'Workspace', 'Tasks', 'Workspace', 'Terminals']) {
+    for (const name of ['Workspace', 'Browser', 'Workspace', 'Threads', 'Workspace', 'Terminals']) {
       const refreshing = page.evaluate(() =>
         window.store.refreshRuntime(window.store.runtimeRegistry.profiles[0]),
       )
@@ -131,8 +131,8 @@ try {
         await page.getByRole('region', { name: 'Browser previews', exact: true }).waitFor()
       if (name === 'Terminals')
         await page.getByRole('region', { name: 'Terminals workspace', exact: true }).waitFor()
-      if (name === 'Tasks')
-        await view(page.getByRole('textbox', { name: 'Message task', exact: true }))
+      if (name === 'Threads')
+        await view(page.getByRole('textbox', { name: 'Message thread', exact: true }))
       await mode(name).click()
 
       await page.evaluate(
@@ -169,7 +169,7 @@ try {
     'page',
     'The redirected page keeps its selected identity in Unified',
   )
-  await mode('Tasks').click()
+  await mode('Threads').click()
   await page.evaluate(() => window.focusBrowserWorkspace())
   await view(page.getByRole('region', { name: 'Browser previews', exact: true }))
   assert.deepEqual(errors, [])

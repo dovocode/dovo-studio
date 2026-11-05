@@ -110,9 +110,9 @@ try {
   await input.fill('  ThReAd  ')
   assert.deepEqual(await titles(), [
     'New thread',
+    'Go to thread…',
     'Thread history',
     'Open workspace',
-    'Go to thread…',
     'Search conversations…',
   ])
   assert.equal(await options.filter({ hasText: /^New thread$/ }).count(), 1)
@@ -122,7 +122,7 @@ try {
   await input.press('Home')
   await input.press('ArrowDown')
   assert.equal(
-    await options.filter({ hasText: /^Thread history$/ }).getAttribute('aria-selected'),
+    await options.filter({ hasText: /^Go to thread…$/ }).getAttribute('aria-selected'),
     'true',
   )
   await input.press('ArrowUp')
@@ -131,7 +131,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.executed), ['new'])
   await page.waitForFunction(() => document.activeElement?.matches('.studio-main'))
   await opener.click()
-  await input.fill('  NEW TASK  ')
+  await input.fill('  NEW THREAD  ')
   assert.deepEqual(await titles(), ['New thread'])
   await input.evaluate((element) => {
     element.dispatchEvent(

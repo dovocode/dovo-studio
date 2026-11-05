@@ -31,6 +31,7 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '@dovo/studio-ui': `
+export {SearchField} from './src/search-field';
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export * as Popover from '@radix-ui/react-popover';
 export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -46,7 +47,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box;
+    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box,DialogFooter=Box;
     export const ProjectIcon=()=>null;
     export const Button=({children,onClick,disabled,type,variant,size,...props})=><button {...props} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
     export const IconButton=({children,label,className,...props})=><button aria-label={label} title={label} {...props}>{children}</button>;
@@ -484,7 +485,7 @@ try {
   await besideChild.waitFor()
   assert.equal(await header.getAttribute('data-thread-header'), 'parent')
   // Closing the pair ends it; the parent opens alone afterwards.
-  await besideChild.getByRole('button', { name: /^Close side-by-side task/ }).click()
+  await besideChild.getByRole('button', { name: /^Close side-by-side thread/ }).click()
   await besideChild.waitFor({ state: 'detached' })
   await select('other')
   await select('parent')
@@ -542,7 +543,7 @@ try {
   const besideDraft = page.locator('section[aria-label="Side by side: New side chat"]')
   await besideDraft.waitFor()
   assert.equal(await besideDraft.locator('[data-review-side-changes]').count(), 0)
-  await besideDraft.getByRole('button', { name: /^Close side-by-side task/ }).click()
+  await besideDraft.getByRole('button', { name: /^Close side-by-side thread/ }).click()
   await besideDraft.waitFor({ state: 'detached' })
   assert.equal((await requests('/api/tasks/side-thread/discard')).length, 0)
   await draftRow.getByRole('button', { name: 'Discard unused draft New side chat' }).click()

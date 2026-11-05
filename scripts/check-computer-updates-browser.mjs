@@ -31,7 +31,7 @@ const built = await bundleBrowser(
     { path: '@dovo/studio-core', contents: 'export const useWorkspace=()=>window.workspace;' },
     {
       path: '@dovo/studio-ui',
-      contents: `export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;export const MessageResponse=({children})=>children;`,
+      contents: `export {Disclosure} from '${root}packages/studio-ui/src/disclosure.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;export const MessageResponse=({children})=>children;`,
     },
     {
       path: 'react-native',

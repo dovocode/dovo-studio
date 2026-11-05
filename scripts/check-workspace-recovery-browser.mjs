@@ -249,6 +249,9 @@ try {
   const forget = page.getByRole('menuitem', { name: 'Forget Computer 0', exact: true })
   assert.match(await forget.getAttribute('class'), /text-destructive/)
   await page.keyboard.press('Escape')
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'More actions for Computer 0',
+  )
   assert.equal(await more.evaluate((button) => button === document.activeElement), true)
   await more.click()
   await page.getByRole('menuitem', { name: 'Recovered edits', exact: true }).click()

@@ -272,6 +272,9 @@ function WorkbenchContent({
       : visibleWorkspaceTarget({ viewId: extensions[0]?.views[0]?.id ?? '' }, workspaceModes),
   )
   const confirmSettingsNavigation = useConfirmSettingsNavigation()
+  // Confirmation changes with computer scope; host navigation always uses the current guard.
+  const settingsConfirmation = useRef(confirmSettingsNavigation)
+  settingsConfirmation.current = confirmSettingsNavigation
   const threadSelections = useRef(new Map<string | null, string>())
   const settingsNavigation = useRef({ target, extensions })
   settingsNavigation.current = { target, extensions }
@@ -301,9 +304,9 @@ function WorkbenchContent({
         extension.views.some(
           (view) => view.navigationGroup === 'settings' && view.id === target.viewId,
         ),
-      ) || confirmSettingsNavigation()
+      ) || settingsConfirmation.current()
     )
-  }, [confirmSettingsNavigation])
+  }, [])
   const commitNavigation = useCallback(
     (next: StudioNavigation, options?: { replace?: boolean }) => {
       if (browserWindowId && next.viewId !== 'browser') return false

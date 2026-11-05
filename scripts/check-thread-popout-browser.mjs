@@ -291,7 +291,12 @@ try {
   assert.equal(
     await main.evaluate(() => window.initialHost === window.host),
     true,
-    'Saved connection changes must preserve the host API and extension catalog',
+    'Saved connection changes must preserve the host API and extension catalog: ' +
+      (await main.evaluate(() =>
+        Object.keys(window.host)
+          .filter((key) => window.host[key] !== window.initialHost[key])
+          .join(', '),
+      )),
   )
   await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
   await detached.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()

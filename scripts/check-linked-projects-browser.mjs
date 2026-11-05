@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const controls = `
 import {useState} from 'react';
 export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;
+export const IconButton=({label,...props})=><button aria-label={label} {...props}/>;
 export const Input=props=><input {...props}/>;
 export const Textarea=props=><textarea {...props}/>;
 export const FormField=({label,children})=><label>{label}{children}</label>;
@@ -18,7 +19,7 @@ export const cn=(...values)=>values.filter(Boolean).join(' ');
 export const Dialog=({children})=><div role="dialog">{children}</div>;
 export const View=({children})=><div>{children}</div>;
 export const Text=({children})=><span>{children}</span>;
-export const DialogContent=View,DialogHeader=View,DialogTitle=Text,DialogDescription=Text;
+export const DialogContent=View,DialogHeader=View,DialogTitle=Text,DialogDescription=Text,DialogFooter=View;
 export const ModelSettings=({agent,onChange})=><input aria-label="Model" value={agent.model} onChange={event=>onChange({...agent,model:event.target.value})}/>;
 export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;
@@ -29,7 +30,8 @@ const browser = await chromium.launch({ headless: true })
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const useWorkspace=()=>window.store;export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});`,
+      '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
+      '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const formatDateTime=String;export const useWorkspace=()=>window.store;export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});`,
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
       '@dovo/studio-ui':
         controls +

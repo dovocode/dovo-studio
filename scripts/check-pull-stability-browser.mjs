@@ -141,8 +141,7 @@ try {
   await detail.getByText('Review workflow description', { exact: true }).waitFor()
   await detail.getByText('Loading stack…', { exact: true }).waitFor()
   await detail
-    .getByRole('button', { name: 'View pull request checks', exact: true })
-    .getByText('Loading checks…', { exact: true })
+    .locator('[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Loading checks…"]')
     .waitFor()
   assert.equal(await page.evaluate(() => window.sectionReads.includes('changes')), false)
   assert.equal(
@@ -218,21 +217,33 @@ try {
   await page.evaluate(() => {
     window.failedSection = undefined
   })
-  await detail.getByRole('button', { name: 'Refresh checks', exact: true }).click()
+  await detail.getByRole('button', { name: 'Refresh check reports', exact: true }).click()
   await detail.getByText('All tests passed', { exact: true }).waitFor()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).waitFor()
-  await detail.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await detail
+    .locator(
+      '[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Check reports: 1 check passed"]',
+    )
+    .waitFor()
   await page.evaluate(() => {
     window.store.connected = false
   })
   await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
-  await detail.getByText('Check reports: 1 check passed · offline', { exact: true }).waitFor()
+  await detail
+    .locator(
+      '[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Check reports: 1 check passed · offline"]',
+    )
+    .waitFor()
   await page.evaluate(() => {
     window.store.connected = true
   })
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
-  await detail.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await detail
+    .locator(
+      '[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Check reports: 1 check passed"]',
+    )
+    .waitFor()
   await page.evaluate(() => {
     window.releaseSection('stack')
     window.detail.pull.headSha = 'a'.repeat(40)
@@ -254,14 +265,14 @@ try {
   })
   await detail.getByRole('button', { name: 'Merge', exact: true }).waitFor()
   await detail
-    .getByRole('button', { name: 'View pull request checks', exact: true })
-    .getByText('Loading checks…', { exact: true })
+    .locator('[role="tab"][aria-controls="pr-panel-checks"][aria-description*="Loading checks…"]')
     .waitFor()
   const beforeMergeChecks = await page.evaluate(
     () => window.sectionReads.filter((section) => section === 'checks').length,
   )
   await detail.getByRole('button', { name: 'Merge', exact: true }).click()
   const merge = page.getByRole('dialog')
+  await merge.getByText('Status sources', { exact: true }).click()
   await merge.getByText('Loading checks…', { exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() => window.sectionReads.filter((section) => section === 'checks').length),
@@ -280,7 +291,7 @@ try {
     window.failedSection = undefined
   })
   await merge.getByRole('button', { name: 'Retry checks', exact: true }).click()
-  await merge.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await merge.getByText('1 check passed', { exact: true }).waitFor()
   await merge.getByRole('button', { name: 'Refresh checks', exact: true }).waitFor()
   // A pushed revision must not retarget the confirmation or its status reports.
   await page.evaluate(() => {
@@ -303,9 +314,10 @@ try {
   await detail.getByRole('button', { name: 'PR actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
   const autoMerge = page.getByRole('dialog')
+  await autoMerge.getByText('Status sources', { exact: true }).click()
   await autoMerge.getByText('Loading checks…', { exact: true }).waitFor()
   await page.evaluate(() => window.releaseSection('checks'))
-  await autoMerge.getByText('Check reports: 1 check passed', { exact: true }).waitFor()
+  await autoMerge.getByText('1 check passed', { exact: true }).waitFor()
   await autoMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.evaluate(() => {
     window.detail.pull.headSha = 'a'.repeat(40)

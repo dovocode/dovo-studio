@@ -268,7 +268,16 @@ try {
         await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
         'rgba(0, 0, 0, 0)',
       )
-      assert.match(await selectedMode.getAttribute('class'), /ring-primary/)
+      const unselectedMode = page.getByRole('button', {
+        name: mode === 'Inherit' ? 'Tune' : 'Inherit',
+        exact: true,
+      })
+      assert.equal(await unselectedMode.getAttribute('aria-pressed'), 'false')
+      assert.notEqual(
+        await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        await unselectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        'The selected mode has a distinct surface',
+      )
       await page.keyboard.press('Escape')
       if (mode === 'Tune' || mode === 'Maestro') {
         const difficulty = page.getByRole('button', { name: 'Choose agent and model', exact: true })

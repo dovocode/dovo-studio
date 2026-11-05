@@ -1468,6 +1468,9 @@ try {
     .getByRole('button', { name: 'Hide Program custom name', exact: true })
     .click()
   await page.getByLabel('Search workspace').fill('')
+  const activeThreads = page.getByRole('complementary').locator('[data-section="active"]')
+  if (!(await activeThreads.evaluate((section) => section.open)))
+    await activeThreads.locator(':scope > summary').click()
   await selectSidebarItem('Thread', 'local thread')
   assert.equal(await page.getByLabel('Thread draft').inputValue(), 'Keep this draft')
   await page.evaluate(() => {

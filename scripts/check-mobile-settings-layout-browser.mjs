@@ -314,7 +314,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
+            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(243, 244, 246)'),
           mode,
         )
         for (const locator of [
@@ -441,10 +441,10 @@ try {
       await page.evaluate(() => window.showSheet(false))
       await page.evaluate(() => window.showScoped(true))
       const sticky = page.getByLabel('Settings target', { exact: true })
-      await sticky.getByText('All projects on all machines', { exact: true }).waitFor()
-      const storage = page.getByText('Shared across paired machines', { exact: true })
+      await sticky.getByText('All projects on all computers', { exact: true }).waitFor()
+      const storage = page.getByText('Shared across paired computers', { exact: true })
       const description = page.getByText(
-        'Defaults for all projects on all machines. More-specific overrides keep their own values.',
+        'Defaults for all projects on all computers. More-specific overrides keep their own values.',
         { exact: true },
       )
       for (const mode of ['dark', 'light']) {
@@ -452,7 +452,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
+            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(243, 244, 246)'),
           mode,
         )
         assert.equal(await storage.count(), 0)
@@ -468,7 +468,7 @@ try {
           'Machine and project choices remain available with multiple computers',
         )
         assert.equal(
-          await sticky.getByText('Shared across paired machines', { exact: true }).count(),
+          await sticky.getByText('Shared across paired computers', { exact: true }).count(),
           0,
           'Storage details must not enlarge the sticky header',
         )
@@ -502,7 +502,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
+            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(243, 244, 246)'),
           mode,
         )
         await page.screenshot({
