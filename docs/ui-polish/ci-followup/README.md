@@ -26,8 +26,8 @@ search, visual controls, pipeline lists and PR lists. Final CI remains a separat
 
 All five original council members confirmed their 9/10 and ship verdicts after reviewing the CI
 delta, including the keyboard fix; no required regressions were identified. These are focused
-confirmations, not a second full-app review. See [reviews.json](reviews.json). Muse’s supplemental
-confirmation remains pending; its original 9/10 consultation is recorded in the baseline.
+confirmations, not a second full-app review. See [reviews.json](reviews.json). Muse also confirmed
+its 9/10 and ship verdict; see the [supplemental confirmation](muse-confirmation.md).
 
 The complete four-shard design matrix passed: 1,140 story/theme/viewport cases and 168 hosted
 inner-frame accessibility cases. That build includes the viewport focus, contrast and border fixes;
