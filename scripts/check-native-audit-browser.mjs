@@ -199,10 +199,10 @@ try {
     },
   )
   await page.evaluate(() => window.show('picker'))
-  await page.getByRole('button', { name: 'Start thread', exact: true }).click()
+  await page.getByRole('button', { name: 'Start task', exact: true }).click()
   await page.getByRole('combobox', { name: 'Dovo project', exact: true }).selectOption('repo')
   const beforePickerRoutes = await page.evaluate(() => window.routes.length)
-  await page.getByRole('button', { name: 'Start thread', exact: true }).last().click()
+  await page.getByRole('button', { name: 'Start task', exact: true }).last().click()
   await page.waitForFunction(() => window.events.at(-1) === 'dismissing')
   assert.equal(await page.evaluate(() => window.routes.length), beforePickerRoutes)
   assert.equal(await page.getByRole('dialog').count(), 2)
