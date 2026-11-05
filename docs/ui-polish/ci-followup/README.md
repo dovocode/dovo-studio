@@ -34,3 +34,6 @@ inner-frame accessibility cases. That build includes the viewport focus, contras
 the later keyboard-release handler was verified separately by the full thread-scroll suite against
 current source. The complete catalog interaction run passed after correcting the preview button and
 attachment names to match the existing synthetic fixture.
+
+Screenshot binaries are intentionally excluded from the shipping PR. Captures were reviewed and
+verified locally before removal; manifests, interaction records and assessments remain.
