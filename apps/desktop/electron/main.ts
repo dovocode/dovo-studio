@@ -176,7 +176,9 @@ if (ownsInstance && !explicitDirectory) {
 }
 registerLinuxDesktop(nightly, appName, rendererPath)
 registerDefaultBrowser(rendererPath, nightly)
-registerConnectionStorage(join(__dirname, '../dist/index.html'))
+registerConnectionStorage(join(__dirname, '../dist/index.html'), (settings) =>
+  browserBridge.refreshSessionCookies(settings),
+)
 registerAccountStorage(rendererPath)
 const dictation = registerDictation(
   rendererPath,

@@ -132,6 +132,37 @@ try {
   await local.getByRole('textbox', { name: 'New profile name' }).fill('Local Work')
   await local.getByRole('button', { name: 'Add profile', exact: true }).click()
   await local.getByRole('textbox', { name: 'Name for Local Work' }).waitFor()
+  const localPersistence = local.getByRole('checkbox', {
+    name: 'Keep signed in across restarts for Local Work',
+    exact: true,
+  })
+  assert.equal(await localPersistence.isChecked(), false)
+  await localPersistence.check()
+  await local
+    .getByRole('form', { name: 'Browser profile Local Work' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work')
+          .keepSessionCookies,
+    ),
+    true,
+  )
+  await localPersistence.uncheck()
+  await local
+    .getByRole('form', { name: 'Browser profile Local Work' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work')
+          .keepSessionCookies,
+    ),
+    false,
+  )
   const language = local.getByRole('textbox', { name: 'Language for Local Work' })
   assert.equal(await language.inputValue(), 'en-US')
   await language.fill('not_a_locale')
@@ -251,11 +282,33 @@ try {
   await remote.getByRole('textbox', { name: 'New profile name' }).fill('Remote Work')
   await remote.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).waitFor()
+  await remote
+    .getByRole('checkbox', { name: 'Keep signed in across restarts for Remote Work', exact: true })
+    .check()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).fill('Remote Personal')
   await remote.getByRole('button', { name: 'Emoji for Remote Work', exact: true }).click()
   await page.getByRole('option', { name: '🏠 Home', exact: true }).click()
   await remote.getByRole('button', { name: 'Save', exact: true }).last().click()
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).waitFor()
+  assert.equal(
+    await remote
+      .getByRole('checkbox', {
+        name: 'Keep signed in across restarts for Remote Personal',
+        exact: true,
+      })
+      .isChecked(),
+    true,
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls
+          .filter((call) => call.path.endsWith('/save'))
+          .at(-1)
+          .input.profiles.find((profile) => profile.name === 'Remote Personal').keepSessionCookies,
+    ),
+    true,
+  )
   assert.equal(
     await page.evaluate(
       () =>

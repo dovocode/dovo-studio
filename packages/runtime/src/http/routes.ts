@@ -924,9 +924,9 @@ export function route(
           browserProfilesResultSchema,
           yield* serviceResult(body(request)),
         )
-        return yield* serviceResult({
-          profiles: s.preferences.save({ browserProfiles: profiles }).browserProfiles,
-        })
+        const saved = s.preferences.save({ browserProfiles: profiles }).browserProfiles
+        yield* serviceResult(s.browsers.refreshSessionCookies())
+        return yield* serviceResult({ profiles: saved })
       }
       if (method === 'POST' && path === '/api/previews/browser/agent') {
         const { taskId, command } = decode(
