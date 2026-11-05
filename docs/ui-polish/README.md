@@ -105,6 +105,10 @@ source digest, individual coverage, historical findings and provider limits. CI 
 from this design judgment. AGY’s exact Gemini retry returned `503 auth_not_found`; no Gemini
 assessment is claimed.
 
+The [post-approval CI supplement](ci-followup/README.md) records the later button geometry,
+project-initial contrast and keyboard-scroll corrections. Its refreshed captures are separate from
+the frozen 350-frame approval baseline.
+
 A [generated Settings reference](../../output/imagegen/README.md) informed hierarchy and field
 alignment, responsive composition and quieter navigation. The [Opus direction](design-direction.md)
 records the implementation priorities. Generated concepts are separate from the actual application

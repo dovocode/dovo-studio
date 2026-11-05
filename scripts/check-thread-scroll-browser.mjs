@@ -127,6 +127,18 @@ try {
   await page.waitForSelector('[data-task-conversation=second]')
   await bottom()
   await uncollapsed()
+  // A transcript without links remains reachable and scrollable from the keyboard.
+  const viewport = page.locator('[role=log] > div')
+  assert.equal(await viewport.getAttribute('tabindex'), '0')
+  await viewport.focus()
+  assert.equal(await viewport.evaluate((node) => node === document.activeElement), true)
+  await page.keyboard.press('PageUp')
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[role=log] > div')
+    return node.scrollHeight - node.clientHeight - node.scrollTop > 100
+  })
+  await page.keyboard.press('End')
+  await bottom()
   // Growing only the composer changes the viewport, not the observed content size.
   const input = page.getByRole('textbox', { name: 'Message' })
   await input.fill('A longer draft that grows the composer viewport')

@@ -229,23 +229,17 @@ try {
       await page.locator('#storybook-root > *').first().waitFor()
     }
     await openStory('dovo-settings-desktop-settings--scoped-lifecycle-settings')
-    await page
-      .getByRole('status')
-      .filter({ hasText: 'Changes apply to existing tasks too' })
-      .waitFor()
+    await page.getByText('Changes apply to existing threads too.', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Settings project', exact: true }).click()
     await page.getByRole('option', { name: 'Dovo Studio', exact: true }).click()
-    await page.getByText('Dovo Studio project defaults', { exact: true }).waitFor()
-    assert.equal(
-      await page.getByRole('button', { name: 'Settings computer', exact: true }).count(),
-      1,
-    )
+    await page.getByText('Editing Dovo Studio on all computers', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Settings computer', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Settings computer', exact: true }).click()
     await page.getByRole('option', { name: 'All computers', exact: true }).waitFor()
     await page.getByRole('option', { name: 'Preview computer', exact: true }).waitFor()
     await page.keyboard.press('Escape')
     const inactiveSetting = page.getByRole('combobox', {
-      name: 'Auto-settle inactive tasks',
+      name: 'Auto-settle inactive threads',
       exact: true,
     })
     await inactiveSetting.click()
@@ -257,7 +251,7 @@ try {
     assert.equal(await inactiveSetting.innerText(), 'Off')
     await page
       .getByRole('button', {
-        name: 'View inheritance for auto-settle inactive tasks',
+        name: 'View inheritance for auto-settle inactive threads',
         exact: true,
       })
       .click()
@@ -563,15 +557,15 @@ try {
       .waitFor()
 
     await openStory('dovo-composers-production-task-composer--full-production-composer')
-    await page.getByRole('button', { name: 'New thread', exact: true }).click()
+    await page.getByRole('button', { name: 'New task', exact: true }).click()
     // A toolbar click from the empty focused editor must survive focus leaving the editor.
     await page.getByRole('textbox', { name: 'Message thread', exact: true }).focus()
     await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
     await page.getByRole('combobox').waitFor()
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Remove preview.png', exact: true }).click()
+    await page.getByRole('button', { name: 'Remove workspace.png', exact: true }).click()
     await page
-      .getByRole('button', { name: 'Remove preview.png', exact: true })
+      .getByRole('button', { name: 'Remove workspace.png', exact: true })
       .waitFor({ state: 'hidden' })
     const mentionField = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await mentionField.fill('@src')

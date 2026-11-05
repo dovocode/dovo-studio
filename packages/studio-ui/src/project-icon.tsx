@@ -19,7 +19,7 @@ export function ProjectIcon({
         icon
           ? undefined
           : {
-              backgroundColor: `color-mix(in srgb, ${projectIconColor(repository)} 70%, var(--card))`,
+              backgroundColor: projectIconColor(repository),
               color: '#fff',
             }
       }

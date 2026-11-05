@@ -26,7 +26,7 @@ const desktop = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {SettingsSaveBar} from '${ui}settings-layout';
 import * as StudioDialog from '${ui}components/ui/dialog';import * as WebDialog from '${root}packages/web-ui/src/dialog';
-function App(){const [webDialog,setWebDialog]=useState(false);window.setWebDialog=setWebDialog;const {Dialog,DialogTrigger,DialogContent,DialogTitle,DialogDescription}=webDialog?WebDialog:StudioDialog;const [state,setState]=useState('clean'),[long,setLong]=useState(false);window.setSaveState=setState;window.setLong=setLong;return <main className="flex h-screen flex-col"><div className="overflow-y-auto flex-1" aria-label="Scrollable settings"><div className="mx-auto max-w-xl p-4"><p>Settings content</p><div style={{height:long?1600:60}}/><p data-content-end>End of settings</p></div></div><SettingsSaveBar dirty={state==='dirty'||state==='saving'} saving={state==='saving'} saved={state==='saved'} changes={[{key:'name',label:'Name',before:'Old',after:'New'}]} description="No unsaved changes" onSave={()=>setState('saving')} onDiscard={()=>setState('clean')}/><Dialog><DialogTrigger>Open dialog</DialogTrigger><DialogContent><DialogTitle>Connection settings</DialogTitle><DialogDescription>Review your computer connection.</DialogDescription><input aria-label="Connection name" defaultValue="Mac Studio"/></DialogContent></Dialog></main>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [webDialog,setWebDialog]=useState(false);window.setWebDialog=setWebDialog;const {Dialog,DialogTrigger,DialogContent,DialogTitle,DialogDescription}=webDialog?WebDialog:StudioDialog;const [state,setState]=useState('dirty'),[long,setLong]=useState(false);window.setSaveState=setState;window.setLong=setLong;return <main className="flex h-screen flex-col"><div className="overflow-y-auto flex-1" aria-label="Scrollable settings"><div className="mx-auto max-w-xl p-4"><p>Settings content</p><div style={{height:long?1600:60}}/><p data-content-end>End of settings</p></div></div><SettingsSaveBar dirty={state==='dirty'||state==='saving'} saving={state==='saving'} saved={state==='saved'} changes={[{key:'name',label:'Name',before:'Old',after:'New'}]} description="No unsaved changes" onSave={()=>setState('saving')} onDiscard={()=>setState('clean')}/><Dialog><DialogTrigger>Open dialog</DialogTrigger><DialogContent><DialogTitle>Connection settings</DialogTitle><DialogDescription>Review your computer connection.</DialogDescription><input aria-label="Connection name" defaultValue="Mac Studio"/></DialogContent></Dialog></main>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -112,6 +112,15 @@ try {
         await page.waitForFunction(
           ({ nativeUI, state }) => {
             const footer = document.querySelector('[aria-label="Settings save actions"]')
+            if (!nativeUI && (state === 'clean' || state === 'saved')) {
+              const status = document.querySelector('.studio-settings-saved')
+              return (
+                !footer &&
+                status?.textContent.includes(
+                  state === 'saved' ? 'Changes saved.' : 'No unsaved changes',
+                )
+              )
+            }
             return (
               footer.getAttribute('aria-busy') === String(state === 'saving') &&
               footer.textContent.includes(
@@ -129,17 +138,36 @@ try {
           },
           { nativeUI, state },
         )
-        assert.deepEqual(
-          {
-            footer: await footer.boundingBox(),
-            save: await save.boundingBox(),
-            discard: await discard.boundingBox(),
-          },
-          before,
-          `Save actions stay in place: ${nativeUI ? 'mobile' : 'desktop'} ${width}px ${font} ${state}`,
-        )
+        if (nativeUI || state === 'dirty' || state === 'saving') {
+          assert.deepEqual(
+            {
+              footer: await footer.boundingBox(),
+              save: await save.boundingBox(),
+              discard: await discard.boundingBox(),
+            },
+            before,
+            `Active save actions stay in place: ${nativeUI ? 'mobile' : 'desktop'} ${width}px ${font} ${state}`,
+          )
+        } else {
+          assert.equal(await save.count(), 0, 'Clean desktop forms omit Save')
+          assert.equal(await discard.count(), 0, 'Clean desktop forms omit Discard')
+          const cue = page.locator('.studio-settings-saved')
+          await cue.waitFor()
+          const bounds = await cue.boundingBox()
+          assert.ok(
+            bounds.x >= 0 && bounds.x + bounds.width <= width,
+            'Clean status fits the viewport',
+          )
+        }
       }
       if (!nativeUI) {
+        await page.evaluate(() => window.setSaveState('dirty'))
+        await save.waitFor()
+        assert.deepEqual(
+          await save.boundingBox(),
+          before.save,
+          'Returning to dirty restores the action position',
+        )
         const end = page.locator('[data-content-end]')
         const widthBefore = await end.evaluate((node) => node.getBoundingClientRect().width)
         await page.evaluate(() => window.setLong(true))
@@ -217,7 +245,7 @@ try {
       await page.close()
     }
   console.log(
-    'Layout stability: desktop/mobile save states preserve action geometry; scrollbars preserve content width; dialogs fade without moving controls at phone/tablet/desktop widths and larger text.',
+    'Layout stability: active desktop saves and all mobile states preserve action geometry; clean desktop forms show status without actions; scrollbars preserve content width; dialogs fade without moving controls at phone/tablet/desktop widths and larger text.',
   )
 } finally {
   await browser.close()

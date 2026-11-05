@@ -1,0 +1,5913 @@
+{
+  "screens": [
+    {
+      "name": "busy-conversation",
+      "mode": "dark",
+      "route": "tasks",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "New thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Organize sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Filter threads by project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioNeeds inputKeep keyboard focus visible when switching projects and opening thread toolsfeature/navigation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioWorkingMake project navigation easier to scan across a busy workspacefeature/navigation42",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioStoppedExplore a compact archive view for completed maintenance threadsfeature/archive",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OPOperations APIReviewAdd a clear health response for background workers and scheduled jobsfeature/health",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OPOperations APIWorkingFix cursor pagination when several activity events share a timestampfeature/pagination",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioWorkingRecover the conversation after a laptop resumes on the local networkfeature/reconnect",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "CLClient portalFailedExplain attachment upload failures without losing the current draftfeature/upload",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OPOperations APIFinishedDocument webhook delivery, retry limits and failure recoveryfeature/webhooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Show thread info",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "feature/navigation · Branch actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Manage linked pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Bookmark reply",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Bookmark reply",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy Code",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Keep the existing blue accent and soften the page background",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Preserve keyboard navigation between threads and tools",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Give long project names and branch labels a predictable overflow treatment",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Compare the mobile layout with the desktop workspace",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Review the attached screenshot before publishing",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Bookmark reply",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jump to turn 1: The project landing page is hard to scan once several threads are active. Make the navigation clearer and keep the current thread easy to find. Please preserve the existing keyboar",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jump to turn 2: Include the case where Files and the bottom terminal are both open. I often read a response while checking a change, and the conversation should still be comfortable at that width.",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jump to turn 3: Keep the follow-up queue visible. Show me what changed and what still needs a visual review.",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Collapse composer activity",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pause queue",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Drag queued message 1 to reorder",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 1 earlier",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 1 later",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pause queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Edit queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remove queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Cancel queued message 1 and return it to the composer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Steer with queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Drag queued message 2 to reorder",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 2 earlier",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 2 later",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "Pause queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Edit queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remove queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Cancel queued message 2 and return it to the composer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Steer with queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Preview workspace.png",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Edit workspace.png",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remove workspace.png",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Attach files",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Choose attachments",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More composer actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Choose agent and model",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Queue follow-up",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Stop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Show tools pane",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Files",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Linked projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Diff",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Linked PRs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Side chats",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Show bottom terminal",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browsers",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Customize thread info",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Close thread info",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Markdown source",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Stashed drafts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Attach thread context",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nThreads\nNeeds input\n1\nST\nDovo Studio\nNeeds input\nKeep keyboard focus visible when switching projects and opening thread tools\nfeature/navigation\nSettle\nOpen\n7\nST\nDovo Studio\nWorking\nMake project navigation easier to scan across a busy workspace\nfeature/navigation\n42\nSettle\nST\nDovo Studio\nStopped\nExplore a compact archive view for completed maintenance threads\nfeature/archive\nSettle\nOP\nOperations API\nReview\nAdd a clear health response for background workers and scheduled jobs\nfeature/health\nSettle\nOP\nOperations API\nWorking\nFix cursor pagination when several activity events share a timestamp\nfeature/pagination\nSettle\nST\nDovo Studio\nWorking\nRecover the conversation after a laptop resumes on the local network\nfeature/reconnect\nSettle\nCL\nClient portal\nFailed\nExplain attachment upload failures without losing the current draft\nfeature/upload\nSettle\nOP\nOperations API\nFinished\nDocument webhook delivery, retry limits and failure recovery\nfeature/webhooks\nSettle\nWaiting\n1\nSnoozed\n1\nST\nDovo Studio\n/\nMake project navigation easier to scan across a busy workspace\nfeature/navigation\n·\nWorking\n\nYou\n\nThe project landing page is hard to scan once several threads are active. Make the navigation clearer and keep the current thread easy to find. Please preserve the existing keyboard flow.\n\n10:00 AM\nAgent\n\nI will review the project list, thread header and composer together. The first pass will keep the current layout and focus on selection, spacing and long titles.\n\n10:01 AM\nYou\n\nInclude the case where Files and the bottom terminal are both open. I often read a response while checking a change, and the conversation should still be comfortable at that width.\n\n10:04 AM\nAgent\n\nThe shared layout is in place. I am checking the selected thread, long branch labels and queued messages with both panels open.\n\n10:06 AM\nYou\n\nKeep the follow-up queue visible. Show me what changed and what still needs a visual review.\n\n10:08 AM\nAgent\n\nThe navigation changes are ready for a visual pass. The project name now anchors the header, while the active thread and its actions share a single row. Long titles wrap in the conversation header and stay on one line in the thread list.\n\nWhat changed\nProject navigation: each project keeps its own threads together, with the current thread clearly selected.\nConversation hierarchy: user requests, progress updates and the final response have distinct spacing, without adding another container around each message.\nNarrow workspaces: opening Files reduces the conversation width without hiding the composer or pushing the page sideways.\n\nThe selected state comes from the active thread ID. That keeps the list and conversation in agreement when a user switches projects:\n\ntsx\nconst selected = thread.id === activeThreadId\n\n\nreturn (\n  <ThreadRow\n    thread={thread}\n    selected={selected}\n    onSelect={() => openThread(thread.id)}\n  />\n)\nReview checklist\nKeep the existing blue accent and soften the page background\nPreserve keyboard navigation between threads and tools\nGive long project names and branch labels a predictable overflow treatment\nCompare the mobile layout with the desktop workspace\nReview the attached screenshot before publishing\n\nThe branch is feature/navigation, linked to PR #42. In this synthetic preview, the two queued follow-ups below remain separate from the conversation so the current request stays easy to read. Open Files alongside the terminal to check whether the same hierarchy holds under everyday workspace density.\n\n10:09 AM\n\nWorking\n\n2 queued messages\n2 queued\n· after this turn\n1\nKeep the existing blue accent, but soften the background.\n2\nPlease include a mobile screenshot when you finish.\n· 1 file\n1 file\nworkspace.png\n\n\n\n\n6.1 Sol\nHigh\n1"
+    },
+    {
+      "name": "pulls-dense",
+      "mode": "dark",
+      "route": "pulls",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Refresh pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Connections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Create pull request",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Manage devices · 1 of 1 online",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Search commands",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "All PRs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Authored by me",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Assigned to me",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Involves me",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Filters",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR repository",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR state",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR sort",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR draft status",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Your review requests, blocked PRs, and your approved PRs with passing checks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#142Dovo Studio · Preview computerReconnect to a paired computer without losing the active thread or its queued messagesDdominicfix/runtime-reconnection-and-queued-thread-continuity→main+68−128uineeds-review+1Repository CI: failedChanges requestedYour review requestedOct 29, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #142",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#141Dovo Studio · Preview computerFix keyboard focusSsam-chenfix/keyboard-focus→main+3−10maintenanceRepository CI: passedApprovedOct 28, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #141",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Draft#140Dovo Studio · Preview computerKeep project selection stable when a VPN computer reconnects during a long running reviewAalex-riverafeature/project-runtime-selection→main+142−383maintenanceRepository CI: pendingReview requiredOct 27, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #140",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#139Dovo Studio · Preview computerShow branch tracking statusRrobinchore/branch-status→main+24−512uineeds-review+1No CI status reportedChanges requestedOct 26, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #139",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#138Dovo Studio · Preview computerPreserve the three line composer draft while switching between project tools and terminalDdominicfix/runtime-reconnection-and-queued-thread-continuity→feature/composer-tools+68−128maintenanceRepository CI: failedApprovedYour review requestedOct 25, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #138",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#137Dovo Studio · Preview computerImprove empty statesSsam-chenfix/keyboard-focus→main+3−10maintenanceRepository CI: passedReview requiredOct 24, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #137",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#136Dovo Studio · Preview computerDisplay the selected account and project before opening a pull request from another computerAalex-riverafeature/project-runtime-selection→main+142−383uineeds-review+1Repository CI: pendingChanges requestedOct 23, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #136",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Draft#135Dovo Studio · Preview computerRefresh stale checksRrobinchore/branch-status→main+24−512maintenanceNo CI status reportedApprovedOct 22, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #135",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#134Dovo Studio · Preview computerLet reviewers compare staged and working files independently before preparing a commitDdominicfix/runtime-reconnection-and-queued-thread-continuity→main+68−128maintenanceRepository CI: failedReview requiredYour review requestedOct 21, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #134",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#133Dovo Studio · Preview computerClarify runtime labelsSsam-chenfix/keyboard-focus→main+3−10uineeds-review+1Repository CI: passedChanges requestedOct 20, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #133",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#132Dovo Studio · Preview computerKeep unsaved agent instructions visible when scrolling through connection and model optionsAalex-riverafeature/project-runtime-selection→main+142−383maintenanceRepository CI: pendingApprovedOct 19, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #132",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#131Dovo Studio · Preview computerTrim sidebar spacingRrobinchore/branch-status→main+24−512maintenanceNo CI status reportedReview requiredOct 18, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #131",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Draft#130Dovo Studio · Preview computerRestore issue list scroll position after reviewing a discussion with a long project titleDdominicfix/runtime-reconnection-and-queued-thread-continuity→main+68−128uineeds-review+1Repository CI: failedChanges requestedOct 17, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #130",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#129Dovo Studio · Preview computerAlign action menusSsam-chenfix/keyboard-focus→main+3−10maintenanceRepository CI: passedApprovedOct 16, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #129",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nPull requests\nConnections\nCreate PR\n1/1\nSearch commands\nAll PRs\n14\nAuthored by me\n0\nReview requests\n4\nAssigned to me\n0\nInvolves me\n0\nFilters\nOpen\n#142\nDovo Studio · Preview computer\n\nReconnect to a paired computer without losing the active thread or its queued messages\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nmain\n+68\n−12\n8\nui\nneeds-review\n+1\nRepository CI: failed\nChanges requested\nYour review requested\nOct 29, 2026\nOpen\n#141\nDovo Studio · Preview computer\n\nFix keyboard focus\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nmaintenance\nRepository CI: passed\nApproved\nOct 28, 2026\nDraft\n#140\nDovo Studio · Preview computer\n\nKeep project selection stable when a VPN computer reconnects during a long running review\n\nA\nalex-rivera\nfeature/project-runtime-selection\n→\nmain\n+142\n−38\n3\nmaintenance\nRepository CI: pending\nReview required\nOct 27, 2026\nOpen\n#139\nDovo Studio · Preview computer\n\nShow branch tracking status\n\nR\nrobin\nchore/branch-status\n→\nmain\n+24\n−5\n12\nui\nneeds-review\n+1\nNo CI status reported\nChanges requested\nOct 26, 2026\nOpen\n#138\nDovo Studio · Preview computer\n\nPreserve the three line composer draft while switching between project tools and terminal\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nfeature/composer-tools\n+68\n−12\n8\nmaintenance\nRepository CI: failed\nApproved\nYour review requested\nOct 25, 2026\nOpen\n#137\nDovo Studio · Preview computer\n\nImprove empty states\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nmaintenance\nRepository CI: passed\nReview required\nOct 24, 2026\nOpen\n#136\nDovo Studio · Preview computer\n\nDisplay the selected account and project before opening a pull request from another computer\n\nA\nalex-rivera\nfeature/project-runtime-selection\n→\nmain\n+142\n−38\n3\nui\nneeds-review\n+1\nRepository CI: pending\nChanges requested\nOct 23, 2026\nDraft\n#135\nDovo Studio · Preview computer\n\nRefresh stale checks\n\nR\nrobin\nchore/branch-status\n→\nmain\n+24\n−5\n12\nmaintenance\nNo CI status reported\nApproved\nOct 22, 2026\nOpen\n#134\nDovo Studio · Preview computer\n\nLet reviewers compare staged and working files independently before preparing a commit\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nmain\n+68\n−12\n8\nmaintenance\nRepository CI: failed\nReview required\nYour review requested\nOct 21, 2026\nOpen\n#133\nDovo Studio · Preview computer\n\nClarify runtime labels\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nui\nneeds-review\n+1\nRepository CI: passed\nChanges requested\nOct 20, 2026\nOpen\n#132\nDovo Studio · Preview computer\n\nKeep unsaved agent instructions visible when scrolling through connection and model options\n\nA\nalex-rivera\nfeature/project-runtime-selection\n→\nmain\n+142\n−38\n3\nmaintenance\nRepository CI: pending\nApproved\nOct 19, 2026\nOpen\n#131\nDovo Studio · Preview computer\n\nTrim sidebar spacing\n\nR\nrobin\nchore/branch-status\n→\nmain\n+24\n−5\n12\nmaintenance\nNo CI status reported\nReview required\nOct 18, 2026\nDraft\n#130\nDovo Studio · Preview computer\n\nRestore issue list scroll position after reviewing a discussion with a long project title\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nmain\n+68\n−12\n8\nui\nneeds-review\n+1\nRepository CI: failed\nChanges requested\nOct 17, 2026\nOpen\n#129\nDovo Studio · Preview computer\n\nAlign action menus\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nmaintenance\nRepository CI: passed\nApproved\nOct 16, 2026"
+    },
+    {
+      "name": "agents-dirty",
+      "mode": "dark",
+      "route": "agents",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings inheritance details",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Add profile",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agent profile",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search agent profiles",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CodexBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Claude CodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Mistral VibeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OpenCodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CursorBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "GitHub CopilotBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "HermesBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Grok BuildBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MuseBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate Codex",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Favorite Codex",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Name",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Robot",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Code",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Builder",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Shield",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Bug",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Research",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Rocket",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Terminal",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Writer",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Brain",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Experiment",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Model",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Refresh models",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Reasoning level",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Service tier",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Daybreak mode",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Model preference scope",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "This computerAll computers",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Access mode",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "SupervisedAuto-accept editsAutoFull access",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Cloud integrations",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "Provider defaultEnabledDisabled",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Approval policy",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Sandbox",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Instructions",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Connection / executable",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Environment variables",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "2 unsaved changes",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Discard",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Save changes",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Check provider",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open thread defaults",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nAgents\nAgents\n\nAgent profiles: the provider, model, access and instructions each coding agent uses.\n\nEditing all projects on all computers · Profile edits apply after saving.\nScope\nShared defaults\nProject\nAll projects\nComputer\nAll computers\nAgent profiles\n\nCustomize a provider profile or add your own.\n\nAdd profile\nCodex\nBuilt-in\nClaude Code\nBuilt-in\nMistral Vibe\nBuilt-in\nOpenCode\nBuilt-in\nCursor\nBuilt-in\nGitHub Copilot\nBuilt-in\nHermes\nBuilt-in\nGrok Build\nBuilt-in\nMuse\nBuilt-in\nCodex\nBuilt-in profile\nProfile inheritance\nName\nProfile icon\nModel\nProvider default\nReasoning level\nProvider default\nAdvanced provider options\nModel visibility & favorites\nAccess mode\nFull access\nSupervised\nAuto-accept edits\nAuto\nFull access\n\nAllow commands and edits without prompts.\n\nCloud integrations\nProvider default\nProvider default\nEnabled\nDisabled\n\nUse apps already connected to your ChatGPT account, such as Google Drive or Slack. Requires account sign-in on the computer running the thread. Provider restrictions and tool approvals still apply.\n\nAdvanced · Full access\nInstructions\nConnection & account\n\nOptional. Leave blank to use the provider installed and signed in on the computer that runs the thread. Paths refer to that computer.\n\nConnection / executable\nConfig directory (CODEX_HOME)\nExecutable arguments (one per line)\nEnvironment variables\n\nOne NAME=value per line. Stored as readable settings, so keep secrets in the computer’s own environment.\n\n2 unsaved changes\n\nCodex · Renames to Runtime navigation reviewer on save · All computers & projects. Applies to new turns.\n\nDiscard\nSave changes\nCheck installation & sign-in\nDefault agent for new threads\n\nPick which profile new threads start with, and their default access, in Thread defaults.\n\nOpen thread defaults\nInstallations & sign-in\n\nProvider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the Computer selector above to manage them."
+    },
+    {
+      "name": "agents",
+      "mode": "dark",
+      "route": "agents",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings inheritance details",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Add profile",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agent profile",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search agent profiles",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CodexBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Claude CodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Mistral VibeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OpenCodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CursorBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "GitHub CopilotBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "HermesBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Grok BuildBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MuseBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate Codex",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Favorite Codex",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Name",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Robot",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Code",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Builder",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Shield",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Bug",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Research",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Rocket",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Terminal",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Writer",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Brain",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Experiment",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Model",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Refresh models",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Reasoning level",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Service tier",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Daybreak mode",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Model preference scope",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "This computerAll computers",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Access mode",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "SupervisedAuto-accept editsAutoFull access",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Cloud integrations",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "Provider defaultEnabledDisabled",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Approval policy",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Sandbox",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Instructions",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Connection / executable",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Environment variables",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Check provider",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open thread defaults",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nAgents\nAgents\n\nAgent profiles: the provider, model, access and instructions each coding agent uses.\n\nEditing all projects on all computers · Profile edits apply after saving.\nScope\nShared defaults\nProject\nAll projects\nComputer\nAll computers\nAgent profiles\n\nCustomize a provider profile or add your own.\n\nAdd profile\nCodex\nBuilt-in\nClaude Code\nBuilt-in\nMistral Vibe\nBuilt-in\nOpenCode\nBuilt-in\nCursor\nBuilt-in\nGitHub Copilot\nBuilt-in\nHermes\nBuilt-in\nGrok Build\nBuilt-in\nMuse\nBuilt-in\nCodex\nBuilt-in profile\nProfile inheritance\nName\nProfile icon\nModel\nProvider default\nReasoning level\nProvider default\nAdvanced provider options\nModel visibility & favorites\nAccess mode\nFull access\nSupervised\nAuto-accept edits\nAuto\nFull access\n\nAllow commands and edits without prompts.\n\nCloud integrations\nProvider default\nProvider default\nEnabled\nDisabled\n\nUse apps already connected to your ChatGPT account, such as Google Drive or Slack. Requires account sign-in on the computer running the thread. Provider restrictions and tool approvals still apply.\n\nAdvanced · Full access\nInstructions\nConnection & account\n\nCodex · All computers & projects. Applies to new turns.\n\nCheck installation & sign-in\nDefault agent for new threads\n\nPick which profile new threads start with, and their default access, in Thread defaults.\n\nOpen thread defaults\nInstallations & sign-in\n\nProvider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the Computer selector above to manage them."
+    },
+    {
+      "name": "task-behavior",
+      "mode": "dark",
+      "route": "task-behavior",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings inheritance details",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Restart & archiving defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR settling defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-resume limited threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-resume limited threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for snooze limited threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Snooze limited threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-settle merged threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-settle merged threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-settle closed threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-settle closed threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-settle inactive threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-settle inactive threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-archive settled threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-archive settled threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for continue threads after restarts",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Continue threads after restarts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for days of inactivity before settling",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Days of inactivity before settling",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for days in settled before archiving",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Days in Settled before archiving",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nThread lifecycle\nThread lifecycle\n\nRecovery, settling and archiving for new and existing threads.\n\nEditing all projects on all computers · Edits apply after saving.\nScope\nShared defaults\nProject\nAll projects\nComputer\nAll computers\nHow inherited lifecycle rules work\n\nComputer-policy fallbacks shown here are reported by Preview computer. Each computer uses its own policies.\n\nAutomation & limits\nSave to apply\n\nApplies to existing and new threads. Inherit uses the parent scope.\n\nAuto-resume limited threads\n\nContinue at the provider’s reported reset time. Each thread can cancel its continuation.\n\nInherit (Off)\n\nSnooze limited threads\n\nHide quota stops until their reported reset time. Combine with auto-resume to continue when they wake.\n\nInherit (Off)\n\nAuto-settle merged threads\n\nMove idle threads to Settled when their pull request merges.\n\nInherit (Off)\n\nAuto-settle closed threads\n\nMove idle threads to Settled when their pull request closes.\n\nInherit (Off)\n\nAuto-settle inactive threads\n\nSettle idle threads after the selected period. Pins, drafts and pending work are protected.\n\nInherit (Off)\n\nAuto-archive settled threads\n\nArchive threads after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.\n\nInherit\n\nComputer policy · Never\n\nContinue threads after restarts\n\nResume interrupted turns after a runtime update, crash or computer restart.\n\nInherit (Off)\n\nDays of inactivity before settling\n\nEffective: 3 days. Applies when automatic settling is on.\n\nDays in Settled before archiving\n\nEffective: 7 days. Applies when auto-archive is on.\n\nChanges apply to existing threads too."
+    },
+    {
+      "name": "runtime",
+      "mode": "dark",
+      "route": "runtime",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer updates",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Set up Linux server",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Connect computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Manage Preview computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More actions for Preview computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Connect your phone",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Reset to defaults",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nDevices & runtime\nDevices & runtime\n\nConnect computers and phones, manage trusted devices and check runtime health.\n\nComputer settings stay on each computer. Service URLs use Save on this device.\nYour computers\n\nThreads and projects from these computers appear in your workspace.\n\nComputer updates\nSet up Linux server\nConnect computer\n\nPreview computer\nOnline\n\nDirect · HTTP / HTTPS · LAN / VPN\n\nhttp://127.0.0.1:42809\n\nManage\nMore\nConnect your phone\n\nFollow and answer threads from the Dovo iPhone or Android app. Scan a QR code or type an eight-digit code.\n\nConnect your phone\nDovo services\nSave to apply\n\nSaved on this device. Account sessions stay separate for each Connect server.\n\nDovo Connect URL\n\nUsed for new computer setup. Existing Connect connections keep their server until Connect is disabled and enabled again through LAN / VPN pairing.\n\nDovo Artifacts URL\n\nLeave Artifacts blank to use the store announced by Connect. A custom URL must also be configured on your Connect broker and artifact server; Studio checks they match before sharing.\n\nReset to defaults\nThis device · no unsaved service URL changes.\n\nThreads and projects appear together; each runs on its own computer. Use a reachable LAN, Tailscale or NetBird address. HTTP and optional HTTPS are supported."
+    },
+    {
+      "name": "busy-conversation",
+      "mode": "light",
+      "route": "tasks",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "New thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Organize sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Filter threads by project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioNeeds inputKeep keyboard focus visible when switching projects and opening thread toolsfeature/navigation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioWorkingMake project navigation easier to scan across a busy workspacefeature/navigation42",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioStoppedExplore a compact archive view for completed maintenance threadsfeature/archive",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OPOperations APIReviewAdd a clear health response for background workers and scheduled jobsfeature/health",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OPOperations APIWorkingFix cursor pagination when several activity events share a timestampfeature/pagination",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "STDovo StudioWorkingRecover the conversation after a laptop resumes on the local networkfeature/reconnect",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "CLClient portalFailedExplain attachment upload failures without losing the current draftfeature/upload",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OPOperations APIFinishedDocument webhook delivery, retry limits and failure recoveryfeature/webhooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Snooze thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settle thread",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Show thread info",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "feature/navigation · Branch actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Manage linked pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Bookmark reply",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Bookmark reply",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Copy Code",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Keep the existing blue accent and soften the page background",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Preserve keyboard navigation between threads and tools",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Give long project names and branch labels a predictable overflow treatment",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Compare the mobile layout with the desktop workspace",
+          "disabled": true
+        },
+        {
+          "role": "input",
+          "label": "Review the attached screenshot before publishing",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "Copy message",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Bookmark reply",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jump to turn 1: The project landing page is hard to scan once several threads are active. Make the navigation clearer and keep the current thread easy to find. Please preserve the existing keyboar",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jump to turn 2: Include the case where Files and the bottom terminal are both open. I often read a response while checking a change, and the conversation should still be comfortable at that width.",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jump to turn 3: Keep the follow-up queue visible. Show me what changed and what still needs a visual review.",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Collapse composer activity",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pause queue",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Drag queued message 1 to reorder",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 1 earlier",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 1 later",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pause queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Edit queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remove queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Cancel queued message 1 and return it to the composer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Steer with queued message 1",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Drag queued message 2 to reorder",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 2 earlier",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Move queued message 2 later",
+          "disabled": true
+        },
+        {
+          "role": "button",
+          "label": "Pause queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Edit queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remove queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Cancel queued message 2 and return it to the composer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Steer with queued message 2",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Preview workspace.png",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Edit workspace.png",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remove workspace.png",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Attach files",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Choose attachments",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More composer actions",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Choose agent and model",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Queue follow-up",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Stop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Show tools pane",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Files",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Linked projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Diff",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Linked PRs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Side chats",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Show bottom terminal",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browsers",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Customize thread info",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Close thread info",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Markdown source",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Stashed drafts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Attach thread context",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nThreads\nNeeds input\n1\nST\nDovo Studio\nNeeds input\nKeep keyboard focus visible when switching projects and opening thread tools\nfeature/navigation\nSettle\nOpen\n7\nST\nDovo Studio\nWorking\nMake project navigation easier to scan across a busy workspace\nfeature/navigation\n42\nSettle\nST\nDovo Studio\nStopped\nExplore a compact archive view for completed maintenance threads\nfeature/archive\nSettle\nOP\nOperations API\nReview\nAdd a clear health response for background workers and scheduled jobs\nfeature/health\nSettle\nOP\nOperations API\nWorking\nFix cursor pagination when several activity events share a timestamp\nfeature/pagination\nSettle\nST\nDovo Studio\nWorking\nRecover the conversation after a laptop resumes on the local network\nfeature/reconnect\nSettle\nCL\nClient portal\nFailed\nExplain attachment upload failures without losing the current draft\nfeature/upload\nSettle\nOP\nOperations API\nFinished\nDocument webhook delivery, retry limits and failure recovery\nfeature/webhooks\nSettle\nWaiting\n1\nSnoozed\n1\nST\nDovo Studio\n/\nMake project navigation easier to scan across a busy workspace\nfeature/navigation\n·\nWorking\n\nYou\n\nThe project landing page is hard to scan once several threads are active. Make the navigation clearer and keep the current thread easy to find. Please preserve the existing keyboard flow.\n\n10:00 AM\nAgent\n\nI will review the project list, thread header and composer together. The first pass will keep the current layout and focus on selection, spacing and long titles.\n\n10:01 AM\nYou\n\nInclude the case where Files and the bottom terminal are both open. I often read a response while checking a change, and the conversation should still be comfortable at that width.\n\n10:04 AM\nAgent\n\nThe shared layout is in place. I am checking the selected thread, long branch labels and queued messages with both panels open.\n\n10:06 AM\nYou\n\nKeep the follow-up queue visible. Show me what changed and what still needs a visual review.\n\n10:08 AM\nAgent\n\nThe navigation changes are ready for a visual pass. The project name now anchors the header, while the active thread and its actions share a single row. Long titles wrap in the conversation header and stay on one line in the thread list.\n\nWhat changed\nProject navigation: each project keeps its own threads together, with the current thread clearly selected.\nConversation hierarchy: user requests, progress updates and the final response have distinct spacing, without adding another container around each message.\nNarrow workspaces: opening Files reduces the conversation width without hiding the composer or pushing the page sideways.\n\nThe selected state comes from the active thread ID. That keeps the list and conversation in agreement when a user switches projects:\n\ntsx\nconst selected = thread.id === activeThreadId\n\n\nreturn (\n  <ThreadRow\n    thread={thread}\n    selected={selected}\n    onSelect={() => openThread(thread.id)}\n  />\n)\nReview checklist\nKeep the existing blue accent and soften the page background\nPreserve keyboard navigation between threads and tools\nGive long project names and branch labels a predictable overflow treatment\nCompare the mobile layout with the desktop workspace\nReview the attached screenshot before publishing\n\nThe branch is feature/navigation, linked to PR #42. In this synthetic preview, the two queued follow-ups below remain separate from the conversation so the current request stays easy to read. Open Files alongside the terminal to check whether the same hierarchy holds under everyday workspace density.\n\n10:09 AM\n\nWorking\n\n2 queued messages\n2 queued\n· after this turn\n1\nKeep the existing blue accent, but soften the background.\n2\nPlease include a mobile screenshot when you finish.\n· 1 file\n1 file\nworkspace.png\n\n\n\n\n6.1 Sol\nHigh\n1"
+    },
+    {
+      "name": "pulls-dense",
+      "mode": "light",
+      "route": "pulls",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Refresh pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Connections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Create pull request",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Manage devices · 1 of 1 online",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Search commands",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "All PRs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Authored by me",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Assigned to me",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Involves me",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Filters",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR repository",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR state",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR sort",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR draft status",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Your review requests, blocked PRs, and your approved PRs with passing checks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#142Dovo Studio · Preview computerReconnect to a paired computer without losing the active thread or its queued messagesDdominicfix/runtime-reconnection-and-queued-thread-continuity→main+68−128uineeds-review+1Repository CI: failedChanges requestedYour review requestedOct 29, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #142",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#141Dovo Studio · Preview computerFix keyboard focusSsam-chenfix/keyboard-focus→main+3−10maintenanceRepository CI: passedApprovedOct 28, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #141",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Draft#140Dovo Studio · Preview computerKeep project selection stable when a VPN computer reconnects during a long running reviewAalex-riverafeature/project-runtime-selection→main+142−383maintenanceRepository CI: pendingReview requiredOct 27, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #140",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#139Dovo Studio · Preview computerShow branch tracking statusRrobinchore/branch-status→main+24−512uineeds-review+1No CI status reportedChanges requestedOct 26, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #139",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#138Dovo Studio · Preview computerPreserve the three line composer draft while switching between project tools and terminalDdominicfix/runtime-reconnection-and-queued-thread-continuity→feature/composer-tools+68−128maintenanceRepository CI: failedApprovedYour review requestedOct 25, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #138",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#137Dovo Studio · Preview computerImprove empty statesSsam-chenfix/keyboard-focus→main+3−10maintenanceRepository CI: passedReview requiredOct 24, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #137",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#136Dovo Studio · Preview computerDisplay the selected account and project before opening a pull request from another computerAalex-riverafeature/project-runtime-selection→main+142−383uineeds-review+1Repository CI: pendingChanges requestedOct 23, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #136",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Draft#135Dovo Studio · Preview computerRefresh stale checksRrobinchore/branch-status→main+24−512maintenanceNo CI status reportedApprovedOct 22, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #135",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#134Dovo Studio · Preview computerLet reviewers compare staged and working files independently before preparing a commitDdominicfix/runtime-reconnection-and-queued-thread-continuity→main+68−128maintenanceRepository CI: failedReview requiredYour review requestedOct 21, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #134",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#133Dovo Studio · Preview computerClarify runtime labelsSsam-chenfix/keyboard-focus→main+3−10uineeds-review+1Repository CI: passedChanges requestedOct 20, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #133",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#132Dovo Studio · Preview computerKeep unsaved agent instructions visible when scrolling through connection and model optionsAalex-riverafeature/project-runtime-selection→main+142−383maintenanceRepository CI: pendingApprovedOct 19, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #132",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#131Dovo Studio · Preview computerTrim sidebar spacingRrobinchore/branch-status→main+24−512maintenanceNo CI status reportedReview requiredOct 18, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #131",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Draft#130Dovo Studio · Preview computerRestore issue list scroll position after reviewing a discussion with a long project titleDdominicfix/runtime-reconnection-and-queued-thread-continuity→main+68−128uineeds-review+1Repository CI: failedChanges requestedOct 17, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #130",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open#129Dovo Studio · Preview computerAlign action menusSsam-chenfix/keyboard-focus→main+3−10maintenanceRepository CI: passedApprovedOct 16, 2026",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Actions for PR #129",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nPull requests\nConnections\nCreate PR\n1/1\nSearch commands\nAll PRs\n14\nAuthored by me\n0\nReview requests\n4\nAssigned to me\n0\nInvolves me\n0\nFilters\nOpen\n#142\nDovo Studio · Preview computer\n\nReconnect to a paired computer without losing the active thread or its queued messages\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nmain\n+68\n−12\n8\nui\nneeds-review\n+1\nRepository CI: failed\nChanges requested\nYour review requested\nOct 29, 2026\nOpen\n#141\nDovo Studio · Preview computer\n\nFix keyboard focus\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nmaintenance\nRepository CI: passed\nApproved\nOct 28, 2026\nDraft\n#140\nDovo Studio · Preview computer\n\nKeep project selection stable when a VPN computer reconnects during a long running review\n\nA\nalex-rivera\nfeature/project-runtime-selection\n→\nmain\n+142\n−38\n3\nmaintenance\nRepository CI: pending\nReview required\nOct 27, 2026\nOpen\n#139\nDovo Studio · Preview computer\n\nShow branch tracking status\n\nR\nrobin\nchore/branch-status\n→\nmain\n+24\n−5\n12\nui\nneeds-review\n+1\nNo CI status reported\nChanges requested\nOct 26, 2026\nOpen\n#138\nDovo Studio · Preview computer\n\nPreserve the three line composer draft while switching between project tools and terminal\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nfeature/composer-tools\n+68\n−12\n8\nmaintenance\nRepository CI: failed\nApproved\nYour review requested\nOct 25, 2026\nOpen\n#137\nDovo Studio · Preview computer\n\nImprove empty states\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nmaintenance\nRepository CI: passed\nReview required\nOct 24, 2026\nOpen\n#136\nDovo Studio · Preview computer\n\nDisplay the selected account and project before opening a pull request from another computer\n\nA\nalex-rivera\nfeature/project-runtime-selection\n→\nmain\n+142\n−38\n3\nui\nneeds-review\n+1\nRepository CI: pending\nChanges requested\nOct 23, 2026\nDraft\n#135\nDovo Studio · Preview computer\n\nRefresh stale checks\n\nR\nrobin\nchore/branch-status\n→\nmain\n+24\n−5\n12\nmaintenance\nNo CI status reported\nApproved\nOct 22, 2026\nOpen\n#134\nDovo Studio · Preview computer\n\nLet reviewers compare staged and working files independently before preparing a commit\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nmain\n+68\n−12\n8\nmaintenance\nRepository CI: failed\nReview required\nYour review requested\nOct 21, 2026\nOpen\n#133\nDovo Studio · Preview computer\n\nClarify runtime labels\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nui\nneeds-review\n+1\nRepository CI: passed\nChanges requested\nOct 20, 2026\nOpen\n#132\nDovo Studio · Preview computer\n\nKeep unsaved agent instructions visible when scrolling through connection and model options\n\nA\nalex-rivera\nfeature/project-runtime-selection\n→\nmain\n+142\n−38\n3\nmaintenance\nRepository CI: pending\nApproved\nOct 19, 2026\nOpen\n#131\nDovo Studio · Preview computer\n\nTrim sidebar spacing\n\nR\nrobin\nchore/branch-status\n→\nmain\n+24\n−5\n12\nmaintenance\nNo CI status reported\nReview required\nOct 18, 2026\nDraft\n#130\nDovo Studio · Preview computer\n\nRestore issue list scroll position after reviewing a discussion with a long project title\n\nD\ndominic\nfix/runtime-reconnection-and-queued-thread-continuity\n→\nmain\n+68\n−12\n8\nui\nneeds-review\n+1\nRepository CI: failed\nChanges requested\nOct 17, 2026\nOpen\n#129\nDovo Studio · Preview computer\n\nAlign action menus\n\nS\nsam-chen\nfix/keyboard-focus\n→\nmain\n+3\n−1\n0\nmaintenance\nRepository CI: passed\nApproved\nOct 16, 2026"
+    },
+    {
+      "name": "agents-dirty",
+      "mode": "light",
+      "route": "agents",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings inheritance details",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Add profile",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agent profile",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search agent profiles",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CodexBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Claude CodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Mistral VibeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OpenCodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CursorBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "GitHub CopilotBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "HermesBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Grok BuildBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MuseBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate Codex",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Favorite Codex",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Name",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Robot",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Code",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Builder",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Shield",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Bug",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Research",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Rocket",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Terminal",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Writer",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Brain",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Experiment",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Model",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Refresh models",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Reasoning level",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Service tier",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Daybreak mode",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Model preference scope",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "This computerAll computers",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Access mode",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "SupervisedAuto-accept editsAutoFull access",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Cloud integrations",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "Provider defaultEnabledDisabled",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Approval policy",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Sandbox",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Instructions",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Connection / executable",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Environment variables",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "2 unsaved changes",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Discard",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Save changes",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Check provider",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open thread defaults",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nAgents\nAgents\n\nAgent profiles: the provider, model, access and instructions each coding agent uses.\n\nEditing all projects on all computers · Profile edits apply after saving.\nScope\nShared defaults\nProject\nAll projects\nComputer\nAll computers\nAgent profiles\n\nCustomize a provider profile or add your own.\n\nAdd profile\nCodex\nBuilt-in\nClaude Code\nBuilt-in\nMistral Vibe\nBuilt-in\nOpenCode\nBuilt-in\nCursor\nBuilt-in\nGitHub Copilot\nBuilt-in\nHermes\nBuilt-in\nGrok Build\nBuilt-in\nMuse\nBuilt-in\nCodex\nBuilt-in profile\nProfile inheritance\nName\nProfile icon\nModel\nProvider default\nReasoning level\nProvider default\nAdvanced provider options\nModel visibility & favorites\nAccess mode\nFull access\nSupervised\nAuto-accept edits\nAuto\nFull access\n\nAllow commands and edits without prompts.\n\nCloud integrations\nProvider default\nProvider default\nEnabled\nDisabled\n\nUse apps already connected to your ChatGPT account, such as Google Drive or Slack. Requires account sign-in on the computer running the thread. Provider restrictions and tool approvals still apply.\n\nAdvanced · Full access\nInstructions\nConnection & account\n\nOptional. Leave blank to use the provider installed and signed in on the computer that runs the thread. Paths refer to that computer.\n\nConnection / executable\nConfig directory (CODEX_HOME)\nExecutable arguments (one per line)\nEnvironment variables\n\nOne NAME=value per line. Stored as readable settings, so keep secrets in the computer’s own environment.\n\n2 unsaved changes\n\nCodex · Renames to Runtime navigation reviewer on save · All computers & projects. Applies to new turns.\n\nDiscard\nSave changes\nCheck installation & sign-in\nDefault agent for new threads\n\nPick which profile new threads start with, and their default access, in Thread defaults.\n\nOpen thread defaults\nInstallations & sign-in\n\nProvider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the Computer selector above to manage them."
+    },
+    {
+      "name": "agents",
+      "mode": "light",
+      "route": "agents",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings inheritance details",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Add profile",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agent profile",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search agent profiles",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CodexBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Claude CodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Mistral VibeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "OpenCodeBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CursorBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "GitHub CopilotBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "HermesBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Grok BuildBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MuseBuilt-in",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Duplicate Codex",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Favorite Codex",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Name",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Robot",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Code",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Builder",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Shield",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Bug",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Research",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Rocket",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Terminal",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Writer",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Brain",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Experiment",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Model",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Refresh models",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Reasoning level",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Service tier",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Daybreak mode",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Model preference scope",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "This computerAll computers",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "☆ Favorite",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Disable",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Access mode",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "SupervisedAuto-accept editsAutoFull access",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Cloud integrations",
+          "disabled": false
+        },
+        {
+          "role": "select",
+          "label": "Provider defaultEnabledDisabled",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Approval policy",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Sandbox",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Instructions",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Connection / executable",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "textarea",
+          "label": "Environment variables",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Check provider",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Open thread defaults",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nAgents\nAgents\n\nAgent profiles: the provider, model, access and instructions each coding agent uses.\n\nEditing all projects on all computers · Profile edits apply after saving.\nScope\nShared defaults\nProject\nAll projects\nComputer\nAll computers\nAgent profiles\n\nCustomize a provider profile or add your own.\n\nAdd profile\nCodex\nBuilt-in\nClaude Code\nBuilt-in\nMistral Vibe\nBuilt-in\nOpenCode\nBuilt-in\nCursor\nBuilt-in\nGitHub Copilot\nBuilt-in\nHermes\nBuilt-in\nGrok Build\nBuilt-in\nMuse\nBuilt-in\nCodex\nBuilt-in profile\nProfile inheritance\nName\nProfile icon\nModel\nProvider default\nReasoning level\nProvider default\nAdvanced provider options\nModel visibility & favorites\nAccess mode\nFull access\nSupervised\nAuto-accept edits\nAuto\nFull access\n\nAllow commands and edits without prompts.\n\nCloud integrations\nProvider default\nProvider default\nEnabled\nDisabled\n\nUse apps already connected to your ChatGPT account, such as Google Drive or Slack. Requires account sign-in on the computer running the thread. Provider restrictions and tool approvals still apply.\n\nAdvanced · Full access\nInstructions\nConnection & account\n\nCodex · All computers & projects. Applies to new turns.\n\nCheck installation & sign-in\nDefault agent for new threads\n\nPick which profile new threads start with, and their default access, in Thread defaults.\n\nOpen thread defaults\nInstallations & sign-in\n\nProvider installs, ACP agents, titles and dictation belong to one computer. Choose a computer in the Computer selector above to manage them."
+    },
+    {
+      "name": "task-behavior",
+      "mode": "light",
+      "route": "task-behavior",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings inheritance details",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings project",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Restart & archiving defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "PR settling defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-resume limited threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-resume limited threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for snooze limited threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Snooze limited threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-settle merged threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-settle merged threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-settle closed threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-settle closed threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-settle inactive threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-settle inactive threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for auto-archive settled threads",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Auto-archive settled threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for continue threads after restarts",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Continue threads after restarts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for days of inactivity before settling",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Days of inactivity before settling",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "View inheritance for days in settled before archiving",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Days in Settled before archiving",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nThread lifecycle\nThread lifecycle\n\nRecovery, settling and archiving for new and existing threads.\n\nEditing all projects on all computers · Edits apply after saving.\nScope\nShared defaults\nProject\nAll projects\nComputer\nAll computers\nHow inherited lifecycle rules work\n\nComputer-policy fallbacks shown here are reported by Preview computer. Each computer uses its own policies.\n\nAutomation & limits\nSave to apply\n\nApplies to existing and new threads. Inherit uses the parent scope.\n\nAuto-resume limited threads\n\nContinue at the provider’s reported reset time. Each thread can cancel its continuation.\n\nInherit (Off)\n\nSnooze limited threads\n\nHide quota stops until their reported reset time. Combine with auto-resume to continue when they wake.\n\nInherit (Off)\n\nAuto-settle merged threads\n\nMove idle threads to Settled when their pull request merges.\n\nInherit (Off)\n\nAuto-settle closed threads\n\nMove idle threads to Settled when their pull request closes.\n\nInherit (Off)\n\nAuto-settle inactive threads\n\nSettle idle threads after the selected period. Pins, drafts and pending work are protected.\n\nInherit (Off)\n\nAuto-archive settled threads\n\nArchive threads after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.\n\nInherit\n\nComputer policy · Never\n\nContinue threads after restarts\n\nResume interrupted turns after a runtime update, crash or computer restart.\n\nInherit (Off)\n\nDays of inactivity before settling\n\nEffective: 3 days. Applies when automatic settling is on.\n\nDays in Settled before archiving\n\nEffective: 7 days. Applies when auto-archive is on.\n\nChanges apply to existing threads too."
+    },
+    {
+      "name": "runtime",
+      "mode": "light",
+      "route": "runtime",
+      "alerts": [],
+      "controls": [
+        {
+          "role": "button",
+          "label": "Workspace",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Terminals",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Issues",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Jira",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Automations",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings",
+          "disabled": false
+        },
+        {
+          "role": "combobox",
+          "label": "Settings section",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "Search settings",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for General",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Appearance",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Conversation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Notifications",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Keyboard shortcuts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Browser",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Updates & about",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread list & projects",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Review & diffs",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread defaults",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Thread lifecycle",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Running threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Pull requests & pipelines",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Agents",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Titles & dictation",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for MCP, skills & hooks",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Usage & limits",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Memory",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for CLI commands & shell",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Studio Tools",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Source control",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Worktrees",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Artifacts",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Devices & runtime",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Computer use",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Remote desktop",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Device previews",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Settings scope for Activity & message history",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Archived threads",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More sections",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Computer updates",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Set up Linux server",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Connect computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Manage Preview computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "More actions for Preview computer",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Connect your phone",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "input",
+          "label": "",
+          "disabled": false
+        },
+        {
+          "role": "button",
+          "label": "Reset to defaults",
+          "disabled": false
+        }
+      ],
+      "text": "Dovo Studio\nDev\nSettings\nApp preferences\nGeneral\nAppearance\nConversation\nNotifications\nKeyboard shortcuts\nBrowser\nUpdates & about\nThread list & projects\nReview & diffs\nThread defaults & behavior\nThread defaults\nThread lifecycle\nRunning threads\nPull requests & pipelines\nAgents & tools\nAgents\nTitles & dictation\nMCP, skills & hooks\nUsage & limits\nMemory\nCLI commands & shell\nStudio Tools\nRepositories & workspaces\nSource control\nWorktrees\nArtifacts\nComputers\nDevices & runtime\nComputer use\nRemote desktop\nDevice previews\nHistory\nActivity & message history\nArchived threads\nMore sections\nSettings\n/\nDevices & runtime\nDevices & runtime\n\nConnect computers and phones, manage trusted devices and check runtime health.\n\nComputer settings stay on each computer. Service URLs use Save on this device.\nYour computers\n\nThreads and projects from these computers appear in your workspace.\n\nComputer updates\nSet up Linux server\nConnect computer\n\nPreview computer\nOnline\n\nDirect · HTTP / HTTPS · LAN / VPN\n\nhttp://127.0.0.1:42809\n\nManage\nMore\nConnect your phone\n\nFollow and answer threads from the Dovo iPhone or Android app. Scan a QR code or type an eight-digit code.\n\nConnect your phone\nDovo services\nSave to apply\n\nSaved on this device. Account sessions stay separate for each Connect server.\n\nDovo Connect URL\n\nUsed for new computer setup. Existing Connect connections keep their server until Connect is disabled and enabled again through LAN / VPN pairing.\n\nDovo Artifacts URL\n\nLeave Artifacts blank to use the store announced by Connect. A custom URL must also be configured on your Connect broker and artifact server; Studio checks they match before sharing.\n\nReset to defaults\nThis device · no unsaved service URL changes.\n\nThreads and projects appear together; each runs on its own computer. Use a reachable LAN, Tailscale or NetBird address. HTTP and optional HTTPS are supported."
+    }
+  ],
+  "errors": []
+}

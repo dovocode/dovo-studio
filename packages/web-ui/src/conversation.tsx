@@ -23,7 +23,7 @@ export function ConversationContent({
   className,
   ...props
 }: ComponentProps<typeof StickToBottom.Content>) {
-  const { scrollRef, contentRef, state } = useStickToBottomContext()
+  const { scrollRef, contentRef, state, stopScroll } = useStickToBottomContext()
   const followLayout = useCallback(() => {
     // The asynchronous follow controller otherwise paints one frame at the old offset.
     // Respect detached readers, text selection and explicit animated navigation.
@@ -40,11 +40,28 @@ export function ConversationContent({
     const root = scrollRef.current
     const content = contentRef.current
     if (!root || !content) return
+    // The scroll viewport must remain keyboard-reachable even without links or buttons.
+    root.tabIndex = 0
     const observer = new ResizeObserver(followLayout)
     observer.observe(root)
     observer.observe(content)
     return () => observer.disconnect()
   }, [scrollRef, contentRef, followLayout])
+  useLayoutEffect(() => {
+    const viewport = scrollRef.current
+    if (!viewport) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target === viewport &&
+        ['ArrowUp', 'PageUp', 'Home'].includes(event.key) &&
+        !event.altKey &&
+        !event.metaKey
+      )
+        stopScroll()
+    }
+    viewport.addEventListener('keydown', onKeyDown)
+    return () => viewport.removeEventListener('keydown', onKeyDown)
+  }, [scrollRef, stopScroll])
   return <StickToBottom.Content className={cn('flex flex-col gap-4 p-4', className)} {...props} />
 }
 
