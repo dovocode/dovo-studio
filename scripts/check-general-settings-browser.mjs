@@ -217,7 +217,9 @@ try {
       if (!column || !description) return null
       const content = column.getBoundingClientRect()
       const copy = description.getBoundingClientRect()
-      const target = element.getBoundingClientRect()
+      const target = (
+        element.closest('.studio-settings-storage-line') ?? element
+      ).getBoundingClientRect()
       return {
         left: target.left - content.left,
         gap: target.top - copy.bottom,
@@ -735,6 +737,7 @@ try {
   await page.getByRole('status').filter({ hasText: 'Claude Code saved' }).waitFor()
   assert.equal((await page.evaluate(() => window.writes.at(-1))).after.agents[0].id, 'dovo:claude')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
+  await page.locator('summary').filter({ hasText: 'Profile inheritance' }).click()
   await page.getByText(/Saving creates an override/).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
   await page.getByRole('button', { name: 'Open thread defaults', exact: true }).click()
@@ -1088,7 +1091,10 @@ try {
   const hostGeometry = await hostTarget.evaluate((node) => {
     const content = node.closest('.studio-settings-content').getBoundingClientRect()
     const target = node.getBoundingClientRect()
-    const name = node.querySelector('[title^="Computer:"]').getBoundingClientRect()
+    const name = node
+      .querySelector('[title^="Computer:"]')
+      .closest('.studio-settings-storage-line')
+      .getBoundingClientRect()
     return {
       left: target.left - content.left,
       nameLeft: name.left - content.left,

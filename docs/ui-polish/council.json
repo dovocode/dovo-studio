@@ -1156,11 +1156,71 @@
       "shipVerdict": "ship; no blocking defect",
       "coverage": "64 exact;31 dark33 light",
       "brief": "Frozen59/source59 only; no past or target scores."
+    },
+    {
+      "round": "independent60",
+      "model": "GPT-6.1 Sol",
+      "id": "f35f8837-f3d0-42de-ae25-6aa04d59ae6c",
+      "score": 9,
+      "gateMet": true,
+      "ship": true,
+      "note": "No required changes;96 exact frames,48 per theme.",
+      "brief": "Frozen350-frame gallery/source60 with recorded interaction evidence; revised9/10 rubric explicit; previous ratings omitted."
+    },
+    {
+      "round": "independent60",
+      "model": "GPT-6.1 Sol",
+      "id": "6b4c3b27-d1dc-490c-9c58-8560e7d8f344",
+      "score": 9,
+      "gateMet": true,
+      "ship": true,
+      "note": "No required changes;94 exact frames,47 per theme.",
+      "brief": "Frozen350-frame gallery/source60 with recorded interaction evidence; revised9/10 rubric explicit; previous ratings omitted."
+    },
+    {
+      "round": "independent60",
+      "model": "GPT-6.1 Sol",
+      "id": "f2c68c07-7d7d-4a1e-a1bb-85c11abd8506",
+      "score": 8.8,
+      "gateMet": false,
+      "ship": false,
+      "note": "Required: auto-merge and Bitbucket accessible consent must include later commits/pushes.88 exact frames,44 per theme.",
+      "brief": "Frozen350-frame gallery/source60 with recorded interaction evidence; revised9/10 rubric explicit; previous ratings omitted."
+    },
+    {
+      "round": "independent60",
+      "model": "Opus 5.5",
+      "id": "2c7025fd-14ef-4daa-8a0f-be762e9fc45a",
+      "score": 9,
+      "gateMet": true,
+      "ship": true,
+      "note": "No required changes;50 exact frames,balanced themes.",
+      "brief": "Frozen350-frame gallery/source60 with recorded interaction evidence; revised9/10 rubric explicit; previous ratings omitted."
+    },
+    {
+      "round": "independent60",
+      "model": "Opus 5.5",
+      "id": "6ed129ca-c94f-4712-abf3-b5aa998335bc",
+      "score": 8.5,
+      "gateMet": false,
+      "ship": false,
+      "note": "Required: truthful quiet service-URL clean status/Reset and consistent scope/save presentation;52 exact frames,26 per theme.",
+      "brief": "Frozen350-frame gallery/source60 with recorded interaction evidence; revised9/10 rubric explicit; previous ratings omitted."
+    },
+    {
+      "round": "independent60",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "16ea7830-7738-4005-a83c-28761c985bc5",
+      "score": 9,
+      "gateMet": true,
+      "ship": true,
+      "note": "No required changes;48 exact frames,24 per theme.",
+      "brief": "Frozen350-frame gallery/source60 with recorded interaction evidence; revised9/10 rubric explicit; previous ratings omitted."
     }
   ],
   "remaining": [
-    "Collect honest council60 assessments and address verified remaining gaps",
-    "Finish PR #50 after revised9/10 gate"
+    "Collect honest council61 final assessments and address required verified gaps",
+    "Finish PR #50 after revised9/10 gate and CI"
   ],
   "approvalTarget": {
     "reviewers": [
@@ -1178,12 +1238,12 @@
     "reason": "Dominic explicitly revised shipping gate to9/10 and requested concrete instructions from all reviewers before shipping. Consultation can name this requested threshold; assessments remain honest."
   },
   "gallery": {
-    "round": 60,
+    "round": 61,
     "captures": 350,
-    "corePass": 60,
-    "dialogPass": 60,
-    "settingsPass": 60,
-    "note": "{'round': 60, 'sourceFreeze': '/tmp/dovo-ui-source60', 'trackedSourceFiles': 3799, 'sourceTreeSha256': 'eb36d2ee45adeb374f799eb13d3e5154986b733182b4a136a8aa72cd68bfb545', 'captures': 350, 'note': 'Full integrated capture after merging main, with final Agent keyboard/focus and PR initial-focus captures replacing affected frames. Scoped focus containment guard does not alter resting appearance. All screenshot pairs checked. Synthetic workspaces, blocked account/runtime writes, simulated native Browser and replayed terminal; browser interaction verification separately recorded.', 'supplementalFrames': ['add-agent-light.png', 'add-agent-model-light.png', 'add-agent-model-scrolled-light.png', 'add-agent-profile-light.png', 'add-mcp-light.png', 'add-skill-light.png', 'agents-compact-dark.png', 'agents-compact-light.png', 'agents-dark.png', 'agents-dirty-compact-dark.png', 'agents-dirty-compact-light.png', 'agents-dirty-dark.png', 'agents-dirty-light.png', 'agents-light.png', 'artifact-actions-light.png', 'artifact-export-light.png', 'browser-bookmarks-light.png', 'browser-history-light.png', 'command-palette-light.png', 'downloads-light.png', 'draft-stash-light.png', 'edit-agent-dirty-light.png', 'edit-agent-light.png', 'forge-connections-light.png', 'harness-light.png', 'image-editor-annotated-light.png', 'image-editor-crop-light.png', 'image-editor-light.png', 'image-editor-shortcuts-light.png', 'image-editor-zoom-light.png', 'image-preview-light.png', 'import-codex-light.png', 'import-pi-light.png', 'issue-comment-light.png', 'issue-create-light.png', 'issue-edit-light.png', 'jira-sources-light.png', 'licenses-light.png', 'link-pr-light.png', 'local-commits-light.png', 'new-automation-light.png', 'new-session-light.png', 'pair-computer-light.png', 'pipeline-run-light.png', 'pr-add-to-thread-light.png', 'pr-ask-agent-light.png', 'pr-auto-merge-dark.png', 'pr-auto-merge-light.png', 'pr-auto-merge-sources-dark.png', 'pr-auto-merge-sources-light.png', 'pr-merge-dark.png', 'pr-merge-light.png', 'pr-merge-sources-dark.png', 'pr-merge-sources-light.png', 'pr-reviewers-light.png', 'project-delete-light.png', 'project-transfer-light.png', 'repository-forge-light.png', 'repository-github-light.png', 'repository-local-light.png', 'section-order-light.png', 'source-picker-light.png', 'terminal-close-light.png', 'terminal-close-multiple-light.png', 'terminals-dark.png', 'terminals-light.png', 'thread-context-light.png', 'undo-error-light.png', 'undo-light.png', 'website-customization-light.png']}"
+    "refreshedCaptures": 194,
+    "sourceTreeSha256": "6505fd03b00d588512430d5593d187c0210c50ae04ad0516d03187c30c003cba",
+    "trackedSourceFiles": 3799,
+    "note": "All core surfaces and controls refreshed, plus Agent/merge follow-ups. Remaining dialogs retained from60 where touched changes do not alter their rendering. Current scope-toolbar keyboard geometry verified in8 catalog traversals. Production components with synthetic workspace/runtime boundaries; no live provider/native claims."
   },
   "unavailableReviews": [
     {
@@ -1268,46 +1328,46 @@
   ],
   "pendingReviews": [
     {
-      "round": "independent60",
+      "round": "independent61",
       "model": "GPT-6.1 Sol",
-      "id": "f35f8837-f3d0-42de-ae25-6aa04d59ae6c",
+      "id": "68cfdb4f-b3e6-44b4-8c7e-1655cc57f24e",
       "status": "running",
-      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+      "brief": "Fresh350-frame gallery/source61 with current interaction evidence; revised9/10 rubric explicit, previous ratings omitted."
     },
     {
-      "round": "independent60",
+      "round": "independent61",
       "model": "GPT-6.1 Sol",
-      "id": "6b4c3b27-d1dc-490c-9c58-8560e7d8f344",
+      "id": "187502d0-dfdc-4c43-ab5a-82e3287f6bd5",
       "status": "running",
-      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+      "brief": "Fresh350-frame gallery/source61 with current interaction evidence; revised9/10 rubric explicit, previous ratings omitted."
     },
     {
-      "round": "independent60",
+      "round": "independent61",
       "model": "GPT-6.1 Sol",
-      "id": "f2c68c07-7d7d-4a1e-a1bb-85c11abd8506",
+      "id": "39d3328d-f57c-40dd-b72a-e4b2da993603",
       "status": "running",
-      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+      "brief": "Fresh350-frame gallery/source61 with current interaction evidence; revised9/10 rubric explicit, previous ratings omitted."
     },
     {
-      "round": "independent60",
+      "round": "independent61",
       "model": "Opus 5.5",
-      "id": "2c7025fd-14ef-4daa-8a0f-be762e9fc45a",
+      "id": "0c63d667-602f-47d9-9c8e-dd544b440d3b",
       "status": "running",
-      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+      "brief": "Fresh350-frame gallery/source61 with current interaction evidence; revised9/10 rubric explicit, previous ratings omitted."
     },
     {
-      "round": "independent60",
+      "round": "independent61",
       "model": "Opus 5.5",
-      "id": "6ed129ca-c94f-4712-abf3-b5aa998335bc",
+      "id": "1833e512-1e6e-4fc9-a0e0-9435f9b638b5",
       "status": "running",
-      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+      "brief": "Fresh350-frame gallery/source61 with current interaction evidence; revised9/10 rubric explicit, previous ratings omitted."
     },
     {
-      "round": "independent60",
+      "round": "independent61",
       "model": "Muse muse-wonder-full-1.0",
-      "id": "16ea7830-7738-4005-a83c-28761c985bc5",
+      "id": "bcc6723d-e481-43c2-9cad-116e2827758c",
       "status": "running",
-      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+      "brief": "Fresh350-frame gallery/source61 with current interaction evidence; revised9/10 rubric explicit, previous ratings omitted."
     }
   ],
   "queuedReviews": [
@@ -1638,6 +1698,11 @@
       "round": "independent60-preflight",
       "finding": "Keyboard focus beneath dirty Agent footer and main integration gaps",
       "result": "Reproduced real catalog keyboard focus obstruction; scoped Settings clears actual header/footer bounds, ignores portal content and pages without sticky context. All8 clean/dirty/theme/width traversals pass. Merged main without dropping unified/terminal behavior; fixed shell-list catalog response via real schema. Fresh350-frame gallery has no capture errors/alerts; lossless equality, #080808 and image-source parity pass."
+    },
+    {
+      "round": "independent60",
+      "finding": "Accessible auto-merge/Bitbucket consent narrower than visible authorization; inconsistent Settings scope/save cues",
+      "result": "Confirmed. Accessible names now include later commits/pushes and failure acknowledgements, with existing consent invalidation retained. Shared scope/storage presentation added, computer-specific sections receive a real heading, clean service URLs show truthful no-unsaved-changes status and outlined Reset; lifecycle source spacing increased. Verification and next review pending. Targeted browser suites, builds, affected types, lint, format, all34 palette/theme combinations and8 catalog keyboard traversals pass;194 affected captures refreshed in350-frame gallery with lossless equality and #080808 checks. Fresh review pending."
     }
   ],
   "previousApprovalTarget": {

@@ -968,7 +968,9 @@ try {
   await page.getByRole('button', { name: 'Merge', exact: true }).click()
   const bitbucketMerge = page.getByRole('dialog')
   await bitbucketMerge
-    .getByRole('checkbox', { name: 'Confirm merge of current source branch' })
+    .getByRole('checkbox', {
+      name: /^Confirm merge of current source branch\. Studio checks viewed revision aaaaaaaa before submitting; later pushes may also be merged(?:\. Acknowledge current failures: .+)?$/,
+    })
     .waitFor()
   await bitbucketMerge
     .getByText(
@@ -1048,7 +1050,7 @@ try {
   assert.equal(await autoDialog.getByRole('checkbox').count(), 1)
   await autoDialog
     .getByRole('checkbox', {
-      name: 'Confirm merge of reviewed commit. Acknowledge current failures: Check reports: 1 failed; Linked pipelines: 1 failed; Repository CI: failed',
+      name: 'Confirm automatic merge when GitHub’s requirements pass, including later commits pushed to this PR. Acknowledge current failures: Check reports: 1 failed; Linked pipelines: 1 failed; Repository CI: failed',
       exact: true,
     })
     .waitFor()

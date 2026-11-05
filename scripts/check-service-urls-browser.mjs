@@ -57,7 +57,7 @@ const built = await bundleBrowser(
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {SettingsGroup,SettingsSaveBar} from '${root}packages/studio-ui/src/settings-layout';`,
+      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {SettingsGroup,SettingsSaveBar,SettingsStorageInfo} from '${root}packages/studio-ui/src/settings-layout';`,
     },
     {
       path: '../preferences/app-preferences',
@@ -104,8 +104,12 @@ try {
     const connect = page.getByLabel('Dovo Connect URL', { exact: true })
     const artifacts = page.getByLabel('Dovo Artifacts URL', { exact: true })
     const save = page.getByRole('button', { name: 'Save service URLs', exact: true })
-    if (kind === 'desktop') assert.equal(await save.count(), 0)
-    else assert.equal(await save.isDisabled(), true)
+    if (kind === 'desktop') {
+      assert.equal(await save.count(), 0)
+      await page
+        .getByText('This device · no unsaved service URL changes.', { exact: true })
+        .waitFor()
+    } else assert.equal(await save.isDisabled(), true)
     if (kind === 'desktop') {
       const group = page.getByRole('heading', { name: 'Dovo services', exact: true }).locator('..')
       await group.getByText('Save to apply', { exact: true }).waitFor()

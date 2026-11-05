@@ -20,7 +20,7 @@ const mocks = {
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
     `\nexport {Disclosure} from '${ui}/disclosure.tsx';export {SearchField} from '${ui}/search-field.tsx';export {cn} from '${ui}/lib/utils.ts';export {IconButton} from '${ui}/components/icon-button.tsx';export * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
-  './host-page': `export const HostPage=({children})=>children;`,
+  './host-page': `export const HostPage=({children,saveInfo})=><>{saveInfo&&<p>{saveInfo}</p>}{children}</>;`,
 }
 const built = await bundleBrowser(
   {
@@ -164,17 +164,15 @@ try {
   )
   assert.equal(await linkedTool.isChecked(), true)
   await page
-    .getByText(
-      'Changes save automatically on this computer. Text fields save on Enter or when you leave the field.',
-      { exact: true },
-    )
+    .getByText('Saved automatically. Text fields save on Enter or when you leave the field.', {
+      exact: true,
+    })
     .waitFor()
   assert.equal(
     await page
-      .getByText(
-        'Changes save automatically on this computer. Text fields save on Enter or when you leave the field.',
-        { exact: true },
-      )
+      .getByText('Saved automatically. Text fields save on Enter or when you leave the field.', {
+        exact: true,
+      })
       .evaluate((element) =>
         Boolean(
           element.compareDocumentPosition(

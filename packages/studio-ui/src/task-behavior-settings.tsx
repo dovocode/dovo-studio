@@ -195,7 +195,7 @@ export function TaskBehaviorSettings({
     }
   }
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       {!supported && (
         <div
           role="status"

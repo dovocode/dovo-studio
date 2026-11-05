@@ -19,11 +19,15 @@ export default function WorktreesView({ entityId }: { entityId?: string }) {
   return (
     <HostPage
       initialRuntimeId={entityId}
+      saveInfo="Saved automatically. Text fields save on Enter or when you leave the field."
       title="Worktrees"
       description="Manage thread checkouts, branch names and cleanup on this computer."
     >
       <div className="space-y-5">
-        <WorktreePreferences onSaved={() => setRevision((value) => value + 1)} />
+        <WorktreePreferences
+          showSaveInfo={false}
+          onSaved={() => setRevision((value) => value + 1)}
+        />
         <WorktreeList revision={revision} />
       </div>
     </HostPage>

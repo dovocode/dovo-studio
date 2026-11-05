@@ -1,4 +1,4 @@
-import { SettingsPage } from './settings-layout'
+import { SettingsPage, SettingsStorageInfo } from './settings-layout'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -19,12 +19,14 @@ export function HostSettingsPage({
   initialRuntimeId,
   children,
   localSettings,
+  saveInfo,
 }: {
   title: string
   description: string
   initialRuntimeId?: string
   children: ReactNode
   localSettings?: ReactNode
+  saveInfo?: string
 }) {
   const sources = useRuntimeSources()
   const confirmNavigation = useConfirmSettingsNavigation()
@@ -84,14 +86,18 @@ export function HostSettingsPage({
       beforeToolbar={localSettings}
       toolbar={
         source && (
-          <div className="studio-settings-target">
+          <div className="studio-settings-target space-y-2">
+            <h2 className="text-sm font-semibold">Computer settings</h2>
             <div className="studio-settings-target-inner flex max-w-3xl flex-wrap items-center gap-3">
-              <span
-                className="min-w-0 truncate text-xs font-medium"
-                title={`Computer: ${source.name}`}
-              >
-                Computer: {source.name}
-              </span>
+              <SettingsStorageInfo>
+                <span title={`Computer: ${source.name}`}>Computer: {source.name}</span>
+                {source.connected && saveInfo && (
+                  <>
+                    {' '}
+                    · <span>{saveInfo}</span>
+                  </>
+                )}
+              </SettingsStorageInfo>
               {sources.length > 1 && (
                 <ChoicePicker
                   aria-label="Computer"

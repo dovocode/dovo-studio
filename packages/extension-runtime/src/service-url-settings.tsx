@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { ACCOUNT_DIRECTORY_URL, normalizeServiceUrls } from '@dovo/protocol'
 import { useAppPreferences, updateAppPreferences, useSettingsDraft } from '@dovo/studio-core'
-import { Button, Input, SettingsGroup, SettingsSaveBar } from '@dovo/studio-ui'
+import { Button, Input, SettingsGroup, SettingsSaveBar, SettingsStorageInfo } from '@dovo/studio-ui'
 
 export function ServiceUrlSettings() {
   const saved = useAppPreferences()
@@ -95,7 +95,7 @@ export function ServiceUrlSettings() {
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="outline"
               onClick={() => {
                 setDraft({ connectOrigin: '', artifactsOrigin: '' })
                 setError('')
@@ -112,30 +112,31 @@ export function ServiceUrlSettings() {
           )}
         </div>
       </SettingsGroup>
-      <SettingsSaveBar
-        dirty={dirty}
-        saving={false}
-        saveLabel="Save service URLs"
-        saveType="submit"
-        saved={!!notice}
-        description={
-          notice
-            ? 'Service URLs saved on this device.'
-            : dirty
-              ? 'Save service URLs to apply these changes on this device.'
-              : 'Edit a URL to show Save service URLs.'
-        }
-        changeCount={
-          Number(fields.connectOrigin !== saved.connectOrigin) +
-          Number(fields.artifactsOrigin !== saved.artifactsOrigin)
-        }
-        onSave={save}
-        onDiscard={() => {
-          setDraft(undefined)
-          setError('')
-          setNotice('')
-        }}
-      />
+      {!dirty ? (
+        <SettingsStorageInfo>
+          <span role={notice ? 'status' : undefined}>
+            {notice || 'This device · no unsaved service URL changes.'}
+          </span>
+        </SettingsStorageInfo>
+      ) : (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={false}
+          saveLabel="Save service URLs"
+          saveType="submit"
+          description="Save service URLs to apply these changes on this device."
+          changeCount={
+            Number(fields.connectOrigin !== saved.connectOrigin) +
+            Number(fields.artifactsOrigin !== saved.artifactsOrigin)
+          }
+          onSave={save}
+          onDiscard={() => {
+            setDraft(undefined)
+            setError('')
+            setNotice('')
+          }}
+        />
+      )}
     </form>
   )
 }

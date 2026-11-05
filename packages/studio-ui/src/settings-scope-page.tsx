@@ -11,7 +11,7 @@ import {
 import { useSettingsTarget, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
-import { SettingsPage } from './settings-layout'
+import { SettingsPage, SettingsStorageInfo } from './settings-layout'
 import { ProjectOrganizationSettings } from './project-organization'
 
 /** Scoped settings share a persistent project and computer target within the scrollport. */
@@ -73,12 +73,17 @@ export function SettingsScopePage({
           aria-label="Settings target"
         >
           <div className="mb-3 flex min-h-7 flex-wrap items-center gap-x-4 gap-y-1">
-            <p className="studio-settings-target-context text-xs font-medium">
-              {editable ? 'Editing' : 'Viewing'} {projectName} on {computerName}
-            </p>
-            {saveHint && (
-              <p className="text-[0.8125rem] leading-normal text-foreground/80">{saveHint}</p>
-            )}
+            <SettingsStorageInfo>
+              <span className="studio-settings-target-context">
+                {editable ? 'Editing' : 'Viewing'} {projectName} on {computerName}
+              </span>
+              {saveHint && (
+                <>
+                  {' '}
+                  · <span>{saveHint}</span>
+                </>
+              )}
+            </SettingsStorageInfo>
             {source && !source.connected && (
               <span role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
                 {source.name} is offline. Reconnect to edit or save.

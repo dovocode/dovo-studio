@@ -46,6 +46,7 @@ export { TaskDefaultSettings } from './task-default-settings'
 export { ProjectOrganizationSettings } from './project-organization'
 export {
   SettingsPage,
+  SettingsStorageInfo,
   SettingsGroup,
   SettingRow,
   SettingsSaveBar,

@@ -124,7 +124,13 @@ function useRuntimePreferences(onSaved?: () => void) {
 
 /** Settings → Computers → Running threads: what this computer does with tasks on its own. Stored
  * on the computer, so every device that manages it sees the same choices. */
-export function RunningTaskPreferences({ children }: { children?: ReactNode }) {
+export function RunningTaskPreferences({
+  children,
+  showSaveInfo = true,
+}: {
+  children?: ReactNode
+  showSaveInfo?: boolean
+}) {
   const { snapshot } = useWorkspace()
   const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
@@ -136,6 +142,7 @@ export function RunningTaskPreferences({ children }: { children?: ReactNode }) {
         busy={busy}
         connected={connected}
         textFields
+        showSaveInfo={showSaveInfo}
       />
       {children}
       <SettingsGroup advanced title="Model modes (experimental)">
@@ -294,7 +301,7 @@ export function RunningTaskPreferences({ children }: { children?: ReactNode }) {
 }
 
 /** PR lifecycle and explicit monitoring tools, saved per computer. */
-export function PullRequestPreferences() {
+export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?: boolean }) {
   const { runtimeRegistry } = useWorkspace()
   const retrievalHosts = runtimeRegistry.profiles.flatMap((profile) =>
     profile.connection.runtimeId ? [{ id: profile.connection.runtimeId, name: profile.name }] : [],
@@ -302,7 +309,13 @@ export function PullRequestPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
+      <PreferencesStatus
+        error={error}
+        loaded={value !== null}
+        busy={busy}
+        connected={connected}
+        showSaveInfo={showSaveInfo}
+      />
       <SettingsGroup title="Code reviews (experimental)">
         <SettingRow
           label="Independent code reviews (experimental)"
@@ -534,7 +547,10 @@ export function ActivityRetention() {
 }
 
 /** Settings → Coding → Worktrees: how task branches are named and when checkouts are removed. */
-export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) {
+export function WorktreePreferences({
+  onSaved,
+  showSaveInfo = true,
+}: { onSaved?: () => void; showSaveInfo?: boolean } = {}) {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences(onSaved)
   return (
     <>
@@ -544,6 +560,7 @@ export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) 
         busy={busy}
         connected={connected}
         textFields
+        showSaveInfo={showSaveInfo}
       />
       <SettingsGroup title="New worktrees">
         <WorktreeRoot
@@ -629,12 +646,14 @@ function PreferencesStatus({
   busy,
   connected,
   textFields = false,
+  showSaveInfo = true,
 }: {
   error: string
   loaded: boolean
   busy: boolean
   connected: boolean
   textFields?: boolean
+  showSaveInfo?: boolean
 }) {
   if (error)
     return (
@@ -643,6 +662,7 @@ function PreferencesStatus({
       </p>
     )
   const pending = !connected || !loaded || busy
+  if (!pending && !showSaveInfo) return null
   return (
     <p role={pending ? 'status' : undefined} className="text-xs text-muted-foreground">
       {!connected

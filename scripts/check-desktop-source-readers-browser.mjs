@@ -24,6 +24,11 @@ const mocks = {
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
   '../connections/source-picker': `export const SourcePicker=()=>null;`,
 }
+mocks['@dovo/studio-ui'] += `
+export {Disclosure} from '${root}packages/studio-ui/src/disclosure.tsx';
+export {Textarea} from '${root}packages/web-ui/src/textarea.tsx';
+export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state.tsx';
+`
 const built = await build({
   stdin: {
     resolveDir: root,

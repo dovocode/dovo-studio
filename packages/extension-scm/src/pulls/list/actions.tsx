@@ -726,9 +726,11 @@ function PullActionDialog({
                     disabled={busy}
                     onCheckedChange={(value) => setConfirmed(value === true)}
                     aria-label={
-                      (detail.pull.provider === 'bitbucket'
-                        ? 'Confirm merge of current source branch'
-                        : 'Confirm merge of reviewed commit') +
+                      (kind === 'auto-merge'
+                        ? 'Confirm automatic merge when GitHub’s requirements pass, including later commits pushed to this PR'
+                        : detail.pull.provider === 'bitbucket'
+                          ? `Confirm merge of current source branch. Studio checks viewed revision ${scope.headSha.slice(0, 8)} before submitting; later pushes may also be merged`
+                          : 'Confirm merge of reviewed commit') +
                       (currentFailures.length > 0
                         ? `. Acknowledge current failures: ${failureLabels.join('; ')}`
                         : '')

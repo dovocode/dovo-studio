@@ -8,6 +8,15 @@ import { useId, useRef, useState, useEffect, useLayoutEffect, type ReactNode } f
 import { Button } from './components/ui/button'
 import { Disclosure } from './disclosure'
 
+export function SettingsStorageInfo({ children }: { children: ReactNode }) {
+  return (
+    <span className="studio-settings-storage-line inline-flex items-start gap-1.5 text-[0.8125rem] leading-normal text-foreground/80">
+      <Check className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+      <span>{children}</span>
+    </span>
+  )
+}
+
 /** Settings page frame and row, in the label-left / control-right style of Codex and T3 Code. */
 export function SettingsPage({
   title,
@@ -120,12 +129,9 @@ export function SettingsPage({
             {(local || storageInfo) && (
               <div className="studio-settings-storage flex flex-wrap items-center gap-2 text-[0.8125rem] leading-normal text-foreground/80">
                 {local && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Check className="size-3" aria-hidden="true" />
-                    This device · saved automatically
-                  </span>
+                  <SettingsStorageInfo>This device · saved automatically</SettingsStorageInfo>
                 )}
-                {storageInfo}
+                {storageInfo && <SettingsStorageInfo>{storageInfo}</SettingsStorageInfo>}
               </div>
             )}
           </div>
