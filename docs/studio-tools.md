@@ -45,10 +45,23 @@ cancel and retry take a run ID. Runs retain their original workflow when retried
 are manual, schedule (cron and timezone), webhook and GitHub; workflows use the existing
 trigger/task/review graph schema.
 
-New browser tabs use isolated profiles. Listing also exposes existing runtime browser tabs; choose
-the returned session ID explicitly before operating a live tab. Page actions return PNG screenshots
-and accessibility snapshots. Logs contain at most the most recent 100 console, page-error and failed
-HTTP/network entries. They live only as long as the browser session.
+New browser tabs use isolated profiles. Listing returns every live tab with its kind, title, URL and
+a unified Studio reference: the user's Browser-workspace tabs appear as `workspace` (remote runtime
+tabs, ID `workspace:<tabId>`) or `desktop` (desktop-local tabs, ID `desktop:<tabId>`, driven through
+the desktop's page-scoped CDP host while the tab is open in the desktop Browser workspace),
+alongside `thread`, `agent` and `studio` sessions. Workspace and desktop tabs are the user's live,
+signed-in tabs; private-profile tabs are never listed or accessible. Choose a session ID explicitly
+before operating a live tab. Desktop tabs support CSS and `text=` selectors (no `role=`) and capture
+no console logs. Page actions return PNG screenshots and accessibility snapshots. Logs contain at
+most the most recent 100 console, page-error and failed HTTP/network entries. They live only as long
+as the browser session.
+
+Threads and browser tabs share one paste-ready ID format: `studio:<runtime>:thread:<id>` and
+`studio:<runtime>:browser:<id>` (the three-part `studio:<runtime>:<id>` form also works). Users copy
+it from **Copy Studio ID (for agents)** in thread and browser-tab menus (on mobile, remote browser
+tabs have the same action). Passing a full reference as a tool `id` unwraps it and selects its
+computer, so no separate `runtimeId` is needed. Thread lists and browser lists include each item's
+`reference`.
 
 **UI debugging is local to the machine.** Both UI control and client registration require a loopback
 runtime connection (localhost, 127.0.0.1 or ::1). Remote paired desktop/web clients cannot register

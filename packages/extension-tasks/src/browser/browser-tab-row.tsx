@@ -13,6 +13,8 @@ import {
   Camera,
   Mic,
   ScreenShare,
+  Bot,
+  Copy,
 } from 'lucide-react'
 import { cn, ContextMenu, IconButton } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
@@ -47,6 +49,8 @@ export function BrowserTabRow({
   state,
   onMute,
   reorder,
+  studioId,
+  agentAccessible,
 }: {
   tab: BrowserTab
   active: boolean
@@ -64,6 +68,10 @@ export function BrowserTabRow({
   onKeepAwake?: () => void
   state?: BrowserTabState
   onMute?: () => void
+  /** Unified Studio reference an agent can be handed for this exact tab. */
+  studioId?: string
+  /** Studio Browsers is enabled on the owning computer, so agents can reach this tab. */
+  agentAccessible?: boolean
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -99,6 +107,31 @@ export function BrowserTabRow({
   const keepsAwake = category === 'active' && tab.kind === 'web' && browserTabKeepsAwake(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
+  const agentBadge =
+    state?.agent || agentAccessible ? (
+      <span
+        role="img"
+        aria-label={
+          state?.agent ? `An agent is connected to ${title}` : `${title} is available to agents`
+        }
+        title={
+          state?.agent
+            ? 'An agent is connected to this tab'
+            : 'Available to agents via Studio Browsers'
+        }
+        className={cn('shrink-0', !state?.agent && 'text-muted-foreground')}
+      >
+        <Bot className={tab.pinned ? 'size-2.5' : 'size-3'} />
+      </span>
+    ) : null
+  const activityShown = !!(
+    state?.camera ||
+    state?.microphone ||
+    state?.screenSharing ||
+    state?.audible ||
+    state?.muted ||
+    state?.agent
+  )
   const identity = (
     <span
       className={cn(
@@ -201,7 +234,7 @@ export function BrowserTabRow({
             aria-current={active ? 'page' : undefined}
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
-            title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
+            title={`${title}\n${tab.url}\n${computer} · ${profile}${studioId ? `\nStudio ID: ${studioId}` : ''}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
             className={`studio-browser-tab-select min-w-0 text-left text-xs ${tab.pinned ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
           >
             <span
@@ -247,11 +280,7 @@ export function BrowserTabRow({
               </>
             )}
           </button>
-          {(state?.camera ||
-            state?.microphone ||
-            state?.screenSharing ||
-            state?.audible ||
-            state?.muted) && (
+          {activityShown && state && (
             <div
               aria-label="Tab activity"
               className={cn(
@@ -297,8 +326,10 @@ export function BrowserTabRow({
                   <Camera className={tab.pinned ? 'size-2.5' : 'size-3'} />
                 </span>
               )}
+              {agentBadge}
             </div>
           )}
+          {!activityShown && agentBadge}
           {!tab.pinned && (
             <div className="studio-browser-tab-actions flex shrink-0 items-center gap-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
               {category === 'active' && (
@@ -330,6 +361,20 @@ export function BrowserTabRow({
           <ContextMenu.Label className="max-w-64 truncate px-2 py-1.5 text-xs text-muted-foreground">
             {title}
           </ContextMenu.Label>
+          {studioId && (
+            <>
+              <ContextMenu.Label className="max-w-64 truncate px-2 pb-1.5 text-[10px] text-muted-foreground">
+                {studioId}
+              </ContextMenu.Label>
+              <ContextMenu.Item
+                className={menuItem}
+                onSelect={() => void navigator.clipboard.writeText(studioId).catch(() => {})}
+              >
+                <Copy size={13} />
+                Copy Studio ID (for agents)
+              </ContextMenu.Item>
+            </>
+          )}
           <ContextMenu.Item className={menuItem} disabled={busy} onSelect={onPin}>
             {tab.pinned ? <PinOff size={13} /> : <Pin size={13} />}
             {tab.pinned ? 'Unpin tab' : 'Pin tab'}

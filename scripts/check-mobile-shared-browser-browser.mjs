@@ -24,7 +24,7 @@ export const Field=({label,value,onChangeText,onSubmitEditing,onFocus,onBlur})=>
 export const Sheet=forwardRef(({title,children,onClose},ref)=>{useImperativeHandle(ref,()=>({dismiss:cb=>{onClose();cb?.()}}));return <section role="dialog" aria-label={title}><h2>{title}</h2><button aria-label="Dismiss sheet" onClick={onClose}>Done</button>{children}</section>});
 export const ScreenHeader=({title,onBack})=><header><h1>{title}</h1>{onBack&&<button onClick={onBack}>Back</button>}</header>;
 export const useTheme=()=>({mode:'dark',colors:{border:'#455063'},styles:{screen:{height:'100vh',display:'flex',flexDirection:'column'},content:{padding:12},muted:{color:'#b8c4d8'},error:{color:'#ff9999'},title:{fontWeight:'bold'}}});
-export const router={push:path=>window.navigation.push(path)};
+export const router={push:path=>window.navigation.push(path),navigate:path=>window.navigation.push(path)};
 let prefs={browserProfiles:[{id:'default',name:'Default'},{id:'device',name:'Device'}],browserWorkspaceEnabled:false,browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};const listeners=new Set();window.setCleanup=change=>{prefs={...prefs,...change};listeners.forEach(f=>f())};export const updateMobilePreferences=change=>window.setCleanup(change);window.setExperimental=value=>window.setCleanup({browserWorkspaceEnabled:value});export const useMobilePreferences=()=>useSyncExternalStore(f=>{listeners.add(f);return ()=>listeners.delete(f)},()=>prefs);
 const profiles=[{id:'lan',name:'LAN computer'},{id:'mac',name:'Mac computer'}];
 const scope=createContext('lan');export const RuntimeScope=({runtimeId,children})=><scope.Provider value={runtimeId}>{children}</scope.Provider>;
@@ -52,7 +52,7 @@ export const runClientEffect=effect=>Effect.runPromise(effect);import {Effect} f
 `
 const built = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import Screen from './screens/browser';import {NativeBrowserProvider} from './browser/native-browser';import {useMobilePreferences} from './runtime/preferences/app-preferences';import {saveRuntimeDraft} from './tasks/draft/use-draft';window.saveRuntimeDraft=saveRuntimeDraft;function FixtureShell(){const prefs=useMobilePreferences();const [visible,setVisible]=React.useState(true);window.showBrowser=setVisible;return <NativeBrowserProvider enabled={prefs.browserWorkspaceEnabled}>{visible?<Screen/>:<div>Thread fixture</div>}</NativeBrowserProvider>}createRoot(document.getElementById('app')).render(<FixtureShell/>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import Screen from './screens/browser';import {NativeBrowserProvider} from './browser/native-browser';import {BrowserWorkspaceProvider} from './browser/browser-workspace';import {useMobilePreferences} from './runtime/preferences/app-preferences';import {saveRuntimeDraft} from './tasks/draft/use-draft';window.saveRuntimeDraft=saveRuntimeDraft;function FixtureShell(){const prefs=useMobilePreferences();const [visible,setVisible]=React.useState(true);window.showBrowser=setVisible;return <NativeBrowserProvider enabled={prefs.browserWorkspaceEnabled}><BrowserWorkspaceProvider>{visible?<Screen/>:<div>Thread fixture</div>}</BrowserWorkspaceProvider></NativeBrowserProvider>}createRoot(document.getElementById('app')).render(<FixtureShell/>);`,
     resolveDir: mobile,
     loader: 'tsx',
   },
@@ -77,6 +77,8 @@ const built = await build({
         }))
         b.onResolve({ filter: /.*/ }, (args) => {
           const p = args.path
+          // Plain responsive layout constants remain production code, including mode navigation.
+          if (p.endsWith('/ui/layout/content-column')) return
           if (
             p === './use-preview-active' ||
             p === './screenshot-attachment' ||
@@ -136,7 +138,9 @@ try {
   const state = () =>
     page.evaluate(() => JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')))
   await page.getByText('Experimental Browser is off.').waitFor()
-  assert.deepEqual(await page.evaluate(() => window.calls), [])
+  // The shared store can persist tabs while the route is gated; no runtime or native browser starts.
+  assert.deepEqual(await page.evaluate(() => window.calls.filter((call) => call.path)), [])
+  assert.deepEqual(await page.evaluate(() => window.nativeCalls), [])
   assert.equal(await page.locator('iframe').count(), 0)
   await page.evaluate(() => window.setExperimental(true))
   await button('Tabs (1)').waitFor()
@@ -373,7 +377,9 @@ try {
   const beforeReload = await state()
   await page.reload()
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  assert.deepEqual(await page.evaluate(() => window.calls), [])
+  // The shared store can persist tabs while the route is gated; no runtime or native browser starts.
+  assert.deepEqual(await page.evaluate(() => window.calls.filter((call) => call.path)), [])
+  assert.deepEqual(await page.evaluate(() => window.nativeCalls), [])
   await page.evaluate(() => window.setExperimental(true))
   await button('Tabs (4)')
     .waitFor({ timeout: 5000 })

@@ -52,6 +52,7 @@ const f = vi.hoisted(() => {
     fakeSession,
     userData: '',
     enabled: true,
+    unifiedEnabled: false,
     zoom: vi.fn<() => number>(() => 1),
     dialog: vi.fn<() => Promise<{ canceled: boolean; filePaths: string[] }>>(),
     review: vi.fn<
@@ -117,6 +118,7 @@ vi.mock('electron-chrome-extensions/preload?raw', () => ({ default: '/* crx prel
 vi.mock('@dovo/protocol/local-settings', () => ({
   readLocalSettingsSection: () => ({
     browserWorkspaceEnabled: f.enabled,
+    unifiedWorkspaceEnabled: f.unifiedEnabled,
     browserProfiles: [{ id: 'work', name: 'Work' }],
   }),
 }))
@@ -143,6 +145,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'dovo-browser-extensions-'))
   f.userData = join(root, 'user-data')
   f.enabled = true
+  f.unifiedEnabled = false
   f.sessions.clear()
   f.instances.length = 0
 })
@@ -844,4 +847,13 @@ it('persists toolbar pins in the selected profile across restart and toggles', a
   await expect(
     restarted.handle(window, { action: 'unpin', profileId: 'work', id }),
   ).resolves.toMatchObject({ extensions: [{ id, pinned: false, enabled: false }] })
+})
+
+it('enables browser extensions when only unified workspace is opted in', async () => {
+  f.enabled = false
+  f.unifiedEnabled = true
+  const extensions = createBrowserExtensions(tabs)
+  await expect(
+    extensions.handle(window, { action: 'list', profileId: 'work' }),
+  ).resolves.toMatchObject({ extensions: [] })
 })

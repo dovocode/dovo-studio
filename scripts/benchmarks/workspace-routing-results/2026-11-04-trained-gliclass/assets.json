@@ -1,0 +1,60 @@
+{
+  "files": [
+    {
+      "path": "LICENSE-APACHE-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "LICENSE-DEBERTA-MIT.txt",
+      "bytes": 1141,
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "path": "LICENSE-TOKENIZERS.txt",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "path": "NOTICE.txt",
+      "bytes": 506,
+      "sha256": "fff091ef23fc6d18936c38b57af243bf1f7ea6cf1b3c1d2d82d195a803dec7de"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3043,
+      "sha256": "9ed18010d6874cfd71e6d233093ffb7646c5a43a959d790a5dc281c1784e68e3"
+    },
+    {
+      "path": "config.json",
+      "bytes": 3751,
+      "sha256": "09216f11809c80d86cd33465e7307db9460b86ae2f189c7cbfdb5061059501c7"
+    },
+    {
+      "path": "model.onnx",
+      "bytes": 197828816,
+      "sha256": "f5b09089083afa709d4a216356daf4407c7a78c610b7fc5892880c3eb4af4d06"
+    },
+    {
+      "path": "routing.json",
+      "bytes": 1651,
+      "sha256": "6e0ca167ec45fad32133982e4add77f7488d25ed1fb69718ec2997f8ddf1efd5"
+    },
+    {
+      "path": "tokenizer.json",
+      "bytes": 8332640,
+      "sha256": "f600de7df2f264c0a832209d2984d512f956e77b8ec80a90914b794ebb27713c"
+    },
+    {
+      "path": "tokenizer.mjs",
+      "bytes": 98937,
+      "sha256": "1c4a848f86156201c033d6cd08c4cf81ae1088552acec3367f31ef086edf5af0"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "bytes": 635,
+      "sha256": "2fcf7b3f79e70fc1671316cc32fbc72f91b5fe8bf0f95806f6f831e0cd74795e"
+    }
+  ],
+  "totalBytes": 206293835
+}

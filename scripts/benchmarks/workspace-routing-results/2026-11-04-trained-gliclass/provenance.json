@@ -1,0 +1,39 @@
+{
+  "cpu": "Apple M4 Max",
+  "memoryBytes": 137438953472,
+  "model": "Mac16,9",
+  "baseAssets": {
+    "model.safetensors": {
+      "bytes": 746211800,
+      "sha256": "4f1043b82812a8f5ec7ff9f97c6744758f47836f9872ba0dbeb3a8e2b0b92a26"
+    },
+    "added_tokens.json": {
+      "bytes": 67,
+      "sha256": "fa9ca9bafacdabaa35949862e42d826d5dc44bc9f81fbc0d4dd02a67e9f539dd"
+    },
+    "tokenizer_config.json": {
+      "bytes": 1692,
+      "sha256": "9d5220b355d2cb9a7df69deccca45509ce1c9a857990fb1047c48403b0f6ddfb"
+    },
+    "special_tokens_map.json": {
+      "bytes": 970,
+      "sha256": "b2f1b2f15f29a6b6d9d6ea4eca1675d2c231a71477f151d48f79cc83a625ba21"
+    },
+    "config.json": {
+      "bytes": 3493,
+      "sha256": "68736d9671719bd4ec92296feb1436af6c1063beb789ba1b42a4adbb99c5f72c"
+    },
+    "tokenizer.json": {
+      "bytes": 8649234,
+      "sha256": "519648948c4c59da1af88f2cf2c8b4f84417b5c673981bc9809abf84cda1b7cc"
+    },
+    "spm.model": {
+      "bytes": 2464616,
+      "sha256": "c679fbf93643d19aab7ee10c0b99e460bdbc02fedf34b92b05af343b4af586fd"
+    },
+    "README.md": {
+      "bytes": 11917,
+      "sha256": "d21dbad060a4dbe8fcc8fbd621d99c347d4b734e2abdf41c6742bb40dcd4d04e"
+    }
+  }
+}

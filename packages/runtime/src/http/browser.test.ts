@@ -761,33 +761,65 @@ it.each([true, false])(
   },
 )
 
-it('hides shared workspace browser sessions and rejects Studio access before any close mutation', async () => {
+it('exposes shared workspace sessions to Studio Tools but hides private tabs before any mutation', async () => {
   const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
   const { browsers, sessions, owners } = browserFixture()
-  const shared = selectionSession()
-  const thread = selectionSession()
-  sessions.set('shared', Promise.resolve(shared))
-  owners.set('shared', STUDIO_BROWSER_SCOPE)
+  const shared = {
+    ...selectionSession(),
+    queue: Promise.resolve(),
+    queued: 0,
+    listeners: new Set(),
+  }
+  const priv = selectionSession()
+  const thread = {
+    ...selectionSession(),
+    queue: Promise.resolve(),
+    queued: 0,
+    listeners: new Set(),
+  }
+  const sharedResource = JSON.stringify([STUDIO_BROWSER_SCOPE, 'tab-1', 'work'])
+  const privateResource = JSON.stringify([
+    STUDIO_BROWSER_SCOPE,
+    'tab-private',
+    'private-123e4567-e89b-12d3-a456-426614174000',
+  ])
+  sessions.set(sharedResource, Promise.resolve(shared))
+  owners.set(sharedResource, STUDIO_BROWSER_SCOPE)
+  sessions.set(privateResource, Promise.resolve(priv))
+  owners.set(privateResource, STUDIO_BROWSER_SCOPE)
   sessions.set('thread', Promise.resolve(thread))
   owners.set('thread', 'task')
+  Object.defineProperty(browsers, 'scheduleState', { value: () => {} })
   expect(await browsers.studioList()).toEqual([
-    { id: 'thread', taskId: 'task', url: 'http://lan.local/', title: 'LAN page' },
+    {
+      id: 'workspace:tab-1',
+      kind: 'workspace',
+      tabId: 'tab-1',
+      profileId: 'work',
+      url: 'http://lan.local/',
+      title: 'LAN page',
+    },
+    { id: 'thread', kind: 'thread', taskId: 'task', url: 'http://lan.local/', title: 'LAN page' },
   ])
-  expect(shared.page.title).not.toHaveBeenCalled()
-  await expect(browsers.studioLogs('shared')).rejects.toMatchObject({ status: 403 })
+  expect(priv.page.title).not.toHaveBeenCalled()
+  expect(await browsers.studioLogs('workspace:tab-1')).toEqual({ entries: shared.logs })
   expect(await browsers.studioLogs('thread')).toEqual({ entries: thread.logs })
-  const close = vi.spyOn(browsers, 'close')
+  await expect(browsers.studioLogs('workspace:tab-private')).rejects.toMatchObject({ status: 403 })
+  const close = vi.spyOn(browsers, 'close').mockResolvedValue()
   const authorize = vi.fn<() => void>()
   for (const action of ['snapshot', 'close'] as const)
     await expect(
-      browsers.agentCommand('task', { action }, authorize, 'shared'),
+      browsers.agentCommand('task', { action }, authorize, 'workspace:tab-private'),
     ).rejects.toMatchObject({ status: 403 })
-  expect(authorize).toHaveBeenCalledTimes(2)
   expect(close).not.toHaveBeenCalled()
-  expect(shared.page.close).not.toHaveBeenCalled()
-  expect(shared.release).not.toHaveBeenCalled()
-  expect(sessions.has('shared')).toBe(true)
-  expect(owners.get('shared')).toBe(STUDIO_BROWSER_SCOPE)
+  expect(priv.page.close).not.toHaveBeenCalled()
+  expect(priv.release).not.toHaveBeenCalled()
+  expect(sessions.has(privateResource)).toBe(true)
+  await expect(
+    browsers.agentCommand('task', { action: 'close' }, authorize, 'workspace:tab-1'),
+  ).resolves.toEqual({ ok: true })
+  expect(close).toHaveBeenCalledWith(sharedResource)
+  expect(owners.get(sharedResource)).toBe(STUDIO_BROWSER_SCOPE)
 })
 
 it('clamps selection results at the runtime boundary and treats nonstrings as empty', async () => {

@@ -10,6 +10,38 @@ const storage = vi.hoisted(() => {
   }
   return state
 })
+
+it('restores Unified mode and optional normal modes independently of the terminal workspace', async () => {
+  let saved = JSON.stringify({
+    browserWorkspaceEnabled: true,
+    terminalWorkspaceEnabled: false,
+    unifiedWorkspaceEnabled: true,
+    unifiedWorkspaceActive: true,
+    hideNormalWorkspaceModes: true,
+  })
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    browserWorkspaceEnabled: true,
+    terminalWorkspaceEnabled: false,
+    unifiedWorkspaceEnabled: true,
+    unifiedWorkspaceActive: true,
+    hideNormalWorkspaceModes: true,
+  })
+  preferences.updateMobilePreferences({ unifiedWorkspaceActive: false })
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved)).toMatchObject({
+      unifiedWorkspaceEnabled: true,
+      unifiedWorkspaceActive: false,
+      hideNormalWorkspaceModes: true,
+      terminalWorkspaceEnabled: false,
+    }),
+  )
+})
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
     getItem: () => storage.getItem(),

@@ -4,6 +4,20 @@ export const tasksExtension = defineStudioExtension(
   [
     { id: 'tasks', title: 'Threads', icon: 'tasks', order: 0, load: () => import('./view') },
     {
+      id: 'workspace',
+      title: 'Workspace',
+      icon: 'workspace',
+      order: -0.25,
+      load: () => import('./unified/workspace-view'),
+    },
+    {
+      id: 'terminals',
+      title: 'Terminals',
+      icon: 'terminal',
+      order: 0.4,
+      load: () => import('./terminal/terminal-workspace'),
+    },
+    {
       id: 'browser',
       title: 'Browser',
       icon: 'browser',

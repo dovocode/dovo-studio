@@ -17,6 +17,15 @@ const runtime = await startRuntime({
   databasePath: ':memory:', ownerToken: 'packaging-smoke-token-at-least-32-characters', port: 0,
 });
 try {
+  // Load the actual bundled weights, tokenizer and native CPU binding from the deployed tree.
+  const { WorkspaceRouter } = await import(new URL('./agents/tasks/workspace-router.js', import.meta.resolve('@dovo/runtime')));
+  const router = new WorkspaceRouter();
+  try {
+    const suggestion = await router.route('https://example.com');
+    if (!suggestion.reason.startsWith('GLiClass suggests ')) throw new Error('Packaged workspace router did not run GLiClass: ' + suggestion.reason);
+  } finally {
+    await router.dispose();
+  }
   // Multi-file artifacts bundle locally through the packaged esbuild executable.
   const { compileArtifactBundle } = await import(new URL('./artifacts/artifact-bundle.js', import.meta.resolve('@dovo/runtime')));
   const preview = await compileArtifactBundle([

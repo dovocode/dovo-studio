@@ -108,7 +108,8 @@ export default function TasksView({
   nativeAgentKey,
   navigationKey,
   pullTarget,
-}: StudioViewProps) {
+  embedded = false,
+}: StudioViewProps & { embedded?: boolean }) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -128,6 +129,9 @@ export default function TasksView({
   )
   const preferences = useAppPreferences()
   const host = useStudioHost()
+  // Unified can replace its host object when palette registration rerenders the shell.
+  // Subscriptions depend on the registry function, not unrelated navigation context.
+  const { registerCommand } = host
   const localTasks = useMemo(
     () => workspace.tasks.filter((task) => !task.example),
     [workspace.tasks],
@@ -236,10 +240,12 @@ export default function TasksView({
     setSplitId(next)
   }
   const [listOpen, setListOpen] = useApplicationState(false)
-  const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const [sidebarPreference, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const sidebar = !embedded && sidebarPreference
   const navigationSidebar = useNavigationSidebar()
   useEffect(() => {
-    if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
+    if (!embedded && compact && navigationSidebar?.setCollapsed)
+      setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
@@ -720,23 +726,23 @@ export default function TasksView({
   })
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.new',
         title: 'New thread',
         aliases: ['new thread', 'new chat', 'start conversation'],
         run: newThread,
       }),
-    [host, newThread],
+    [registerCommand, newThread],
   )
   useEffect(() => {
     const disposers = [
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.switch',
         title: 'Go to thread…',
         aliases: ['go to thread', 'find thread', 'find thread', 'switch thread', 'switch thread'],
         run: () => setSearching('tasks'),
       }),
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.search',
         title: 'Search conversations…',
         aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
@@ -746,16 +752,16 @@ export default function TasksView({
     return () => {
       for (const dispose of disposers) dispose()
     }
-  }, [host])
+  }, [registerCommand])
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.terminal',
         title: 'Toggle terminal',
         aliases: ['shell', 'console', 'command line'],
         run: toggleTerminal,
       }),
-    [host, toggleTerminal],
+    [registerCommand, toggleTerminal],
   )
   // Sidebar order, reported by the visible task list, for switching tasks from the keyboard.
   const order = useRef<TaskEntry[]>([])

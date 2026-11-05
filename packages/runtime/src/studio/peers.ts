@@ -4,6 +4,7 @@ import {
   studioPeerRegistrationSchema,
   RuntimeRequestError,
   noStudioTools,
+  parseStudioReference,
   studioThreadsCommandSchema,
   type ThreadWatchSummary,
 } from '@dovo/protocol'
@@ -161,7 +162,15 @@ export async function routedStudioTool(
 ) {
   authorize()
   requireStudioPart(s, part, policy)
-  const input = decode(Schema.Record(Schema.String, Schema.Unknown), command)
+  const decoded = decode(Schema.Record(Schema.String, Schema.Unknown), command)
+  // A pasted unified Studio reference (`studio:<runtime>:<kind>:<id>`) routes and unwraps itself.
+  const reference =
+    (part === 'threads' || part === 'browsers') && typeof decoded.id === 'string'
+      ? parseStudioReference(decoded.id)
+      : undefined
+  const input = reference ? { ...decoded, id: reference.id } : decoded
+  const routedCommand = reference ? input : command
+  runtimeId ??= reference && reference.runtimeId !== 'local' ? reference.runtimeId : undefined
   if (policy?.readOnly && !studioReadAction(part, input.action))
     throw new HttpError(403, 'This agent has read-only Studio Tools access')
   if (runtimeId && part === 'ui')
@@ -230,7 +239,7 @@ export async function routedStudioTool(
     }
   }
   if (owner === 'local') {
-    const result = await studioTool(s, taskId, part, command, authorize, policy)
+    const result = await studioTool(s, taskId, part, routedCommand, authorize, policy)
     restartMonitor()
     if (part !== 'discover') return result
     const computers = new Map(
@@ -264,7 +273,7 @@ export async function routedStudioTool(
         part === 'threads' && (input.action === 'create' || input.allowPermissionIncrease === true)
           ? '/api/studio/forward-v2'
           : '/api/studio/forward',
-        { taskId: `paired:${scope}`, part, command, policy: forwardedPolicy },
+        { taskId: `paired:${scope}`, part, command: routedCommand, policy: forwardedPolicy },
         Schema.Unknown,
         { method: 'POST', timeoutMs: durableSnapshot ? 10000 : 120000 },
       ),

@@ -9,6 +9,7 @@ import { WorkspaceStore } from '../../storage/workspace'
 import { AgentRegistry } from '../configuration/registry'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout'
 import { TitleGeneration } from './title-generation'
+import { WorkspaceRouter } from './workspace-router'
 import { decode, taskSchema } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import type { AgentAdapter, AgentRun } from '../execution/types'
@@ -34,6 +35,32 @@ function setup(checkouts?: ConstructorParameters<typeof TitleGeneration>[3]) {
   const titles = new TitleGeneration(db, store, registry, checkouts)
   return { db, store, registry, titles }
 }
+it.each(['browser', 'terminal', 'thread'] as const)(
+  'routes workspace input to %s without title settings or a provider',
+  async (mode) => {
+    const s = setup()
+    const route = vi
+      .spyOn(WorkspaceRouter.prototype, 'route')
+      .mockResolvedValue({ mode, reason: 'GLiClass suggestion' })
+    const provider = vi.spyOn(s.registry, 'get')
+    try {
+      expect(s.titles.read().model).toBe('')
+      expect(await runClientEffect(s.titles.routeWorkspaceEffect({ text: 'pnpm test' }))).toEqual({
+        mode,
+        reason: 'GLiClass suggestion',
+      })
+      expect(route).toHaveBeenCalledWith('pnpm test', {})
+      expect(provider).not.toHaveBeenCalled()
+      expect(s.store.get().tasks).toEqual([])
+    } finally {
+      route.mockRestore()
+      provider.mockRestore()
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)
 it('generates a title from attachment metadata without inventing message text', async () => {
   const s = setup()
   let captured: AgentRun | undefined

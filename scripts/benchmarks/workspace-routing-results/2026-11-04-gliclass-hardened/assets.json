@@ -1,0 +1,90 @@
+{
+  "run": "run-09",
+  "parentRun": "run-08",
+  "totalBytes": 206295753,
+  "files": [
+    {
+      "path": "LICENSE-APACHE-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "LICENSE-DEBERTA-MIT.txt",
+      "bytes": 1141,
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "path": "LICENSE-TOKENIZERS.txt",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "path": "NOTICE.txt",
+      "bytes": 772,
+      "sha256": "98698ccdb5c31573e5a0d6a2384ff3bf618f17bef02545c37de67c48e9154014"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2795,
+      "sha256": "bdf6a5d07eb59b7fbcbd3ee45401bfe500808cffa642715c798deab223dd82b0"
+    },
+    {
+      "path": "config.json",
+      "bytes": 3752,
+      "sha256": "a3f2055042b9baeaf32a6f105959614d00049e470efe30a1cffa3b2ef785efc7"
+    },
+    {
+      "path": "model.onnx",
+      "bytes": 197828922,
+      "sha256": "281661098f4ef538d75f7233c9dcc2c9bbba719586cf98e3c4b18a371584922c"
+    },
+    {
+      "path": "routing.json",
+      "bytes": 3444,
+      "sha256": "8d41875c087120ee813834b53f87cba25f9421dbfde83acf23263fd2769773ef"
+    },
+    {
+      "path": "tokenizer.json",
+      "bytes": 8332640,
+      "sha256": "f600de7df2f264c0a832209d2984d512f956e77b8ec80a90914b794ebb27713c"
+    },
+    {
+      "path": "tokenizer.mjs",
+      "bytes": 98937,
+      "sha256": "1c4a848f86156201c033d6cd08c4cf81ae1088552acec3367f31ef086edf5af0"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "bytes": 635,
+      "sha256": "2fcf7b3f79e70fc1671316cc32fbc72f91b5fe8bf0f95806f6f831e0cd74795e"
+    }
+  ],
+  "archive": {
+    "path": "dovo-workspace-selections-gliclass-hardened-20261104.tar.gz",
+    "bytes": 177812998,
+    "sha256": "2f1ab28d5524a58d6b8c49c4c4d4b8c21955e7d359bc8b6b3d3a14c95051ebcf"
+  },
+  "checkpointSha256": "295726d54bb815460a589eaa3bc38d5d8444a2bf7456c8ba20107a09962e296d",
+  "sources": [
+    {
+      "path": "scripts/benchmarks/harden-workspace-selection-training.py",
+      "sha256": "7213f743efb6010fff98e595abf63258ce8cf41259437196a3be61d905b87080"
+    },
+    {
+      "path": "scripts/benchmarks/train-workspace-gliclass.py",
+      "sha256": "2af69aeeab858b6e3a0ef488bdcb6274e40396b28aecfeffc51d4b1ad7bf0679"
+    },
+    {
+      "path": "scripts/benchmarks/predict-workspace-selections.mjs",
+      "sha256": "13356bf7e825b66d9c90a0fb21d8aee763c444138bfe7e3caf71edea53ae16f4"
+    },
+    {
+      "path": "scripts/benchmarks/check-workspace-gliclass-export.mjs",
+      "sha256": "6468715d5c938ac67774fdffe27577e4bcc3738cae4998e2daf4d52a400953d2"
+    },
+    {
+      "path": "work/workspace-selection-training/dataset-v9.json",
+      "sha256": "948b2af24a3e8c0701a379414c23812aabd994902879d006da3768e730e9cd49"
+    }
+  ]
+}

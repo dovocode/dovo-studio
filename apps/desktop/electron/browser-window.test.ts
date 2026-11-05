@@ -8,6 +8,7 @@ const f = vi.hoisted(() => ({
   trust: vi.fn<(event: Electron.IpcMainInvokeEvent, path: string) => void>(),
   load: vi.fn<() => Promise<void>>(),
   enabled: false,
+  unifiedEnabled: false,
   error: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
 }))
 class MockWindow {
@@ -79,7 +80,10 @@ vi.mock('./links', () => ({ offerLink: vi.fn<() => Promise<void>>() }))
 vi.mock('./quit-shortcut', () => ({ registerQuitShortcut: () => {} }))
 import { registerBrowserWindows } from './browser-window'
 vi.mock('@dovo/protocol/local-settings', () => ({
-  readLocalSettingsSection: () => ({ browserWorkspaceEnabled: f.enabled }),
+  readLocalSettingsSection: () => ({
+    browserWorkspaceEnabled: f.enabled,
+    unifiedWorkspaceEnabled: f.unifiedEnabled,
+  }),
 }))
 const event = {} as Electron.IpcMainInvokeEvent
 
@@ -89,6 +93,7 @@ beforeEach(() => {
   vi.unstubAllEnvs()
   f.windows.splice(0)
   f.enabled = true
+  f.unifiedEnabled = false
   f.load.mockResolvedValue()
   registration = registerBrowserWindows('/app/index.html', '/app/preload.mjs')
 })
@@ -191,4 +196,11 @@ it('returns all remaining workspaces before shutdown and propagates persistence 
   expect(f.windows.every((window) => !window.destroyed)).toBe(true)
   returnTabs.mockRejectedValueOnce(new Error('Storage is full'))
   await expect(registration.returnAll()).rejects.toThrow('Storage is full')
+})
+
+it('opens browser windows with unified workspace enabled independently', async () => {
+  f.enabled = false
+  f.unifiedEnabled = true
+  await f.invoke!(event, undefined)
+  expect(f.windows).toHaveLength(1)
 })

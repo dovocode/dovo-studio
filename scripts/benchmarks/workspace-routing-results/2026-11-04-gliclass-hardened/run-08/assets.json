@@ -1,0 +1,65 @@
+{
+  "files": [
+    {
+      "path": "LICENSE-APACHE-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "LICENSE-DEBERTA-MIT.txt",
+      "bytes": 1141,
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "path": "LICENSE-TOKENIZERS.txt",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "path": "NOTICE.txt",
+      "bytes": 772,
+      "sha256": "98698ccdb5c31573e5a0d6a2384ff3bf618f17bef02545c37de67c48e9154014"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2795,
+      "sha256": "bdf6a5d07eb59b7fbcbd3ee45401bfe500808cffa642715c798deab223dd82b0"
+    },
+    {
+      "path": "config.json",
+      "bytes": 3752,
+      "sha256": "a3f2055042b9baeaf32a6f105959614d00049e470efe30a1cffa3b2ef785efc7"
+    },
+    {
+      "path": "model.onnx",
+      "bytes": 197828922,
+      "sha256": "cff99c1c99d700c44bdf7330429717c2c0c69b4703dde588a1cec836ed5df9c5"
+    },
+    {
+      "path": "routing.json",
+      "bytes": 3444,
+      "sha256": "3437734473a2bd7a54cd53c647e5c7c34a16f70371224721290582c199de580e"
+    },
+    {
+      "path": "tokenizer.json",
+      "bytes": 8332640,
+      "sha256": "f600de7df2f264c0a832209d2984d512f956e77b8ec80a90914b794ebb27713c"
+    },
+    {
+      "path": "tokenizer.mjs",
+      "bytes": 98937,
+      "sha256": "1c4a848f86156201c033d6cd08c4cf81ae1088552acec3367f31ef086edf5af0"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "bytes": 635,
+      "sha256": "2fcf7b3f79e70fc1671316cc32fbc72f91b5fe8bf0f95806f6f831e0cd74795e"
+    }
+  ],
+  "totalBytes": 206295753,
+  "archive": {
+    "path": "dovo-workspace-selections-gliclass-hardened-20261104-run-08.tar.gz",
+    "bytes": 177760206,
+    "sha256": "e3346eb5e68aa6ac541cbc95fb2419bbd5abb3ee85dcd5b58985f2111004ebf3"
+  }
+}

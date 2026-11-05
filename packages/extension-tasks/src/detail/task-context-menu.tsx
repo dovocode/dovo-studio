@@ -1,4 +1,4 @@
-import { taskSnoozeMenuChoices } from '@dovo/protocol'
+import { studioReference, taskSnoozeMenuChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
 import { Schema } from 'effect'
@@ -551,6 +551,21 @@ export function TaskContextMenu({
                       ['Branch', branch],
                       ['Project path', repository?.path ?? ''],
                       ['Thread ID', task.id],
+                      [
+                        'Studio ID (for agents)',
+                        (() => {
+                          try {
+                            return studioReference(
+                              source.runtimeIdentity ??
+                                (local ? 'local' : (source.runtimeId ?? 'local')),
+                              'thread',
+                              task.id,
+                            )
+                          } catch {
+                            return ''
+                          }
+                        })(),
+                      ],
                     ] as const
                   ).map(([label, text]) => (
                     <Menu.Item

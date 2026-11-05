@@ -1,0 +1,3098 @@
+[
+  {
+    "task": "destination",
+    "input": "make my app support navigation to docs.aurora.io/docs#install",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.085777282714844, -17.27049446105957, 11.348628997802734]
+  },
+  {
+    "task": "destination",
+    "input": "echo 'https://100.101.8.15:7009/help'",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "terminal",
+    "logits": [-18.145828247070312, 11.342487335205078, -8.255952835083008]
+  },
+  {
+    "task": "destination",
+    "input": "https://portal.larch.app/api/v2/check?command=echo%20hi",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "browser",
+    "logits": [11.757261276245117, -15.103894233703613, -6.749741554260254]
+  },
+  {
+    "task": "destination",
+    "input": "On Quarry Server: pnpm --filter web test",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "terminal",
+    "logits": [-19.09786605834961, 11.305983543395996, -7.22384786605835]
+  },
+  {
+    "task": "destination",
+    "input": "gh run view --log-failed | tee /tmp/workspace.log",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "terminal",
+    "logits": [-19.090682983398438, 9.783638000488281, -6.413630485534668]
+  },
+  {
+    "task": "destination",
+    "input": "Please do this in project Missing Repository 42",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.905078887939453, -17.25547218322754, 10.073686599731445]
+  },
+  {
+    "task": "destination",
+    "input": "Would you ask Fable 5.1 to investigate this crash?",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.25669288635254, -16.673236846923828, 11.386641502380371]
+  },
+  {
+    "task": "destination",
+    "input": "Would Selenite Code 3 be a good fit for Lotus Planner? I only want a recommendation",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-17.455699920654297, -16.175073623657227, 10.862021446228027]
+  },
+  {
+    "task": "destination",
+    "input": "http://100.101.8.15:7009/settings?tab=terminal",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "browser",
+    "logits": [11.979132652282715, -16.585168838500977, -6.826889991760254]
+  },
+  {
+    "task": "destination",
+    "input": "Take a look at https://portal.larch.app/help for me",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-12.879359245300293, -17.033767700195312, 10.897578239440918]
+  },
+  {
+    "task": "destination",
+    "input": "I need you to review http://lab.internal:9988/help",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-17.89525604248047, -16.829177856445312, 11.065507888793945]
+  },
+  {
+    "task": "destination",
+    "input": "claude -p \"Help: this page refuses to load\"",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "terminal",
+    "logits": [-19.099090576171875, 10.352716445922852, -6.406089782714844]
+  },
+  {
+    "task": "destination",
+    "input": "Could Celestine handle a tricky compiler bug?",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-17.627689361572266, -16.34666633605957, 9.79975414276123]
+  },
+  {
+    "task": "destination",
+    "input": "Warum schl\u00e4gt htop fehl?",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.10198211669922, -15.044271469116211, 11.257041931152344]
+  },
+  {
+    "task": "destination",
+    "input": "support.hummingbird.dev/article?id=42",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "browser",
+    "logits": [11.674968719482422, -16.762584686279297, -6.23790168762207]
+  },
+  {
+    "task": "destination",
+    "input": "Explain a screenshot mentioning Summit Laptop, without changing the computer",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.353321075439453, -16.559049606323242, 10.603190422058105]
+  },
+  {
+    "task": "destination",
+    "input": "Open https://gallery.sunbird.org and explain its image loading strategy",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.206174850463867, -16.898250579833984, 11.637923240661621]
+  },
+  {
+    "task": "destination",
+    "input": "Suggest an alternative to ssh-keygen -lf ~/.ssh/id_ed25519.pub",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "thread",
+    "logits": [-18.242164611816406, -14.67308521270752, 11.453559875488281]
+  },
+  {
+    "task": "destination",
+    "input": "Computer: Summit Laptop\nProject: Lotus Planner\nCommand: git diff --stat",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "terminal",
+    "logits": [-19.451072692871094, 10.535148620605469, -7.3283820152282715]
+  },
+  {
+    "task": "destination",
+    "input": "claude -p \"explain catalog limits\"",
+    "options": [
+      {
+        "id": "browser",
+        "label": "browser: A website address or a simple request to open a website"
+      },
+      {
+        "id": "terminal",
+        "label": "terminal: A shell command or command-line invocation with program flags"
+      },
+      {
+        "id": "thread",
+        "label": "thread: A question, conversation, coding task or request to analyze or change something"
+      }
+    ],
+    "expected": "terminal",
+    "logits": [-19.419422149658203, 10.2937650680542, -7.631810665130615]
+  },
+  {
+    "task": "runtime",
+    "input": "open dovocode.com/workspace?item=28 in the Shopping browser profile on Helix Build Host",
+    "options": [
+      {
+        "id": "runtime:test:scene:28:3",
+        "label": "runtime: Dune Server"
+      },
+      {
+        "id": "runtime:test:scene:28:1",
+        "label": "runtime: Aurora PC"
+      },
+      {
+        "id": "runtime:test:scene:28:2",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "runtime:test:scene:28:0",
+        "label": "runtime: Helix Build Host"
+      }
+    ],
+    "expected": "runtime:test:scene:28:0",
+    "logits": [
+      -21.941814422607422, -21.726980209350586, -20.92815589904785, -1.5123834609985352,
+      13.10255241394043
+    ]
+  },
+  {
+    "task": "runtime",
+    "input": "Computer: Satellite Laptop\nProject: Aurora Notes\nCommand: git log -39 --oneline",
+    "options": [
+      {
+        "id": "runtime:test:scene:38:3",
+        "label": "runtime: Atlas Workstation"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "runtime:test:scene:38:1",
+        "label": "runtime: Helix Build Host"
+      },
+      {
+        "id": "runtime:test:scene:38:2",
+        "label": "runtime: Satellite Laptop"
+      },
+      {
+        "id": "runtime:test:scene:38:0",
+        "label": "runtime: Mac Studio"
+      }
+    ],
+    "expected": "runtime:test:scene:38:2",
+    "logits": [
+      -21.52029037475586, -1.6622676849365234, -20.530149459838867, 13.08211612701416,
+      -20.87818145751953
+    ]
+  },
+  {
+    "task": "runtime",
+    "input": "Computer: Nomad Laptop\nProject: No Project\nCommand: pwd",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "foundry",
+        "label": "runtime: Foundry Server"
+      },
+      {
+        "id": "nomad",
+        "label": "runtime: Nomad Laptop"
+      },
+      {
+        "id": "runtime-decoy-0",
+        "label": "runtime: Maplebook"
+      },
+      {
+        "id": "runtime-decoy-1",
+        "label": "runtime: Bamboo Server"
+      },
+      {
+        "id": "runtime-decoy-2",
+        "label": "runtime: Yew Desktop"
+      },
+      {
+        "id": "runtime-decoy-3",
+        "label": "runtime: Palm Laptop"
+      },
+      {
+        "id": "runtime-decoy-4",
+        "label": "runtime: Willowbook"
+      },
+      {
+        "id": "runtime-decoy-5",
+        "label": "runtime: Pinecone Mac"
+      },
+      {
+        "id": "runtime-decoy-6",
+        "label": "runtime: Cactus Host"
+      },
+      {
+        "id": "runtime-decoy-7",
+        "label": "runtime: Moss Station"
+      },
+      {
+        "id": "runtime-decoy-8",
+        "label": "runtime: Fern PC"
+      },
+      {
+        "id": "runtime-decoy-9",
+        "label": "runtime: Lichen Node"
+      },
+      {
+        "id": "runtime-decoy-10",
+        "label": "runtime: Thistle Mini"
+      },
+      {
+        "id": "runtime-decoy-11",
+        "label": "runtime: Marigold Host"
+      },
+      {
+        "id": "marina",
+        "label": "runtime: Marina Mac"
+      }
+    ],
+    "expected": "nomad",
+    "logits": [
+      -1.1060470342636108, -19.562923431396484, 13.0050687789917, -19.073999404907227,
+      -18.985307693481445, -19.84792709350586, -20.29052734375, -19.603740692138672,
+      -18.87530517578125, -19.384967803955078, -19.716114044189453, -19.394454956054688,
+      -19.883499145507812, -19.587282180786133, -19.67447853088379, -19.84620475769043
+    ]
+  },
+  {
+    "task": "runtime",
+    "input": "Visit http://100.80.71.3:6192 using Photography",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "foundry",
+        "label": "runtime: Foundry Server"
+      },
+      {
+        "id": "nomad",
+        "label": "runtime: Nomad Laptop"
+      },
+      {
+        "id": "runtime-decoy-0",
+        "label": "runtime: Maplebook"
+      },
+      {
+        "id": "runtime-decoy-1",
+        "label": "runtime: Bamboo Server"
+      },
+      {
+        "id": "runtime-decoy-2",
+        "label": "runtime: Yew Desktop"
+      },
+      {
+        "id": "runtime-decoy-3",
+        "label": "runtime: Palm Laptop"
+      },
+      {
+        "id": "runtime-decoy-4",
+        "label": "runtime: Willowbook"
+      },
+      {
+        "id": "runtime-decoy-5",
+        "label": "runtime: Pinecone Mac"
+      },
+      {
+        "id": "runtime-decoy-6",
+        "label": "runtime: Cactus Host"
+      },
+      {
+        "id": "runtime-decoy-7",
+        "label": "runtime: Moss Station"
+      },
+      {
+        "id": "runtime-decoy-8",
+        "label": "runtime: Fern PC"
+      },
+      {
+        "id": "runtime-decoy-9",
+        "label": "runtime: Lichen Node"
+      },
+      {
+        "id": "runtime-decoy-10",
+        "label": "runtime: Thistle Mini"
+      },
+      {
+        "id": "runtime-decoy-11",
+        "label": "runtime: Marigold Host"
+      },
+      {
+        "id": "marina",
+        "label": "runtime: Marina Mac"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -1.0601853132247925, -19.53505516052246, -18.082094192504883, -18.476184844970703,
+      -18.490800857543945, -19.369510650634766, -18.81143569946289, -18.845407485961914,
+      -18.531719207763672, -19.36542510986328, -19.29279899597168, -19.160219192504883,
+      -19.465038299560547, -19.225276947021484, -19.212589263916016, -19.303485870361328
+    ]
+  },
+  {
+    "task": "runtime",
+    "input": "zellij attach profile-work",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-1.2409076690673828, -20.003938674926758, -20.27914047241211, -19.306133270263672]
+  },
+  {
+    "task": "runtime",
+    "input": "Use the default profile on Quarry Server and open http://100.95.71.44:6127",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "quarry",
+    "logits": [-2.6354820728302, -20.493547439575195, 13.077390670776367, -20.943382263183594]
+  },
+  {
+    "task": "runtime",
+    "input": "Computer: Atlas Workstation\nProject: Atlas Payments\nCommand: git log -6 --oneline",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "runtime:test:scene:5:2",
+        "label": "runtime: Atlas Workstation"
+      },
+      {
+        "id": "runtime:test:scene:5:1",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "runtime:test:scene:5:3",
+        "label": "runtime: Satellite Laptop"
+      },
+      {
+        "id": "runtime:test:scene:5:0",
+        "label": "runtime: Helix Build Host"
+      }
+    ],
+    "expected": "runtime:test:scene:5:2",
+    "logits": [
+      -1.570276141166687, 13.089978218078613, -21.021989822387695, -21.2501277923584,
+      -20.59449577331543
+    ]
+  },
+  {
+    "task": "runtime",
+    "input": "Make the terminal help command work in project Lupin Mobile",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-1.1492282152175903, -19.805532455444336, -20.66314125061035, -18.784378051757812]
+  },
+  {
+    "task": "runtime",
+    "input": "I want Sol to implement the feature",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "mac-studio",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "macbook",
+        "label": "runtime: Dominic's MacBook"
+      },
+      {
+        "id": "linux",
+        "label": "runtime: Linux Server"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-1.3294522762298584, -19.728670120239258, -19.950191497802734, -18.131284713745117]
+  },
+  {
+    "task": "runtime",
+    "input": "Let Opus 5.5 review this change",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "mac-studio",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "macbook",
+        "label": "runtime: Dominic's MacBook"
+      },
+      {
+        "id": "linux",
+        "label": "runtime: Linux Server"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-1.0286712646484375, -19.527389526367188, -19.571874618530273, -19.52756118774414]
+  },
+  {
+    "task": "runtime",
+    "input": "What is the difference between Mac Studio and another option?",
+    "options": [
+      {
+        "id": "runtime:test:125:1",
+        "label": "runtime: Atlas Workstation"
+      },
+      {
+        "id": "runtime:test:125:0",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-17.397052764892578, -13.671215057373047, -0.02468268573284149]
+  },
+  {
+    "task": "runtime",
+    "input": "Run the work from the paired Satellite Laptop computer",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "runtime:test:69:1",
+        "label": "runtime: Satellite Laptop"
+      },
+      {
+        "id": "runtime:test:69:0",
+        "label": "runtime: Helix Build Host"
+      }
+    ],
+    "expected": "runtime:test:69:1",
+    "logits": [-3.4890964031219482, 13.056473731994629, -18.792203903198242]
+  },
+  {
+    "task": "runtime",
+    "input": "Would Selenite Code 3 be a good fit for Lotus Planner? I only want a recommendation",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-0.1333983838558197, -19.10966682434082, -20.482934951782227, -18.685697555541992]
+  },
+  {
+    "task": "runtime",
+    "input": "support.hummingbird.dev/article?id=42",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-0.5526571869850159, -20.400203704833984, -20.76224708557129, -20.022533416748047]
+  },
+  {
+    "task": "runtime",
+    "input": "Which is better for this task, Opus 5.5 or Fable 5.1?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "mac-studio",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "macbook",
+        "label": "runtime: Dominic's MacBook"
+      },
+      {
+        "id": "linux",
+        "label": "runtime: Linux Server"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-0.10209768265485764, -18.557697296142578, -18.163122177124023, -18.10300636291504]
+  },
+  {
+    "task": "runtime",
+    "input": "Would you use Fable 5.1 to look at the bug?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "mac-studio",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "macbook",
+        "label": "runtime: Dominic's MacBook"
+      },
+      {
+        "id": "linux",
+        "label": "runtime: Linux Server"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-0.8243337869644165, -19.510099411010742, -20.088489532470703, -19.88980484008789]
+  },
+  {
+    "task": "runtime",
+    "input": "Navigate to https://gallery.sunbird.org using profile Unknown Profile 42",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-1.5980808734893799, -20.25938606262207, -20.76546287536621, -19.339921951293945]
+  },
+  {
+    "task": "runtime",
+    "input": "Work in Brook Finance with Tourmaline Code 1 on Marina Mac",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "foundry",
+        "label": "runtime: Foundry Server"
+      },
+      {
+        "id": "nomad",
+        "label": "runtime: Nomad Laptop"
+      },
+      {
+        "id": "runtime-decoy-0",
+        "label": "runtime: Maplebook"
+      },
+      {
+        "id": "runtime-decoy-1",
+        "label": "runtime: Bamboo Server"
+      },
+      {
+        "id": "runtime-decoy-2",
+        "label": "runtime: Yew Desktop"
+      },
+      {
+        "id": "runtime-decoy-3",
+        "label": "runtime: Palm Laptop"
+      },
+      {
+        "id": "runtime-decoy-4",
+        "label": "runtime: Willowbook"
+      },
+      {
+        "id": "runtime-decoy-5",
+        "label": "runtime: Pinecone Mac"
+      },
+      {
+        "id": "runtime-decoy-6",
+        "label": "runtime: Cactus Host"
+      },
+      {
+        "id": "runtime-decoy-7",
+        "label": "runtime: Moss Station"
+      },
+      {
+        "id": "runtime-decoy-8",
+        "label": "runtime: Fern PC"
+      },
+      {
+        "id": "runtime-decoy-9",
+        "label": "runtime: Lichen Node"
+      },
+      {
+        "id": "runtime-decoy-10",
+        "label": "runtime: Thistle Mini"
+      },
+      {
+        "id": "runtime-decoy-11",
+        "label": "runtime: Marigold Host"
+      },
+      {
+        "id": "marina",
+        "label": "runtime: Marina Mac"
+      }
+    ],
+    "expected": "marina",
+    "logits": [
+      -1.619787335395813, -19.797935485839844, -19.175567626953125, -19.455005645751953,
+      -19.404857635498047, -20.18461036682129, -20.154146194458008, -19.80079460144043,
+      -19.513874053955078, -19.887727737426758, -19.926847457885742, -19.98247718811035,
+      -19.830995559692383, -19.54888343811035, -18.533706665039062, 13.090078353881836
+    ]
+  },
+  {
+    "task": "runtime",
+    "input": "Do not switch my project when I ask what Lotus Planner means",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "harbor",
+        "label": "runtime: Harbor Mac"
+      },
+      {
+        "id": "quarry",
+        "label": "runtime: Quarry Server"
+      },
+      {
+        "id": "summit",
+        "label": "runtime: Summit Laptop"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-0.1804305762052536, -18.72612190246582, -20.059276580810547, -17.94046401977539]
+  },
+  {
+    "task": "runtime",
+    "input": "For this request, switch to computer Atlas Workstation",
+    "options": [
+      {
+        "id": "runtime:test:64:1",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "runtime:test:64:0",
+        "label": "runtime: Atlas Workstation"
+      }
+    ],
+    "expected": "runtime:test:64:0",
+    "logits": [-20.199193954467773, -3.651303768157959, 12.985799789428711]
+  },
+  {
+    "task": "model",
+    "input": "Let model Altair Pro handle the code review",
+    "options": [
+      {
+        "id": "model:test:22:0",
+        "label": "model: Granite 4.2"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:22:1",
+        "label": "model: Opus 5.5"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-21.048255920410156, -1.421247959136963, -19.83048439025879]
+  },
+  {
+    "task": "model",
+    "input": "Ask Wonder-full 1.0 to look at the patch",
+    "options": [
+      {
+        "id": "model:test:111:0",
+        "label": "model: Fable 5.1"
+      },
+      {
+        "id": "model:test:111:1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "model:test:111:2",
+        "label": "model: Wonder-full 1.0"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:111:5",
+        "label": "model: Granite 4.2"
+      },
+      {
+        "id": "model:test:111:4",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "model:test:111:3",
+        "label": "model: Helios Mini"
+      }
+    ],
+    "expected": "model:test:111:2",
+    "logits": [
+      -20.926807403564453, -19.139387130737305, 13.031270027160645, -3.017230987548828,
+      -20.101713180541992, -19.453815460205078, -19.930850982666016
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Explain a screenshot mentioning Summit Laptop, without changing the computer",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      1.1562758684158325, -18.473831176757812, -17.88083839416504, -18.529464721679688,
+      -18.444746017456055
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Explain whether Opus could help with a migration",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "opus-5.5",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "sol-6.1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "fable-5.1",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "expected": "keep",
+    "logits": [1.223494529724121, -15.920376777648926, -18.880456924438477, -18.581655502319336]
+  },
+  {
+    "task": "model",
+    "input": "Make the terminal help command work in project Lupin Mobile",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.9166776537895203, -18.476964950561523, -18.242494583129883, -18.00142478942871,
+      -18.47844123840332
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Could you use Opus to fix this bug?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "opus-5.5",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "sol-6.1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "fable-5.1",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "expected": "opus-5.5",
+    "logits": [-1.6865895986557007, 12.349761962890625, -19.850543975830078, -19.700342178344727]
+  },
+  {
+    "task": "model",
+    "input": "Let model Fable 5.1 handle the code review",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:61:2",
+        "label": "model: Fable 5.1"
+      },
+      {
+        "id": "model:test:61:1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "model:test:61:0",
+        "label": "model: Wonder-full 1.0"
+      }
+    ],
+    "expected": "model:test:61:2",
+    "logits": [-2.039954900741577, 12.986499786376953, -19.43669891357422, -18.03345489501953]
+  },
+  {
+    "task": "model",
+    "input": "Ask Fable to repair the failing tests",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "opus-5.5",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "sol-6.1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "fable-5.1",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "expected": "fable-5.1",
+    "logits": [-2.181746244430542, -20.32988166809082, -19.293081283569336, 13.035115242004395]
+  },
+  {
+    "task": "model",
+    "input": "Let model Sol 6.1 handle the code review",
+    "options": [
+      {
+        "id": "model:test:37:1",
+        "label": "model: Fable 5.1"
+      },
+      {
+        "id": "model:test:37:2",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:37:0",
+        "label": "model: Wonder-full 1.0"
+      }
+    ],
+    "expected": "model:test:37:2",
+    "logits": [-20.362863540649414, 12.866581916809082, -3.1080756187438965, -19.3527889251709]
+  },
+  {
+    "task": "model",
+    "input": "Ask Sol 6.1 to look at the patch",
+    "options": [
+      {
+        "id": "model:test:48:1",
+        "label": "model: Fable 5.1"
+      },
+      {
+        "id": "model:test:48:3",
+        "label": "model: Helios Mini"
+      },
+      {
+        "id": "model:test:48:0",
+        "label": "model: Granite 4.2"
+      },
+      {
+        "id": "model:test:48:2",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "model:test:48:5",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "model:test:48:4",
+        "label": "model: Wonder-full 1.0"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      }
+    ],
+    "expected": "model:test:48:5",
+    "logits": [
+      -20.625825881958008, -19.38637351989746, -20.215246200561523, -19.112586975097656,
+      13.066206932067871, -19.337312698364258, -2.341668128967285
+    ]
+  },
+  {
+    "task": "model",
+    "input": "I want my app to understand codex resume --last and docs.sunbird.org",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.5990232229232788, -18.21194076538086, -18.405363082885742, -17.778242111206055,
+      -18.640979766845703
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Can you use Sol 6.1 to review the implementation?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "opus-5.5",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "sol-6.1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "fable-5.1",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "expected": "sol-6.1",
+    "logits": [-1.7930443286895752, -20.388916015625, 12.832874298095703, -20.702777862548828]
+  },
+  {
+    "task": "model",
+    "input": "Work outside a repository with Moonstone Mini 2 and explain this stack trace",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "moonstone",
+    "logits": [
+      -1.8774176836013794, -19.77191162109375, -19.100723266601562, 13.105053901672363,
+      -19.899953842163086
+    ]
+  },
+  {
+    "task": "model",
+    "input": "For this request, switch to Sol 6.1",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:29:0",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "model:test:29:2",
+        "label": "model: Helios Mini"
+      },
+      {
+        "id": "model:test:29:1",
+        "label": "model: Granite 4.2"
+      }
+    ],
+    "expected": "model:test:29:0",
+    "logits": [-2.826690196990967, 12.949342727661133, -19.06365203857422, -20.223106384277344]
+  },
+  {
+    "task": "model",
+    "input": "Use Missing Model 42 to review the code",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.9846879839897156, -18.269580841064453, -18.201683044433594, -18.2454776763916,
+      -18.18731689453125
+    ]
+  },
+  {
+    "task": "model",
+    "input": "I'm asking about Altair Pro, not selecting it",
+    "options": [
+      {
+        "id": "model:test:55:4",
+        "label": "model: Helios Mini"
+      },
+      {
+        "id": "model:test:55:2",
+        "label": "model: Granite 4.2"
+      },
+      {
+        "id": "model:test:55:3",
+        "label": "model: Fable 5.1"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:55:1",
+        "label": "model: Wonder-full 1.0"
+      },
+      {
+        "id": "model:test:55:0",
+        "label": "model: Sol 6.1"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -19.8975772857666, -19.766868591308594, -18.546003341674805, 0.30223187804222107,
+      -17.911388397216797, -18.137537002563477
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Can you explain a screenshot that mentions Fable 5.1?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:30:1",
+        "label": "model: Helios Mini"
+      },
+      {
+        "id": "model:test:30:0",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "expected": "keep",
+    "logits": [1.1761375665664673, -18.217409133911133, -15.419626235961914]
+  },
+  {
+    "task": "model",
+    "input": "Review my patch with Chert, while leaving the project unchanged",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "chert",
+    "logits": [
+      -1.1678707599639893, -19.14446258544922, -18.437870025634766, -16.853137969970703,
+      13.037378311157227
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Let model Sol 6.1 handle the code review",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "model:test:103:3",
+        "label": "model: Fable 5.1"
+      },
+      {
+        "id": "model:test:103:1",
+        "label": "model: Helios Mini"
+      },
+      {
+        "id": "model:test:103:0",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "model:test:103:2",
+        "label": "model: Sol 6.1"
+      }
+    ],
+    "expected": "model:test:103:2",
+    "logits": [
+      -1.5869277715682983, -20.633363723754883, -20.151588439941406, -19.942251205444336,
+      12.978094100952148
+    ]
+  },
+  {
+    "task": "model",
+    "input": "Please analyze the startup crash in Verbena Editor with Moonstone",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "celestine",
+        "label": "model: Celestine 1.6"
+      },
+      {
+        "id": "selenite",
+        "label": "model: Selenite Code 3"
+      },
+      {
+        "id": "moonstone",
+        "label": "model: Moonstone Mini 2"
+      },
+      {
+        "id": "chert",
+        "label": "model: Chert Pro 7"
+      }
+    ],
+    "expected": "moonstone",
+    "logits": [
+      -1.3852750062942505, -20.235200881958008, -20.003463745117188, 11.166770935058594,
+      -19.896860122680664
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Use Fable 5.1 on Helix Build Host in project Aurora Notes to fix the startup crash",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:scene:3:3",
+        "label": "project: Quartz Analytics"
+      },
+      {
+        "id": "project:test:scene:3:0",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "project:test:scene:3:2",
+        "label": "project: Atlas Payments"
+      },
+      {
+        "id": "project:test:scene:3:1",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      }
+    ],
+    "expected": "project:test:scene:3:1",
+    "logits": [
+      -1.1989550590515137, -21.565834045410156, -21.607810974121094, -21.56578254699707,
+      13.029214859008789, -18.644834518432617
+    ]
+  },
+  {
+    "task": "project",
+    "input": "cd ~/workspace && npm audit --json",
+    "options": [
+      {
+        "id": "project:test:84:2",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:84:4",
+        "label": "project: Helix Terminal"
+      },
+      {
+        "id": "project:test:84:0",
+        "label": "project: Quartz Analytics"
+      },
+      {
+        "id": "project:test:84:3",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "project:test:84:5",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "project:test:84:1",
+        "label": "project: Atlas Payments"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -20.639442443847656, -0.6671180129051208, -20.27049446105957, -20.012046813964844,
+      -18.487346649169922, -20.453983306884766, -20.65695571899414, -15.486899375915527
+    ]
+  },
+  {
+    "task": "project",
+    "input": "The target repository is Quartz Analytics; improve startup",
+    "options": [
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:107:3",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "project:test:107:2",
+        "label": "project: Helix Terminal"
+      },
+      {
+        "id": "project:test:107:4",
+        "label": "project: Quartz Analytics"
+      },
+      {
+        "id": "project:test:107:0",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "project:test:107:1",
+        "label": "project: Atlas Payments"
+      }
+    ],
+    "expected": "project:test:107:4",
+    "logits": [
+      -17.832435607910156, -1.3348537683486938, -21.331846237182617, -21.053245544433594,
+      12.935831069946289, -21.234804153442383, -21.40158462524414
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Help: pnpm test exits immediately without showing an error",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "lotus",
+        "label": "project: Lotus Planner"
+      },
+      {
+        "id": "flax",
+        "label": "project: Flax Dashboard"
+      },
+      {
+        "id": "verbena",
+        "label": "project: Verbena Editor"
+      },
+      {
+        "id": "lupin",
+        "label": "project: Lupin Mobile"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.560283362865448, -16.133907318115234, -20.26076316833496, -20.09117889404297,
+      -20.13892364501953, -20.5363712310791
+    ]
+  },
+  {
+    "task": "project",
+    "input": "What is the difference between Culture and Astronomy browser profiles?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "lotus",
+        "label": "project: Lotus Planner"
+      },
+      {
+        "id": "flax",
+        "label": "project: Flax Dashboard"
+      },
+      {
+        "id": "verbena",
+        "label": "project: Verbena Editor"
+      },
+      {
+        "id": "lupin",
+        "label": "project: Lupin Mobile"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      0.26083293557167053, -15.821464538574219, -18.904233932495117, -18.864410400390625,
+      -18.704313278198242, -19.590539932250977
+    ]
+  },
+  {
+    "task": "project",
+    "input": "I'm asking about Quartz Analytics, not selecting it",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:70:3",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "project:test:70:4",
+        "label": "project: Quartz Analytics"
+      },
+      {
+        "id": "project:test:70:2",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "project:test:70:1",
+        "label": "project: Atlas Payments"
+      },
+      {
+        "id": "project:test:70:0",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      0.6805769801139832, -20.6557559967041, -16.6483211517334, -17.866806030273438,
+      -20.359851837158203, -20.235111236572266, -16.47166633605957
+    ]
+  },
+  {
+    "task": "project",
+    "input": "For this request, switch to project Tundra Cloud",
+    "options": [
+      {
+        "id": "project:test:88:0",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "project:test:88:1",
+        "label": "project: Larch Calendar"
+      }
+    ],
+    "expected": "keep",
+    "logits": [-20.775415420532227, -2.164088249206543, -17.93061065673828, -21.59195899963379]
+  },
+  {
+    "task": "project",
+    "input": "Use Granite 4.2 on Aurora PC in project Atlas Payments to fix the startup crash",
+    "options": [
+      {
+        "id": "project:test:scene:39:3",
+        "label": "project: Atlas Payments"
+      },
+      {
+        "id": "project:test:scene:39:0",
+        "label": "project: Helix Terminal"
+      },
+      {
+        "id": "project:test:scene:39:2",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:scene:39:1",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      }
+    ],
+    "expected": "project:test:scene:39:3",
+    "logits": [
+      13.144378662109375, -22.02764320373535, -21.72648048400879, -1.8524619340896606,
+      -20.540748596191406, -18.60001564025879
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Running zellij attach profile-work gives a missing-session error; explain it",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "lotus",
+        "label": "project: Lotus Planner"
+      },
+      {
+        "id": "flax",
+        "label": "project: Flax Dashboard"
+      },
+      {
+        "id": "verbena",
+        "label": "project: Verbena Editor"
+      },
+      {
+        "id": "lupin",
+        "label": "project: Lupin Mobile"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      0.10962806642055511, -15.954545021057129, -19.53647232055664, -19.538436889648438,
+      -19.453432083129883, -20.21567726135254
+    ]
+  },
+  {
+    "task": "project",
+    "input": "What is the difference between Dovo Studio and another option?",
+    "options": [
+      {
+        "id": "project:test:115:2",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "project:test:115:1",
+        "label": "project: Helix Terminal"
+      },
+      {
+        "id": "project:test:115:0",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:115:4",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "project:test:115:3",
+        "label": "project: Atlas Payments"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -15.374787330627441, -20.686172485351562, -20.18617057800293, -16.158565521240234,
+      0.44328632950782776, -20.50411033630371, -20.741037368774414
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Use Fable 5.1 on Helix Build Host in project Dovo Studio to fix the startup crash",
+    "options": [
+      {
+        "id": "project:test:scene:30:1",
+        "label": "project: Helix Terminal"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "project:test:scene:30:2",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:scene:30:0",
+        "label": "project: Larch Calendar"
+      },
+      {
+        "id": "project:test:scene:30:3",
+        "label": "project: Dovo Studio"
+      }
+    ],
+    "expected": "project:test:scene:30:3",
+    "logits": [
+      -20.55591583251953, -18.666500091552734, -21.688430786132812, -1.5258816480636597,
+      -21.612815856933594, 13.012541770935059
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Can you diagnose why file ./gallery.jpg fails?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "lotus",
+        "label": "project: Lotus Planner"
+      },
+      {
+        "id": "flax",
+        "label": "project: Flax Dashboard"
+      },
+      {
+        "id": "verbena",
+        "label": "project: Verbena Editor"
+      },
+      {
+        "id": "lupin",
+        "label": "project: Lupin Mobile"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.059326279908418655, -15.996979713439941, -18.889122009277344, -18.443071365356445,
+      -18.12982940673828, -19.589548110961914
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Could Celestine handle a tricky compiler bug?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "lotus",
+        "label": "project: Lotus Planner"
+      },
+      {
+        "id": "flax",
+        "label": "project: Flax Dashboard"
+      },
+      {
+        "id": "verbena",
+        "label": "project: Verbena Editor"
+      },
+      {
+        "id": "lupin",
+        "label": "project: Lupin Mobile"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      0.17345497012138367, -16.30278968811035, -19.05703353881836, -18.745777130126953,
+      -18.956235885620117, -19.892230987548828
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Let Opus 5.5 review this change",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "dovo",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "shampoo",
+        "label": "project: Shampoo"
+      },
+      {
+        "id": "client",
+        "label": "project: Client Website"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.4276985824108124, -16.337522506713867, -17.309688568115234, -21.252038955688477,
+      -21.014249801635742
+    ]
+  },
+  {
+    "task": "project",
+    "input": "The target repository is Aurora Notes; improve startup",
+    "options": [
+      {
+        "id": "project:test:83:0",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "project:test:83:1",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "project:test:83:2",
+        "label": "project: Quartz Analytics"
+      }
+    ],
+    "expected": "project:test:83:1",
+    "logits": [
+      -21.323896408081055, -1.8573557138442993, -17.9346981048584, 13.072247505187988,
+      -21.324848175048828
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Should I use Opus for code reviews?",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "dovo",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "shampoo",
+        "label": "project: Shampoo"
+      },
+      {
+        "id": "client",
+        "label": "project: Client Website"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      -0.1086793839931488, -16.135059356689453, -17.178564071655273, -21.42554473876953,
+      -21.251081466674805
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Use Sol 6.1 on Mac Studio in project Dovo Studio to fix the startup crash",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:scene:9:3",
+        "label": "project: Helix Terminal"
+      },
+      {
+        "id": "project:test:scene:9:0",
+        "label": "project: Aurora Notes"
+      },
+      {
+        "id": "project:test:scene:9:2",
+        "label": "project: Quartz Analytics"
+      },
+      {
+        "id": "project:test:scene:9:1",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      }
+    ],
+    "expected": "project:test:scene:9:1",
+    "logits": [
+      -1.0750080347061157, -21.871110916137695, -21.538419723510742, -20.445695877075195,
+      13.035036087036133, -18.811439514160156
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Explain why the screenshot mentions Marina Mac without changing computers",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "dahlia",
+        "label": "project: Dahlia Desktop"
+      },
+      {
+        "id": "juniper",
+        "label": "project: Juniper Tasks"
+      },
+      {
+        "id": "pebble",
+        "label": "project: Pebble Web"
+      },
+      {
+        "id": "project-decoy-0",
+        "label": "project: Button Docs"
+      },
+      {
+        "id": "project-decoy-1",
+        "label": "project: Ribbon Chat"
+      },
+      {
+        "id": "project-decoy-2",
+        "label": "project: Canvas CRM"
+      },
+      {
+        "id": "project-decoy-3",
+        "label": "project: Palette API"
+      },
+      {
+        "id": "project-decoy-4",
+        "label": "project: Brush Tasks"
+      },
+      {
+        "id": "project-decoy-5",
+        "label": "project: Ink Billing"
+      },
+      {
+        "id": "project-decoy-6",
+        "label": "project: Stencil Search"
+      },
+      {
+        "id": "project-decoy-7",
+        "label": "project: Crayon Mail"
+      },
+      {
+        "id": "project-decoy-8",
+        "label": "project: Pastel Mobile"
+      },
+      {
+        "id": "project-decoy-9",
+        "label": "project: Easel Reports"
+      },
+      {
+        "id": "brook",
+        "label": "project: Brook Finance"
+      }
+    ],
+    "expected": "keep",
+    "logits": [
+      0.3480445444583893, -15.413427352905273, -19.67245101928711, -19.51131248474121,
+      -19.87557601928711, -19.703411102294922, -19.49846076965332, -19.458568572998047,
+      -19.693517684936523, -20.508047103881836, -19.73216438293457, -19.4478816986084,
+      -19.326744079589844, -19.53910255432129, -19.489269256591797, -19.581279754638672
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Model: Selenite Code 3\nComputer: Harbor Mac\nProject: Verbena Editor\nFix keyboard navigation",
+    "options": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "lotus",
+        "label": "project: Lotus Planner"
+      },
+      {
+        "id": "flax",
+        "label": "project: Flax Dashboard"
+      },
+      {
+        "id": "verbena",
+        "label": "project: Verbena Editor"
+      },
+      {
+        "id": "lupin",
+        "label": "project: Lupin Mobile"
+      }
+    ],
+    "expected": "verbena",
+    "logits": [
+      -0.6735444664955139, -16.857669830322266, -21.137432098388672, -20.192527770996094,
+      12.697739601135254, -21.141342163085938
+    ]
+  },
+  {
+    "task": "project",
+    "input": "Computer: Aurora PC\nProject: Helix Terminal\nCommand: git log -21 --oneline",
+    "options": [
+      {
+        "id": "project:test:scene:20:3",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "project:test:scene:20:1",
+        "label": "project: Quartz Analytics"
+      },
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "project:test:scene:20:2",
+        "label": "project: Atlas Payments"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "project:test:scene:20:0",
+        "label": "project: Helix Terminal"
+      }
+    ],
+    "expected": "project:test:scene:20:0",
+    "logits": [
+      -21.00994873046875, -20.478906631469727, -1.1003828048706055, -21.434547424316406,
+      -17.197019577026367, 13.05025577545166
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "Can you explain a screenshot that mentions Development?",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:20:0",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "profile:test:20:1",
+        "label": "profile: Development"
+      },
+      {
+        "id": "profile:test:20:2",
+        "label": "profile: Private"
+      }
+    ],
+    "expected": "default",
+    "logits": [1.9171700477600098, -19.756940841674805, -18.43206024169922, -19.28358268737793]
+  },
+  {
+    "task": "profile",
+    "input": "The browser profile should be Development; load dovocode.com",
+    "options": [
+      {
+        "id": "profile:test:113:0",
+        "label": "profile: Private"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:113:1",
+        "label": "profile: Development"
+      }
+    ],
+    "expected": "profile:test:113:1",
+    "logits": [-21.256378173828125, -6.391456127166748, 12.853548049926758]
+  },
+  {
+    "task": "profile",
+    "input": "Can you explain a screenshot that mentions Private?",
+    "options": [
+      {
+        "id": "profile:test:45:4",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "profile:test:45:2",
+        "label": "profile: Social"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:45:0",
+        "label": "profile: Development"
+      },
+      {
+        "id": "profile:test:45:1",
+        "label": "profile: Shopping"
+      },
+      {
+        "id": "profile:test:45:3",
+        "label": "profile: Private"
+      }
+    ],
+    "expected": "default",
+    "logits": [
+      -19.273130416870117, -20.84870147705078, 1.6676453351974487, -20.59685707092285,
+      -21.162363052368164, -17.1719970703125
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "I'm asking about Social, not selecting it",
+    "options": [
+      {
+        "id": "profile:test:15:0",
+        "label": "profile: Private"
+      },
+      {
+        "id": "profile:test:15:1",
+        "label": "profile: Social"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      }
+    ],
+    "expected": "default",
+    "logits": [-19.28969955444336, -17.24024200439453, 0.20878945291042328]
+  },
+  {
+    "task": "profile",
+    "input": "Open gallery.example.org in Consulting on Marina Mac",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "cooking",
+        "label": "profile: Cooking"
+      },
+      {
+        "id": "photography",
+        "label": "profile: Photography"
+      },
+      {
+        "id": "reading",
+        "label": "profile: Reading Room"
+      },
+      {
+        "id": "profile-decoy-0",
+        "label": "profile: Gardening"
+      },
+      {
+        "id": "profile-decoy-1",
+        "label": "profile: Fishing"
+      },
+      {
+        "id": "profile-decoy-2",
+        "label": "profile: Sailing"
+      },
+      {
+        "id": "profile-decoy-3",
+        "label": "profile: Running"
+      },
+      {
+        "id": "profile-decoy-4",
+        "label": "profile: Swimming"
+      },
+      {
+        "id": "profile-decoy-5",
+        "label": "profile: Climbing"
+      },
+      {
+        "id": "profile-decoy-6",
+        "label": "profile: Skiing"
+      },
+      {
+        "id": "profile-decoy-7",
+        "label": "profile: Hiking"
+      },
+      {
+        "id": "profile-decoy-8",
+        "label": "profile: Drawing"
+      },
+      {
+        "id": "profile-decoy-9",
+        "label": "profile: Pottery"
+      },
+      {
+        "id": "profile-decoy-10",
+        "label": "profile: Baking"
+      },
+      {
+        "id": "consulting",
+        "label": "profile: Consulting"
+      }
+    ],
+    "expected": "consulting",
+    "logits": [
+      -2.3966970443725586, -19.898237228393555, -20.159116744995117, -19.763566970825195,
+      -20.170433044433594, -20.00458526611328, -19.818546295166016, -20.200632095336914,
+      -20.14394187927246, -20.18826675415039, -20.11835479736328, -19.944597244262695,
+      -20.2922306060791, -20.57275390625, -19.617151260375977, 12.970837593078613
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "open http://studio.lan:8176/workspace?item=1 in the Documentation browser profile on Aurora PC",
+    "options": [
+      {
+        "id": "profile:test:scene:1:3",
+        "label": "profile: Social"
+      },
+      {
+        "id": "profile:test:scene:1:0",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "profile:test:scene:1:1",
+        "label": "profile: Shopping"
+      },
+      {
+        "id": "profile:test:scene:1:2",
+        "label": "profile: Private"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      }
+    ],
+    "expected": "profile:test:scene:1:0",
+    "logits": [
+      -21.585111618041992, 13.142374992370605, -21.588212966918945, -20.93160629272461,
+      -4.471304416656494
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "Bring up https://quartz.app/docs under browser profile Documentation",
+    "options": [
+      {
+        "id": "profile:test:51:1",
+        "label": "profile: Work"
+      },
+      {
+        "id": "profile:test:51:2",
+        "label": "profile: Private"
+      },
+      {
+        "id": "profile:test:51:0",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      }
+    ],
+    "expected": "profile:test:51:0",
+    "logits": [-21.827728271484375, -20.09971809387207, 12.706735610961914, -5.862642765045166]
+  },
+  {
+    "task": "profile",
+    "input": "cd ~/workspace && vercel env ls",
+    "options": [
+      {
+        "id": "profile:test:42:1",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:42:0",
+        "label": "profile: Private"
+      }
+    ],
+    "expected": "default",
+    "logits": [-19.909595489501953, -1.5119601488113403, -17.310102462768555]
+  },
+  {
+    "task": "profile",
+    "input": "ifconfig en0\n# inspect the result",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:63:4",
+        "label": "profile: Development"
+      },
+      {
+        "id": "profile:test:63:2",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "profile:test:63:3",
+        "label": "profile: Shopping"
+      },
+      {
+        "id": "profile:test:63:1",
+        "label": "profile: Work"
+      },
+      {
+        "id": "profile:test:63:0",
+        "label": "profile: Social"
+      }
+    ],
+    "expected": "default",
+    "logits": [
+      -0.7421795129776001, -19.87741470336914, -19.99503517150879, -21.38650894165039,
+      -21.036182403564453, -21.263565063476562
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "open https://quartz.app/docs/workspace?item=31 in the Documentation browser profile on Atlas Workstation",
+    "options": [
+      {
+        "id": "profile:test:scene:31:2",
+        "label": "profile: Work"
+      },
+      {
+        "id": "profile:test:scene:31:1",
+        "label": "profile: Documentation"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:scene:31:0",
+        "label": "profile: Shopping"
+      },
+      {
+        "id": "profile:test:scene:31:3",
+        "label": "profile: Development"
+      }
+    ],
+    "expected": "profile:test:scene:31:1",
+    "logits": [
+      -16.64401626586914, 12.921699523925781, -5.461264133453369, -21.420238494873047,
+      -19.822620391845703
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "health.birch.org/download/tool.tar.gz",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:77:1",
+        "label": "profile: Private"
+      },
+      {
+        "id": "profile:test:77:0",
+        "label": "profile: Social"
+      },
+      {
+        "id": "profile:test:77:2",
+        "label": "profile: Shopping"
+      }
+    ],
+    "expected": "default",
+    "logits": [-0.7522918581962585, -20.38765525817871, -20.72831916809082, -21.013410568237305]
+  },
+  {
+    "task": "profile",
+    "input": "open dovocode.com/workspace?item=28 in the Shopping browser profile on Helix Build Host",
+    "options": [
+      {
+        "id": "profile:test:scene:28:0",
+        "label": "profile: Work"
+      },
+      {
+        "id": "profile:test:scene:28:3",
+        "label": "profile: Development"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:scene:28:1",
+        "label": "profile: Shopping"
+      },
+      {
+        "id": "profile:test:scene:28:2",
+        "label": "profile: Private"
+      }
+    ],
+    "expected": "profile:test:scene:28:1",
+    "logits": [
+      -19.165842056274414, -18.57650375366211, -4.24907922744751, 12.966678619384766,
+      -20.38711166381836
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "Open https://docs.testhost.dev with the Unlisted browser profile",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "cooking",
+        "label": "profile: Cooking"
+      },
+      {
+        "id": "photography",
+        "label": "profile: Photography"
+      },
+      {
+        "id": "reading",
+        "label": "profile: Reading Room"
+      },
+      {
+        "id": "profile-decoy-0",
+        "label": "profile: Gardening"
+      },
+      {
+        "id": "profile-decoy-1",
+        "label": "profile: Fishing"
+      },
+      {
+        "id": "profile-decoy-2",
+        "label": "profile: Sailing"
+      },
+      {
+        "id": "profile-decoy-3",
+        "label": "profile: Running"
+      },
+      {
+        "id": "profile-decoy-4",
+        "label": "profile: Swimming"
+      },
+      {
+        "id": "profile-decoy-5",
+        "label": "profile: Climbing"
+      },
+      {
+        "id": "profile-decoy-6",
+        "label": "profile: Skiing"
+      },
+      {
+        "id": "profile-decoy-7",
+        "label": "profile: Hiking"
+      },
+      {
+        "id": "profile-decoy-8",
+        "label": "profile: Drawing"
+      },
+      {
+        "id": "profile-decoy-9",
+        "label": "profile: Pottery"
+      },
+      {
+        "id": "profile-decoy-10",
+        "label": "profile: Baking"
+      },
+      {
+        "id": "consulting",
+        "label": "profile: Consulting"
+      }
+    ],
+    "expected": "default",
+    "logits": [
+      -0.5599550604820251, -19.876575469970703, -20.251161575317383, -19.697065353393555,
+      -19.981714248657227, -19.949275970458984, -20.038908004760742, -20.09457015991211,
+      -20.063812255859375, -20.10570526123047, -20.014719009399414, -19.81081771850586,
+      -20.19575309753418, -20.403982162475586, -19.734054565429688, -20.00699234008789
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "open https://quartz.app/docs/workspace?item=37 in the Work browser profile on Satellite Laptop",
+    "options": [
+      {
+        "id": "profile:test:scene:37:0",
+        "label": "profile: Work"
+      },
+      {
+        "id": "profile:test:scene:37:2",
+        "label": "profile: Private"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:scene:37:1",
+        "label": "profile: Development"
+      },
+      {
+        "id": "profile:test:scene:37:3",
+        "label": "profile: Social"
+      }
+    ],
+    "expected": "profile:test:scene:37:0",
+    "logits": [
+      13.08356761932373, -20.560640335083008, -4.444504737854004, -20.190797805786133,
+      -21.01657485961914
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "Use Reading Room on Foundry Server to open library.example.edu",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "cooking",
+        "label": "profile: Cooking"
+      },
+      {
+        "id": "photography",
+        "label": "profile: Photography"
+      },
+      {
+        "id": "reading",
+        "label": "profile: Reading Room"
+      },
+      {
+        "id": "profile-decoy-0",
+        "label": "profile: Gardening"
+      },
+      {
+        "id": "profile-decoy-1",
+        "label": "profile: Fishing"
+      },
+      {
+        "id": "profile-decoy-2",
+        "label": "profile: Sailing"
+      },
+      {
+        "id": "profile-decoy-3",
+        "label": "profile: Running"
+      },
+      {
+        "id": "profile-decoy-4",
+        "label": "profile: Swimming"
+      },
+      {
+        "id": "profile-decoy-5",
+        "label": "profile: Climbing"
+      },
+      {
+        "id": "profile-decoy-6",
+        "label": "profile: Skiing"
+      },
+      {
+        "id": "profile-decoy-7",
+        "label": "profile: Hiking"
+      },
+      {
+        "id": "profile-decoy-8",
+        "label": "profile: Drawing"
+      },
+      {
+        "id": "profile-decoy-9",
+        "label": "profile: Pottery"
+      },
+      {
+        "id": "profile-decoy-10",
+        "label": "profile: Baking"
+      },
+      {
+        "id": "consulting",
+        "label": "profile: Consulting"
+      }
+    ],
+    "expected": "reading",
+    "logits": [
+      -2.9149341583251953, -19.9918270111084, -19.917757034301758, 12.99691390991211,
+      -20.204219818115234, -20.09941291809082, -20.085426330566406, -20.061695098876953,
+      -20.05839729309082, -20.080276489257812, -20.025070190429688, -19.76905059814453,
+      -20.15288543701172, -20.395214080810547, -19.778182983398438, -19.90857696533203
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "http://100.95.71.44:6127/ready",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "culture",
+        "label": "profile: Culture"
+      },
+      {
+        "id": "fitness",
+        "label": "profile: Fitness"
+      },
+      {
+        "id": "astronomy",
+        "label": "profile: Astronomy"
+      },
+      {
+        "id": "journal",
+        "label": "profile: Journal"
+      }
+    ],
+    "expected": "default",
+    "logits": [
+      -1.0952277183532715, -21.303634643554688, -21.2952880859375, -21.68512725830078,
+      -21.2943115234375
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "git bisect start 2>&1",
+    "options": [
+      {
+        "id": "profile:test:98:2",
+        "label": "profile: Work"
+      },
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:98:0",
+        "label": "profile: Private"
+      },
+      {
+        "id": "profile:test:98:1",
+        "label": "profile: Documentation"
+      }
+    ],
+    "expected": "default",
+    "logits": [-20.960119247436523, -0.8884202241897583, -19.769821166992188, -20.221017837524414]
+  },
+  {
+    "task": "profile",
+    "input": "Visit http://100.80.71.3:6192 using Photography",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "cooking",
+        "label": "profile: Cooking"
+      },
+      {
+        "id": "photography",
+        "label": "profile: Photography"
+      },
+      {
+        "id": "reading",
+        "label": "profile: Reading Room"
+      },
+      {
+        "id": "profile-decoy-0",
+        "label": "profile: Gardening"
+      },
+      {
+        "id": "profile-decoy-1",
+        "label": "profile: Fishing"
+      },
+      {
+        "id": "profile-decoy-2",
+        "label": "profile: Sailing"
+      },
+      {
+        "id": "profile-decoy-3",
+        "label": "profile: Running"
+      },
+      {
+        "id": "profile-decoy-4",
+        "label": "profile: Swimming"
+      },
+      {
+        "id": "profile-decoy-5",
+        "label": "profile: Climbing"
+      },
+      {
+        "id": "profile-decoy-6",
+        "label": "profile: Skiing"
+      },
+      {
+        "id": "profile-decoy-7",
+        "label": "profile: Hiking"
+      },
+      {
+        "id": "profile-decoy-8",
+        "label": "profile: Drawing"
+      },
+      {
+        "id": "profile-decoy-9",
+        "label": "profile: Pottery"
+      },
+      {
+        "id": "profile-decoy-10",
+        "label": "profile: Baking"
+      },
+      {
+        "id": "consulting",
+        "label": "profile: Consulting"
+      }
+    ],
+    "expected": "photography",
+    "logits": [
+      -2.347764492034912, -19.51808738708496, 12.93758773803711, -20.003711700439453,
+      -20.146818161010742, -20.024995803833008, -20.015716552734375, -20.200851440429688,
+      -20.082454681396484, -20.195817947387695, -20.03656578063965, -19.835351943969727,
+      -20.294620513916016, -20.491243362426758, -19.931690216064453, -20.048662185668945
+    ]
+  },
+  {
+    "task": "profile",
+    "input": "What is the difference between Social and another option?",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "profile:test:95:1",
+        "label": "profile: Development"
+      },
+      {
+        "id": "profile:test:95:0",
+        "label": "profile: Social"
+      }
+    ],
+    "expected": "default",
+    "logits": [1.3185031414031982, -19.778350830078125, -17.545459747314453]
+  },
+  {
+    "task": "profile",
+    "input": "Load https://journal.sunbird.org with Journal on Summit Laptop",
+    "options": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "culture",
+        "label": "profile: Culture"
+      },
+      {
+        "id": "fitness",
+        "label": "profile: Fitness"
+      },
+      {
+        "id": "astronomy",
+        "label": "profile: Astronomy"
+      },
+      {
+        "id": "journal",
+        "label": "profile: Journal"
+      }
+    ],
+    "expected": "journal",
+    "logits": [
+      -3.687422275543213, -21.32129669189453, -21.43679428100586, -21.74859619140625,
+      12.8755464553833
+    ]
+  }
+]

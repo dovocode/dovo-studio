@@ -1,0 +1,206 @@
+{
+  "baseRepository": "knowledgator/gliclass-base-v3.0",
+  "baseRevision": "77a70e6cd52e602ed18184ef37d18bdd3741e3d5",
+  "initializationPath": "selections-20261104/run-01/checkpoint",
+  "initializationSha256": "947c9085283acce3d9afa5b988a83019febb0cd74f0059723fd1c240b1cff838",
+  "datasetSha256": "e0771d125d996fa24120685f2dda93803105fd71bbfe7d2b44a33a9bf823a00d",
+  "benchmarkSha256": "ab4edc619035deba1c8490fa9bf52deb8ab770d0aeffc7c46edff8b24b08ce8a",
+  "seed": 20261105,
+  "epochs": 2,
+  "batchSize": 16,
+  "learningRate": 6e-6,
+  "optimizer": "AdamW",
+  "weightDecay": 0.01,
+  "schedule": "10% linear warmup, linear decay",
+  "gradientNorm": 1.0,
+  "device": "Apple MPS",
+  "machine": "arm64",
+  "macOS": "27.3",
+  "parameters": 186545922,
+  "dtype": "float32",
+  "maxOptions": 16,
+  "maxLength": 384,
+  "trainingSeconds": 176.16508424999847,
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "baselineValidation": {
+    "correct": 1450,
+    "total": 1471,
+    "accuracy": 0.9857239972807614,
+    "confusion": {
+      "browser": {
+        "browser": 266,
+        "terminal": 0,
+        "thread": 15
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 262,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 789,
+        "total": 806
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "model": {
+        "correct": 145,
+        "total": 145
+      },
+      "project": {
+        "correct": 196,
+        "total": 200
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Set the project to none and use model Ember 3",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "For this thread use Raven Mini on Graphics Station, with no project",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "Computer: CI Node\nProject selection: No Project\nCommand: git --version",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "For this thread use Kestrel Plus on Graphics Station, with no project",
+        "task": "project",
+        "expected": "none",
+        "actual": "keep"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.10677628241995933
+  },
+  "selection": "Validation accuracy, then validation cross-entropy. No test/benchmark checkpoint selection."
+}

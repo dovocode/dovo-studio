@@ -1,0 +1,315 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 348,
+        "total": 350,
+        "accuracy": 0.9942857142857143,
+        "confusion": {
+          "browser": {
+            "browser": 25,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 25,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 50
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 100,
+            "total": 100
+          },
+          "runtime": {
+            "correct": 100,
+            "total": 100
+          },
+          "profile": {
+            "correct": 25,
+            "total": 25
+          },
+          "project": {
+            "correct": 73,
+            "total": 75
+          },
+          "model": {
+            "correct": 50,
+            "total": 50
+          }
+        },
+        "completePlans": {
+          "correct": 98,
+          "total": 100
+        },
+        "mistakes": [
+          {
+            "input": "Should I use Tourmaline Code 1 for Brook Finance? I only want advice",
+            "expected": "keep",
+            "actual": "brook",
+            "ms": 19.853666999551933,
+            "logits": [
+              1.0300652980804443, -17.949176788330078, 3.6035561561584473, -21.927797317504883,
+              -22.276031494140625, -21.84099578857422
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "brook",
+                "label": "project: Brook Finance"
+              },
+              {
+                "id": "dahlia",
+                "label": "project: Dahlia Desktop"
+              },
+              {
+                "id": "juniper",
+                "label": "project: Juniper Tasks"
+              },
+              {
+                "id": "pebble",
+                "label": "project: Pebble Web"
+              }
+            ],
+            "caseId": 86,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14256, 5442, 128001, 663, 294,
+              67634, 13839, 128001, 663, 294, 33036, 47395, 128001, 663, 294, 31746, 2277, 128002,
+              4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663,
+              280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269,
+              3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973,
+              260, 21863, 294, 3432, 273, 380, 103327, 3506, 376, 270, 14256, 5442, 302, 273, 364,
+              409, 1678, 2
+            ]
+          },
+          {
+            "input": "Explain a browser redirect problem in Pebble Web using Tourmaline",
+            "expected": "pebble",
+            "actual": "keep",
+            "ms": 19.5646249994752,
+            "logits": [
+              2.166480541229248, -17.79442596435547, -21.91112518310547, -21.50250244140625,
+              -21.70025634765625, -13.882781028747559
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "brook",
+                "label": "project: Brook Finance"
+              },
+              {
+                "id": "dahlia",
+                "label": "project: Dahlia Desktop"
+              },
+              {
+                "id": "juniper",
+                "label": "project: Juniper Tasks"
+              },
+              {
+                "id": "pebble",
+                "label": "project: Pebble Web"
+              }
+            ],
+            "caseId": 97,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14256, 5442, 128001, 663, 294,
+              67634, 13839, 128001, 663, 294, 33036, 47395, 128001, 663, 294, 31746, 2277, 128002,
+              4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663,
+              280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269,
+              3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973,
+              260, 21863, 294, 19719, 266, 2672, 20539, 735, 267, 31746, 2277, 478, 103327, 2
+            ]
+          }
+        ],
+        "medianMs": 19.143000004987698,
+        "p95Ms": 20.827458996791393
+      },
+      "q8": {
+        "correct": 348,
+        "total": 350,
+        "accuracy": 0.9942857142857143,
+        "confusion": {
+          "browser": {
+            "browser": 25,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 25,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 50
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 100,
+            "total": 100
+          },
+          "runtime": {
+            "correct": 100,
+            "total": 100
+          },
+          "profile": {
+            "correct": 25,
+            "total": 25
+          },
+          "project": {
+            "correct": 73,
+            "total": 75
+          },
+          "model": {
+            "correct": 50,
+            "total": 50
+          }
+        },
+        "completePlans": {
+          "correct": 98,
+          "total": 100
+        },
+        "mistakes": [
+          {
+            "input": "Should I use Tourmaline Code 1 for Brook Finance? I only want advice",
+            "expected": "keep",
+            "actual": "brook",
+            "ms": 41.461167005763855,
+            "logits": [
+              1.0244481563568115, -17.782421112060547, 2.636533737182617, -21.89131736755371,
+              -22.21402359008789, -21.798736572265625
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "brook",
+                "label": "project: Brook Finance"
+              },
+              {
+                "id": "dahlia",
+                "label": "project: Dahlia Desktop"
+              },
+              {
+                "id": "juniper",
+                "label": "project: Juniper Tasks"
+              },
+              {
+                "id": "pebble",
+                "label": "project: Pebble Web"
+              }
+            ],
+            "caseId": 86,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14256, 5442, 128001, 663, 294,
+              67634, 13839, 128001, 663, 294, 33036, 47395, 128001, 663, 294, 31746, 2277, 128002,
+              4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663,
+              280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269,
+              3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973,
+              260, 21863, 294, 3432, 273, 380, 103327, 3506, 376, 270, 14256, 5442, 302, 273, 364,
+              409, 1678, 2
+            ]
+          },
+          {
+            "input": "Explain a browser redirect problem in Pebble Web using Tourmaline",
+            "expected": "pebble",
+            "actual": "keep",
+            "ms": 41.34741600137204,
+            "logits": [
+              2.1340787410736084, -17.624685287475586, -21.93817710876465, -21.497770309448242,
+              -21.72629737854004, -13.867868423461914
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "brook",
+                "label": "project: Brook Finance"
+              },
+              {
+                "id": "dahlia",
+                "label": "project: Dahlia Desktop"
+              },
+              {
+                "id": "juniper",
+                "label": "project: Juniper Tasks"
+              },
+              {
+                "id": "pebble",
+                "label": "project: Pebble Web"
+              }
+            ],
+            "caseId": 97,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14256, 5442, 128001, 663, 294,
+              67634, 13839, 128001, 663, 294, 33036, 47395, 128001, 663, 294, 31746, 2277, 128002,
+              4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663,
+              280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269,
+              3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973,
+              260, 21863, 294, 19719, 266, 2672, 20539, 735, 267, 31746, 2277, 478, 103327, 2
+            ]
+          }
+        ],
+        "medianMs": 37.13524999693618,
+        "p95Ms": 42.16062499472173
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 0.0001857280731201172,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "15ab2a3e09f1aff331a1274151cbcfed6d13f49cdd188db9a1086c2f30f027f3",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-08/"
+}

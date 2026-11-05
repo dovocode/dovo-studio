@@ -276,6 +276,8 @@ export const remoteBrowserMessageSchema = Schema.Union([
     editable: Schema.Boolean,
     touch: Schema.optional(Schema.Boolean),
     primaryModifier: Schema.optional(Schema.Literals(['Control', 'Meta'])),
+    /** Epoch milliseconds of the last agent command on this tab, when recent. */
+    agentActiveAt: Schema.optional(Schema.Number),
   }),
   mutableStruct({
     type: Schema.Literal('error'),

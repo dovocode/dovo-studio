@@ -16,7 +16,7 @@ import { artifactRetentionSchema } from '../../conversation/artifacts.js'
 import { repositoryOpenTargetsSchema } from '../../scm/repositories/repository-tools.js'
 export const RUNTIME_PROTOCOL_VERSION = 2
 export const PAIRING_PROTOCOL_VERSION = 2
-import { mutableStruct, mutableArray } from '../../shared/schema.js'
+import { mutableStruct, mutableArray, isoDateTime } from '../../shared/schema.js'
 import { minValue, urlSchema, refine, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
 import {
@@ -54,14 +54,89 @@ export const approvalSchema = mutableStruct({
   rememberRule: Schema.optional(Schema.NullOr(Schema.Literals(['command', 'web']))),
   createdAt: Schema.String,
 })
+/** Standalone shells share a scope without creating a synthetic thread. */
+export const STUDIO_TERMINAL_SCOPE = 'studio:terminals'
+/** Untrusted terminal metadata is plain, single-line text, never terminal control data. */
+export const terminalTextSchema = refine(
+  Schema.String,
+  (value) => !/[\p{Cc}\p{Cs}\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/u.test(value),
+  'Expected single-line text without control or direction override characters',
+)
+export const terminalTitleSchema = refine(
+  maxValue(minValue(terminalTextSchema, 1), 256),
+  (value) => value.trim().length > 0,
+  'Expected a nonempty terminal title',
+)
+export const terminalActivitySchema = mutableStruct({
+  state: Schema.Literals(['idle', 'working', 'done', 'blocked', 'error']),
+  app: Schema.optional(
+    Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_.+-]{1,32}$/))),
+  ),
+  title: Schema.optional(maxValue(terminalTextSchema, 192)),
+  message: Schema.optional(maxValue(terminalTextSchema, 2048)),
+  kind: Schema.optional(Schema.Literals(['permission', 'question', 'auth'])),
+  progress: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      Schema.check(Schema.isLessThanOrEqualTo(100)),
+    ),
+  ),
+})
+export type TerminalActivity = typeof terminalActivitySchema.Type
 export const terminalSchema = mutableStruct({
+  repositoryId: Schema.optional(Schema.String),
+  shellId: Schema.optional(Schema.String),
+  directory: Schema.optional(Schema.String),
+  execution: Schema.optional(Schema.Literals(['main', 'worktree'])),
+  checkoutBranch: Schema.optional(Schema.String),
   checkoutId: Schema.optional(Schema.String),
   id: Schema.String,
   taskId: Schema.String,
   title: Schema.String,
+  /** Latest OSC 0/2 title; independent of an explicit user rename. */
+  terminalTitle: Schema.optional(terminalTitleSchema),
+  customTitle: Schema.optional(terminalTitleSchema),
+  /** Explicit program activity from OSC 7501 or a supported tool lifecycle hook. */
+  activity: Schema.optional(terminalActivitySchema),
+  /** Native PTY foreground process; absent on hosts without foreground inspection. */
+  foregroundProcess: Schema.optional(
+    mutableStruct({ name: terminalTitleSchema, idle: Schema.Boolean }),
+  ),
+  integrationError: Schema.optional(Schema.String),
   exited: Schema.Boolean,
+  /** A retained terminal with no running process, waiting for an explicit restore. */
+  dormant: Schema.optional(Schema.Boolean),
+  recoveryProgram: Schema.optional(
+    Schema.Literals(['codex', 'claude', 'pi', 'opencode', 'tmux', 'herdr']),
+  ),
+  recoveryError: Schema.optional(Schema.String),
+  recoverySetup: Schema.optional(Schema.String),
+  pinned: Schema.optional(Schema.Boolean),
+  settledAt: Schema.optional(isoDateTime(Schema.String)),
+  snoozedUntil: Schema.optional(isoDateTime(Schema.String)),
   exitCode: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
+export const updateTerminalSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 200),
+  /** Null resumes automatic naming from the terminal title or launch name. */
+  title: Schema.optional(Schema.NullOr(terminalTitleSchema)),
+  pinned: Schema.optional(Schema.Boolean),
+  settled: Schema.optional(Schema.Boolean),
+  snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
+})
+export type UpdateTerminal = Schema.Schema.Type<typeof updateTerminalSchema>
+export const createWorkspaceTerminalSchema = mutableStruct({
+  rememberSession: Schema.optional(Schema.Boolean),
+  repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  command: Schema.optional(maxValue(minValue(Schema.String, 1), 20000)),
+  shellId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  execution: Schema.optional(Schema.Literals(['main', 'worktree'])),
+  existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 32768)),
+  worktreeBaseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 1000)),
+  sourceTerminalId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+})
+export type CreateWorkspaceTerminal = Schema.Schema.Type<typeof createWorkspaceTerminalSchema>
 export const jobRunStepSchema = mutableStruct({
   nodeId: Schema.String,
   label: Schema.String,
@@ -164,6 +239,8 @@ export const snapshotSchema = mutableStruct({
   queueRestoreReceiptsSupported: Schema.optional(Schema.Literal(true)),
   checkedDraftMoveSupported: Schema.optional(Schema.Literal(true)),
   threadServersSupported: Schema.optional(Schema.Boolean),
+  workspaceRoutingSelectionsSupported: Schema.optional(Schema.Literal(true)),
+  terminalRecoverySupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),

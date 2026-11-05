@@ -1,0 +1,116 @@
+{
+  "correct": 5,
+  "total": 6,
+  "results": [
+    {
+      "text": "Use Opus on Mac Studio in Dovo to fix the login bug",
+      "expected": {
+        "destination": "thread",
+        "runtime": "mac-studio",
+        "model": "opus-5.5",
+        "project": "dovo"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "mac-studio",
+          "model": "opus-5.5",
+          "project": "dovo"
+        }
+      },
+      "correct": true,
+      "ms": 649.154937
+    },
+    {
+      "text": "use Opus on Mac Studio in Dovo",
+      "expected": {
+        "destination": "thread",
+        "runtime": "mac-studio",
+        "model": "opus-5.5",
+        "project": "dovo"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "mac-studio",
+          "model": "opus-5.5",
+          "project": "dovo"
+        }
+      },
+      "correct": true,
+      "ms": 564.6268340000001
+    },
+    {
+      "text": "Use Sol to improve Shampoo",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "sol-6.1",
+        "project": "shampoo"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "sol-6.1",
+          "project": "shampoo"
+        }
+      },
+      "correct": true,
+      "ms": 727.289088
+    },
+    {
+      "text": "Open dovocode.com using my work browser profile",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "work"
+      },
+      "actual": {
+        "mode": "browser",
+        "selections": {
+          "runtime": "keep",
+          "profile": "work"
+        }
+      },
+      "correct": true,
+      "ms": 473.9212299999999
+    },
+    {
+      "text": "Project: No Project\nComputer: Mac Studio\nCommand: codex resume --last",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "mac-studio",
+        "project": "none"
+      },
+      "actual": {
+        "mode": "terminal",
+        "selections": {
+          "runtime": "mac-studio",
+          "project": "none"
+        }
+      },
+      "correct": true,
+      "ms": 446.95440400000007
+    },
+    {
+      "text": "Tell me whether Opus is better than Sol for Dovo Studio",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "dovo"
+        }
+      },
+      "correct": false,
+      "ms": 590.5456739999995
+    }
+  ]
+}

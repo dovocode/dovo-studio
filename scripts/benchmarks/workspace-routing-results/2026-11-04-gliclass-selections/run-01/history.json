@@ -1,0 +1,860 @@
+[
+  {
+    "epoch": 1,
+    "correct": 1397,
+    "total": 1431,
+    "accuracy": 0.976240391334731,
+    "confusion": {
+      "browser": {
+        "browser": 263,
+        "terminal": 0,
+        "thread": 18
+      },
+      "terminal": {
+        "browser": 3,
+        "terminal": 260,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 12,
+        "terminal": 0,
+        "thread": 250
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 773,
+        "total": 806
+      },
+      "model": {
+        "correct": 145,
+        "total": 145
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 159,
+        "total": 160
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Navigate to https://storage.local:6999/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Navigate to http://[::1]:3039/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Navigate to https://meridian.ai/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Navigate to https://localhost:6111/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "dig example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Navigate to http://monitor.orchid.org/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Navigate to http://192.168.81.2:4444/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Navigate to https://10.91.2.5:8777/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "Navigate to https://service.willow.app/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Navigate to https://100.119.4.8:5678/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Navigate to http://office.internal:8765/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Navigate to http://docs.harbor.dev/help and extract the headings",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "meridian.ai/settings?tab=terminal",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:84:4"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.16402090228339838
+  },
+  {
+    "epoch": 2,
+    "correct": 1391,
+    "total": 1431,
+    "accuracy": 0.9720475192173306,
+    "confusion": {
+      "browser": {
+        "browser": 246,
+        "terminal": 0,
+        "thread": 35
+      },
+      "terminal": {
+        "browser": 2,
+        "terminal": 258,
+        "thread": 3
+      },
+      "thread": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 262
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 766,
+        "total": 806
+      },
+      "model": {
+        "correct": 145,
+        "total": 145
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 160,
+        "total": 160
+      }
+    },
+    "mistakes": [
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "pnpm why react\n# inspect the result",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "dig example.edu",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "cd ~/workspace && pnpm why react",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "take me to http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging pnpm why react",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.4279148806163856
+  },
+  {
+    "epoch": 3,
+    "correct": 1411,
+    "total": 1431,
+    "accuracy": 0.9860237596086653,
+    "confusion": {
+      "browser": {
+        "browser": 263,
+        "terminal": 0,
+        "thread": 18
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 262,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 786,
+        "total": 806
+      },
+      "model": {
+        "correct": 145,
+        "total": 145
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 160,
+        "total": 160
+      }
+    },
+    "mistakes": [
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.14040764559245164
+  },
+  {
+    "epoch": 4,
+    "correct": 1414,
+    "total": 1431,
+    "accuracy": 0.9881201956673655,
+    "confusion": {
+      "browser": {
+        "browser": 266,
+        "terminal": 0,
+        "thread": 15
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 262,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 789,
+        "total": 806
+      },
+      "model": {
+        "correct": 145,
+        "total": 145
+      },
+      "profile": {
+        "correct": 145,
+        "total": 145
+      },
+      "runtime": {
+        "correct": 175,
+        "total": 175
+      },
+      "project": {
+        "correct": 160,
+        "total": 160
+      }
+    },
+    "mistakes": [
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.10323416092018353
+  }
+]

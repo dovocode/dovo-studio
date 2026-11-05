@@ -1,0 +1,171 @@
+[
+  {
+    "epoch": 1,
+    "correct": 632,
+    "total": 636,
+    "accuracy": 0.9937106918238994,
+    "confusion": {
+      "browser": {
+        "browser": 212,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 4,
+        "terminal": 208,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 212
+      }
+    },
+    "mistakes": [
+      {
+        "input": "dig example.edu",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "uptime",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "hostname",
+        "expected": "terminal",
+        "actual": "browser"
+      }
+    ],
+    "loss": 0.09388324030221162
+  },
+  {
+    "epoch": 2,
+    "correct": 631,
+    "total": 636,
+    "accuracy": 0.9921383647798742,
+    "confusion": {
+      "browser": {
+        "browser": 212,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 4,
+        "terminal": 207,
+        "thread": 1
+      },
+      "thread": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 212
+      }
+    },
+    "mistakes": [
+      {
+        "input": "dig example.edu",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "uptime",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "file logo.png",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname",
+        "expected": "terminal",
+        "actual": "browser"
+      },
+      {
+        "input": "dirname /tmp/app/main.ts",
+        "expected": "terminal",
+        "actual": "browser"
+      }
+    ],
+    "loss": 0.04852210875223216
+  },
+  {
+    "epoch": 3,
+    "correct": 634,
+    "total": 636,
+    "accuracy": 0.9968553459119497,
+    "confusion": {
+      "browser": {
+        "browser": 212,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 210,
+        "thread": 1
+      },
+      "thread": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 212
+      }
+    },
+    "mistakes": [
+      {
+        "input": "file logo.png",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname",
+        "expected": "terminal",
+        "actual": "browser"
+      }
+    ],
+    "loss": 0.015982574553518078
+  },
+  {
+    "epoch": 4,
+    "correct": 634,
+    "total": 636,
+    "accuracy": 0.9968553459119497,
+    "confusion": {
+      "browser": {
+        "browser": 212,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 1,
+        "terminal": 210,
+        "thread": 1
+      },
+      "thread": {
+        "browser": 0,
+        "terminal": 0,
+        "thread": 212
+      }
+    },
+    "mistakes": [
+      {
+        "input": "file logo.png",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "hostname",
+        "expected": "terminal",
+        "actual": "browser"
+      }
+    ],
+    "loss": 0.022338299043623246
+  }
+]

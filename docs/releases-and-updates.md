@@ -73,7 +73,8 @@ parallel. The extracted Windows server still exercises setup, start, status and 
 
 On macOS, up to four independent binaries sign concurrently within each nesting level, with children
 completed before enclosing bundles and the root app signed last. The pinned `@electron/osx-sign`
-patch deduplicates framework symlink aliases and waits for in-flight signatures before reporting a
+patch serializes `Contents/MacOS` executables so bundle inspection cannot race temporary signing
+files, deduplicates framework symlink aliases and waits for in-flight signatures before reporting a
 failure or allowing builder retries. Identity selection, entitlements, timestamps, hardened runtime
 and strict verification stay with the existing signer. Notarization and stapling follow successful
 signing. The temporary notarization ZIP uses compression level 1 to reduce local compression time;

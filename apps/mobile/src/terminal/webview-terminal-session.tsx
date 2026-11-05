@@ -4,7 +4,7 @@ import { createRuntimeClient, mutableStruct, decode, responses } from '@dovo/pro
 import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
 import { startReconnecting } from '@dovo/client-runtime'
-import { AppState, View } from 'react-native'
+import { AppState, KeyboardAvoidingView, Platform } from 'react-native'
 import { Text } from '../ui/content/text'
 import { WebView } from 'react-native-webview'
 import { Schema } from 'effect'
@@ -94,7 +94,10 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
     }
   }, [ready, connection, call, id, backgrounded, visible])
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <WebView
         key={generation}
         onContentProcessDidTerminate={() => {
@@ -173,6 +176,6 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
           {error}
         </Text>
       )}
-    </View>
+    </KeyboardAvoidingView>
   )
 }

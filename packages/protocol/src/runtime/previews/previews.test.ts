@@ -1,6 +1,6 @@
 import { decodeResult } from '../../shared/schema.js'
 import { describe, expect, it } from 'vite-plus/test'
-import { previewUrl, browserCommandSchema } from './previews'
+import { previewUrl, browserCommandSchema, desktopBrowserHostSchema } from './previews'
 describe('preview addresses', () => {
   it('resolves loopback against the task runtime while retaining port, path and query', () => {
     expect(previewUrl('localhost:3000/demo?q=one', 'http://workstation.internal:8787')).toBe(
@@ -42,5 +42,36 @@ describe('preview addresses', () => {
     expect(decodeResult(browserCommandSchema, { ...input, preserveFocus: 'true' }).success).toBe(
       false,
     )
+  })
+})
+
+describe('desktop browser CDP discovery', () => {
+  const token = 'a1'.repeat(32)
+  const endpoint = `ws://127.0.0.1:43210/${token}/devtools/page/7`
+  const accepts = (value: string) =>
+    decodeResult(desktopBrowserHostSchema, {
+      pid: 123,
+      targets: [{ taskId: 'studio:browser', tabId: 'tab-1', profileId: 'work', endpoint: value }],
+    }).success
+
+  it('accepts authenticated loopback page endpoints with numeric transport IDs', () => {
+    expect(accepts(endpoint)).toBe(true)
+  })
+
+  it.each([
+    endpoint.replace('127.0.0.1', '192.168.1.2'),
+    endpoint.replace('127.0.0.1', 'localhost'),
+    endpoint.replace('ws://', 'https://'),
+    endpoint.replace('127.0.0.1', 'user:secret@127.0.0.1'),
+    endpoint.replace(`${token}/`, ''),
+    endpoint.replace(token, 'a1'.repeat(31)),
+    endpoint.replace(token, 'z'.repeat(64)),
+    endpoint.replace('/page/7', '/browser/7'),
+    endpoint.replace('/page/7', '/page/[1,"studio:browser:tab-1"]'),
+    `${endpoint}?token=extra`,
+    `${endpoint}#fragment`,
+    `${endpoint}/extra`,
+  ])('rejects endpoints outside the loopback capability format: %s', (value) => {
+    expect(accepts(value)).toBe(false)
   })
 })

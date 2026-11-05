@@ -30,7 +30,9 @@ const built = await bundleBrowser(
       contents: `import React from 'react';import {createRoot} from 'react-dom/client';
 import {TerminalPane} from './packages/extension-tasks/src/terminal/terminal-pane';
 import {Group,Panel} from 'react-resizable-panels';
-const node=createRoot(document.getElementById('app'));window.render=()=>node.render(window.mounted===false?null:<Group orientation="vertical" style={{height:'100vh'}}><Panel defaultSize="60%"><div>Conversation</div></Panel><Panel id="terminal" defaultSize="40%"><TerminalPane taskId={window.taskId??"task"} focusId={window.focusId??"session"} onOpenFile={file=>window.openedFiles.push(file)} onClose={()=>{}} onAddSelection={(taskId,text)=>window.insertions.push({taskId,text})}/></Panel></Group>);window.render();`,
+const node=createRoot(document.getElementById('app'));
+function ScopedPane({anchor}) {return <div data-workspace-anchor={anchor} style={{height:380}}><TerminalPane taskId="studio:terminals" focusId={anchor} sessionScopeId={anchor} autoCreate={false} onClose={()=>{}} onNewSession={()=>window.newWorkspaceRequests.push(anchor)} onSessionsClosed={ids=>{window.closedEvents.push({anchor,ids});if(ids.includes(anchor)){window.hiddenAnchors.push(anchor);window.render()}}}/></div>}
+window.render=()=>node.render(window.mounted===false?null:window.twoScopes?<div>{(window.scopeAnchors??['scope-a','scope-b']).filter(id=>!window.hiddenAnchors.includes(id)).map(anchor=><ScopedPane key={anchor} anchor={anchor}/>)}</div>:<Group orientation="vertical" style={{height:'100vh'}}><Panel defaultSize="60%"><div>Conversation</div></Panel><Panel id="terminal" defaultSize="40%"><TerminalPane taskId={window.taskId??"task"} focusId={window.focusId??"session"} onOpenFile={file=>window.openedFiles.push(file)} onClose={()=>{}} onAddSelection={(taskId,text)=>window.insertions.push({taskId,text})}/></Panel></Group>);window.render();`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -589,9 +591,254 @@ try {
   await page.getByRole('button', { name: 'Close terminal panes', exact: true }).click()
   await page.waitForFunction(() => window.runtime.snapshot.terminals.length === 0)
   assert.equal(await page.evaluate(() => window.replacementCalls), 2)
+  await page.evaluate(() => {
+    window.taskId = 'studio:terminals'
+    window.focusId = 'workspace-shell'
+    window.runtime.workspace = {
+      tasks: [],
+      repositories: [{ id: 'workspace-project', name: 'Standalone project' }],
+    }
+    window.runtime.snapshot = {
+      terminals: [
+        {
+          id: 'workspace-shell',
+          taskId: window.taskId,
+          repositoryId: 'workspace-project',
+          title: 'Standalone shell',
+          exited: false,
+        },
+      ],
+    }
+    window.workspaceCreates = []
+    const request = window.runtime.request
+    window.runtime.request = async (path, input) => {
+      if (path !== '/api/terminals/workspace') return request(path, input)
+      window.workspaceCreates.push(input)
+      const session = {
+        id: 'workspace-split',
+        taskId: window.taskId,
+        repositoryId: window.runtime.snapshot.terminals.find(
+          (session) => session.id === input.sourceTerminalId,
+        )?.repositoryId,
+        title: 'Standalone split',
+        exited: false,
+      }
+      window.runtime.snapshot = { terminals: [...window.runtime.snapshot.terminals, session] }
+      window.render()
+      return session
+    }
+    window.render()
+  })
+  await terminal
+    .locator('[data-terminal-session="workspace-shell"] .dovo-terminal-canvas')
+    .waitFor()
+  await terminal.getByRole('button', { name: /Split terminal left\/right/ }).click()
+  await terminal
+    .locator('[data-terminal-session="workspace-split"] .dovo-terminal-canvas')
+    .waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => window.workspaceCreates),
+    [{ sourceTerminalId: 'workspace-shell' }],
+    'Standalone splits inherit their source shell and checkout without requiring a thread',
+  )
+  assert.equal(await terminal.locator('[data-terminal-session]:visible').count(), 2)
+  // The actual TerminalPane and canvas renderer must isolate standalone anchors on one owner.
+  await page.evaluate(() => {
+    window.twoScopes = true
+    window.hiddenAnchors = []
+    window.closedEvents = []
+    window.scopedCreates = []
+    window.newWorkspaceRequests = []
+    window.scopedCloses = []
+    window.runtime.snapshot = {
+      terminals: [
+        { id: 'scope-a', taskId: 'studio:terminals', title: 'Anchor A' },
+        { id: 'scope-b', taskId: 'studio:terminals', title: 'Anchor B' },
+        { id: 'unrelated', taskId: 'studio:terminals', title: 'Unrelated shell' },
+        { id: 'thread-only', taskId: 'task', title: 'Thread shell' },
+      ],
+    }
+    const previous = window.runtime.request
+    window.runtime.request = async (path, input) => {
+      if (path === '/api/terminals/workspace') {
+        window.scopedCreates.push(input)
+        const session = {
+          id: 'scope-split-' + window.scopedCreates.length,
+          taskId: 'studio:terminals',
+          title: 'Scoped split ' + window.scopedCreates.length,
+        }
+        if (window.delayScopeSnapshot) window.pendingScopedSession = session
+        else
+          window.runtime.snapshot = { terminals: [...window.runtime.snapshot.terminals, session] }
+        window.render()
+        return session
+      }
+      if (path === '/api/terminals/close') {
+        if (input.id === window.failScopedClose) throw new Error('Scoped close rejected')
+        window.scopedCloses.push(input.id)
+        // Deliberately retain the stale snapshot after a confirmed close.
+        return { ok: true }
+      }
+      return previous(path, input)
+    }
+    window.render()
+  })
+  const a = page.locator('[data-workspace-anchor="scope-a"]')
+  const b = page.locator('[data-workspace-anchor="scope-b"]')
+  await a.locator('[data-terminal-session="scope-a"] .dovo-terminal-canvas').waitFor()
+  await b.locator('[data-terminal-session="scope-b"] .dovo-terminal-canvas').waitFor()
+  assert.equal(await a.locator('[data-terminal-session]').count(), 1)
+  assert.equal(await b.locator('[data-terminal-session]').count(), 1)
+  assert.equal(
+    await a.locator('[data-terminal-tab]').count(),
+    0,
+    'Standalone shells have no horizontal session tabs',
+  )
+  assert.equal(await a.getByRole('button', { name: /Close terminal tab/ }).count(), 0)
+  await a.getByRole('button', { name: 'New terminal session', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.newWorkspaceRequests), ['scope-a'])
+  assert.deepEqual(
+    await page.evaluate(() => window.scopedCreates),
+    [],
+    'New standalone terminals use the workspace starter instead of hidden internal tabs',
+  )
+  await page.evaluate(() => {
+    window.delayScopeSnapshot = true
+  })
+  await a.getByRole('button', { name: /Split terminal left\/right/ }).click()
+  await page.waitForFunction(() => !!window.pendingScopedSession)
+  // Layout membership is retained even before the create response reaches the snapshot.
+  await page.waitForFunction(() =>
+    Object.entries(localStorage).some(
+      ([key, value]) => key.includes('scope-a') && value.includes('scope-split-1'),
+    ),
+  )
+  // Reselect before the new peer appears: persistence must keep both its ID and selection.
+  await page.evaluate(() => {
+    window.mounted = false
+    window.render()
+  })
+  await a.waitFor({ state: 'detached' })
+  await page.evaluate(() => {
+    window.mounted = true
+    window.render()
+  })
+  await a.locator('[data-terminal-session="scope-a"] .dovo-terminal-canvas').waitFor()
+  const pendingLayout = await page.evaluate(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.includes('scope-a'))
+    return JSON.parse(entry[1])
+  })
+  assert.equal(pendingLayout.selected, 'scope-split-1')
+  assert.ok(pendingLayout.groups.some((group) => group.sessions.includes('scope-split-1')))
+  await page.evaluate(() => {
+    window.runtime.snapshot = {
+      terminals: [...window.runtime.snapshot.terminals, window.pendingScopedSession],
+    }
+    window.render()
+  })
+  await a.locator('[data-terminal-session="scope-split-1"] .dovo-terminal-canvas').waitFor()
+  assert.equal(await a.locator('[data-terminal-session]:visible').count(), 2)
+  assert.equal(await b.locator('[data-terminal-session]').count(), 1)
+  await page.evaluate(() => {
+    window.mounted = false
+    window.render()
+  })
+  await a.waitFor({ state: 'detached' })
+  await page.evaluate(() => {
+    window.mounted = true
+    window.render()
+  })
+  await a.locator('[data-terminal-session="scope-split-1"] .dovo-terminal-canvas').waitFor()
+  assert.equal(await a.locator('[data-terminal-session]:visible').count(), 2)
+  assert.equal(await b.locator('[data-terminal-session]').count(), 1)
+  assert.deepEqual(await page.evaluate(() => window.scopedCreates), [
+    { sourceTerminalId: 'scope-a' },
+  ])
+  // Changing orientation must preserve a third pane that has not reached the snapshot yet.
+  await a.getByRole('button', { name: /Split terminal left\/right/ }).click()
+  await page.waitForFunction(() => window.pendingScopedSession?.id === 'scope-split-2')
+  await a.getByRole('button', { name: 'Stack panes', exact: true }).click()
+  const rotatedLayout = await page.evaluate(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.includes('scope-a'))
+    return JSON.parse(entry[1])
+  })
+  assert.ok(
+    rotatedLayout.groups.some(
+      (group) => group.layout === 'rows' && group.sessions.includes('scope-split-2'),
+    ),
+    'Orientation changes retain pending pane membership',
+  )
+  await page.evaluate(() => {
+    window.runtime.snapshot = {
+      terminals: [...window.runtime.snapshot.terminals, window.pendingScopedSession],
+    }
+    window.render()
+  })
+  await a.locator('[data-terminal-session="scope-split-2"] .dovo-terminal-canvas').waitFor()
+  assert.equal(await a.locator('[data-terminal-session]:visible').count(), 3)
+  assert.equal(await b.locator('[data-terminal-session]').count(), 1)
+  await a.getByRole('button', { name: 'Close Scoped split 2 pane', exact: true }).click()
+  await page.getByRole('button', { name: 'Close terminal', exact: true }).click()
+  await a.locator('[data-terminal-session="scope-split-2"]').waitFor({ state: 'detached' })
+  await page.evaluate(() => {
+    window.scopedCloses = []
+    window.closedEvents = []
+  })
+  // Close the split, then fail the anchor close: successful subset is reported and anchor survives.
+  await page.evaluate(() => {
+    window.failScopedClose = 'scope-a'
+  })
+  await a.getByRole('button', { name: 'Close terminal session', exact: true }).click()
+  await page.getByRole('button', { name: 'Close terminal panes', exact: true }).click()
+  await a.getByRole('alert').filter({ hasText: 'Scoped close rejected' }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.scopedCloses), ['scope-split-1'])
+  assert.deepEqual(await page.evaluate(() => window.closedEvents), [
+    { anchor: 'scope-a', ids: ['scope-split-1'] },
+  ])
+  assert.equal(await a.locator('[data-terminal-session="scope-split-1"]').count(), 0)
+  assert.equal(await b.locator('[data-terminal-session]').count(), 1)
+  // Successful anchor close hides only A despite a still-stale global snapshot.
+  await page.evaluate(() => {
+    window.failScopedClose = undefined
+  })
+  await a.getByRole('button', { name: 'Close terminal session', exact: true }).click()
+  await page.getByRole('button', { name: 'Close terminal', exact: true }).click()
+  await a.waitFor({ state: 'detached' })
+  assert.equal(await b.locator('[data-terminal-session="scope-b"]').count(), 1)
+  assert.deepEqual(await page.evaluate(() => window.hiddenAnchors), ['scope-a'])
+  await page.evaluate(() => {
+    window.scopeAnchors = ['legacy-anchor']
+    window.runtime.snapshot = {
+      terminals: [
+        { id: 'legacy-anchor', taskId: 'studio:terminals', title: 'Legacy anchor' },
+        { id: 'legacy-split', taskId: 'studio:terminals', title: 'Legacy split' },
+        { id: 'legacy-unrelated', taskId: 'studio:terminals', title: 'Unrelated' },
+      ],
+    }
+    const sharedScope = JSON.stringify([
+      window.runtime.connection.runtimeId ?? window.runtime.connection.address,
+      'studio:terminals',
+    ])
+    localStorage.setItem(
+      'dovo.terminal-layout:' + sharedScope,
+      JSON.stringify({
+        selected: 'legacy-split',
+        groups: [
+          { id: 'legacy-anchor', sessions: ['legacy-anchor', 'legacy-split'], layout: 'rows' },
+          { id: 'legacy-unrelated', sessions: ['legacy-unrelated'], layout: 'columns' },
+        ],
+      }),
+    )
+    window.render()
+  })
+  const legacy = page.locator('[data-workspace-anchor="legacy-anchor"]')
+  await legacy.locator('[data-terminal-session="legacy-split"] .dovo-terminal-canvas').waitFor()
+  assert.equal(await legacy.locator('[data-terminal-session]:visible').count(), 2)
+  assert.equal(await legacy.locator('[data-terminal-session="legacy-unrelated"]').count(), 0)
+
   assert.deepEqual(errors, [])
   console.log(
-    'Terminal: scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration and wrapped file locations passed.',
+    'Terminal: scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration, wrapped file locations, standalone anchor isolation, delayed split membership, partial/successful close events and legacy split restoration passed.',
   )
 } finally {
   await browser.close()

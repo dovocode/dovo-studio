@@ -387,6 +387,16 @@ it('keeps the experimental Browser disabled until explicitly enabled', async () 
   updateAppPreferences({ browserWorkspaceEnabled: false })
   expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
 })
+it('keeps the unified workspace opt-in and persists it independently from Browser', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().unifiedWorkspaceEnabled).toBe(false)
+  updateAppPreferences({ unifiedWorkspaceEnabled: true })
+  expect(readAppPreferences().unifiedWorkspaceEnabled).toBe(true)
+  expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
+  expect(JSON.parse(saved.getItem('dovo.app-preferences.v1')!).unifiedWorkspaceEnabled).toBe(true)
+})
 
 it('merges desktop updates with the latest settings from another window', async () => {
   let saved: Record<string, unknown> = { theme: 'dark', browserWorkspaceEnabled: false }
@@ -486,4 +496,19 @@ it('persists calendar snoozes and info order independently of visibility and old
     threadInfoOrder: [],
     taskSnoozeSchedule: { morningTime: '09:00', eveningTime: '18:00', weekStartsOn: 1 },
   })
+})
+
+it('keeps hiding normal modes opt-in and persisted separately from unified', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().unifiedWorkspaceHideNormalModes).toBe(false)
+  updateAppPreferences({ unifiedWorkspaceHideNormalModes: true })
+  expect(readAppPreferences()).toMatchObject({
+    unifiedWorkspaceHideNormalModes: true,
+    unifiedWorkspaceEnabled: false,
+  })
+  expect(
+    JSON.parse(saved.getItem('dovo.app-preferences.v1')!).unifiedWorkspaceHideNormalModes,
+  ).toBe(true)
 })

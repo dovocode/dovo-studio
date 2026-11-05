@@ -1,0 +1,1072 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "test": {
+      "fp32": {
+        "correct": 1449,
+        "total": 1461,
+        "accuracy": 0.9917864476386037,
+        "confusion": {
+          "browser": {
+            "browser": 302,
+            "terminal": 1,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 265,
+            "thread": 2
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 1,
+            "thread": 265
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 832,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 175,
+            "total": 175
+          },
+          "model": {
+            "correct": 142,
+            "total": 145
+          },
+          "project": {
+            "correct": 155,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "mistakes": [
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 19.962457998190075,
+            "logits": [
+              -7.923328399658203, -21.970876693725586, -16.74981689453125, -21.277313232421875,
+              -22.089553833007812, -21.83283805847168, 9.32984733581543
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:70:3",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "project:test:70:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "project:test:70:2",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:70:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:70:0",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              14792, 9073, 128001, 663, 294, 23369, 10454, 128001, 663, 294, 771, 10450, 5122,
+              128001, 663, 294, 14271, 20839, 128001, 663, 294, 114609, 12328, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "herdr resume demo",
+            "expected": "terminal",
+            "actual": "thread",
+            "ms": 19.805416999588488,
+            "logits": [-20.153467178344727, 4.461035251617432, 4.612659931182861],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 342, 14445, 4247,
+              6731, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:100:0",
+            "ms": 18.714249999902677,
+            "logits": [
+              -19.94061279296875, -3.8522188663482666, -10.032254219055176, -21.23024559020996,
+              -21.24921417236328, -21.201812744140625
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:100:3",
+                "label": "model: Fable 5.1"
+              },
+              {
+                "id": "model:test:100:0",
+                "label": "model: Sol 6.1"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:100:4",
+                "label": "model: Helios Mini"
+              },
+              {
+                "id": "model:test:100:1",
+                "label": "model: Granite 4.2"
+              },
+              {
+                "id": "model:test:100:2",
+                "label": "model: Opus 5.5"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 55154, 456, 260, 435, 128001, 1040, 294, 13433, 525, 260, 435,
+              128001, 2876, 262, 1049, 2068, 5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040,
+              294, 75055, 5702, 128001, 1040, 294, 18333, 453, 260, 445, 128001, 1040, 294, 48919,
+              456, 260, 524, 128002, 4989, 262, 499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336,
+              1040, 411, 3232, 289, 1659, 269, 298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269,
+              3973, 261, 548, 262, 763, 1040, 260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525,
+              260, 435, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "load dovocode.com",
+            "expected": "browser",
+            "actual": "terminal",
+            "ms": 20.05204200031585,
+            "logits": [-6.34986686706543, 1.5270452499389648, -11.982892990112305],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2929, 333, 10450,
+              11478, 260, 549, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Tundra Cloud, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 18.705833001149585,
+            "logits": [
+              7.426640033721924, -22.183231353759766, -10.174964904785156, -21.819135665893555
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:0:0",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:0:1",
+                "label": "project: Dovo Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14792,
+              9073, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              771, 10450, 5122, 128002, 4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374,
+              260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425,
+              5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335,
+              363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331, 314, 56926, 5262, 261,
+              298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "zellij attach work",
+            "expected": "terminal",
+            "actual": "thread",
+            "ms": 19.853624999086605,
+            "logits": [-20.162105560302734, 4.62959098815918, 8.995911598205566],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 24881, 436, 19951,
+              8934, 374, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Dovo Studio, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 20.24558400080423,
+            "logits": [
+              8.120638847351074, -22.31450843811035, -22.16044044494629, -9.320600509643555,
+              -15.719693183898926
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:25:0",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "project:test:25:2",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:25:1",
+                "label": "project: Dovo Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 114609,
+              12328, 128001, 663, 294, 49405, 14893, 128001, 2876, 262, 1049, 2068, 663, 346, 363,
+              499, 663, 3973, 128001, 663, 294, 771, 10450, 5122, 128002, 4989, 262, 499, 663, 3973,
+              283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333,
+              298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260,
+              8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280,
+              358, 2331, 314, 771, 10450, 5122, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:65:1",
+            "ms": 17.365833999065217,
+            "logits": [
+              -21.19788932800293, -21.144817352294922, -20.503618240356445, -10.512979507446289,
+              -0.6116605997085571
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:65:2",
+                "label": "model: Granite 4.2"
+              },
+              {
+                "id": "model:test:65:0",
+                "label": "model: Opus 5.5"
+              },
+              {
+                "id": "model:test:65:3",
+                "label": "model: Fable 5.1"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:65:1",
+                "label": "model: Sol 6.1"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 18333, 453, 260, 445, 128001, 1040, 294, 48919, 456, 260, 524,
+              128001, 1040, 294, 55154, 456, 260, 435, 128001, 2876, 262, 1049, 2068, 5536, 1040,
+              346, 363, 499, 1040, 3973, 128001, 1040, 294, 13433, 525, 260, 435, 128002, 4989, 262,
+              499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411, 3232, 289, 1659, 269,
+              298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261, 548, 262, 763, 1040,
+              260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525, 260, 435, 261, 298, 6350, 278,
+              2
+            ]
+          },
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 20.04270900215488,
+            "logits": [
+              -16.464710235595703, 8.491397857666016, -21.46505355834961, -22.04483413696289,
+              -21.87727928161621, -21.924882888793945, -9.153285026550293, -21.849227905273438
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:120:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:120:3",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:120:2",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:120:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:120:5",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:120:1",
+                "label": "project: Aurora Notes"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 23369, 10454, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356,
+              12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663, 294, 14271, 20839, 128001,
+              663, 294, 49405, 14893, 128001, 663, 294, 114609, 12328, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294, 14792, 9073, 128002, 4989, 262,
+              499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268,
+              601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003,
+              585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863,
+              294, 273, 280, 358, 2331, 314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:25:1",
+            "ms": 15.26979200207279,
+            "logits": [-14.534123420715332, -10.36054515838623, -6.381190776824951],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:25:0",
+                "label": "model: Wonder-full 1.0"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:25:1",
+                "label": "model: Sol 6.1"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 11188, 271, 11984, 376, 260, 693, 128001, 2876, 262, 1049, 2068,
+              5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040, 294, 13433, 525, 260, 435,
+              128002, 4989, 262, 499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411,
+              3232, 289, 1659, 269, 298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261,
+              548, 262, 763, 1040, 260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525, 260, 435,
+              261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "Help: nc -vz 10.11.12.13 443 isn't working",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 20.318167000368703,
+            "logits": [-20.141550064086914, 6.285247802734375, 4.356715202331543],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 4469, 294, 35567,
+              341, 2179, 1895, 466, 260, 1554, 260, 1432, 260, 2209, 47990, 928, 280, 297, 560, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Dovo Studio, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 20.26679199843784,
+            "logits": [
+              -22.023902893066406, -16.412927627563477, -21.922603607177734, -22.0416202545166,
+              -21.442386627197266, 9.316329002380371, -9.275880813598633
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:80:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:80:4",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:80:2",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "project:test:80:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:80:3",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 14271, 20839, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 114609, 12328, 128001, 663, 294, 49405, 14893, 128001, 663, 294, 23369, 10454,
+              128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 771, 10450, 5122, 261, 298, 6350, 278, 2
+            ]
+          }
+        ],
+        "medianMs": 20.00324999971781,
+        "p95Ms": 22.877040999446763
+      },
+      "q8": {
+        "correct": 1450,
+        "total": 1461,
+        "accuracy": 0.9924709103353867,
+        "confusion": {
+          "browser": {
+            "browser": 302,
+            "terminal": 1,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 265,
+            "thread": 2
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 266
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 833,
+            "total": 836
+          },
+          "runtime": {
+            "correct": 175,
+            "total": 175
+          },
+          "model": {
+            "correct": 142,
+            "total": 145
+          },
+          "project": {
+            "correct": 155,
+            "total": 160
+          },
+          "profile": {
+            "correct": 145,
+            "total": 145
+          }
+        },
+        "mistakes": [
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 41.802374998951564,
+            "logits": [
+              -8.131036758422852, -21.952085494995117, -16.791128158569336, -21.244800567626953,
+              -22.067462921142578, -21.81693458557129, 9.534924507141113
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:70:3",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "project:test:70:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "project:test:70:2",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:70:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:70:0",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              14792, 9073, 128001, 663, 294, 23369, 10454, 128001, 663, 294, 771, 10450, 5122,
+              128001, 663, 294, 14271, 20839, 128001, 663, 294, 114609, 12328, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "herdr resume demo",
+            "expected": "terminal",
+            "actual": "thread",
+            "ms": 41.4775829995051,
+            "logits": [-20.009536743164062, 1.3039318323135376, 7.598715305328369],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 342, 14445, 4247,
+              6731, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:100:0",
+            "ms": 40.859000000637025,
+            "logits": [
+              -20.014856338500977, -5.182828426361084, -10.070562362670898, -21.204357147216797,
+              -21.205110549926758, -21.159208297729492
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:100:3",
+                "label": "model: Fable 5.1"
+              },
+              {
+                "id": "model:test:100:0",
+                "label": "model: Sol 6.1"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:100:4",
+                "label": "model: Helios Mini"
+              },
+              {
+                "id": "model:test:100:1",
+                "label": "model: Granite 4.2"
+              },
+              {
+                "id": "model:test:100:2",
+                "label": "model: Opus 5.5"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 55154, 456, 260, 435, 128001, 1040, 294, 13433, 525, 260, 435,
+              128001, 2876, 262, 1049, 2068, 5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040,
+              294, 75055, 5702, 128001, 1040, 294, 18333, 453, 260, 445, 128001, 1040, 294, 48919,
+              456, 260, 524, 128002, 4989, 262, 499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336,
+              1040, 411, 3232, 289, 1659, 269, 298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269,
+              3973, 261, 548, 262, 763, 1040, 260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525,
+              260, 435, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "load dovocode.com",
+            "expected": "browser",
+            "actual": "terminal",
+            "ms": 41.90816600021208,
+            "logits": [-2.5658085346221924, -1.1960575580596924, -12.093661308288574],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 2929, 333, 10450,
+              11478, 260, 549, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Tundra Cloud, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 40.74512499937555,
+            "logits": [
+              7.691736698150635, -22.081375122070312, -10.2631196975708, -21.705307006835938
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:0:0",
+                "label": "project: Aurora Notes"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:0:1",
+                "label": "project: Dovo Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14792,
+              9073, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294,
+              771, 10450, 5122, 128002, 4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374,
+              260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425,
+              5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335,
+              363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331, 314, 56926, 5262, 261,
+              298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "zellij attach work",
+            "expected": "terminal",
+            "actual": "thread",
+            "ms": 41.78837499785004,
+            "logits": [-20.039674758911133, 2.479957103729248, 9.908075332641602],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 24881, 436, 19951,
+              8934, 374, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Dovo Studio, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 45.4329999993206,
+            "logits": [
+              8.43188762664795, -22.27831268310547, -22.139373779296875, -9.569905281066895,
+              -15.76982593536377
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:25:0",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "project:test:25:2",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:25:1",
+                "label": "project: Dovo Studio"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 114609,
+              12328, 128001, 663, 294, 49405, 14893, 128001, 2876, 262, 1049, 2068, 663, 346, 363,
+              499, 663, 3973, 128001, 663, 294, 771, 10450, 5122, 128002, 4989, 262, 499, 663, 3973,
+              283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333,
+              298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260,
+              8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280,
+              358, 2331, 314, 771, 10450, 5122, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:65:1",
+            "ms": 36.72108300088439,
+            "logits": [
+              -21.15936279296875, -21.09906768798828, -20.520334243774414, -10.609893798828125,
+              -2.6436846256256104
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:65:2",
+                "label": "model: Granite 4.2"
+              },
+              {
+                "id": "model:test:65:0",
+                "label": "model: Opus 5.5"
+              },
+              {
+                "id": "model:test:65:3",
+                "label": "model: Fable 5.1"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:65:1",
+                "label": "model: Sol 6.1"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 18333, 453, 260, 445, 128001, 1040, 294, 48919, 456, 260, 524,
+              128001, 1040, 294, 55154, 456, 260, 435, 128001, 2876, 262, 1049, 2068, 5536, 1040,
+              346, 363, 499, 1040, 3973, 128001, 1040, 294, 13433, 525, 260, 435, 128002, 4989, 262,
+              499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411, 3232, 289, 1659, 269,
+              298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261, 548, 262, 763, 1040,
+              260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525, 260, 435, 261, 298, 6350, 278,
+              2
+            ]
+          },
+          {
+            "input": "I'm asking about Quartz Analytics, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 37.04158300024574,
+            "logits": [
+              -16.51707649230957, 8.959667205810547, -21.430747985839844, -22.020597457885742,
+              -21.840988159179688, -21.894655227661133, -9.360468864440918, -21.84170150756836
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:120:4",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "project:test:120:3",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:120:2",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:120:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:120:5",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "project:test:120:1",
+                "label": "project: Aurora Notes"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 23369, 10454, 128001, 585, 2679, 346, 425, 5521, 346, 954, 356,
+              12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663, 294, 14271, 20839, 128001,
+              663, 294, 49405, 14893, 128001, 663, 294, 114609, 12328, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128001, 663, 294, 14792, 9073, 128002, 4989, 262,
+              499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268,
+              601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003,
+              585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863,
+              294, 273, 280, 358, 2331, 314, 23369, 10454, 261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Sol 6.1, not selecting it",
+            "expected": "keep",
+            "actual": "model:test:25:1",
+            "ms": 36.369749999721535,
+            "logits": [-14.687759399414062, -10.425878524780273, -7.14456033706665],
+            "task": "model",
+            "options": [
+              {
+                "id": "model:test:25:0",
+                "label": "model: Wonder-full 1.0"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "model:test:25:1",
+                "label": "model: Sol 6.1"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 1040, 294, 11188, 271, 11984, 376, 260, 693, 128001, 2876, 262, 1049, 2068,
+              5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040, 294, 13433, 525, 260, 435,
+              128002, 4989, 262, 499, 5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411,
+              3232, 289, 1659, 269, 298, 266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261,
+              548, 262, 763, 1040, 260, 21863, 294, 273, 280, 358, 2331, 314, 13433, 525, 260, 435,
+              261, 298, 6350, 278, 2
+            ]
+          },
+          {
+            "input": "I'm asking about Dovo Studio, not selecting it",
+            "expected": "keep",
+            "actual": "none",
+            "ms": 42.164250000496395,
+            "logits": [
+              -22.018892288208008, -16.46004867553711, -21.897546768188477, -22.011985778808594,
+              -21.461353302001953, 9.55378532409668, -9.47555923461914
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "project:test:80:1",
+                "label": "project: Atlas Payments"
+              },
+              {
+                "id": "project:test:80:4",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "project:test:80:2",
+                "label": "project: Larch Calendar"
+              },
+              {
+                "id": "project:test:80:0",
+                "label": "project: Helix Terminal"
+              },
+              {
+                "id": "project:test:80:3",
+                "label": "project: Quartz Analytics"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 663, 294, 14271, 20839, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 114609, 12328, 128001, 663, 294, 49405, 14893, 128001, 663, 294, 23369, 10454,
+              128001, 585, 2679, 346, 425, 5521, 346, 954, 356, 12499, 128001, 2876, 262, 1049,
+              2068, 663, 346, 363, 499, 663, 3973, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 273, 280, 358, 2331,
+              314, 771, 10450, 5122, 261, 298, 6350, 278, 2
+            ]
+          }
+        ],
+        "medianMs": 41.2579999974696,
+        "p95Ms": 42.60433300078148
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 0.00020313262939453125,
+      "quantizedChangedPredictions": ["Help: nc -vz 10.11.12.13 443 isn't working"]
+    }
+  },
+  "challengeSha256": "2114a7cf11eaf6ff2427ea4bc190bd7d0719a06a7a11b19a3c315539c1ed3682",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-04/"
+}

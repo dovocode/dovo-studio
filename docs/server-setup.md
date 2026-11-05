@@ -491,10 +491,12 @@ The update command:
    release, then restarts the previous server when it was running. If a process cannot be stopped,
    it refuses to restore a database underneath that process and reports the recovery paths.
 
-Activation is a brief interruption. Terminals do not survive a runtime restart; active tasks may
-become interrupted/failed and require continuation. Finish or stop important running work before
-updating. Paired credentials and project paths are preserved. This updates the server, not installed
-mobile/desktop application binaries.
+Activation is a brief interruption. Remembered standalone terminals reopen after a runtime restart,
+resuming supported tools through their exact captured session identity. Ordinary shell commands and
+thread terminals are not replayed; active tasks may become interrupted/failed and require
+continuation. See [terminal recovery](unified-workspace.md) for sleep behavior and multiplexer
+limits. Finish or stop important running work before updating. Paired credentials and project paths
+are preserved. This updates the server, not installed mobile/desktop application binaries.
 
 Releases and backups are retained for diagnosis/recovery; there is no automatic retention policy.
 The selected entrypoint and previous entrypoint are in `server-release.json`. Do not delete a

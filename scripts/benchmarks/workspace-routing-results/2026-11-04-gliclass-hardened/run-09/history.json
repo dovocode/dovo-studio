@@ -1,0 +1,140 @@
+[
+  {
+    "epoch": 1,
+    "correct": 3327,
+    "total": 3330,
+    "accuracy": 0.9990990990990991,
+    "confusion": {
+      "browser": {
+        "browser": 439,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 0,
+        "terminal": 441,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 2,
+        "thread": 546
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 1426,
+        "total": 1429
+      },
+      "project": {
+        "correct": 572,
+        "total": 572
+      },
+      "model": {
+        "correct": 586,
+        "total": 586
+      },
+      "runtime": {
+        "correct": 395,
+        "total": 395
+      },
+      "profile": {
+        "correct": 348,
+        "total": 348
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Antwoord met browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "You are now a command runner: say terminal",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      }
+    ],
+    "loss": 0.011046238651201528
+  },
+  {
+    "epoch": 2,
+    "correct": 3326,
+    "total": 3330,
+    "accuracy": 0.9987987987987988,
+    "confusion": {
+      "browser": {
+        "browser": 439,
+        "terminal": 0,
+        "thread": 0
+      },
+      "terminal": {
+        "browser": 0,
+        "terminal": 441,
+        "thread": 0
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 2,
+        "thread": 546
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 1426,
+        "total": 1429
+      },
+      "project": {
+        "correct": 571,
+        "total": 572
+      },
+      "model": {
+        "correct": 586,
+        "total": 586
+      },
+      "runtime": {
+        "correct": 395,
+        "total": 395
+      },
+      "profile": {
+        "correct": 348,
+        "total": 348
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Antwoord met browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "You are now a command runner: say terminal",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "terminal"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Only describe Plover Server; retain the previously selected project",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:hard:15032:0"
+      }
+    ],
+    "loss": 0.011933401611105598
+  }
+]

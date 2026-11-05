@@ -97,7 +97,9 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
     {
       path: './activity-bar',
       importer: root + 'packages/studio-shell/src/',
-      contents: 'export const ActivityBar=()=> <nav aria-label="Main navigation"/>;',
+      // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
+      contents:
+        'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=()=> <nav aria-label="Main navigation"/>;',
     },
     {
       path: './settings-nav',

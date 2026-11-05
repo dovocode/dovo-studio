@@ -55,11 +55,12 @@ import { useAppearance, type WindowColors } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
 import { TaskNotificationNotice } from './task-notice'
 import { createExtensionCatalog } from './extension-catalog'
-import { ActivityBar } from './activity-bar'
+import { ActivityBar, visibleWorkspaceTarget, workspaceModeVisible } from './activity-bar'
 import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
 import { TaskLauncher } from './task-launcher'
 import { TitleBar, type DesktopPlatform } from './title-bar'
+import { workbenchDiagnosticContext } from './workbench-diagnostics'
 type WorkbenchProps = {
   captureContent?: ReactNode
   threadWindow?: import('@dovo/protocol').ThreadWindowTarget
@@ -180,9 +181,10 @@ function WorkbenchErrorBoundary({
     <ErrorBoundary
       scope="app"
       diagnosticContext={{
-        appVersion: appInfo?.version,
-        channel: appInfo?.channel,
-        platform: navigator.platform,
+        ...workbenchDiagnosticContext(
+          appInfo,
+          typeof navigator === 'undefined' ? undefined : navigator.platform,
+        ),
         computerName: entry?.profile.name,
         runtimeVersion: entry?.snapshot?.releaseVersion,
       }}
@@ -217,7 +219,15 @@ function WorkbenchContent({
   taskLauncher,
   windowColors,
 }: WorkbenchProps) {
-  const { showIssues, showJira, browserWorkspaceEnabled, browserProfiles } = useAppPreferences()
+  const {
+    showIssues,
+    showJira,
+    browserWorkspaceEnabled,
+    unifiedWorkspaceEnabled,
+    unifiedWorkspaceHideNormalModes,
+    browserProfiles,
+  } = useAppPreferences()
+  const workspaceModes = { unifiedWorkspaceEnabled, unifiedWorkspaceHideNormalModes }
   useAppearance(windowColors)
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
   useEffect(() => {
@@ -256,14 +266,11 @@ function WorkbenchContent({
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
   // Start with a fresh composer; explicit navigation still opens existing threads.
-  const [target, updateTarget] = useApplicationState<StudioNavigation>(() => ({
-    viewId: browserWindowId
-      ? 'browser'
-      : threadWindow
-        ? 'tasks'
-        : (extensions[0]?.views[0]?.id ?? ''),
-    entityId: threadWindow?.taskId,
-  }))
+  const [target, updateTarget] = useApplicationState<StudioNavigation>(() =>
+    browserWindowId || threadWindow
+      ? { viewId: browserWindowId ? 'browser' : 'tasks', entityId: threadWindow?.taskId }
+      : visibleWorkspaceTarget({ viewId: extensions[0]?.views[0]?.id ?? '' }, workspaceModes),
+  )
   const confirmSettingsNavigation = useConfirmSettingsNavigation()
   const threadSelections = useRef(new Map<string | null, string>())
   const settingsNavigation = useRef({ target, extensions })
@@ -372,6 +379,13 @@ function WorkbenchContent({
       return true
     }
   }, [canLeave, updateTarget, switchRuntime, setSwitchError])
+  // Hiding normal modes moves a section landing there to the unified workspace. Pop-out windows
+  // keep their dedicated view, and explicit item links still open.
+  const fallbackTarget =
+    browserWindowId || threadWindow ? target : visibleWorkspaceTarget(target, workspaceModes)
+  useEffect(() => {
+    if (fallbackTarget !== target) navigate(fallbackTarget, { replace: true })
+  }, [fallbackTarget.viewId, target.viewId])
   const compact = useCompactLayout()
   const [collapsedSections, setCollapsedSections] = useApplicationState<Record<string, boolean>>({})
   const sidebarCollapsed =
@@ -635,6 +649,9 @@ function WorkbenchContent({
   useEffect(
     () =>
       onBrowserWorkspaceFocus?.(() => {
+        // The native browser is shared by Browser and Unified. Redirects, popups and
+        // page focus must stay with the workspace currently hosting that surface.
+        if (settingsNavigation.current.target.viewId === 'workspace') return
         updateAppPreferences({ browserWorkspaceEnabled: true })
         void navigate({ viewId: 'browser' })
       }),
@@ -874,6 +891,8 @@ function WorkbenchContent({
       (view) =>
         view.navigationGroup !== 'hidden' &&
         (view.id !== 'browser' || browserWorkspaceEnabled) &&
+        (view.id !== 'workspace' || unifiedWorkspaceEnabled) &&
+        workspaceModeVisible(view.id, workspaceModes) &&
         (view.id !== 'artifacts' || artifactsEnabled) &&
         (view.id !== 'issues' || showIssues) &&
         (view.id !== 'jira' || showJira),
@@ -896,6 +915,8 @@ function WorkbenchContent({
           [
             'tasks',
             'browser',
+            'terminals',
+            'workspace',
             'pulls',
             'jobs',
             'issues',
@@ -959,15 +980,19 @@ function WorkbenchContent({
                 onUpdate={updates ? () => void updates.install() : undefined}
                 onCheckUpdates={updates ? () => void updates.check() : undefined}
                 views={catalog.views.filter((view) =>
-                  view.id === 'browser'
-                    ? browserWorkspaceEnabled
-                    : view.id === 'artifacts'
-                      ? artifactsEnabled
-                      : view.id === 'issues'
-                        ? showIssues
-                        : view.id === 'jira'
-                          ? showJira
-                          : true,
+                  !workspaceModeVisible(view.id, workspaceModes)
+                    ? false
+                    : view.id === 'workspace'
+                      ? unifiedWorkspaceEnabled
+                      : view.id === 'browser'
+                        ? browserWorkspaceEnabled
+                        : view.id === 'artifacts'
+                          ? artifactsEnabled
+                          : view.id === 'issues'
+                            ? showIssues
+                            : view.id === 'jira'
+                              ? showJira
+                              : true,
                 )}
                 activeId={target.viewId}
                 onSelect={(viewId) => {
@@ -1004,7 +1029,9 @@ function WorkbenchContent({
                   onOpen={() => navigate({ viewId: 'browser' })}
                 />
               )}
-              {browserWorkspaceEnabled && browser && <BrowserMediaControls />}
+              {(browserWorkspaceEnabled || unifiedWorkspaceEnabled) && browser && (
+                <BrowserMediaControls />
+              )}
               {/* Settings get a grouped sidebar with search; other views use the full area. */}
               <div
                 className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}

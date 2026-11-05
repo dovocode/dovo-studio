@@ -199,6 +199,25 @@ it('creates, sends, waits, reads, searches and archives threads through existing
     runtimeIdentity: s.runtimeId,
     title: 'Parent',
   })
+  const listed: unknown = await (await post('threads', { action: 'list' })).json()
+  const { threads } = decode(
+    mutableStruct({
+      threads: Schema.Array(
+        mutableStruct({ id: Schema.String, reference: Schema.optional(Schema.String) }),
+      ),
+    }),
+    listed,
+  )
+  const reference = threads.find((thread) => thread.id === id)?.reference
+  expect(reference).toBe(`studio:${s.runtimeId}:thread:${id}`)
+  // A pasted unified reference works anywhere the bare thread ID does.
+  const byReference = await post('threads', { action: 'read', id: reference })
+  expect(byReference.status).toBe(200)
+  expect(await byReference.text()).toContain('Studio answer')
+  expect((await post('threads', { action: 'read', id: `studio:local:thread:${id}` })).status).toBe(
+    200,
+  )
+  expect((await post('browsers', { action: 'list' })).status).toBe(200)
   expect((await post('threads', { action: 'archive', id })).status).toBe(200)
   expect(s.store.taskSummary(id).archivedAt).toBeTruthy()
   expect((await post('threads', { action: 'unarchive', id })).status).toBe(200)

@@ -1,13 +1,39 @@
 import { Effect } from 'effect'
-import { readdir, rmdir } from 'node:fs/promises'
-import { basename, dirname } from 'node:path'
+import { readdir, realpath, rmdir } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Services } from '../../services.js'
 import { HttpError, runtimeOperation, runtimeProgram } from '../../errors.js'
 import { isTaskWorktree, taskWorktreeKeys } from '../tasks/task-checkout.js'
 import { withinWorktrees } from '../tasks/task-worktree-keys.js'
-import { worktreeListSchema, type TaskSummary } from '@dovo/protocol'
+import { worktreeListSchema, type TaskSummary, type TerminalInfo } from '@dovo/protocol'
 
 type Worktree = (typeof worktreeListSchema.Type.worktrees)[number]
+/** Only what the guard reads; settled or snoozed shells are still live processes. */
+type LiveShells = {
+  terminals: { list(): readonly Pick<TerminalInfo, 'title' | 'exited' | 'directory'>[] }
+}
+type WorktreeServices = Pick<Services, 'git' | 'store' | 'preferences'> & LiveShells
+
+const canonical = (path: string) => realpath(path).catch(() => resolve(path))
+/** Titles of running shells whose working directory is this checkout or inside it. */
+async function liveShellTitles(s: LiveShells, path: string) {
+  const target = await canonical(path)
+  const titles: string[] = []
+  for (const shell of s.terminals.list()) {
+    if (shell.exited || !shell.directory) continue
+    const offset = relative(target, await canonical(shell.directory))
+    if (offset === '' || (!isAbsolute(offset) && offset !== '..' && !offset.startsWith(`..${sep}`)))
+      titles.push(shell.title)
+  }
+  return titles
+}
+const shellLabel = (titles: string[]) =>
+  titles.length > 1 ? `${titles[0]} and ${titles.length - 1} more` : titles[0]
+const shellInUse = (titles: string[]) =>
+  new HttpError(
+    409,
+    `This worktree is open in ${shellLabel(titles)}. Close the terminal first; settling or snoozing keeps it running.`,
+  )
 
 function ownsWorktree(
   task: TaskSummary,
@@ -95,7 +121,7 @@ export function worktreeChoicesEffect(s: Pick<Services, 'git' | 'store'>, reposi
 }
 
 /** Dovo-created task worktrees across registered projects (Settings → Coding → Worktrees). */
-export function listWorktreesEffect(s: Pick<Services, 'git' | 'store' | 'preferences'>) {
+export function listWorktreesEffect(s: WorktreeServices) {
   return runtimeProgram(
     Effect.gen(function* () {
       const root = s.preferences.worktreesRoot()
@@ -136,7 +162,14 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store' | 'prefere
           )
           seen.add(path)
           const owner = owners.find((task) => !task.archivedAt) ?? owners[0]
-          const state = owner ? (owner.archivedAt ? 'archived' : 'active') : 'missing'
+          // A live standalone shell holds the checkout without becoming a task owner.
+          const shells = yield* runtimeOperation(() => liveShellTitles(s, path))
+          const state =
+            shells.length || (owner && !owner.archivedAt)
+              ? 'active'
+              : owner
+                ? 'archived'
+                : 'missing'
           const prunable = record.some((line) => line.startsWith('prunable'))
           // A prunable entry has no directory left to inspect; nothing there can be lost.
           const dirty = prunable
@@ -157,7 +190,7 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store' | 'prefere
             repositoryId: repository.id,
             repositoryName: repository.name,
             taskId: owner?.id,
-            taskTitle: owner?.title,
+            taskTitle: owner?.title ?? (shells.length ? shellLabel(shells) : undefined),
             threadIds: owners.map((task) => task.id),
             state,
             // Unreadable status counts as changed: never offer to delete what we can't inspect.
@@ -172,13 +205,9 @@ export function listWorktreesEffect(s: Pick<Services, 'git' | 'store' | 'prefere
   )
 }
 
-/** Removes a worktree whose task is archived or deleted. Uncommitted changes and active tasks
- * are refused; the branch is always kept so no commits are lost. */
-export function removeWorktreeEffect(
-  s: Pick<Services, 'git' | 'store' | 'preferences'>,
-  path: string,
-  orphanOnly = false,
-) {
+/** Removes a worktree whose task is archived or deleted. Uncommitted changes, active tasks and
+ * live terminal shells are refused; the branch is always kept so no commits are lost. */
+export function removeWorktreeEffect(s: WorktreeServices, path: string, orphanOnly = false) {
   return runtimeProgram(
     Effect.gen(function* () {
       const { worktrees, root } = yield* listWorktreesEffect(s)
@@ -187,6 +216,8 @@ export function removeWorktreeEffect(
         throw new HttpError(404, 'That worktree is no longer listed. Refresh and try again.')
       if (orphanOnly && entry.threadIds.length)
         throw new HttpError(409, 'This worktree is still linked to another thread')
+      const shells = yield* runtimeOperation(() => liveShellTitles(s, path))
+      if (shells.length) throw shellInUse(shells)
       if (entry.state === 'active')
         throw new HttpError(409, 'This worktree belongs to an active task. Archive the task first.')
       if (entry.dirty)
@@ -215,6 +246,9 @@ export function removeWorktreeEffect(
             409,
             'This worktree belongs to an active task. Archive the task first.',
           )
+        // A shell may have opened here while Git was inspecting; check right before removal.
+        const opened = await liveShellTitles(s, path)
+        if (opened.length) throw shellInUse(opened)
         // No --force: git itself refuses anything that became dirty or locked meanwhile.
         // A prunable entry's directory is already gone; only its registration remains.
         await s.git.command(top, ['worktree', 'remove', path])

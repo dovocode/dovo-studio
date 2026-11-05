@@ -37,6 +37,8 @@ jobs:
       # All packages were compiled above; the local test command intentionally builds first.
       - uses: ./.github/actions/setup-browser
       - run: pnpm exec vp test --maxWorkers=4
+      - name: Verify bundled GLiClass inference and offline worker
+        run: node scripts/check-workspace-router-model.mjs
       - name: Verify native browser extensions
         run: pnpm test:browser-extensions:native
       - name: Verify native terminal file paths

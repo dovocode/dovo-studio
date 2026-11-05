@@ -386,6 +386,7 @@ export function registerBrowser(
           camera: !!(state?.camera || pip?.camera),
           microphone: !!(state?.microphone || pip?.microphone),
           screenSharing: !!(state?.screenSharing || pip?.screenSharing),
+          agent: !!cdp?.connected(JSON.stringify([entry.windowId, entry.key])),
         },
       ]
     })
@@ -1954,7 +1955,7 @@ export function registerBrowser(
         other.restoreFocus = false
         setVisible(other, false)
         other.inactiveAt ??= Date.now()
-        if (other.taskId === command.taskId && !command.agentAccess) {
+        if (other.taskId === command.taskId && !command.agentAccess && !workspace) {
           other.agentAccess = false
           cdp?.remove(key)
           other.cdp = undefined
@@ -1992,7 +1993,13 @@ export function registerBrowser(
           entry.view.webContents.isDestroyed()
         )
           return
-        entry.cdp = cdp.register(viewKey, command.taskId, profileId, entry.view.webContents)
+        entry.cdp = cdp.register(
+          viewKey,
+          command.taskId,
+          profileId,
+          entry.view.webContents,
+          command.tabId,
+        )
       } else if (entry.cdp) {
         cdp?.remove(viewKey)
         entry.cdp = undefined

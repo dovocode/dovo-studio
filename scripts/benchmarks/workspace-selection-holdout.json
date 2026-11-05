@@ -1,0 +1,236 @@
+{
+  "description": "Fresh manual holdout authored after run-02 training began, before inspecting its results. No further training on these cases.",
+  "catalogs": {
+    "runtime": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "mac-studio",
+        "label": "runtime: Mac Studio"
+      },
+      {
+        "id": "macbook",
+        "label": "runtime: Dominic's MacBook"
+      },
+      {
+        "id": "linux",
+        "label": "runtime: Linux Server"
+      }
+    ],
+    "model": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "opus-5.5",
+        "label": "model: Opus 5.5"
+      },
+      {
+        "id": "sol-6.1",
+        "label": "model: Sol 6.1"
+      },
+      {
+        "id": "fable-5.1",
+        "label": "model: Fable 5.1"
+      }
+    ],
+    "project": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "dovo",
+        "label": "project: Dovo Studio"
+      },
+      {
+        "id": "shampoo",
+        "label": "project: Shampoo"
+      },
+      {
+        "id": "client",
+        "label": "project: Client Website"
+      }
+    ],
+    "profile": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "work",
+        "label": "profile: Work"
+      },
+      {
+        "id": "personal",
+        "label": "profile: Personal"
+      },
+      {
+        "id": "testing",
+        "label": "profile: Testing"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "text": "Use Opus 5.5 without a project and investigate my broken sidebar",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "none"
+      }
+    },
+    {
+      "text": "Computer: Linux Server\nProject: home folder\nCommand: ls -lah",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "linux",
+        "project": "none"
+      }
+    },
+    {
+      "text": "Start in my home directory on Mac Studio: pwd",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "mac-studio",
+        "project": "none"
+      }
+    },
+    {
+      "text": "Use Fable 5.1, no repository, and help me understand TLS",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "none"
+      }
+    },
+    {
+      "text": "In project Shampoo with Opus 5.5, fix the settings panel",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "shampoo"
+      }
+    },
+    {
+      "text": "Open https://example.net/settings in profile Personal on Linux Server",
+      "expected": {
+        "destination": "browser",
+        "runtime": "linux",
+        "profile": "personal"
+      }
+    },
+    {
+      "text": "Browse dovocode.com/?from=launcher using Work on Mac Studio",
+      "expected": {
+        "destination": "browser",
+        "runtime": "mac-studio",
+        "profile": "work"
+      }
+    },
+    {
+      "text": "https://dovocode.com/docs",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      }
+    },
+    {
+      "text": "ls -la",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "claude -p \"explain project selection\"",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Teach my CLI to understand ls -la and URLs like dovocode.com",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Explain the No Project option without changing my project",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Compare the Work and Personal browser profiles",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Why does Mac Studio use more RAM than Linux Server?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Use Fable 5.1 on Linux Server to review Client Website",
+      "expected": {
+        "destination": "thread",
+        "runtime": "linux",
+        "model": "fable-5.1",
+        "project": "client"
+      }
+    },
+    {
+      "text": "Command: git status\nProject: Shampoo\nComputer: Mac Studio",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "mac-studio",
+        "project": "shampoo"
+      }
+    },
+    {
+      "text": "Visit dovocode.com with the Default browser profile",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      }
+    },
+    {
+      "text": "Fix the rendering bug using a model called Unavailable-Model",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    }
+  ]
+}

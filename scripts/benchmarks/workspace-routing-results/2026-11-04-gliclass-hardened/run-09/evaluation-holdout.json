@@ -1,0 +1,211 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 62,
+        "total": 63,
+        "accuracy": 0.9841269841269841,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 5,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 18,
+            "total": 18
+          },
+          "runtime": {
+            "correct": 18,
+            "total": 18
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 13,
+            "total": 14
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 17,
+          "total": 18
+        },
+        "mistakes": [
+          {
+            "input": "Use Fable 5.1 on Linux Server to review Client Website",
+            "expected": "client",
+            "actual": "keep",
+            "ms": 19.13987500302028,
+            "logits": [
+              -0.884216845035553, -16.791624069213867, -19.814453125, -21.094348907470703,
+              -7.881180763244629
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "dovo",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "shampoo",
+                "label": "project: Shampoo"
+              },
+              {
+                "id": "client",
+                "label": "project: Client Website"
+              }
+            ],
+            "caseId": 14,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 34884, 128001, 663, 294, 9173, 4802, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 1922, 55154, 456, 260,
+              435, 277, 5768, 5561, 264, 1078, 9173, 4802, 2
+            ]
+          }
+        ],
+        "medianMs": 17.441791998862755,
+        "p95Ms": 20.426666000275873
+      },
+      "q8": {
+        "correct": 62,
+        "total": 63,
+        "accuracy": 0.9841269841269841,
+        "confusion": {
+          "browser": {
+            "browser": 4,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 5,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 9
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 18,
+            "total": 18
+          },
+          "runtime": {
+            "correct": 18,
+            "total": 18
+          },
+          "model": {
+            "correct": 9,
+            "total": 9
+          },
+          "project": {
+            "correct": 13,
+            "total": 14
+          },
+          "profile": {
+            "correct": 4,
+            "total": 4
+          }
+        },
+        "completePlans": {
+          "correct": 17,
+          "total": 18
+        },
+        "mistakes": [
+          {
+            "input": "Use Fable 5.1 on Linux Server to review Client Website",
+            "expected": "client",
+            "actual": "keep",
+            "ms": 41.06558399507776,
+            "logits": [
+              -0.9887281060218811, -16.659482955932617, -19.673927307128906, -21.15196418762207,
+              -8.113198280334473
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "dovo",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "shampoo",
+                "label": "project: Shampoo"
+              },
+              {
+                "id": "client",
+                "label": "project: Client Website"
+              }
+            ],
+            "caseId": 14,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 34884, 128001, 663, 294, 9173, 4802, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 1922, 55154, 456, 260,
+              435, 277, 5768, 5561, 264, 1078, 9173, 4802, 2
+            ]
+          }
+        ],
+        "medianMs": 37.36374999425607,
+        "p95Ms": 41.915542002243455
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 2.3365020751953125e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "070a70031c9335cdf9a48890f0cbcd0bd22f53430a1bc89dbdf48b470ccb2e17",
+  "rawReportOnMac": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-09/evaluation-holdout.json"
+}

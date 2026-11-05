@@ -62,6 +62,7 @@ import { Pairing } from './auth/pairing.js'
 import { GitService } from './scm/git/git.js'
 import { cliRead } from './scm/git/command-read.js'
 import { Terminals } from './terminal/terminals.js'
+import { TerminalRecovery } from './terminal/recovery.js'
 import { AgentRegistry } from './agents/configuration/registry.js'
 import { Approvals } from './agents/execution/approvals.js'
 import { Questions } from './agents/execution/questions.js'
@@ -190,6 +191,7 @@ export function createServices(
       () => commands.get(),
       activity,
       (id) => threadServers.environment(id, 'terminal'),
+      db.name === ':memory:' ? undefined : new TerminalRecovery(db),
     ),
     agents = new AgentRegistry(
       () => commands.get(),
