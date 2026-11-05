@@ -1057,12 +1057,93 @@
       "verdict": "ship; nonblocking refinements",
       "coverage": "56 exact;26 dark/30 light;four compact",
       "summary": "No blockers. Computer-backed fallback attribution, repeated help, Checks hierarchy/provider detail, capability presentation and update-description promise. Git cue overlaps content."
+    },
+    {
+      "round": "independent58",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent58_sol_a",
+      "score": 8.4,
+      "shipVerdict": "ship; no material visual blocker",
+      "coverage": "54 exact frames;28 dark26 light;1 contact for triage",
+      "brief": "Frozen gallery58/source58 only; no past or target scores."
+    },
+    {
+      "round": "independent58",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent58_resume_sol_b",
+      "score": 8.3,
+      "shipVerdict": "ship; no blocking defect",
+      "coverage": "84 exact frames;42 per theme",
+      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
+    },
+    {
+      "round": "independent58",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent58_resume_sol_c",
+      "score": 8.3,
+      "shipVerdict": "ship; no blocking defect",
+      "coverage": "78 exact frames;39 per theme",
+      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
+    },
+    {
+      "round": "independent58",
+      "model": "Opus 5.5",
+      "id": "9c2008db-3c31-4de1-ac81-015adcd5ce92",
+      "score": 8.5,
+      "shipVerdict": "ship; no blocking defect",
+      "coverage": "50 exact frames;25 per theme",
+      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
+    },
+    {
+      "round": "independent58",
+      "model": "Opus 5.5",
+      "id": "a2a47620-cd41-4ae7-b0a9-8acc308eb0d8",
+      "score": 8.0,
+      "shipVerdict": "ship; no blocking defect",
+      "coverage": "49 exact frames;25 dark24 light",
+      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
+    },
+    {
+      "round": "independent58",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "1063e59f-708f-4d32-bf02-1c7c3a319bcb",
+      "score": 8.0,
+      "shipVerdict": "ship; no material-harm or blocking defect",
+      "coverage": "71 exact frames;37 dark34 light;4 contacts for triage",
+      "brief": "Exact model after quota reset; frozen58/source58 only, no past or target scores."
+    },
+    {
+      "round": "independent59",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent59_sol_a",
+      "score": 8.4,
+      "shipVerdict": "ship; no release-blocking visual defect",
+      "coverage": "52 exact frames;26 per theme;10 compact",
+      "brief": "Frozen59/source59 only; no past or target scores."
+    },
+    {
+      "round": "independent59",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent59_sol_b",
+      "score": 8.4,
+      "shipVerdict": "ship; no material visual blocker",
+      "coverage": "86 exact frames;43 per theme",
+      "brief": "Frozen59/source59 only; no past or target scores."
+    },
+    {
+      "round": "independent59",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent59_sol_c",
+      "score": 8.5,
+      "shipVerdict": "ship; no material visual blocker",
+      "coverage": "80 exact frames;40 per theme;1 contact triage",
+      "brief": "Frozen59/source59 only; no past or target scores."
     }
   ],
   "remaining": [
-    "Receive independent reviews of frozen gallery58 and address verified findings",
-    "Retry exact Muse after its reported provider reset",
-    "Finish PR #50 after the independent design approval gate"
+    "Receive independent council59 and Muse58 assessments; address verified findings",
+    "Obtain requested independent quality approval",
+    "Finish PR #50 after the quality gate"
   ],
   "approvalTarget": {
     "reviewers": [
@@ -1080,12 +1161,12 @@
     "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
   },
   "gallery": {
-    "round": 58,
-    "captures": 344,
+    "round": 59,
+    "captures": 346,
     "corePass": 58,
-    "dialogPass": 58,
-    "settingsPass": 58,
-    "note": "172 theme pairs;326 ordinary1440x960 and18 compact1100x960 frames;22 contacts separate. Full capture after final behavior/style changes; unused tree-shaken import removal and test-only saved-name assertion completed shortly after capture began. All3583 tracked source files match source58; digest8f710df245087705f8c5c5b85953a08a9b03c3388f0d6596e94fca07ae346c05. No errors/alerts; lossless export, canvas and image-source parity verified."
+    "dialogPass": 59,
+    "settingsPass": 59,
+    "note": "173 theme pairs;326 ordinary1440x960 and20 compact1100x960 frames;22 contacts separate. Gallery58 baseline plus54 focused replaced/new Agent/Runtime/PR/Git frames. All3583 tracked source files match source59; digeste91ee8ecb16500102e4ce8fdf965372de1f0b66666c4adcb50f74a1a2c94c41b. No capture errors/alerts; lossless export, canvas and image-source parity verified. Manifest lists exact replacement provenance."
   },
   "unavailableReviews": [
     {
@@ -1150,43 +1231,38 @@
       "id": "c1926aa5-cdcf-49c4-9184-a33421161850",
       "status": "failed",
       "reason": "Provider429 subscription quota exhausted after10 provider attempts; reset2026-11-04T23:52:05Z. No assessment issued."
-    }
-  ],
-  "pendingReviews": [
-    {
-      "round": "independent58",
-      "model": "GPT-6.1 Sol",
-      "id": "/root/independent58_sol_a",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
-    },
-    {
-      "round": "independent58",
-      "model": "GPT-6.1 Sol",
-      "id": "/root/independent58_sol_b",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
-    },
-    {
-      "round": "independent58",
-      "model": "GPT-6.1 Sol",
-      "id": "/root/independent58_sol_c",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
     },
     {
       "round": "independent58",
       "model": "Opus 5.5",
       "id": "9544c092-8f3f-4786-b19a-5ee0c5334f90",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
+      "status": "cancelled",
+      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores.",
+      "reason": "Authoritative child status says Cancelled by user during interruption; partial inspection only, no final score."
     },
     {
       "round": "independent58",
       "model": "Opus 5.5",
       "id": "cef195ff-5290-4961-985f-1934ec1a6f51",
+      "status": "cancelled",
+      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores.",
+      "reason": "Authoritative child status says Cancelled by user during interruption; partial inspection only, no final score."
+    }
+  ],
+  "pendingReviews": [
+    {
+      "round": "independent59",
+      "model": "Opus 5.5",
+      "id": "1ce10520-594a-4830-89db-c37dcc95bca2",
       "status": "running",
-      "brief": "Fresh context; frozen gallery58/source58 only. No past or target scores."
+      "brief": "Fresh context; frozen gallery59/source59 only. No past or target scores."
+    },
+    {
+      "round": "independent59",
+      "model": "Opus 5.5",
+      "id": "76ed3fde-80dd-48ad-8c03-d063da3b268d",
+      "status": "running",
+      "brief": "Fresh context; frozen gallery59/source59 only. No past or target scores."
     }
   ],
   "queuedReviews": [
@@ -1196,13 +1272,6 @@
       "status": "unavailable",
       "reason": "Confirmed agy models lists gemini-4-argon-high. ACP read-only launch rejected by adapter; direct AGY plan+sandbox launch reached provider but returned503 auth_not_found for antigravity. No review issued.",
       "latestRetry": "AGY models still lists gemini-4-argon-high. Google ACP catalog advertises only Gemini3.8Flash; direct exact-model AGY plan+sandbox review retry again returned503 auth_not_found for antigravity. No review issued or substituted."
-    },
-    {
-      "round": "independent58",
-      "model": "Muse muse-wonder-full-1.0",
-      "status": "waiting-provider-reset",
-      "retryAfter": "2026-11-04T23:52:05Z",
-      "reason": "Latest exact-model attempt failed on provider quota. Avoid an immediate retry while the reported cooldown is active; no substitute assessment."
     }
   ],
   "supersededReviews": [
@@ -1293,6 +1362,11 @@
       "round": "pass58",
       "summary": "Retain the existing saved Agent heading/actions beneath the sticky scope toolbar during long edits, with measured responsive clearance and no duplicate subject state. Saved profile identity remains stable until a rename is saved; existing dirty footer and clean footer flow retained. Git outer continuation occupies its own labeled strip below the viewport, visible only for actual remaining content and hidden at the end/in review. Removed duplicate lifecycle provenance inside expanded help while retaining persistent attribution and both computer-preserving links. Repository CI has a sibling heading and sentence-case signal; independent sources retained. Updates copy no longer promises unavailable channel selection.",
       "verification": "Managed Chromium installed. Final production web/desktop builds, affected UI/shell/Agents/runtime/tasks/SCM types and scoped lint/format/diff passed. Wide/compact/mobile scoped-Agent suite verifies saved/draft identity and sticky hit-test geometry; General Settings, target/inheritance ownership, task-project-panel/Git overflow/end/review geometry and PR workspace/source/merge-footer suites pass.344-frame capture has no errors/alerts; all3583 tracked source files byte-match the frozen tree. Lossless export, #080808 canvas and image-source parity checked."
+    },
+    {
+      "round": "pass59",
+      "summary": "Clear pending Agent rename footer with saved heading preserved; added clean compact Agents evidence. Service-URL guidance now follows actual clean/pending/saved state. Shared native scrollbar-gutter matching aligns fixed PR actions, modal Agent footer and Git continuation to sibling scroll body content, preserving focus clearance and fixed actions without magic pixel offsets. Inline Agent and inner changed-file scroll flow retained.",
+      "verification": "Managed Chromium installed. Final production web/desktop builds, UI/Agents/runtime/SCM/tasks types, scoped lint/format/diff pass. Scoped-Agent rename/layout/save-guard and service-URL validation/reset/failure suites pass. After rebuilding CSS, PR workspace and Git panel geometry suites pass precise right-edge alignment, body/footer separation and existing mutation/draft/source guards. Focused Agent dialog captures assert content alignment in both themes.346 exact frames173 pairs;54 new/replaced frames, no capture errors/alerts; lossless pixels, canvas and image source parity verified. All3583 tracked source files match final frozen source59."
     }
   ],
   "designConsultations": [
@@ -1358,6 +1432,13 @@
       "id": "02d6cb12-f79d-4e5f-8f4e-705c67019da0",
       "status": "completed",
       "summary": "Requested concrete source-aware Settings implementation instructions without a score. Confirmed that all-computer editing reads fallback policies from one selected computer, and found that pending/failed reads could be presented as Off. Adopted persistent named provenance plus distinct checking/offline/unavailable feedback, retaining known scoped values and original boolean resolution. Deferred broader save-mode component and Agent subject propagation as separate nonblocking layout work; existing explicit-save state remains authoritative. Did not pass display strings as authoritative inherited booleans or invent fleet policy values."
+    },
+    {
+      "round": "design59",
+      "model": "Opus 5.5",
+      "id": "9c2008db-3c31-4de1-ac81-015adcd5ce92",
+      "status": "completed",
+      "summary": "Source-aware implementation guidance without another rating. Confirmed sibling scrollbar-gutter ownership as outer-footer mismatch; proposed shared stable native-gutter utility and inner dividers, with symmetric focus clearance and no fixed7px compensation. Adopted for PR actions, modal AgentEditor and Git continuation. Legitimate nested changed-file gutter retained; inline Agent save flow untouched. Geometry assertions verify actual alignment and fixed reachable action areas."
     }
   ],
   "findingTriage": [
@@ -1445,6 +1526,21 @@
       "round": "independent57",
       "finding": "Duplicate lifecycle attribution; profile identity scrolls away; Git continuation overlays content; Checks heading/status inconsistency; update copy promises absent channel selection",
       "result": "Confirmed. Remove the repeated attribution within help while retaining persistent policy context and target-preserving links. Reuse the existing Agent profile heading as a sticky context row beneath the measured scope toolbar, retaining saved-record identity and existing actions; add measured scroll clearance so inputs remain unobstructed. Keep the clean footer in flow. Git continuation now has its own labeled strip outside the viewport, gated by real overflow and hidden at the end/review state. Checks uses a sibling-scale Repository CI heading and sentence-case status without changing source semantics. About copy describes update preferences across host capabilities."
+    },
+    {
+      "round": "independent58",
+      "finding": "Sol B image-editor screenshot anomaly",
+      "result": "Withdrawn after independent recheck. Root and reviewer opened exact frozen PNGs and verified source region pixel parity across themes for editor, crop and annotated:746/980/839 colors. No rendering defect established; export/live behavior remains outside frozen-image review. Score unchanged."
+    },
+    {
+      "round": "independent58",
+      "finding": "Agent saved/draft identity ambiguity; dialog footer alignment; hidden service-URL Save guidance",
+      "result": "Pending names explicitly say Rename to while saved heading remains authoritative. Clean compact Agents now captured directly in both themes. Service-URL clean/pending/saved descriptions reflect actual Save availability. Shared stable-gutter utility reserves native lane on fixed sibling action areas, inner divider owns aligned width, symmetric focus padding retained. Existing nested Git file scrollbar lane is legitimate and retained. Independent provider merge verdict is not renamed to Repository CI or replaced by aggregate failures; different status sources remain separate."
+    },
+    {
+      "round": "independent59",
+      "finding": "Sol B claimed missing crop image in light-theme frame",
+      "result": "Withdrawn on independent second full-size view and pixel inspection: source region is identical across themes,980 colors, with image/red annotation/dashed crop visible. No crop discrepancy or related ship condition remains; score8.4 and ship unchanged."
     }
   ],
   "previousApprovalTarget": {

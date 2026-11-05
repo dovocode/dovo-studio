@@ -118,7 +118,13 @@ export function ServiceUrlSettings() {
         saveLabel="Save service URLs"
         saveType="submit"
         saved={!!notice}
-        description="Saved on this device when you choose Save service URLs."
+        description={
+          notice
+            ? 'Service URLs saved on this device.'
+            : dirty
+              ? 'Save service URLs to apply these changes on this device.'
+              : 'Edit a URL to show Save service URLs.'
+        }
         changeCount={
           Number(fields.connectOrigin !== saved.connectOrigin) +
           Number(fields.artifactsOrigin !== saved.artifactsOrigin)

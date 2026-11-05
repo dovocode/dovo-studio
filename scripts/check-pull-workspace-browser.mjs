@@ -129,6 +129,10 @@ try {
         return {
           dialog: rect(element),
           body: rect(body),
+          bodyContentRight:
+            body.getBoundingClientRect().right -
+            (body.offsetWidth - body.clientWidth) -
+            parseFloat(getComputedStyle(body).paddingRight),
           cancel: rect(cancel),
           submit: rect(submit),
           viewport: { width: innerWidth, height: innerHeight },
@@ -151,6 +155,10 @@ try {
           `${label}: ${name} does not overlap the scrolling form body`,
         )
       }
+      assert.ok(
+        Math.abs(geometry.submit.right - geometry.bodyContentRight) <= 1,
+        `${label}: submit aligns with the scroll body's content edge`,
+      )
       assert.ok(
         geometry.cancel.right <= geometry.submit.left + 1,
         `${label}: Cancel and submit do not overlap`,

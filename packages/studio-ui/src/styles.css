@@ -532,6 +532,11 @@ textarea {
 :where(.overflow-y-auto, .overflow-auto) {
   scrollbar-gutter: stable;
 }
+/* Fixed actions beside a scroll body reserve the same native scrollbar lane. */
+.studio-scroll-gutter-match {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
 .studio {
   --studio-header-height: 52px;
   --studio-navigation-width: 48px;

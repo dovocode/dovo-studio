@@ -463,6 +463,20 @@ export async function captureFollowUpDialogs(page, origin, output) {
         if (route === 'tasks')
           await page.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
         await open()
+        if (['edit-agent', 'edit-agent-dirty'].includes(name)) {
+          assert.ok(
+            await page.locator('.studio-agent-editor').evaluate((dialog) => {
+              const body = dialog.querySelector('[data-agent-editor-scroll]')
+              const footer = dialog.querySelector('.studio-scroll-gutter-match > fieldset')
+              const contentRight =
+                body.getBoundingClientRect().right -
+                (body.offsetWidth - body.clientWidth) -
+                parseFloat(getComputedStyle(body).paddingRight)
+              return Math.abs(footer.getBoundingClientRect().right - contentRight) <= 1
+            }),
+            `${name}: fixed actions align with the scroll body content edge`,
+          )
+        }
         if (name === 'thread-delete') {
           const cancel = page
             .getByRole('dialog')

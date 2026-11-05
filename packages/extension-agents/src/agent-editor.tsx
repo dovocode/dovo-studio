@@ -82,6 +82,8 @@ export function AgentEditor({
   const dirty =
     JSON.stringify(agent) !== JSON.stringify(initial) ||
     environment !== formatAgentEnvironment(initial.env)
+  const profileName = agent.name.trim() || initial.name
+  const profileLabel = profileName === initial.name ? profileName : `Rename to ${profileName}`
   useSettingsDraft(dirty, busy)
   useEffect(() => {
     onDirtyChange?.(dirty)
@@ -179,7 +181,10 @@ export function AgentEditor({
             })
         }}
       >
-        <div className={inline ? undefined : 'min-h-0 flex-1 overflow-y-auto pb-5'}>
+        <div
+          data-agent-editor-scroll={!inline || undefined}
+          className={inline ? undefined : '-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-5'}
+        >
           <fieldset disabled={busy || !connected} className="min-w-0 space-y-5">
             <div className="space-y-5">
               {creating && step === 0 && (
@@ -537,7 +542,7 @@ export function AgentEditor({
           </fieldset>
         </div>
         <div
-          className={`min-w-0 shrink-0 pt-3 ${inline ? 'mt-5' : ''} ${inline && (creating || dirty || busy || error) ? 'sticky bottom-[calc(-1*var(--studio-settings-scroll-padding,0px))] z-10 bg-background pb-[var(--studio-settings-scroll-padding,0px)]' : ''}`}
+          className={`min-w-0 shrink-0 pt-3 ${inline ? 'mt-5' : 'studio-scroll-gutter-match -mx-1 -mb-1 px-1 pb-1'} ${inline && (creating || dirty || busy || error) ? 'sticky bottom-[calc(-1*var(--studio-settings-scroll-padding,0px))] z-10 bg-background pb-[var(--studio-settings-scroll-padding,0px)]' : ''}`}
         >
           <fieldset
             disabled={busy || !connected}
@@ -561,7 +566,7 @@ export function AgentEditor({
                   !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
                   !supportsAccess(agent.provider, agent.permission)
                 }
-                description={`${agent.name.trim() || initial.name} · ${computerName}. Applies to new turns.`}
+                description={`${profileLabel} · ${computerName}. Applies to new turns.`}
                 onDiscard={discard}
                 onSave={() => form.current?.requestSubmit()}
               />

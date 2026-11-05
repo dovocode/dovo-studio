@@ -504,7 +504,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         path: resolve(output, `${name}-${mode}.png`),
         animations: 'disabled',
       })
-      if (['pulls-dense', 'issues-dense', 'agents-dirty'].includes(name)) {
+      if (['pulls-dense', 'issues-dense', 'agents', 'agents-dirty'].includes(name)) {
         await page.setViewportSize({ width: 1100, height: 960 })
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
         await page.screenshot({

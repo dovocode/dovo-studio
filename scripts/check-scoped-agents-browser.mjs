@@ -332,11 +332,13 @@ try {
     }
     assert.equal(await page.getByLabel('Configuration scope', { exact: true }).count(), 0)
     await page.getByLabel('Name', { exact: true }).fill('Project writer')
-    if (!mobile)
+    if (!mobile) {
       await page
         .locator('.studio-agent-profile-header')
         .getByRole('heading', { name: 'Writer', exact: true })
         .waitFor()
+      await page.getByText(/^Rename to Project writer · .*Applies to new turns\.$/).waitFor()
+    }
     await setCloudIntegrations('false', 'Disabled')
     await page
       .getByRole('button', { name: mobile ? 'Save agent' : 'Save changes', exact: true })

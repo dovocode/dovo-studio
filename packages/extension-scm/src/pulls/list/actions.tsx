@@ -798,20 +798,22 @@ function PullActionDialog({
               </p>
             )}
           </div>
-          <div className="shrink-0 space-y-4 border-t pt-4">
-            {error && (
-              <div role="alert" className="space-y-2 text-xs text-destructive">
-                <p>{error}</p>
-                <p>If the response was lost after submission, refresh the PR before retrying.</p>
+          <div className="studio-scroll-gutter-match -mx-1 -mb-1 shrink-0 px-1 pb-1">
+            <div className="space-y-4 border-t pt-4">
+              {error && (
+                <div role="alert" className="space-y-2 text-xs text-destructive">
+                  <p>{error}</p>
+                  <p>If the response was lost after submission, refresh the PR before retrying.</p>
+                </div>
+              )}
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!valid || busy || !connected}>
+                  {busy ? 'Submitting…' : label}
+                </Button>
               </div>
-            )}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!valid || busy || !connected}>
-                {busy ? 'Submitting…' : label}
-              </Button>
             </div>
           </div>
         </form>

@@ -654,6 +654,15 @@ try {
     await continuation.waitFor()
     assert.equal(await continuation.innerText(), 'More Git & project actions below')
     assert.ok(
+      await continuation.evaluate((element) => {
+        const viewport = element.parentElement.querySelector('[data-git-actions-scroll]')
+        const contentRight =
+          viewport.getBoundingClientRect().right - (viewport.offsetWidth - viewport.clientWidth)
+        return Math.abs(element.firstElementChild.getBoundingClientRect().right - contentRight) <= 1
+      }),
+      'The Git continuation divider shares the scroll body content edge',
+    )
+    assert.ok(
       (await continuation.boundingBox()).y >=
         (await gitScroll.boundingBox()).y + (await gitScroll.boundingBox()).height - 1,
       'The Git continuation occupies its own strip below the content viewport',
@@ -668,7 +677,7 @@ try {
           html.dataset.theme = scheme
           const dialog = element.closest('[role="dialog"]')
           return {
-            cue: getComputedStyle(element).backgroundColor,
+            cue: getComputedStyle(element.firstElementChild).backgroundColor,
             surface: getComputedStyle(dialog).backgroundColor,
           }
         } finally {
