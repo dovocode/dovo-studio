@@ -29,20 +29,20 @@ control styles make the workspace and its secondary surfaces feel consistent.
   and explicit saves remain clearly distinguished, including an initial save cue on scoped forms.
   The existing Agent profile heading remains visible below the scoped target during long edits;
   measured scroll clearance keeps fields accessible beneath both rows. Agent draft actions stay
-  reachable in an opaque footer with readable profile and target identity; pending renames are
-  explicitly labeled. Instructions spans the form with six readable lines; substantial help uses
-  full-width rows. Appearance retains all palettes and font previews, with a bounded terminal size
-  stepper. Search, legacy notices, explicit-save groups and unsaved-navigation guards remain. Save
-  cues and Editing/Viewing context follow the selected computer’s capabilities; offline targets show
-  one reconnect instruction. Mixed-save pages name their explicit-save exceptions, and computer
-  forms explain automatic-save timing. Save guidance has a readable text size and emphasis; offline
-  defaults and lifecycle offer a direct route to Devices & runtime without changing the selected
-  target. Settings search uses the visible thread labels and focuses the matching control; the
-  navigation offers a measured continuation action for lower sections. Running-thread save feedback
-  appears before its introduction, and lifecycle links retain the computer while opening the
-  relevant restart/archive or PR settling defaults. Lifecycle also names the reporting computer
-  above its controls, so the source is visible with help collapsed. The navigation continuation uses
-  its visible text as its accessible name.
+  reachable in an opaque footer with readable profile and target identity; pending renames identify
+  the saved profile and the name applied on save. Instructions spans the form with six readable
+  lines; substantial help uses full-width rows. Appearance retains all palettes and font previews,
+  with a bounded terminal size stepper. Search, legacy notices, explicit-save groups and
+  unsaved-navigation guards remain. Save cues and Editing/Viewing context follow the selected
+  computer’s capabilities; offline targets show one reconnect instruction. Mixed-save pages name
+  their explicit-save exceptions, and computer forms explain automatic-save timing. Save guidance
+  has a readable text size and emphasis; offline defaults and lifecycle offer a direct route to
+  Devices & runtime without changing the selected target. Settings search uses the visible thread
+  labels and focuses the matching control; the navigation offers a measured continuation action for
+  lower sections. Running-thread save feedback appears before its introduction, and lifecycle links
+  retain the computer while opening the relevant restart/archive or PR settling defaults. Lifecycle
+  also names the reporting computer above its controls, so the source is visible with help
+  collapsed. The navigation continuation uses its visible text as its accessible name.
 - **Git and PRs:** staged/unstaged groups support partial staging, selection and per-file Unstage.
   Changed-file groups share a bounded scroll area, keeping the commit form discoverable at dense
   desktop sizes; modest three/four-entry change sets fit at the captured normal and compact desktop
@@ -67,13 +67,14 @@ control styles make the workspace and its secondary surfaces feel consistent.
 
 ## Evidence and limits
 
-The gallery contains **346 actual app captures across 173 surfaces**, each in dark and light,
+The gallery contains **350 actual app captures across 175 surfaces**, each in dark and light,
 including 1100px compact layouts, dense lists, edited Agent forms, long Git comparisons, open
 controls and follow-up/image dialogs. Checked-in WebPs are lossless conversions, verified
-pixel-for-pixel against the PNGs. The latest pass replaces affected Agent, Runtime, PR action and
-Git states with focused captures and adds clean compact Agents in both themes. Unaffected frames
-come from the preceding full capture. The frozen manifest records this provenance and matching
-source. Six earlier comparisons remain below.
+pixel-for-pixel against the PNGs. The latest pass captures the integrated source after merging main,
+including the new Terminal starter, with final focused Agent and merge captures replacing affected
+frames. Compact Agents keeps Name, Model, Reasoning and Access together; keyboard traversal now
+clears the actual sticky headers and dirty footer. The frozen manifest records this provenance and
+matching source. Six earlier comparisons remain below.
 
 Captures use production components with schema-checked synthetic data and blocked account/runtime
 writes. Dense lists contain 14 rows; some other collections intentionally show empty states. The
@@ -81,13 +82,14 @@ native Browser bridge is simulated. Terminal uses the production worker/renderer
 WebSocket replay. Long Git fixture patches include full-file context. These are verification limits,
 not evidence of live Electron, provider, account or terminal execution behavior.
 
-Independent council review is **in progress**, and the design approval target has not been met.
-Briefs omit past and target scores; reviewers receive frozen screenshots and matching source.
-[council.json](council.json) records assessments, coverage and provider limitations. The latest
-exact `muse-wonder-full-1.0` retry completed after the quota reset: 8.0/10, ship, with71 exact
-frames inspected. Its primary pending-rename finding is addressed in this pass. AGY lists
-`gemini-4-argon-high`, but its latest direct sandboxed review returned `503 auth_not_found`; no
-Gemini assessment is claimed.
+Independent council review is **in progress**, and the revised9/10 design approval target has not
+been met. Final reviewers receive frozen screenshots, matching source and
+[interaction evidence](interaction-evidence.md). The revised target is9/10, with honest scoring and
+no previous ratings supplied. [council.json](council.json) records assessments, coverage and
+provider limitations. The latest exact `muse-wonder-full-1.0` retry completed after the quota reset:
+8.0/10, ship, with71 exact frames inspected. Its primary pending-rename finding is addressed in this
+pass. AGY lists `gemini-4-argon-high`, but its latest direct sandboxed review returned
+`503 auth_not_found`; no Gemini assessment is claimed.
 
 A [generated Settings reference](../../output/imagegen/README.md) informed hierarchy and field
 alignment, responsive composition and quieter navigation. The [Opus direction](design-direction.md)
@@ -314,3 +316,10 @@ Starting captures: [welcome](screenshots/before-welcome-dark.webp),
 
 Thread info before its redesign: [dark](screenshots/before-thread-info-dark.webp),
 [light](screenshots/before-thread-info-light.webp).
+
+## Integrated workspace starters
+
+| Surface   | Dark                                          | Light                                          |
+| --------- | --------------------------------------------- | ---------------------------------------------- |
+| Terminals | [Screenshot](screenshots/terminals-dark.webp) | [Screenshot](screenshots/terminals-light.webp) |
+| Workspace | [Screenshot](screenshots/workspace-dark.webp) | [Screenshot](screenshots/workspace-light.webp) |

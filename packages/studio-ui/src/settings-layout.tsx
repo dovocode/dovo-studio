@@ -76,6 +76,7 @@ export function SettingsPage({
         onFocusCapture={(event) => {
           const target = event.target
           if (!(target instanceof HTMLElement) || target === event.currentTarget) return
+          if (!event.currentTarget.contains(target)) return
           if (
             target.closest(
               '.studio-settings-toolbar, .studio-agent-profile-header, [data-settings-sticky-actions]',
@@ -93,6 +94,7 @@ export function SettingsPage({
           const footer = viewport
             .querySelector('[data-settings-sticky-actions]')
             ?.getBoundingClientRect()
+          if (!toolbar && !profile && !footer) return
           const top = Math.max(
             bounds.top,
             toolbar?.bottom ?? bounds.top,

@@ -627,7 +627,11 @@ function PullActionDialog({
                 </p>
                 <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 ref={readinessHeading} tabIndex={-1} className="text-sm font-medium">
+                    <h3
+                      ref={readinessHeading}
+                      tabIndex={-1}
+                      className="text-sm font-medium outline-none!"
+                    >
                       Repository merge status
                     </h3>
                     {mergeStatus?.headSha === scope.headSha && (

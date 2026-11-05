@@ -418,7 +418,14 @@ export function TerminalPane({
           groups.map((tab, index) => {
             const session = sessions.find((session) => session.id === tab.sessions[0])!
             return (
-              <div key={tab.id} data-terminal-tab className={cn('flex shrink-0 items-center rounded-md', tab.id === group?.id && 'studio-selected-surface')}>
+              <div
+                key={tab.id}
+                data-terminal-tab
+                className={cn(
+                  'flex shrink-0 items-center rounded-md',
+                  tab.id === group?.id && 'studio-selected-surface',
+                )}
+              >
                 <Button
                   size="sm"
                   variant="ghost"

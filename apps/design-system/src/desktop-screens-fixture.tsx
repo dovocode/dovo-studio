@@ -225,6 +225,9 @@ function ScreenWorkspace({
         },
         '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'main' },
         '/api/terminals/ticket': { ticket: 'catalog-preview' },
+        '/api/terminals/shells': {
+          shells: [{ id: 'default', label: 'Default shell', path: '/bin/bash', args: [] }],
+        },
         '/api/review/read': { files: [], groups: [] },
         '/api/tasks/waiting': { dependencies: [] },
         '/api/artifacts/library': { artifacts: [] },

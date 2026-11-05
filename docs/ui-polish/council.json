@@ -1159,9 +1159,8 @@
     }
   ],
   "remaining": [
-    "Collect concrete9/10 implementation criteria from three Sol,two Opus and Muse",
-    "Implement necessary refinements and verify actual evidence",
-    "Finish and ship PR #50 after revised9/10 quality gate"
+    "Collect honest council60 assessments and address verified remaining gaps",
+    "Finish PR #50 after revised9/10 gate"
   ],
   "approvalTarget": {
     "reviewers": [
@@ -1179,12 +1178,12 @@
     "reason": "Dominic explicitly revised shipping gate to9/10 and requested concrete instructions from all reviewers before shipping. Consultation can name this requested threshold; assessments remain honest."
   },
   "gallery": {
-    "round": 59,
-    "captures": 346,
-    "corePass": 58,
-    "dialogPass": 59,
-    "settingsPass": 59,
-    "note": "173 theme pairs;326 ordinary1440x960 and20 compact1100x960 frames;22 contacts separate. Gallery58 baseline plus54 focused replaced/new Agent/Runtime/PR/Git frames. All3583 tracked source files match source59; digeste91ee8ecb16500102e4ce8fdf965372de1f0b66666c4adcb50f74a1a2c94c41b. No capture errors/alerts; lossless export, canvas and image-source parity verified. Manifest lists exact replacement provenance."
+    "round": 60,
+    "captures": 350,
+    "corePass": 60,
+    "dialogPass": 60,
+    "settingsPass": 60,
+    "note": "{'round': 60, 'sourceFreeze': '/tmp/dovo-ui-source60', 'trackedSourceFiles': 3799, 'sourceTreeSha256': 'eb36d2ee45adeb374f799eb13d3e5154986b733182b4a136a8aa72cd68bfb545', 'captures': 350, 'note': 'Full integrated capture after merging main, with final Agent keyboard/focus and PR initial-focus captures replacing affected frames. Scoped focus containment guard does not alter resting appearance. All screenshot pairs checked. Synthetic workspaces, blocked account/runtime writes, simulated native Browser and replayed terminal; browser interaction verification separately recorded.', 'supplementalFrames': ['add-agent-light.png', 'add-agent-model-light.png', 'add-agent-model-scrolled-light.png', 'add-agent-profile-light.png', 'add-mcp-light.png', 'add-skill-light.png', 'agents-compact-dark.png', 'agents-compact-light.png', 'agents-dark.png', 'agents-dirty-compact-dark.png', 'agents-dirty-compact-light.png', 'agents-dirty-dark.png', 'agents-dirty-light.png', 'agents-light.png', 'artifact-actions-light.png', 'artifact-export-light.png', 'browser-bookmarks-light.png', 'browser-history-light.png', 'command-palette-light.png', 'downloads-light.png', 'draft-stash-light.png', 'edit-agent-dirty-light.png', 'edit-agent-light.png', 'forge-connections-light.png', 'harness-light.png', 'image-editor-annotated-light.png', 'image-editor-crop-light.png', 'image-editor-light.png', 'image-editor-shortcuts-light.png', 'image-editor-zoom-light.png', 'image-preview-light.png', 'import-codex-light.png', 'import-pi-light.png', 'issue-comment-light.png', 'issue-create-light.png', 'issue-edit-light.png', 'jira-sources-light.png', 'licenses-light.png', 'link-pr-light.png', 'local-commits-light.png', 'new-automation-light.png', 'new-session-light.png', 'pair-computer-light.png', 'pipeline-run-light.png', 'pr-add-to-thread-light.png', 'pr-ask-agent-light.png', 'pr-auto-merge-dark.png', 'pr-auto-merge-light.png', 'pr-auto-merge-sources-dark.png', 'pr-auto-merge-sources-light.png', 'pr-merge-dark.png', 'pr-merge-light.png', 'pr-merge-sources-dark.png', 'pr-merge-sources-light.png', 'pr-reviewers-light.png', 'project-delete-light.png', 'project-transfer-light.png', 'repository-forge-light.png', 'repository-github-light.png', 'repository-local-light.png', 'section-order-light.png', 'source-picker-light.png', 'terminal-close-light.png', 'terminal-close-multiple-light.png', 'terminals-dark.png', 'terminals-light.png', 'thread-context-light.png', 'undo-error-light.png', 'undo-light.png', 'website-customization-light.png']}"
   },
   "unavailableReviews": [
     {
@@ -1267,7 +1266,50 @@
       "reason": "Authoritative child status says Cancelled by user during interruption; partial inspection only, no final score."
     }
   ],
-  "pendingReviews": [],
+  "pendingReviews": [
+    {
+      "round": "independent60",
+      "model": "GPT-6.1 Sol",
+      "id": "f35f8837-f3d0-42de-ae25-6aa04d59ae6c",
+      "status": "running",
+      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+    },
+    {
+      "round": "independent60",
+      "model": "GPT-6.1 Sol",
+      "id": "6b4c3b27-d1dc-490c-9c58-8560e7d8f344",
+      "status": "running",
+      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+    },
+    {
+      "round": "independent60",
+      "model": "GPT-6.1 Sol",
+      "id": "f2c68c07-7d7d-4a1e-a1bb-85c11abd8506",
+      "status": "running",
+      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+    },
+    {
+      "round": "independent60",
+      "model": "Opus 5.5",
+      "id": "2c7025fd-14ef-4daa-8a0f-be762e9fc45a",
+      "status": "running",
+      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+    },
+    {
+      "round": "independent60",
+      "model": "Opus 5.5",
+      "id": "6ed129ca-c94f-4712-abf3-b5aa998335bc",
+      "status": "running",
+      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+    },
+    {
+      "round": "independent60",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "16ea7830-7738-4005-a83c-28761c985bc5",
+      "status": "running",
+      "brief": "Fresh independent review, frozen350-frame gallery/source60 and executed interaction evidence. Revised9/10 criterion explicit; no previous ratings supplied."
+    }
+  ],
   "queuedReviews": [
     {
       "round": "reset30",
@@ -1487,8 +1529,8 @@
       "round": "nine-point59",
       "model": "Muse muse-wonder-full-1.0",
       "id": "1063e59f-708f-4d32-bf02-1c7c3a319bcb",
-      "status": "running",
-      "summary": "Requested same ranked9/10 criteria against original frozen58 evidence, retaining review limits; awaiting answer."
+      "status": "completed",
+      "summary": "Requires saved Agent identity with explicit rename-on-save, distinguishing Git parent folders and live interaction evidence. All six criteria replies collected; no future score promised."
     }
   ],
   "findingTriage": [
@@ -1591,6 +1633,11 @@
       "round": "independent59",
       "finding": "Sol B claimed missing crop image in light-theme frame",
       "result": "Withdrawn on independent second full-size view and pixel inspection: source region is identical across themes,980 colors, with image/red annotation/dashed crop visible. No crop discrepancy or related ship condition remains; score8.4 and ship unchanged."
+    },
+    {
+      "round": "independent60-preflight",
+      "finding": "Keyboard focus beneath dirty Agent footer and main integration gaps",
+      "result": "Reproduced real catalog keyboard focus obstruction; scoped Settings clears actual header/footer bounds, ignores portal content and pages without sticky context. All8 clean/dirty/theme/width traversals pass. Merged main without dropping unified/terminal behavior; fixed shell-list catalog response via real schema. Fresh350-frame gallery has no capture errors/alerts; lossless equality, #080808 and image-source parity pass."
     }
   ],
   "previousApprovalTarget": {

@@ -16,7 +16,13 @@ export function StartupHeading({
           Your workspace, ready when you are
         </span>
       )}
-      <h2 className={welcome ? 'startup-heading text-balance text-2xl font-medium tracking-tight sm:text-3xl' : 'startup-heading max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl'}>
+      <h2
+        className={
+          welcome
+            ? 'startup-heading text-balance text-2xl font-medium tracking-tight sm:text-3xl'
+            : 'startup-heading max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl'
+        }
+      >
         What would you like to work on?
       </h2>
       {welcome && (

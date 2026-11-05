@@ -438,7 +438,11 @@ export async function captureFollowUpDialogs(page, origin, output) {
     },
   ])
   const results = []
-  for (const mode of ['dark', 'light'])
+  for (const mode of ['dark', 'light'].filter(
+    (mode) =>
+      !process.argv.some((arg) => arg.startsWith('--capture-mode=')) ||
+      process.argv.includes(`--capture-mode=${mode}`),
+  ))
     for (const [name, route, open] of scenarios) {
       if (
         process.argv.some((arg) => arg.startsWith('--dialog-only=')) &&

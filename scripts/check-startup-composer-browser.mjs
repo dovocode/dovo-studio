@@ -45,7 +45,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box;
+    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box,DialogFooter=Box;
+    export const SearchField=({onValueChange,...props})=><input {...props} onChange={event=>onValueChange?.(event.target.value)}/>;
     export const ProjectIcon=()=>null;
     export const Button=({children,onClick,disabled,type,variant,size,...props})=><button {...props} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
@@ -420,7 +421,7 @@ try {
     ),
     false,
   )
-  await besideParent.getByRole('button', { name: /Close side-by-side task/ }).click()
+  await besideParent.getByRole('button', { name: /Close side-by-side thread/ }).click()
   // A late save must not open the panel for a different thread after navigation.
   await editor.fill('Question before switching threads')
   await page.evaluate(() => {

@@ -195,12 +195,7 @@ try {
     await openPalettes()
     await page.getByRole('radio', { name, exact: true }).locator('..').click()
     await browsePalettes.click()
-    assert.equal(
-      await page
-        .getByRole('img', { name: `Current color palette: ${name}`, exact: true })
-        .isVisible(),
-      true,
-    )
+    await page.getByRole('img', { name: `Current color palette: ${name}`, exact: true }).waitFor()
   }
   const mode = async (name) => {
     await page.getByRole('combobox', { name: 'Color scheme', exact: true }).click()
