@@ -76,7 +76,7 @@ try {
   await page.addStyleTag({ content: await readFile(new URL(css, directory), 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const width = async (name) => (await page.getByTestId(name).boundingBox()).width
-  const expectPane = async (pane) => {
+  const expectPane = async (pane, flat = false) => {
     const style = await pane.evaluate((element) => {
       const style = getComputedStyle(element)
       const content = getComputedStyle(element.firstElementChild)
@@ -89,11 +89,11 @@ try {
       }
     })
     if (
-      style.radius !== '16px' ||
-      style.border !== '1px' ||
-      style.inset !== '8px' ||
+      style.radius !== (flat ? '0px' : '18px') ||
+      style.border !== (flat ? '0px' : '1px') ||
+      style.inset !== (flat ? '0px' : '6px') ||
       style.clip !== 'hidden' ||
-      style.contentRadius !== '16px'
+      style.contentRadius !== (flat ? '0px' : '18px')
     )
       throw new Error(
         'Pane must share the linked-projects frame with clipped rounded content: ' +
@@ -141,6 +141,12 @@ try {
     await page.mouse.up()
   }
   await drag('Resize thread sidebar', 100)
+  await expectWidth('left', 380)
+  const threadResize = page.getByRole('separator', { name: 'Resize thread sidebar' })
+  await threadResize.focus()
+  await page.keyboard.press('ArrowRight')
+  await expectWidth('left', 390)
+  await page.keyboard.press('ArrowLeft')
   await expectWidth('left', 380)
   await drag('Resize tools sidebar', -80)
   await expectWidth('right', 460)
@@ -249,8 +255,9 @@ try {
     throw new Error('Project directory still displays a file count')
   await projectFolder.click()
   await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).click()
   await projectWidth(256)
-  await expectPane(projectPane)
+  await expectPane(projectPane, true)
   await drag('Resize project file tree', -80)
   await projectWidth(336)
   await page.waitForFunction(() => window.saved().projectFilesSidebarWidth === 336)

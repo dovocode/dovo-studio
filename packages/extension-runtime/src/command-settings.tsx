@@ -162,7 +162,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
         >
           {connected && baseline && (
             <p className="text-[0.8125rem] leading-normal text-foreground/80">
-              Use Save changes to apply edits on this computer.
+              Edits apply on this computer after saving.
             </p>
           )}
           <fieldset disabled={busy || !connected} className="space-y-5">

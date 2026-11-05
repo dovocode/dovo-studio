@@ -198,6 +198,9 @@ try {
     assert.ok(Math.abs(bounds.width - 32) < 0.1, name + ' retains its 32px pointer target')
     assert.ok(Math.abs(bounds.height - 32) < 0.1, name + ' retains its 32px pointer target')
     assert.equal(await button.locator('svg').count(), 1, name + ' keeps its action icon')
+    await button.hover()
+    await button.focus()
+    assert.equal(await button.evaluate((element) => element === document.activeElement), true)
   }
   const checkIdle = async (screenshot) => {
     const input = page.getByRole('textbox', { name: 'Message thread', exact: true })

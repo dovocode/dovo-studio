@@ -5,7 +5,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
 import { MoreHorizontal, RefreshCw } from 'lucide-react'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import {
   forgeLabels,
   pullActionResultSchema,
@@ -301,6 +301,8 @@ function PullActionDialog({
   const [teams, setTeams] = useApplicationState('')
   const [operation, setOperation] = useApplicationState<'add' | 'remove'>('add')
   const [confirmed, setConfirmed] = useApplicationState(false)
+  const readinessHeading = useRef<HTMLHeadingElement>(null)
+  const failuresId = useId()
   const [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   const [error, setError] = useApplicationState('')
@@ -489,6 +491,12 @@ function PullActionDialog({
     >
       <DialogContent
         className="flex max-h-[85dvh] flex-col overflow-hidden"
+        onOpenAutoFocus={(event) => {
+          if (readinessHeading.current) {
+            event.preventDefault()
+            readinessHeading.current.focus({ preventScroll: true })
+          }
+        }}
         onEscapeKeyDown={(e) => {
           if (busy) e.preventDefault()
         }}
@@ -619,7 +627,9 @@ function PullActionDialog({
                 </p>
                 <section aria-label="Merge readiness" className="space-y-3 rounded-lg border p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium">Repository merge status</h3>
+                    <h3 ref={readinessHeading} tabIndex={-1} className="text-sm font-medium">
+                      Repository merge status
+                    </h3>
                     {mergeStatus?.headSha === scope.headSha && (
                       <Button
                         type="button"
@@ -649,6 +659,7 @@ function PullActionDialog({
                       <Signal signal={mergeStatus.providerReadiness} />
                       {currentFailures.length > 0 && (
                         <ul
+                          id={failuresId}
                           aria-label="Current merge failures"
                           className="space-y-1 text-xs text-status-error"
                         >
@@ -680,7 +691,7 @@ function PullActionDialog({
                   <p className="text-xs text-muted-foreground">
                     {kind === 'auto-merge'
                       ? 'Auto-merge waits for the provider’s requirements. Later commits may change these statuses.'
-                      : 'Review these statuses before confirming. The provider enforces repository requirements.'}
+                      : 'The provider enforces repository requirements.'}
                   </p>
                 </section>
                 <FormField label="Merge method">
@@ -707,6 +718,7 @@ function PullActionDialog({
                 <label className="flex items-start gap-2 text-xs leading-relaxed">
                   <Checkbox
                     checked={confirmed}
+                    aria-describedby={currentFailures.length > 0 ? failuresId : undefined}
                     disabled={busy}
                     onCheckedChange={(value) => setConfirmed(value === true)}
                     aria-label={
@@ -728,17 +740,12 @@ function PullActionDialog({
                       <>
                         I confirm merging the current source branch. Studio checks viewed revision{' '}
                         {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
-                        merged. Repository rules still apply.
+                        merged.
                       </>
                     ) : (
-                      <>
-                        I confirm merging reviewed commit {scope.headSha.slice(0, 8)}. Repository
-                        rules still apply.
-                      </>
+                      <>I confirm merging reviewed commit {scope.headSha.slice(0, 8)}.</>
                     )}
-                    {currentFailures.length > 0 && (
-                      <> I also acknowledge the current failures: {failureLabels.join('; ')}.</>
-                    )}
+                    {currentFailures.length > 0 && <> I acknowledge the failures listed above.</>}
                   </span>
                 </label>
               </>

@@ -73,6 +73,36 @@ export function SettingsPage({
         aria-label={`${title} settings`}
         tabIndex={0}
         className="studio-settings-scroll min-h-0 flex-1 scroll-pt-[calc(var(--studio-settings-toolbar-height,0px)+var(--studio-settings-profile-height,0px)+0.75rem)] overflow-y-auto px-4 py-[var(--studio-settings-scroll-padding)] outline-none [--studio-settings-scroll-padding:1.75rem] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-10"
+        onFocusCapture={(event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement) || target === event.currentTarget) return
+          if (
+            target.closest(
+              '.studio-settings-toolbar, .studio-agent-profile-header, [data-settings-sticky-actions]',
+            )
+          )
+            return
+          const viewport = event.currentTarget
+          const bounds = viewport.getBoundingClientRect()
+          const toolbar = viewport
+            .querySelector('.studio-settings-toolbar')
+            ?.getBoundingClientRect()
+          const profile = viewport
+            .querySelector('.studio-agent-profile-header')
+            ?.getBoundingClientRect()
+          const footer = viewport
+            .querySelector('[data-settings-sticky-actions]')
+            ?.getBoundingClientRect()
+          const top = Math.max(
+            bounds.top,
+            toolbar?.bottom ?? bounds.top,
+            profile?.bottom ?? bounds.top,
+          )
+          const bottom = Math.min(bounds.bottom, footer?.top ?? bounds.bottom)
+          const focused = target.getBoundingClientRect()
+          if (focused.bottom > bottom) viewport.scrollTop += focused.bottom - bottom + 12
+          else if (focused.top < top) viewport.scrollTop -= top - focused.top + 12
+        }}
       >
         <div
           ref={content}
@@ -251,7 +281,9 @@ export function SettingsSaveBar({
   changes = [],
   saveError,
   readLatestChanges,
+  surface = 'page',
 }: {
+  surface?: 'page' | 'embedded'
   changeCount?: number
   changes?: SettingsChange[]
   saveError?: string
@@ -316,7 +348,7 @@ export function SettingsSaveBar({
         : description
   return (
     <div
-      className="studio-settings-savebar sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-none border-t border-border/70 bg-background py-3 shadow-none"
+      className={`studio-settings-savebar ${surface === 'embedded' ? 'studio-settings-savebar-embedded' : ''} sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-none border-t border-border/70 bg-background py-3 shadow-none`}
       role="group"
       aria-label="Settings save actions"
       aria-busy={saving}

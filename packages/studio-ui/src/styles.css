@@ -3069,6 +3069,9 @@ a.studio-project-row:hover {
 .studio-settings-saved {
   padding-top: 0.25rem;
 }
+.studio-settings-savebar-embedded {
+  background: transparent;
+}
 @container settings-content (min-width: 45rem) {
   .studio-settings-page .studio-setting-row {
     display: grid;

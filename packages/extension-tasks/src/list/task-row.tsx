@@ -350,7 +350,7 @@ function TaskRowView({
                     compact ? 'flex-1' : 'w-full',
                     highlighted || unread
                       ? 'text-foreground'
-                      : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
+                      : 'text-foreground/90 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
                     compact && editable && 'pr-24',
                   )}
                 >

@@ -109,7 +109,7 @@ createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><A
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByText('1. Install on this computer', { exact: true }).waitFor()
-    const saveGuidance = page.getByText('Use Save changes to apply edits on this computer.', {
+    const saveGuidance = page.getByText('Edits apply on this computer after saving.', {
       exact: true,
     })
     if (!mobile) {

@@ -11,7 +11,7 @@ export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
     <SettingsScopePage
       title="Thread defaults"
       description="Choose the agent, access and workspace for new threads."
-      saveInfo="Use Save changes to apply edits."
+      saveInfo="Edits apply after saving."
       offlineRecovery
     >
       {({ scope, repository }) => (

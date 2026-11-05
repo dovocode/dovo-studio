@@ -55,7 +55,7 @@ export default function TaskBehaviorView({ entityId }: { entityId?: string }) {
       title="Thread lifecycle"
       description="Recovery, settling and archiving for new and existing threads."
       supportsEditing={(snapshot) => snapshot?.taskBehaviorSupported === true}
-      saveInfo="Use Save changes to apply edits."
+      saveInfo="Edits apply after saving."
       offlineRecovery
     >
       {({ scope, repository }) => (

@@ -288,7 +288,7 @@ try {
         : page.getByLabel('Name', { exact: true })
     ).waitFor()
     if (!mobile) {
-      await page.getByText('Use Save changes to apply profile edits.', { exact: true }).waitFor()
+      await page.getByText('Profile edits apply after saving.', { exact: true }).waitFor()
       await assertProfileComposition()
       if (initialWidth === 1100) await selectProfile('Writer', 'gpt-6.1')
       else {
@@ -337,7 +337,9 @@ try {
         .locator('.studio-agent-profile-header')
         .getByRole('heading', { name: 'Writer', exact: true })
         .waitFor()
-      await page.getByText(/^Rename to Project writer · .*Applies to new turns\.$/).waitFor()
+      await page
+        .getByText(/^Writer · Renames to Project writer on save · .*Applies to new turns\.$/)
+        .waitFor()
     }
     await setCloudIntegrations('false', 'Disabled')
     await page
@@ -372,6 +374,7 @@ try {
       },
     )
     await page.getByRole('button', { name: 'Reset', exact: true }).click()
+    if (!mobile) await page.locator('summary').filter({ hasText: 'Profile inheritance' }).click()
     await (
       mobile
         ? page.getByRole('button', { name: 'Override', exact: true })
@@ -642,7 +645,7 @@ try {
       })
       await project.selectOption('git:github.com/team/repo')
       await page.getByRole('status').filter({ hasText: 'Update Dovo on linux' }).waitFor()
-      const saveHint = page.getByText('Use Save changes to apply profile edits.', { exact: true })
+      const saveHint = page.getByText('Profile edits apply after saving.', { exact: true })
       assert.equal(
         await saveHint.count(),
         0,

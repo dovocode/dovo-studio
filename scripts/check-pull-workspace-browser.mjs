@@ -443,6 +443,13 @@ try {
   await mergeReadiness
     .getByRole('heading', { name: 'Repository merge status', exact: true })
     .waitFor()
+  assert.equal(
+    await mergeReadiness
+      .getByRole('heading')
+      .evaluate((element) => element === document.activeElement),
+    true,
+    'Merge opens on the readiness heading, without accepting consent or submitting',
+  )
   await mergeReadiness.getByText('Waiting for required reviews', { exact: true }).waitFor()
   const statusDisclosure = mergeReadiness.locator('details').filter({ hasText: 'Status sources' })
   assert.equal(await statusDisclosure.getAttribute('open'), null)
@@ -479,9 +486,7 @@ try {
     'CI status: passed',
   ])
     assert.equal(await headerStatus.getByText(status, { exact: true }).count(), 0)
-  await mergeDialog
-    .getByText(/I also acknowledge the current failures: Linked pipelines: 1 failed\./)
-    .waitFor()
+  await mergeDialog.getByText(/I acknowledge the failures listed above\./).waitFor()
   const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
   assert.equal(
     await mergeDialog
@@ -1039,11 +1044,7 @@ try {
     ['Review status', 'Review required'],
   ])
     await sourceValue(autoDialog, name, value).waitFor()
-  await autoDialog
-    .getByText(
-      /I also acknowledge the current failures: Check reports: 1 failed; Linked pipelines: 1 failed; Repository CI: failed\./,
-    )
-    .waitFor()
+  await autoDialog.getByText(/I acknowledge the failures listed above\./).waitFor()
   assert.equal(await autoDialog.getByRole('checkbox').count(), 1)
   await autoDialog
     .getByRole('checkbox', {

@@ -122,13 +122,12 @@ export function ScopedAgents({
   )
   const origin = origins.find((entry) => entry.agent.id === selected?.id)?.scope ?? 'built-in'
   return (
-    <section className="studio-agents-profiles space-y-5">
+    <section className="studio-agents-profiles space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">Agent profiles</h2>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Each built-in provider has a profile that uses the computer’s own installation and
-            sign-in. Customize one here, or add your own profile for a different model or role.
+            Customize a provider profile or add your own.
           </p>
         </div>
         <Button
@@ -281,7 +280,7 @@ export function ScopedAgents({
         <div className="studio-agents-detail studio-agent-editor min-w-0">
           {selected ? (
             <>
-              <div className="studio-agent-profile-header mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="studio-agent-profile-header mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <AgentAvatar provider={selected.provider} className="size-5" />
                   <h3 className="truncate text-sm font-medium" title={selected.name}>
@@ -373,7 +372,7 @@ export function ScopedAgents({
                   )}
                 </div>
               </div>
-              <div className="mb-5 space-y-2">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
                 <div className="flex items-center gap-2 text-xs font-medium">
                   <SettingSource
                     label={selected.name}
@@ -387,16 +386,20 @@ export function ScopedAgents({
                         : `Inherited from ${settingsScopeLabels[origin]}`}
                   </span>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {local
-                    ? `Customized at ${settingsScopeLabels[scope]}. ${inheritedSelected ? 'Reset removes this override and restores the inherited configuration.' : 'This profile was created here; more specific levels can still override it.'}`
-                    : `Using the ${origin === 'built-in' ? 'built-in' : settingsScopeLabels[origin]} configuration. Saving creates an override at ${settingsScopeLabels[scope]}; Reset then restores the inherited one.`}
-                </p>
-                {builtInAgentDefinition(selected.id) && (
-                  <p className="text-xs text-muted-foreground">
-                    {builtInAgentDefinition(selected.id)?.description}
-                  </p>
-                )}
+                <Disclosure title="Profile inheritance">
+                  <div className="space-y-2 pb-2 pt-1">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {local
+                        ? `Customized at ${settingsScopeLabels[scope]}. ${inheritedSelected ? 'Reset removes this override and restores the inherited configuration.' : 'This profile was created here; more specific levels can still override it.'}`
+                        : `Using the ${origin === 'built-in' ? 'built-in' : settingsScopeLabels[origin]} configuration. Saving creates an override at ${settingsScopeLabels[scope]}; Reset then restores the inherited one.`}
+                    </p>
+                    {builtInAgentDefinition(selected.id) && (
+                      <p className="text-xs text-muted-foreground">
+                        {builtInAgentDefinition(selected.id)?.description}
+                      </p>
+                    )}
+                  </div>
+                </Disclosure>
               </div>
               <AgentEditor
                 key={JSON.stringify(selected)}

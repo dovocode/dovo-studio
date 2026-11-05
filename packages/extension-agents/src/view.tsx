@@ -11,7 +11,7 @@ export default function AgentsView() {
       title="Agents"
       description="Agent profiles: the provider, model, access and instructions each coding agent uses."
       supportsEditing={(snapshot) => snapshot?.scopedAgentsSupported === true}
-      saveInfo="Use Save changes to apply profile edits."
+      saveInfo="Profile edits apply after saving."
       wide
     >
       {({ scope, repository }) => (

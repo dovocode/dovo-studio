@@ -14,6 +14,7 @@ import { resolve } from 'node:path'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const all = process.argv.includes('--all')
 const manifest = []
+const interactions = []
 const output = resolve(process.argv[2] ?? '/tmp/dovo-ui-polish')
 await mkdir(output, { recursive: true })
 const server = await createServer({
@@ -611,6 +612,58 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       console.log(
         `${name}-${mode}: ${(await page.locator('body').innerText()).slice(0, 100).replaceAll('\n', ' | ')}`,
       )
+      if (
+        process.argv.includes('--verify-interactions') &&
+        ['agents', 'agents-dirty'].includes(name)
+      ) {
+        for (const width of [1440, 1100]) {
+          await page.setViewportSize({ width, height: 960 })
+          const nameField = page.getByLabel('Name', { exact: true })
+          await nameField.focus()
+          const visited = []
+          for (let step = 0; step < 80; step++) {
+            const focused = await page.evaluate(() => {
+              const element = document.activeElement
+              const bounds = element.getBoundingClientRect()
+              const hit = document.elementFromPoint(
+                bounds.left + bounds.width / 2,
+                bounds.top + bounds.height / 2,
+              )
+              return {
+                label:
+                  element.getAttribute('aria-label') ??
+                  element.closest('[data-setting-label]')?.getAttribute('data-setting-label') ??
+                  element.textContent?.trim(),
+                unobstructed:
+                  bounds.width > 0 &&
+                  bounds.height > 0 &&
+                  (hit === element || element.contains(hit)),
+                bounds: bounds.toJSON(),
+                hit: hit?.outerHTML.slice(0, 300),
+              }
+            })
+            assert.ok(
+              focused.unobstructed,
+              `${name} ${mode} ${width}: keyboard focus obscured: ${JSON.stringify(focused)}`,
+            )
+            visited.push(focused.label)
+            if (focused.label === 'Instructions') break
+            await page.keyboard.press('Tab')
+          }
+          assert.ok(
+            visited.includes('Instructions'),
+            'Keyboard reaches Instructions through the Agent form',
+          )
+          interactions.push({
+            screen: name,
+            mode,
+            width,
+            keyboardTraversal: visited,
+            unobstructed: true,
+          })
+        }
+        await page.setViewportSize({ width: 1440, height: 960 })
+      }
     }
   if (process.argv.includes('--dialogs') || process.argv.includes('--dialogs-only'))
     await captureFollowUpDialogs(page, origin, output)
@@ -619,6 +672,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     JSON.stringify({ screens: manifest, errors }, null, 2),
   )
   if (errors.length) throw Error(errors.join('\n'))
+  if (interactions.length)
+    await writeFile(resolve(output, 'interactions.json'), JSON.stringify(interactions, null, 2))
   console.log(`Screenshots: ${output}`)
 } finally {
   for (const peer of sockets.clients) peer.terminate()

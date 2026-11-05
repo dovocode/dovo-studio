@@ -1138,27 +1138,45 @@
       "shipVerdict": "ship; no material visual blocker",
       "coverage": "80 exact frames;40 per theme;1 contact triage",
       "brief": "Frozen59/source59 only; no past or target scores."
+    },
+    {
+      "round": "independent59",
+      "model": "Opus 5.5",
+      "id": "1ce10520-594a-4830-89db-c37dcc95bca2",
+      "score": 8.3,
+      "shipVerdict": "ship; no blocking defect",
+      "coverage": "54 exact;27 per theme",
+      "brief": "Frozen59/source59 only; no past or target scores."
+    },
+    {
+      "round": "independent59",
+      "model": "Opus 5.5",
+      "id": "76ed3fde-80dd-48ad-8c03-d063da3b268d",
+      "score": 8.5,
+      "shipVerdict": "ship; no blocking defect",
+      "coverage": "64 exact;31 dark33 light",
+      "brief": "Frozen59/source59 only; no past or target scores."
     }
   ],
   "remaining": [
-    "Receive independent council59 and Muse58 assessments; address verified findings",
-    "Obtain requested independent quality approval",
-    "Finish PR #50 after the quality gate"
+    "Collect concrete9/10 implementation criteria from three Sol,two Opus and Muse",
+    "Implement necessary refinements and verify actual evidence",
+    "Finish and ship PR #50 after revised9/10 quality gate"
   ],
   "approvalTarget": {
     "reviewers": [
       {
         "model": "GPT-6.1 Sol",
         "count": 3,
-        "minimumScore": 10
+        "minimumScore": 9
       },
       {
         "model": "Opus 5.5",
         "count": 2,
-        "minimumScore": 10
+        "minimumScore": 9
       }
     ],
-    "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
+    "reason": "Dominic explicitly revised shipping gate to9/10 and requested concrete instructions from all reviewers before shipping. Consultation can name this requested threshold; assessments remain honest."
   },
   "gallery": {
     "round": 59,
@@ -1249,22 +1267,7 @@
       "reason": "Authoritative child status says Cancelled by user during interruption; partial inspection only, no final score."
     }
   ],
-  "pendingReviews": [
-    {
-      "round": "independent59",
-      "model": "Opus 5.5",
-      "id": "1ce10520-594a-4830-89db-c37dcc95bca2",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery59/source59 only. No past or target scores."
-    },
-    {
-      "round": "independent59",
-      "model": "Opus 5.5",
-      "id": "76ed3fde-80dd-48ad-8c03-d063da3b268d",
-      "status": "running",
-      "brief": "Fresh context; frozen gallery59/source59 only. No past or target scores."
-    }
-  ],
+  "pendingReviews": [],
   "queuedReviews": [
     {
       "round": "reset30",
@@ -1439,6 +1442,53 @@
       "id": "9c2008db-3c31-4de1-ac81-015adcd5ce92",
       "status": "completed",
       "summary": "Source-aware implementation guidance without another rating. Confirmed sibling scrollbar-gutter ownership as outer-footer mismatch; proposed shared stable native-gutter utility and inner dividers, with symmetric focus clearance and no fixed7px compensation. Adopted for PR actions, modal AgentEditor and Git continuation. Legitimate nested changed-file gutter retained; inline Agent save flow untouched. Geometry assertions verify actual alignment and fixed reachable action areas."
+    },
+    {
+      "round": "nine-point59",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent59_sol_a",
+      "status": "completed",
+      "summary": "Required: compact Agent efficiency, shorter merge decision reading path and live evidence for focus/save/discard/scope/consent boundaries. At1100x960 Name/Model/Reasoning fully visible. Sidebar changes optional.",
+      "note": "Dominic explicitly requested9/10 criteria; no rescore requested or promised."
+    },
+    {
+      "round": "nine-point59",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent59_sol_b",
+      "status": "completed",
+      "summary": "Required: compact Agent efficiency, stronger title identification without dropping metadata, live dense-workflow evidence. Merge wording optional; keep Git review read-only.",
+      "note": "Dominic explicitly requested9/10 criteria; no rescore requested or promised."
+    },
+    {
+      "round": "nine-point59",
+      "model": "GPT-6.1 Sol",
+      "id": "/root/independent59_sol_c",
+      "status": "completed",
+      "summary": "Required: compact Name/Model/Reasoning/Access together, discoverable sidebar width adjustment or suitable existing mechanism, live dirty/scope/serviceURL/Git return evidence. Merge wording optional.",
+      "note": "Dominic explicitly requested9/10 criteria; no rescore requested or promised."
+    },
+    {
+      "round": "nine-point59",
+      "model": "Opus 5.5",
+      "id": "1ce10520-594a-4830-89db-c37dcc95bca2",
+      "status": "completed",
+      "summary": "Required: Agent modal footer surface and old-to-new rename identity; consistent Settings target/save presentation; less repeated merge status and live initial-focus verification. Shared native gutter must remain verified. No promised future score.",
+      "note": "Dominic explicitly requested9/10 criteria; no rescore requested or promised."
+    },
+    {
+      "round": "nine-point59",
+      "model": "Opus 5.5",
+      "id": "76ed3fde-80dd-48ad-8c03-d063da3b268d",
+      "status": "completed",
+      "summary": "Required: stage/unstage from file review with progression/status/focus/busy/offline browser evidence; clean save wording that does not reference an absent button; consolidate merge source presentation while retaining provider verdict/independence/consent guards. Workflow request differs from Sol preference for read-only Git review; root must assess source semantics before adoption.",
+      "note": "Dominic explicitly requested9/10 criteria; no rescore requested or promised."
+    },
+    {
+      "round": "nine-point59",
+      "model": "Muse muse-wonder-full-1.0",
+      "id": "1063e59f-708f-4d32-bf02-1c7c3a319bcb",
+      "status": "running",
+      "summary": "Requested same ranked9/10 criteria against original frozen58 evidence, retaining review limits; awaiting answer."
     }
   ],
   "findingTriage": [
@@ -1544,9 +1594,18 @@
     }
   ],
   "previousApprovalTarget": {
-    "model": "Opus 5.5",
-    "reviewers": 2,
-    "minimumScore": 9,
-    "reason": "Dominic changed the target to Opus 9/10."
+    "reviewers": [
+      {
+        "model": "GPT-6.1 Sol",
+        "count": 3,
+        "minimumScore": 10
+      },
+      {
+        "model": "Opus 5.5",
+        "count": 2,
+        "minimumScore": 10
+      }
+    ],
+    "reason": "Current active goal requires unanimous10/10 from three Sol and two Opus reviewers. No scores or targets are shared in briefs."
   }
 }

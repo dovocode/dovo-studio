@@ -83,7 +83,10 @@ export function AgentEditor({
     JSON.stringify(agent) !== JSON.stringify(initial) ||
     environment !== formatAgentEnvironment(initial.env)
   const profileName = agent.name.trim() || initial.name
-  const profileLabel = profileName === initial.name ? profileName : `Rename to ${profileName}`
+  const profileLabel =
+    profileName === initial.name
+      ? initial.name
+      : `${initial.name} · Renames to ${profileName} on save`
   useSettingsDraft(dirty, busy)
   useEffect(() => {
     onDirtyChange?.(dirty)
@@ -222,7 +225,7 @@ export function AgentEditor({
               )}
               {(step === 1 || !creating) && (
                 <section className="space-y-4">
-                  {!creating && <h3 className="text-sm font-semibold">Profile</h3>}
+                  {!creating && !inline && <h3 className="text-sm font-semibold">Profile</h3>}
                   <FormField layout="settings" label="Name">
                     <Input
                       aria-label="Name"
@@ -296,49 +299,6 @@ export function AgentEditor({
                       <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
                     )}
                     <ModelSettings agent={agent} onChange={setAgent} />
-                    {(agent.provider === 'claude' || agent.provider === 'codex') && (
-                      <div className="space-y-2">
-                        <FormField layout="settings" label="Cloud integrations">
-                          <Select
-                            value={
-                              agent.cloudIntegrations === undefined
-                                ? 'default'
-                                : String(agent.cloudIntegrations)
-                            }
-                            onValueChange={(value) => {
-                              if (!value) return
-                              setAgent({
-                                ...agent,
-                                cloudIntegrations:
-                                  value === 'default' ? undefined : value === 'true',
-                              })
-                            }}
-                          >
-                            <SelectTrigger
-                              aria-label="Cloud integrations"
-                              aria-describedby={cloudHelpId}
-                              className="h-9 text-xs"
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="default">Provider default</SelectItem>
-                              <SelectItem value="true">Enabled</SelectItem>
-                              <SelectItem value="false">Disabled</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormField>
-                        <p
-                          id={cloudHelpId}
-                          className="text-xs font-normal leading-relaxed text-muted-foreground"
-                        >
-                          Use apps already connected to your{' '}
-                          {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
-                          Google Drive or Slack. Requires account sign-in on the computer running
-                          the thread. Provider restrictions and tool approvals still apply.
-                        </p>
-                      </div>
-                    )}
                     <div className="space-y-2">
                       <FormField layout="settings" label="Access mode">
                         <Select
@@ -389,6 +349,49 @@ export function AgentEditor({
                         {accessModes.find((mode) => mode.id === agent.permission)?.description}
                       </p>
                     </div>
+                    {(agent.provider === 'claude' || agent.provider === 'codex') && (
+                      <div className="space-y-2">
+                        <FormField layout="settings" label="Cloud integrations">
+                          <Select
+                            value={
+                              agent.cloudIntegrations === undefined
+                                ? 'default'
+                                : String(agent.cloudIntegrations)
+                            }
+                            onValueChange={(value) => {
+                              if (!value) return
+                              setAgent({
+                                ...agent,
+                                cloudIntegrations:
+                                  value === 'default' ? undefined : value === 'true',
+                              })
+                            }}
+                          >
+                            <SelectTrigger
+                              aria-label="Cloud integrations"
+                              aria-describedby={cloudHelpId}
+                              className="h-9 text-xs"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="default">Provider default</SelectItem>
+                              <SelectItem value="true">Enabled</SelectItem>
+                              <SelectItem value="false">Disabled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormField>
+                        <p
+                          id={cloudHelpId}
+                          className="text-xs font-normal leading-relaxed text-muted-foreground"
+                        >
+                          Use apps already connected to your{' '}
+                          {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as
+                          Google Drive or Slack. Requires account sign-in on the computer running
+                          the thread. Provider restrictions and tool approvals still apply.
+                        </p>
+                      </div>
+                    )}
                     <PermissionPolicyFields
                       value={agent}
                       layout="settings"
@@ -542,6 +545,9 @@ export function AgentEditor({
           </fieldset>
         </div>
         <div
+          data-settings-sticky-actions={
+            inline && (creating || dirty || busy || error) ? '' : undefined
+          }
           className={`min-w-0 shrink-0 pt-3 ${inline ? 'mt-5' : 'studio-scroll-gutter-match -mx-1 -mb-1 px-1 pb-1'} ${inline && (creating || dirty || busy || error) ? 'sticky bottom-[calc(-1*var(--studio-settings-scroll-padding,0px))] z-10 bg-background pb-[var(--studio-settings-scroll-padding,0px)]' : ''}`}
         >
           <fieldset
@@ -555,6 +561,7 @@ export function AgentEditor({
             )}
             {!creating ? (
               <SettingsSaveBar
+                surface={inline ? 'page' : 'embedded'}
                 changes={settingsChanges(
                   { ...initial, env: undefined, environment: formatAgentEnvironment(initial.env) },
                   { ...agent, env: undefined, environment },

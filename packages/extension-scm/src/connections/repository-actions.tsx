@@ -95,6 +95,7 @@ function FileIdentity({ path, status }: { path: string; status: string }) {
   const separator = path.lastIndexOf('/')
   const basename = path.slice(separator + 1)
   const directory = separator >= 0 ? path.slice(0, separator) : ''
+  const parentSeparator = directory.lastIndexOf('/')
   return (
     <span className="block min-w-0" title={path}>
       {directory && <span className="sr-only">{path}</span>}
@@ -105,8 +106,13 @@ function FileIdentity({ path, status }: { path: string; status: string }) {
         {basename}
       </span>
       {directory && (
-        <span aria-hidden="true" className="block truncate font-mono text-xs text-muted-foreground">
-          {directory}/
+        <span aria-hidden="true" className="flex min-w-0 font-mono text-xs text-muted-foreground">
+          {parentSeparator >= 0 && (
+            <span className="min-w-0 truncate">{directory.slice(0, parentSeparator + 1)}</span>
+          )}
+          <span className="max-w-full shrink-0 truncate">
+            {directory.slice(parentSeparator + 1)}/
+          </span>
         </span>
       )}
       <span className="mt-0.5 block text-muted-foreground">{status}</span>
