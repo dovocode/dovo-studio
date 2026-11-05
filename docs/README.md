@@ -5,6 +5,9 @@ provider setup, and feature manual. The guides below focus on particular workflo
 
 ## Setup and operating guides
 
+- [Terminals and unified workspace](unified-workspace.md): paired terminal sessions, mixed tabs and
+  experimental AI input routing on desktop/web.
+
 - [Remote desktop](remote-desktop.md): experimental paired screen viewing and human mouse/keyboard
   control.
 

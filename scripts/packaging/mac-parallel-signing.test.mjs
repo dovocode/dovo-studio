@@ -72,7 +72,7 @@ function options(f) {
   }
 }
 
-await test('installed signer bounds concurrency, deduplicates aliases and signs children before parents', async (t) => {
+await test('installed signer bounds concurrency, isolates bundle executables and signs children before parents', async (t) => {
   const f = await fixture(t)
   const opts = options(f)
   const canonicalPaths = new Map(
@@ -84,11 +84,19 @@ await test('installed signer bounds concurrency, deduplicates aliases and signs 
   )
   // Ignored missing binaries must not become realpath errors in the parallel scheduler.
   opts.binaries.push(join(f.root, 'missing-ignored'))
+  opts.ignore = (file) => file.includes('missing-ignored')
   const expected = new Set(
     await Promise.all(
-      [f.app, f.framework, f.frameworkBinary, f.helper, f.helperBinary, f.main, ...f.parallel].map(
-        (p) => realpath(p),
-      ),
+      [
+        f.app,
+        f.framework,
+        f.frameworkBinary,
+        f.helper,
+        f.helperBinary,
+        f.main,
+        f.ignored,
+        ...f.parallel,
+      ].map((p) => realpath(p)),
     ),
   )
   const active = new Set()
@@ -103,6 +111,13 @@ await test('installed signer bounds concurrency, deduplicates aliases and signs 
       const canonical = canonicalPaths.get(file)
       assert.ok(expected.has(canonical), file)
       assert.ok(!active.has(canonical) && !finished.has(canonical), `Duplicate: ${file}`)
+      const bundleExecutables = [f.main, f.helperBinary, f.ignored].map((file) =>
+        canonicalPaths.get(file),
+      )
+      if (bundleExecutables.includes(canonical))
+        assert.equal(active.size, 0, 'Bundle executables must not inspect temporary signing files')
+      for (const executable of bundleExecutables)
+        assert.ok(!active.has(executable), 'Bundle executable signing must remain isolated')
       for (const child of expected) {
         if (child.startsWith(canonical + sep))
           assert.ok(finished.has(child), `${child} before ${file}`)

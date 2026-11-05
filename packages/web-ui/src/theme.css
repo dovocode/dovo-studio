@@ -126,12 +126,12 @@
 /* Resolve effects locally when an action overrides the inherited palette accent. */
 :root,
 .studio-destructive-accent {
-  --studio-selected-fill: color-mix(in srgb, var(--primary) 16%, var(--sidebar));
+  --studio-selected-fill: color-mix(in srgb, var(--foreground) 6%, var(--sidebar));
   --studio-selected-gradient: linear-gradient(
     140deg,
-    color-mix(in srgb, var(--primary) 28%, var(--sidebar)),
-    color-mix(in srgb, var(--primary) 12%, var(--sidebar)) 68%,
-    color-mix(in srgb, var(--primary) 22%, var(--sidebar))
+    color-mix(in srgb, var(--foreground) 6%, var(--sidebar)),
+    color-mix(in srgb, var(--foreground) 4%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--foreground) 5%, var(--sidebar))
   );
   --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
     color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
@@ -156,28 +156,44 @@
   --studio-icon-glow: none;
 }
 
+/* Keep a single scrim when a confirmation opens above an existing editor. */
+.dovo-dialog-overlay {
+  background-color: rgb(0 0 0 / 0.28);
+}
+:is(.dark, [data-theme='dark']) .dovo-dialog-overlay {
+  background-color: rgb(0 0 0 / 0.55);
+}
+.dovo-dialog-overlay:has(~ .dovo-dialog-overlay[data-state='open']) {
+  background-color: transparent;
+  backdrop-filter: none;
+}
+
 /* Shared modal surfaces keep the app's compact type and control sizes. */
 .dovo-dialog-content {
   --dialog-edge: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);
-  --dialog-field: color-mix(in srgb, var(--card) 90%, var(--foreground) 10%);
+  --dialog-field: var(--card);
   --dialog-inset: color-mix(in srgb, var(--card) 95%, var(--foreground) 5%);
   border-color: var(--dialog-edge);
   border-radius: 18px;
   background-color: var(--card);
-  background-image: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--card) 92%, var(--foreground) 8%),
-    color-mix(in srgb, var(--card) 97%, var(--foreground) 3%)
-  );
+  background-image: none;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
     0 24px 80px #0004,
     var(--studio-glow-wide);
 }
+.dovo-dialog-content [data-slot='dialog-title']:not(.sr-only) {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.dovo-dialog-content [data-slot='dialog-description']:not(.sr-only) {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
 .dovo-dialog-content [data-dialog-close] {
-  border: 1px solid color-mix(in srgb, var(--foreground) 5%, transparent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--foreground) 7%, var(--card));
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
 }
 .dovo-dialog-content [data-dialog-close]:hover {
   background: color-mix(in srgb, var(--foreground) 12%, var(--card));
@@ -202,9 +218,15 @@
 }
 .dovo-dialog-content
   :where(input, textarea, select, button[role='combobox']):not([aria-invalid='true']) {
-  border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
+  border-color: var(--control-edge);
 }
-.dovo-dialog-content input[type='checkbox'] {
+.dovo-dialog-content textarea {
+  font-size: 0.8125rem;
+  resize: none;
+  border-radius: 8px;
+}
+.dovo-dialog-content input[type='checkbox'],
+.dovo-dialog-content input[type='radio'] {
   accent-color: var(--primary);
 }
 .dovo-dialog-content [data-slot='button'][data-variant='default'] {
@@ -222,8 +244,16 @@
     inset 0 1px 0 #ffffff40,
     var(--studio-glow-strong);
 }
-.dovo-dialog-content [data-slot='button'][data-variant='default']:disabled {
+:is(
+  [data-slot='button'][data-variant='default']:disabled,
+  .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
+) {
+  border: 1px solid transparent;
+  background-color: color-mix(in srgb, var(--action) 75%, var(--card));
+  background-image: none;
+  color: var(--action-foreground);
   box-shadow: none;
+  opacity: 0.5;
 }
 :root[data-theme-gradients='false']
   :is(.dovo-dialog-content, .dovo-dialog-content [data-slot='button'][data-variant='default']) {
@@ -238,16 +268,35 @@
     color: CanvasText;
     box-shadow: none;
   }
+  :is(
+    [data-slot='button'][data-variant='default']:disabled,
+    .dovo-dialog-content [data-slot='button'][data-variant='default']:disabled
+  ) {
+    border-color: GrayText;
+    background: Canvas;
+    color: GrayText;
+    opacity: 1;
+  }
 }
 
 /* Shared controls use palette-derived layers; caller utilities can still override them. */
+.dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) + [data-slot='dialog-description'] {
+  margin-top: 0;
+}
+.dovo-dialog-content :is([data-choice-picker], [data-slot='select-trigger']) {
+  background-color: var(--dialog-field);
+  color: var(--foreground);
+  border-radius: 8px;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+}
 @layer base {
   :where(input, textarea, button):is(
     [data-slot='input'],
     [data-slot='textarea'],
     [data-slot='select-trigger']
   ) {
-    background-color: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+    background-color: var(--card);
   }
   :where([data-slot='card']) {
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
@@ -258,6 +307,11 @@
     color: var(--foreground);
     box-shadow:
       0 12px 32px #0003,
+      var(--studio-glow-wide);
+  }
+  :root[data-theme='light'] :where(.studio-menu-surface) {
+    box-shadow:
+      0 8px 24px #00000014,
       var(--studio-glow-wide);
   }
   :where(
@@ -304,4 +358,55 @@
       color: HighlightText;
     }
   }
+}
+
+.is-user .dovo-message-content {
+  background-color: color-mix(in srgb, var(--foreground) 5%, var(--background));
+}
+
+.dovo-dialog-content
+  :is([data-choice-picker], [data-slot='select-trigger']):not([aria-invalid='true']) {
+  border-color: var(--control-edge);
+}
+
+/* Share the title's grid cell so a sticky close control adds no row or gap. */
+.dovo-dialog-content:not(.flex):not(:has(> [data-slot='dialog-title'].sr-only)) > :first-child {
+  grid-area: 1 / 1;
+}
+.dovo-dialog-content:not(.flex):not(:has(> [data-slot='dialog-title'].sr-only))
+  > .dovo-dialog-close-anchor {
+  position: sticky;
+  top: 4px;
+  grid-area: 1 / 1;
+  inset-inline: 0;
+  align-self: start;
+}
+.dovo-dialog-content > [data-slot='dialog-header'] > [data-slot='dialog-title']:not(.sr-only) {
+  min-height: 2rem;
+}
+@media (width < 640px) {
+  /* Leave room for the 44px close target and its keyboard outline. */
+  .dovo-dialog-content > [data-slot='dialog-title']:not(.sr-only) {
+    min-height: 2.25rem;
+  }
+  .dovo-dialog-content > [data-slot='dialog-header'] > [data-slot='dialog-title']:not(.sr-only) {
+    min-height: 2.75rem;
+  }
+}
+
+/* Control edges carry interaction; pane separators keep the softer border token. */
+:root {
+  --control-edge: color-mix(in srgb, var(--foreground) 56%, var(--card));
+}
+.dark,
+[data-theme='dark'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 40%, var(--card));
+}
+:is(
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-choice-picker],
+  [data-slot='select-trigger']
+):not([aria-invalid='true']) {
+  border-color: var(--control-edge);
 }

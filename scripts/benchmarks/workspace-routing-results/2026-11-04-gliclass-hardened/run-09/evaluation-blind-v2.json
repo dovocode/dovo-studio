@@ -1,0 +1,307 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 348,
+        "total": 350,
+        "accuracy": 0.9942857142857143,
+        "confusion": {
+          "browser": {
+            "browser": 25,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 25,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 50
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 100,
+            "total": 100
+          },
+          "runtime": {
+            "correct": 100,
+            "total": 100
+          },
+          "profile": {
+            "correct": 25,
+            "total": 25
+          },
+          "project": {
+            "correct": 74,
+            "total": 75
+          },
+          "model": {
+            "correct": 49,
+            "total": 50
+          }
+        },
+        "completePlans": {
+          "correct": 99,
+          "total": 100
+        },
+        "mistakes": [
+          {
+            "input": "Should I use Tourmaline Code 1 for Brook Finance? I only want advice",
+            "expected": "keep",
+            "actual": "tourmaline",
+            "ms": 16.372624995710794,
+            "logits": [
+              -0.4637557566165924, -19.0179500579834, -18.288103103637695, 9.082275390625,
+              -19.002134323120117
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "peregrine",
+                "label": "model: Peregrine 2.7"
+              },
+              {
+                "id": "halite",
+                "label": "model: Halite Mini 4"
+              },
+              {
+                "id": "tourmaline",
+                "label": "model: Tourmaline Code 1"
+              },
+              {
+                "id": "amber",
+                "label": "model: Amber Pro 8"
+              }
+            ],
+            "caseId": 86,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040,
+              294, 71278, 392, 260, 819, 128001, 1040, 294, 12166, 5936, 5702, 453, 128001, 1040,
+              294, 103327, 3506, 376, 128001, 1040, 294, 12901, 2191, 578, 128002, 4989, 262, 499,
+              5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411, 3232, 289, 1659, 269, 298,
+              266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261, 548, 262, 763, 1040, 260,
+              21863, 294, 3432, 273, 380, 103327, 3506, 376, 270, 14256, 5442, 302, 273, 364, 409,
+              1678, 2
+            ]
+          },
+          {
+            "input": "Should I use Tourmaline Code 1 for Brook Finance? I only want advice",
+            "expected": "keep",
+            "actual": "brook",
+            "ms": 20.296125003369525,
+            "logits": [
+              -0.5110242962837219, -16.95880699157715, 7.145322799682617, -20.68684196472168,
+              -21.207054138183594, -20.6307430267334
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "brook",
+                "label": "project: Brook Finance"
+              },
+              {
+                "id": "dahlia",
+                "label": "project: Dahlia Desktop"
+              },
+              {
+                "id": "juniper",
+                "label": "project: Juniper Tasks"
+              },
+              {
+                "id": "pebble",
+                "label": "project: Pebble Web"
+              }
+            ],
+            "caseId": 86,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14256, 5442, 128001, 663, 294,
+              67634, 13839, 128001, 663, 294, 33036, 47395, 128001, 663, 294, 31746, 2277, 128002,
+              4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663,
+              280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269,
+              3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973,
+              260, 21863, 294, 3432, 273, 380, 103327, 3506, 376, 270, 14256, 5442, 302, 273, 364,
+              409, 1678, 2
+            ]
+          }
+        ],
+        "medianMs": 19.22797949737287,
+        "p95Ms": 20.853249996434897
+      },
+      "q8": {
+        "correct": 348,
+        "total": 350,
+        "accuracy": 0.9942857142857143,
+        "confusion": {
+          "browser": {
+            "browser": 25,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 25,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 50
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 100,
+            "total": 100
+          },
+          "runtime": {
+            "correct": 100,
+            "total": 100
+          },
+          "profile": {
+            "correct": 25,
+            "total": 25
+          },
+          "project": {
+            "correct": 74,
+            "total": 75
+          },
+          "model": {
+            "correct": 49,
+            "total": 50
+          }
+        },
+        "completePlans": {
+          "correct": 99,
+          "total": 100
+        },
+        "mistakes": [
+          {
+            "input": "Should I use Tourmaline Code 1 for Brook Finance? I only want advice",
+            "expected": "keep",
+            "actual": "tourmaline",
+            "ms": 36.86662499967497,
+            "logits": [
+              -0.3518809378147125, -18.899044036865234, -18.310033798217773, 8.15078353881836,
+              -18.966474533081055
+            ],
+            "task": "model",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected AI model; no available model requested"
+              },
+              {
+                "id": "peregrine",
+                "label": "model: Peregrine 2.7"
+              },
+              {
+                "id": "halite",
+                "label": "model: Halite Mini 4"
+              },
+              {
+                "id": "tourmaline",
+                "label": "model: Tourmaline Code 1"
+              },
+              {
+                "id": "amber",
+                "label": "model: Amber Pro 8"
+              }
+            ],
+            "caseId": 86,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 5536, 1040, 346, 363, 499, 1040, 3973, 128001, 1040,
+              294, 71278, 392, 260, 819, 128001, 1040, 294, 12166, 5936, 5702, 453, 128001, 1040,
+              294, 103327, 3506, 376, 128001, 1040, 294, 12901, 2191, 578, 128002, 4989, 262, 499,
+              5536, 1040, 3973, 264, 333, 262, 374, 260, 336, 1040, 411, 3232, 289, 1659, 269, 298,
+              266, 1040, 1857, 260, 369, 363, 499, 1040, 269, 3973, 261, 548, 262, 763, 1040, 260,
+              21863, 294, 3432, 273, 380, 103327, 3506, 376, 270, 14256, 5442, 302, 273, 364, 409,
+              1678, 2
+            ]
+          },
+          {
+            "input": "Should I use Tourmaline Code 1 for Brook Finance? I only want advice",
+            "expected": "keep",
+            "actual": "brook",
+            "ms": 42.79079100524541,
+            "logits": [
+              -0.5162684917449951, -16.873920440673828, 5.731009006500244, -20.64143180847168,
+              -21.126367568969727, -20.56572151184082
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "brook",
+                "label": "project: Brook Finance"
+              },
+              {
+                "id": "dahlia",
+                "label": "project: Dahlia Desktop"
+              },
+              {
+                "id": "juniper",
+                "label": "project: Juniper Tasks"
+              },
+              {
+                "id": "pebble",
+                "label": "project: Pebble Web"
+              }
+            ],
+            "caseId": 86,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 14256, 5442, 128001, 663, 294,
+              67634, 13839, 128001, 663, 294, 33036, 47395, 128001, 663, 294, 31746, 2277, 128002,
+              4989, 262, 499, 663, 3973, 283, 262, 22440, 270, 291, 374, 260, 8524, 314, 266, 663,
+              280, 268, 601, 1585, 333, 298, 1971, 278, 260, 369, 425, 5521, 289, 363, 663, 269,
+              3973, 1003, 585, 2679, 260, 8159, 548, 262, 763, 663, 335, 363, 499, 663, 269, 3973,
+              260, 21863, 294, 3432, 273, 380, 103327, 3506, 376, 270, 14256, 5442, 302, 273, 364,
+              409, 1678, 2
+            ]
+          }
+        ],
+        "medianMs": 37.364520994742634,
+        "p95Ms": 42.071666997799184
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 0.00010037422180175781,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "15ab2a3e09f1aff331a1274151cbcfed6d13f49cdd188db9a1086c2f30f027f3",
+  "rawReportOnMac": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-09/evaluation-blind-v2.json"
+}

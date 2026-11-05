@@ -5,6 +5,7 @@ import {
   supportsSettledSummaryPaging,
 } from '@dovo/protocol'
 import { useTaskSearch } from '../tasks/list/use-task-search'
+import { WorkspaceModes } from '../workspace/workspace-modes'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
 import { contentColumn } from '../ui/layout/content-column'
@@ -709,6 +710,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               ]
         }
       />
+      {!car && !archived && <WorkspaceModes mode="tasks" />}
       {!car && (
         <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
           <SearchField

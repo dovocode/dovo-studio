@@ -7,9 +7,10 @@ import { chromium } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
 if (screenshots) mkdirSync(screenshots, { recursive: true })
-const css = readdirSync(root + 'apps/desktop/dist/assets')
+const assets = process.env.DOVO_BROWSER_ASSETS ?? root + 'apps/desktop/dist/assets'
+const css = readdirSync(assets)
   .filter((file) => file.endsWith('.css'))
-  .map((file) => readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'))
+  .map((file) => readFileSync(assets + '/' + file, 'utf8'))
   .join('\n')
 const mocks = {
   '@dovo/studio-core': `
@@ -74,17 +75,18 @@ const built = await build({
       window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
       function Thread({task,workspaceControls,temporary,onSelectRemote,onStartBackground}){
         const [open,setOpen]=useState(false);
-        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New thread':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Thread info" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover>{open && <ThreadInfoSettingsSlot visible />}</TaskProjectPopover><TaskConversation onStartBackground={onStartBackground?task=>{window.backgroundStarts.push(task.id);onStartBackground(task)}:undefined} task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
       }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
         const [rail,setRail]=useState(false);window.setRail=setRail;
         const [activeView,setActiveView]=useState('tasks');window.setActiveView=setActiveView;
-        const views=[['tasks','Tasks','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
+        const views=[['tasks','Threads','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;const [scopeEnabled,setScopeEnabled]=useState(false);window.setScopeEnabled=setScopeEnabled;
         const [activity,setActivity]=useState(false);window.setActivity=setActivity;const [activityPaused,setActivityPaused]=useState(true);window.setActivityPaused=setActivityPaused;
+        const [queueStaging,setQueueStaging]=useState(false);window.setQueueStaging=setQueueStaging;
         const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);window.hideSettings=()=>setSettings(false);
         const task=workspace.tasks.find(task=>task.id===id);
         window.task=task;window.reset=()=>{setId(null);setPending(null);setWorkspace({repositories,agents:[],tasks:[],automations:[]})};
@@ -105,7 +107,7 @@ const built = await build({
           }
           throw Error('Unexpected request '+path);
         };
-        const value={workspace,setWorkspace,snapshot:{workspace,defaults,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
+        const value={workspace,setWorkspace,snapshot:{workspace,defaults,promptQueueStagingSupported:queueStaging,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
         const renderThread=(task,workspaceControls,temporary,onSelectRemote,onStartBackground)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} onStartBackground={onStartBackground??(window.testBackground?()=>{}:undefined)}/>;
         return <WorkspaceValueProvider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</WorkspaceValueProvider>
       }
@@ -170,7 +172,7 @@ try {
   const infoButton = page.getByRole('button', { name: 'Thread info', exact: true })
   const openInfo = async () => {
     if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
-    await page.getByRole('region', { name: 'Environment and access', exact: true }).waitFor()
+    await page.getByRole('dialog', { name: 'Thread info', exact: true }).waitFor()
   }
   const closeInfo = async () => {
     if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')
@@ -186,8 +188,24 @@ try {
             (a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity,
           ),
     )
+  const checkIconAction = async (name, title) => {
+    const button = page.getByRole('button', { name, exact: true })
+    await button.waitFor()
+    assert.equal((await button.textContent()).trim(), '', name + ' has no visible label')
+    assert.equal(await button.getAttribute('aria-label'), name)
+    assert.match(await button.getAttribute('title'), title, name + ' keeps its hover name')
+    const bounds = await button.boundingBox()
+    assert.ok(Math.abs(bounds.width - 32) < 0.1, name + ' retains its 32px pointer target')
+    assert.ok(Math.abs(bounds.height - 32) < 0.1, name + ' retains its 32px pointer target')
+    assert.equal(await button.locator('svg').count(), 1, name + ' keeps its action icon')
+    if (await button.isEnabled()) {
+      await button.hover()
+      await button.focus()
+      assert.equal(await button.evaluate((element) => element === document.activeElement), true)
+    }
+  }
   const checkIdle = async (screenshot) => {
-    const input = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await page
       .locator('header')
       .first()
@@ -202,7 +220,10 @@ try {
       surface.height <= 48,
       'Empty, unfocused composer is a single row: ' + JSON.stringify(surface),
     )
-    assert.ok(editor.width > 70, 'The idle input leaves room for its placeholder')
+    assert.ok(
+      editor.width > 70,
+      'The idle input leaves room for its placeholder: ' + JSON.stringify({ surface, editor }),
+    )
     assert.ok(editor.x >= add.x + add.width, 'The placeholder follows the plus control')
     assert.ok(Math.abs(editor.y + editor.height / 2 - (add.y + add.height / 2)) < 2)
     assert.ok(Math.abs(editor.y + editor.height / 2 - (actions.y + actions.height / 2)) < 2)
@@ -285,7 +306,7 @@ try {
     await settleComposer()
   }
   const checkFullComposer = async () => {
-    const input = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await input.evaluate((element) => element.blur())
     await settleComposer()
     const compact = await page.locator('.studio-composer').boundingBox()
@@ -327,7 +348,7 @@ try {
   }
   // The composer machine selector and header share transfer state, including recovery.
   await page.evaluate(() => window.setMultiple(true))
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.getByRole('button', { name: 'Linux workstation', exact: true }).click()
   await page.waitForFunction(() => typeof window.cancelSwitch === 'function')
   assert.equal(
@@ -339,18 +360,20 @@ try {
     true,
   )
   assert.equal(
-    await page.getByRole('textbox', { name: 'Message task', exact: true }).isDisabled(),
+    await page.getByRole('textbox', { name: 'Message thread', exact: true }).isDisabled(),
     true,
   )
   await page.evaluate(() => window.cancelSwitch())
   await page.getByRole('alert').filter({ hasText: 'Transfer fixture failed' }).waitFor()
-  await page.waitForFunction(() => !document.querySelector('[aria-label="Message task"]').disabled)
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Message thread"]').disabled,
+  )
   assert.equal(
     await page.getByRole('button', { name: 'Start without a project', exact: true }).isDisabled(),
     false,
   )
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Thread server', exact: true }).click()
   await page.keyboard.press('Escape')
   await closeInfo()
   await page.evaluate(() => window.setMultiple(false))
@@ -397,15 +420,24 @@ try {
       assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 1)
       const workspaceBar = page.getByRole('group', { name: 'Project and checkout', exact: true })
       const deviceBounds = await workspaceBar
-        .getByRole('button', { name: 'Task server', exact: true })
+        .getByRole('button', { name: 'Thread server', exact: true })
         .boundingBox()
       assert.ok(projectBounds && dropdownBounds && deviceBounds)
       assert.ok(Math.abs(projectBounds.x + projectBounds.width - dropdownBounds.x) < 1)
       assert.equal(projectBounds.y, dropdownBounds.y)
-      assert.equal(await start.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await start.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        0,
+      )
       assert.ok(deviceBounds.y >= (await page.locator('.studio-composer').boundingBox()).y)
-      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread project', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        1,
+      )
       const modelGroup = page.getByRole('group', { name: 'Model and reasoning', exact: true })
       assert.equal(
         await modelGroup
@@ -419,17 +451,17 @@ try {
       )
       assert.equal(
         await modelGroup
-          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
           .count(),
         0,
       )
       assert.equal(
         await workspaceBar
-          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
           .count(),
         0,
       )
-      await page.getByRole('textbox', { name: 'Message task' }).focus()
+      await page.getByRole('textbox', { name: 'Message thread' }).focus()
       await settleComposer()
       const before = await geometry()
       // The reference layout must apply through StartupDraft's production conversation path.
@@ -454,7 +486,7 @@ try {
       assert.ok(send.x + send.width <= surface.x + surface.width)
       assert.ok(Math.abs(add.y + add.height / 2 - (send.y + send.height / 2)) < 1)
       assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
-      const input = page.getByRole('textbox', { name: 'Message task' })
+      const input = page.getByRole('textbox', { name: 'Message thread' })
       assert.equal(await input.getAttribute('placeholder'), 'Ask anything, build or fix...')
       const emptyEditor = await input.evaluate((el) => ({
         height: el.getBoundingClientRect().height,
@@ -471,10 +503,10 @@ try {
       )
       if (device.name === 'desktop' && project === 'No project') {
         await input.focus()
-        await input.pressSequentially('Make both composers uniform using this styling.', {
+        await input.pressSequentially('Make both composers uniform.', {
           delay: 1,
         })
-      } else await input.fill('Make both composers uniform using this styling.')
+      } else await input.fill('Make both composers uniform.')
       await page.locator('[data-saved="true"]').waitFor()
       await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
       const after = await geometry()
@@ -491,7 +523,7 @@ try {
       assert(after.heroY > 48)
       assert(after.composerY > after.heroY)
       assert(after.composerY + after.composerHeight < device.height - 40)
-      assert.equal(await input.inputValue(), 'Make both composers uniform using this styling.')
+      assert.equal(await input.inputValue(), 'Make both composers uniform.')
       assert(await input.evaluate((element) => document.activeElement === element))
       assert.equal(
         await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
@@ -534,12 +566,13 @@ try {
         }
       })
       assert.equal(stopStyle.type, 'button', 'Stop must not submit the message form')
+      await checkIconAction('Stop', /^Stop the agent and pause queued messages$/)
       assert.equal(stopStyle.width, '32px')
       assert.equal(stopStyle.height, '32px')
       assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
       assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
-      assert.notEqual(stopStyle.shadow, 'none', 'Stop shares Send glow')
-      assert.notEqual(stopStyle.gradient, 'none', 'Stop shares Send gradient')
+      assert.equal(stopStyle.shadow, 'none', 'Stop does not demand attention with a glow')
+      assert.equal(stopStyle.gradient, 'none', 'Stop uses a quiet, solid surface')
       assert.equal(stopStyle.icon, true)
       if (device.name === 'desktop' && project === 'dovo-studio') {
         await settleComposer()
@@ -555,57 +588,17 @@ try {
               background: style.backgroundImage,
             }
           }, pseudo)
-        assert.equal((await glow()).animation, 'studio-stop-glow')
-        assert.notEqual((await glow()).display, 'none')
-        assert.equal((await glow('::after')).animation, 'studio-stop-glow')
-        assert.equal((await glow('::after')).filter, 'none', 'Border stays sharp')
-        assert.ok(
-          !(await glow('::after')).background.includes('rgba(0, 0, 0, 0)'),
-          'The entire rotating border stays visible',
-        )
-        assert.notEqual((await glow('::after')).mask, 'none')
-        const firstBorder = (await glow('::after')).transform
-        const firstGlow = (await glow()).transform
-        await page.waitForFunction(
-          (first) =>
-            getComputedStyle(document.querySelector('[data-composer-stop]'), '::before')
-              .transform !== first,
-          firstGlow,
-        )
-        assert.notEqual(
-          (await glow('::after')).transform,
-          firstBorder,
-          'Red border rotates with glow',
-        )
+        for (const pseudo of ['::before', '::after'])
+          assert.equal((await glow(pseudo)).animation, 'none', 'Stop stays calm while work runs')
         for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
           assert.equal(
             await page.locator(selector).evaluate((node) => getComputedStyle(node).transform),
             'none',
             'Button and stop icon remain still',
           )
-        await page.emulateMedia({ reducedMotion: 'reduce' })
-        assert.equal((await glow()).display, 'none', 'OS reduced motion keeps the glow still')
-        assert.equal(
-          (await glow('::after')).display,
-          'none',
-          'OS reduced motion keeps border still',
-        )
-        await page.emulateMedia({ reducedMotion: 'no-preference' })
-        await page.evaluate(() => {
-          document.documentElement.dataset.motion = 'reduce'
-        })
-        assert.equal((await glow()).display, 'none', 'App reduced motion keeps the glow still')
-        assert.equal(
-          (await glow('::after')).display,
-          'none',
-          'App reduced motion keeps border still',
-        )
-        await page.evaluate(() => {
-          delete document.documentElement.dataset.motion
-        })
         if (screenshots)
           await page.screenshot({
-            path: screenshots + '/desktop-stop-glow.png',
+            path: screenshots + '/desktop-stop.png',
             animations: 'disabled',
           })
         await page.evaluate(() => {
@@ -616,7 +609,7 @@ try {
           () =>
             getComputedStyle(document.querySelector('[data-composer-stop]')).boxShadow === 'none',
         )
-        assert.equal((await glow()).display, 'none', 'Disabled glow has no animated layer')
+        assert.equal((await glow()).animation, 'none', 'Disabled glow has no animated layer')
         assert.equal(
           await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
           'none',
@@ -627,7 +620,8 @@ try {
           document.documentElement.dataset.theme = 'light'
           document.documentElement.classList.remove('dark')
         })
-        assert.notEqual((await glow()).display, 'none', 'Light mode retains the busy glow')
+        await settleComposer()
+        assert.equal((await glow()).animation, 'none', 'Light Stop also stays still')
         if (screenshots)
           await page.screenshot({
             path: screenshots + '/desktop-stop-light.png',
@@ -636,8 +630,12 @@ try {
 
         const contrast = await stop.evaluate((button) => {
           const style = getComputedStyle(button)
+          const surface = getComputedStyle(button.closest('form')).backgroundColor
           const context = document.createElement('canvas').getContext('2d')
           const luminance = (color) => {
+            context.clearRect(0, 0, 1, 1)
+            context.fillStyle = surface
+            context.fillRect(0, 0, 1, 1)
             context.fillStyle = color
             context.fillRect(0, 0, 1, 1)
             const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((value) => {
@@ -646,7 +644,7 @@ try {
             })
             return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
           }
-          const icon = luminance(style.color),
+          const icon = luminance(getComputedStyle(button.querySelector('.lucide-square')).color),
             background = luminance(style.backgroundColor)
           return (Math.max(icon, background) + 0.05) / (Math.min(icon, background) + 0.05)
         })
@@ -664,8 +662,14 @@ try {
         await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
         0,
       )
-      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread project', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        0,
+      )
       assert.equal(
         await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
         0,
@@ -678,19 +682,19 @@ try {
       assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 0)
       await openInfo()
       assert.equal(
-        await page.getByRole('button', { name: 'Configure task permissions', exact: true }).count(),
+        await page
+          .getByRole('button', { name: 'Configure thread permissions', exact: true })
+          .count(),
         0,
       )
       if (project === 'dovo-studio')
         assert.equal(
-          await page.getByRole('button', { name: 'Checkout branch', exact: true }).isDisabled(),
-          true,
+          await page.getByRole('button', { name: 'Checkout branch', exact: true }).count(),
+          0,
         )
       if (screenshots && device.name === 'desktop' && project === 'dovo-studio')
         await page.screenshot({ path: screenshots + '/desktop-info-menu.png' })
-      const settingsNode = await page
-        .getByRole('region', { name: 'Environment and access', exact: true })
-        .elementHandle()
+      const settingsNode = await page.locator('.task-info-settings').elementHandle()
       await closeInfo()
       assert.equal(await settingsNode.evaluate((node) => node.isConnected), false)
       await openInfo()
@@ -709,14 +713,14 @@ try {
           window.setTask({})
         })
         await page
-          .locator('.studio-composer [contenteditable][aria-label="Message task"]')
+          .locator('.studio-composer [contenteditable][aria-label="Message thread"]')
           .waitFor()
         await checkIdle(device.name + '-idle-thread-rich.png')
         await page.evaluate(() => {
           window.setRichText(false)
           window.setTask({})
         })
-        await page.locator('.studio-composer textarea[aria-label="Message task"]').waitFor()
+        await page.locator('.studio-composer textarea[aria-label="Message thread"]').waitFor()
         await checkFullComposer()
       }
       const startedSurface = await page.locator('.studio-composer').boundingBox()
@@ -748,7 +752,7 @@ try {
     }
   }
   // /sidechat uses the real command menu and never submits a main-thread message.
-  const input = page.getByRole('textbox', { name: 'Message task' })
+  const input = page.getByRole('textbox', { name: 'Message thread' })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page
     .locator('header')
@@ -891,11 +895,11 @@ try {
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
-      Math.abs(queueStrip.x - composer.x - 12) < 1 &&
-        Math.abs(queueStrip.width - composer.width + 24) < 1,
+      Math.abs(queueStrip.x - composer.x) < 1 && Math.abs(queueStrip.width - composer.width) < 1,
+      JSON.stringify({ queueStrip, composer }),
     )
     assert.ok(
-      Math.abs(queueStrip.y + queueStrip.height + 8 - composer.y) < 2,
+      Math.abs(queueStrip.y + queueStrip.height - composer.y) < 2,
       JSON.stringify({ queue, composer }),
     )
     assert.equal(
@@ -964,7 +968,7 @@ try {
       const sourceBounds = await sourceControl.boundingBox()
       const previewBounds = await preview.boundingBox()
       assert.ok(
-        bounds.height <= 56 + extraLineHeight,
+        bounds.height <= 64 + extraLineHeight,
         JSON.stringify({ source: source.kind, bounds }),
       )
       assert.ok(sourceBounds.y + sourceBounds.height <= previewBounds.y + 1)
@@ -1016,7 +1020,7 @@ try {
     .waitFor({ state: 'hidden' })
   // Alt previews and submits the alternative for either saved default, without
   // changing the preference or inverting Alt+Enter a second time.
-  const followUpInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const followUpInput = page.getByRole('textbox', { name: 'Message thread', exact: true })
   for (const defaultMode of ['queue', 'steer']) {
     await page.evaluate((mode) => {
       window.setFollowUp(mode)
@@ -1026,10 +1030,11 @@ try {
     const defaultLabel = defaultMode === 'steer' ? 'Steer agent' : 'Queue follow-up'
     const alternateLabel = defaultMode === 'steer' ? 'Queue follow-up' : 'Steer agent'
     await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await checkIconAction(defaultLabel, new RegExp('^' + defaultLabel + ' \\(Enter\\)$'))
     await page.keyboard.down('Alt')
     const alternateButton = page.getByRole('button', { name: alternateLabel, exact: true })
     await alternateButton.waitFor()
-    assert.match(await alternateButton.getAttribute('title'), /Alt\+Enter/)
+    await checkIconAction(alternateLabel, /\(Alt\+Enter\)$/)
     assert.equal(await followUpInput.inputValue(), 'Keep this draft while choosing an action')
     await page.keyboard.up('Alt')
     await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
@@ -1084,8 +1089,29 @@ try {
     await page.keyboard.up('Alt')
   }
   await page.evaluate(() => {
+    window.setQueueStaging(true)
+    window.setTask({
+      status: 'review',
+      queuePaused: true,
+      queue: [{ id: 'stage-icon', role: 'user', text: 'Paused follow-up', paused: true }],
+    })
+  })
+  await followUpInput.fill('Add this message without starting the queue')
+  await checkIconAction('Add to queue', /^Add to queue \(Enter\)$/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add to queue', exact: true }).isDisabled(),
+    false,
+  )
+  await followUpInput.fill('')
+  await checkIconAction('Add to queue', /^Add to queue \(Enter\)$/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add to queue', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.setQueueStaging(false)
     window.setFollowUp('queue')
-    window.setTask({ queue: [], contextUsage: undefined })
+    window.setTask({ queue: [], queuePaused: undefined, contextUsage: undefined })
   })
   // A transcript with unloaded history must keep its loading/error path, not show a new-task hero.
   await page.evaluate(() =>
@@ -1095,7 +1121,7 @@ try {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
     0,
   )
-  assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Thread project', exact: true }).count(), 0)
   if (screenshots) {
     for (const device of [
       { name: 'desktop', width: 1440, height: 900 },
@@ -1109,7 +1135,10 @@ try {
       await page.locator('[data-saved="false"]').waitFor()
       await page.getByRole('button', { name: 'Choose project', exact: true }).click()
       await page.getByRole('textbox', { name: 'Search projects' }).waitFor()
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      assert.equal(
+        await page.getByRole('button', { name: 'Thread server', exact: true }).count(),
+        1,
+      )
       await page.screenshot({
         path: screenshots + '/' + device.name + '-single-server-projects.png',
       })
@@ -1133,7 +1162,7 @@ try {
       )
       await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })
       await page.keyboard.press('Escape')
-      await page.getByRole('button', { name: 'Task server', exact: true }).click()
+      await page.getByRole('button', { name: 'Thread server', exact: true }).click()
       await page.getByRole('dialog', { name: 'Choose a server' }).waitFor()
       await page.screenshot({ path: screenshots + '/' + device.name + '-server-choice.png' })
       await page.keyboard.press('Escape')
@@ -1164,7 +1193,7 @@ try {
     await page.getByRole('button', { name: 'dovo-studio', exact: true }).click()
     await page.getByRole('group', { name: 'Project and checkout', exact: true }).waitFor()
     const rail = page.getByRole('navigation', { name: 'Main navigation', exact: true })
-    const tasks = rail.getByRole('button', { name: 'Tasks', exact: true })
+    const tasks = rail.getByRole('button', { name: 'Threads', exact: true })
     assert.equal(await tasks.getAttribute('aria-current'), 'page')
     await rail.getByRole('button', { name: 'Browser', exact: true }).click()
     assert.equal(
@@ -1178,7 +1207,7 @@ try {
         ?.textContent.includes('6.1 Sol'),
     )
     await page.screenshot({ path: screenshots + '/sidebar-startup.png', scale: 'css' })
-    const draft = page.getByRole('textbox', { name: 'Message task', exact: true })
+    const draft = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await draft.fill('Refine the project start experience')
     await page.locator('[data-saved="true"]').waitFor()
     await page.screenshot({ path: screenshots + '/sidebar-startup-ready.png', scale: 'css' })
@@ -1268,7 +1297,7 @@ try {
   const sentBefore = await page.evaluate(
     () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
   )
-  const draftInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  const draftInput = page.getByRole('textbox', { name: 'Message thread', exact: true })
   await draftInput.fill('Help me build ')
   await page.locator('[data-saved="true"]').waitFor()
   assert(await draftInput.evaluate((node) => document.activeElement === node))

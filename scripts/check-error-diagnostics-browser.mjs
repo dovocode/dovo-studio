@@ -10,9 +10,11 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';
 import {ErrorBoundary} from '${root}packages/studio-ui/src/components/error-boundary';
+import {workbenchDiagnosticContext} from '${root}packages/studio-shell/src/workbench-diagnostics';
 window.fixed=false;window.copied=[];
 function Broken(){if(!window.fixed)throw Error('Failed http://user:secret@host/api?token=private#hash Bearer credential');return <p>Recovered</p>}
-const root=createRoot(document.getElementById('app'));root.render(<ErrorBoundary scope="app" diagnosticContext={{appVersion:'0.0.9',channel:'nightly',runtimeVersion:'0.0.9-nightly.526'}}><Broken/></ErrorBoundary>);window.nested=()=>root.render(<ErrorBoundary key="nested" scope="app" diagnosticContext={{appVersion:'0.0.9',channel:'nightly'}}><ErrorBoundary><Broken/></ErrorBoundary></ErrorBoundary>);
+const desktopContext=workbenchDiagnosticContext({version:'0.0.9',channel:'nightly',viewer:{platform:'darwin',architecture:'arm64',processArchitecture:'arm64'}},'MacIntel');
+const root=createRoot(document.getElementById('app'));root.render(<ErrorBoundary scope="app" diagnosticContext={{...desktopContext,runtimeVersion:'0.0.9-nightly.526'}}><Broken/></ErrorBoundary>);window.nested=()=>root.render(<ErrorBoundary key="nested" scope="app" diagnosticContext={workbenchDiagnosticContext({version:'0.0.9',channel:'nightly'},'MacIntel')}><ErrorBoundary><Broken/></ErrorBoundary></ErrorBoundary>);
 `,
     },
     bundle: true,
@@ -43,6 +45,11 @@ try {
   const first = await page.evaluate(() => window.copied[0])
   assert.equal(first.context.appVersion, '0.0.9')
   assert.equal(first.context.runtimeVersion, '0.0.9-nightly.526')
+  assert.equal(first.context.viewerPlatform, 'darwin')
+  assert.equal(first.context.viewerArchitecture, 'arm64')
+  assert.equal(first.context.viewerProcessArchitecture, 'arm64')
+  assert.equal(first.context.platform, undefined)
+  assert.equal(first.context.browserPlatformLegacy, undefined)
   assert.equal(first.context.surface, 'app')
   for (const secret of ['user:secret', 'private', 'credential', '#hash'])
     assert.ok(!first.error.includes(secret))
@@ -68,6 +75,8 @@ try {
   const nested = await page.evaluate(() => window.copied.at(-1))
   assert.equal(nested.context.appVersion, '0.0.9')
   assert.equal(nested.context.surface, 'view')
+  assert.equal(nested.context.browserPlatformLegacy, 'MacIntel')
+  assert.equal(nested.context.viewerArchitecture, undefined)
   console.log(
     'Error recovery: bounded redacted copyable diagnostics, stable identity, failed clipboard feedback and retry passed.',
   )

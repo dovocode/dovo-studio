@@ -3,6 +3,11 @@ export type ClientDiagnosticContext = {
   build?: string
   channel?: string
   platform?: string
+  viewerPlatform?: string
+  viewerArchitecture?: string
+  viewerProcessArchitecture?: string
+  /** navigator.platform is a compatibility string, not hardware architecture. */
+  browserPlatformLegacy?: string
   computerName?: string
   runtimeVersion?: string
   surface?: string

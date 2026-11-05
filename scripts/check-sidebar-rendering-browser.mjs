@@ -151,7 +151,7 @@ try {
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByText('Running thread', { exact: true }).waitFor()
-  const scroller = page.locator('[aria-label="Task sidebar"] [aria-busy]')
+  const scroller = page.locator('[aria-label="Thread sidebar"] [aria-busy]')
   const mountedRows = () => page.locator('[data-row-icon]').count()
 
   // A large open section mounts rows near the viewport; collapsed sections build no rows.
@@ -446,7 +446,7 @@ try {
   })
   const waitForVisibleRows = () =>
     page.waitForFunction(() => {
-      const element = document.querySelector('[aria-label="Task sidebar"] [aria-busy]')
+      const element = document.querySelector('[aria-label="Thread sidebar"] [aria-busy]')
       const bounds = element.getBoundingClientRect()
       return [...element.querySelectorAll('[data-row-icon]')].some((icon) => {
         const row = icon.closest('button').getBoundingClientRect()
@@ -575,6 +575,37 @@ try {
     await page.addStyleTag({
       content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
+  const assertStatusColors = async (indicator, tone) => {
+    const colors = await indicator.evaluate((element, tone) => {
+      const probe = document.createElement('span')
+      const textToken =
+        tone === 'attention'
+          ? 'status-warning'
+          : tone === 'danger'
+            ? 'destructive'
+            : 'muted-foreground'
+      const iconToken =
+        tone === 'active' ? 'primary' : tone === 'success' ? 'status-success' : textToken
+      element.append(probe)
+      probe.style.color = `var(--${textToken})`
+      const expectedText = getComputedStyle(probe).color
+      probe.style.color = `var(--${iconToken})`
+      const expectedIcon = getComputedStyle(probe).color
+      probe.remove()
+      return {
+        text: getComputedStyle(element).color,
+        icon: getComputedStyle(element.querySelector('.studio-thread-status-icon')).color,
+        expectedText,
+        expectedIcon,
+      }
+    }, tone)
+    assert.equal(
+      colors.text,
+      colors.expectedText,
+      `${tone} status text keeps its intended emphasis`,
+    )
+    assert.equal(colors.icon, colors.expectedIcon, `${tone} status icon keeps its semantic color`)
+  }
   await page.evaluate(() => {
     const turn = {
       id: 'appearance-turn',
@@ -662,8 +693,8 @@ try {
     await compactTitle
       .locator('xpath=ancestor::button[1]')
       .getByLabel('Settled', { exact: true })
-      .evaluate((el) => el.classList.contains('text-status-success')),
-    true,
+      .getAttribute('data-tone'),
+    'success',
   )
   const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
   assert.ok(
@@ -688,15 +719,27 @@ try {
   )
   const projectless = page.getByRole('button', { name: /Projectless layout/ }).first()
   await projectless.waitFor()
-  const draftGlyph = projectless.getByLabel('Draft', { exact: true })
+  const draftStatus = projectless.locator('[data-thread-state="Draft"]')
+  const draftGlyph = draftStatus.locator('.studio-thread-status-icon')
   await draftGlyph.waitFor()
   assert.ok(
-    (await draftGlyph.boundingBox()).x <
+    (await draftGlyph.boundingBox()).x >
       (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
+    'Draft status sits after the project name with the other row statuses',
   )
-  assert.notEqual(
+  assert.equal(await draftStatus.innerText(), 'Draft')
+  const draftProjectBox = await projectless.getByText('No Project', { exact: true }).boundingBox()
+  const draftStatusBox = await draftStatus.boundingBox()
+  assert.ok(
+    Math.abs(
+      draftProjectBox.y + draftProjectBox.height / 2 - draftStatusBox.y - draftStatusBox.height / 2,
+    ) < 1,
+    'Draft status and project name share the top line',
+  )
+  assert.equal(
     await projectless.evaluate((el) => getComputedStyle(el).backgroundColor),
     'rgba(0, 0, 0, 0)',
+    'Draft rows leave the full-row highlight for selection',
   )
   assert.equal(await projectless.locator('[data-thread-execution] > *').count(), 2)
   const titleLine = await projectless.locator('[data-thread-title]').boundingBox()
@@ -778,14 +821,14 @@ try {
     { row: workingRow, state: 'Working' },
     { row: waitingRow, state: 'Waiting' },
   ]) {
-    const indicator = row.getByLabel(new RegExp('^' + state))
+    const indicator = row.locator('.studio-thread-status')
     await indicator.waitFor()
     const text = await indicator.innerText()
+    assert.match(text, new RegExp('^' + state), `${state} rows keep their status label`)
     if (state === 'Working')
-      assert.match(text, /^\d+[smh]/, 'Grouped working rows keep their elapsed time')
-    else assert.equal(text, '', 'Waiting sections use an icon without a repeated label')
-    assert.ok(!text.includes(state), `${state} sections omit the repeated label`)
+      assert.match(text, /^Working \d+[smh]/, 'Grouped working rows keep their elapsed time')
     assert.equal(await indicator.locator('svg').count(), 1)
+    await assertStatusColors(indicator, state === 'Working' ? 'active' : 'neutral')
   }
   assert.match(
     await page
@@ -803,7 +846,7 @@ try {
   )
   await page.evaluate(() => window.setListPreferences({ workingSection: false }))
   assert.match(await workingRow.innerText(), /Working/, 'Ungrouped working rows keep their label')
-  assert.equal(await waitingRow.getByLabel(/^Waiting/).innerText(), '')
+  assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'Waiting')
 
   // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
   await page.evaluate(() => {
@@ -862,6 +905,84 @@ try {
   )
   await terminalRow.waitFor()
   assert.equal(await terminalRow.getByLabel('1 active terminal', { exact: true }).count(), 0)
+
+  // Real rows keep states explicit while sharing the presentation's visual semantics.
+  await page.evaluate(() => {
+    window.setRemoteTasks([])
+    window.setListPreferences({
+      taskGrouping: 'none',
+      workingSection: false,
+      collapsedThreadSections: [],
+    })
+    window.publish(
+      ['review', 'done', 'failed', 'cancelled', 'draft', 'running'].map((status) => ({
+        ...window.initialTasks[0],
+        id: 'state-' + status,
+        title: 'State ' + status,
+        status,
+        lastViewedTurnId: 'state-turn',
+        turns:
+          status === 'draft'
+            ? []
+            : [
+                {
+                  id: 'state-turn',
+                  provider: 'codex',
+                  status: status === 'running' ? 'running' : 'completed',
+                  startedAt: new Date(Date.now() - 600000).toISOString(),
+                  ...(status === 'running'
+                    ? {}
+                    : { finishedAt: new Date(Date.now() - 300000).toISOString() }),
+                },
+              ],
+      })),
+    )
+  })
+  for (const [status, state, tone] of [
+    ['review', 'Review', 'attention'],
+    ['done', 'Finished', 'success'],
+    ['failed', 'Failed', 'danger'],
+    ['cancelled', 'Stopped', 'neutral'],
+    ['draft', 'Draft', 'neutral'],
+    ['running', 'Working', 'active'],
+  ]) {
+    const row = page
+      .locator('.studio-thread-card')
+      .filter({ has: page.getByText('State ' + status, { exact: true }) })
+    const indicator = row.locator('.studio-thread-status')
+    await indicator.waitFor()
+    assert.equal(await indicator.getAttribute('data-thread-state'), state)
+    assert.equal(await indicator.getAttribute('data-tone'), tone)
+    assert.match(await indicator.innerText(), new RegExp('^' + state))
+    assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
+    assert.equal(
+      await row
+        .locator('[data-thread-branch]')
+        .getAttribute('class')
+        .then((value) => value.includes('font-mono')),
+      true,
+    )
+    assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 1)
+    await assertStatusColors(indicator, tone)
+    if (status !== 'draft') {
+      assert.equal(
+        await row.locator('[data-thread-execution] img, [data-thread-execution] svg').count(),
+        1,
+      )
+    }
+  }
+  const draftStateRow = page
+    .locator('.studio-thread-card')
+    .filter({ has: page.getByText('State draft', { exact: true }) })
+  assert.ok(!(await draftStateRow.getAttribute('class')).includes('bg-status-warning'))
+  assert.equal(await draftStateRow.locator('[data-thread-state="Draft"]').count(), 1)
+  const reviewStateRow = page
+    .locator('.studio-thread-card')
+    .filter({ has: page.getByText('State review', { exact: true }) })
+  await reviewStateRow.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await reviewStateRow.getAttribute('aria-current'), 'true')
+  assert.equal(await page.evaluate(() => window.selected.task.id), 'state-review')
 
   if (process.env.DOVO_UI_SCREENSHOT) {
     await page.evaluate(() => {

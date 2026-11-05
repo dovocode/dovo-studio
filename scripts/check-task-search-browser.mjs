@@ -19,7 +19,7 @@ function App(){const[cfg,setCfg]=useState({owners:['a','b'],token:'first',online
 const profiles=['a','b'].filter(id=>id!=='b'||!cfg.missing).map(id=>({id,name:id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}}));
 window.workspace={activeRuntimeId:'a',connection:profiles[0].connection,runtimeRegistry:{profiles},readRuntime,request:async()=>{window.activeCalls++;return {taskIds:[],hits:[]}}};
 const entries=cfg.owners.flatMap(id=>['shared',...(cfg.older?['older']:[])].map(taskId=>({key:JSON.stringify([id,taskId]),projectName:'Studio',source:{runtimeId:id,name:'Computer '+id,online:id==='a'||cfg.online},task:{id:taskId,title:(taskId==='older'?'Older settled thread ':'Thread ')+id,createdAt:'2026-10-24',draft:String(tick),messages:cfg.online?[]:[{id:'local',role:'user',text:'needle in saved messages'}]}})));
-return <><button onClick={()=>setMode('messages')}>Search conversations</button><button onClick={()=>setMode('tasks')}>Go to task</button><TaskSearchDialog mode={mode} entries={entries} onModeChange={setMode} onClose={()=>setMode(null)} onSelect={(entry,messageId)=>window.opened.push({key:entry.key,messageId})}/></>}
+return <><button onClick={()=>setMode('messages')}>Search conversations</button><button onClick={()=>setMode('tasks')}>Go to thread</button><TaskSearchDialog mode={mode} entries={entries} onModeChange={setMode} onClose={()=>setMode(null)} onSelect={(entry,messageId)=>window.opened.push({key:entry.key,messageId})}/></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -137,27 +137,27 @@ try {
       'Closing global search releases its full-list subscriptions',
     )
     await page.evaluate(() => window.change({ owners: ['a', 'b'], missing: false, online: true }))
-    await page.getByRole('button', { name: 'Go to task', exact: true }).click()
+    await page.getByRole('button', { name: 'Go to thread', exact: true }).click()
     await page.waitForFunction(() => window.watches.length - window.stops.length === 2)
     assert.ok(
       await page.evaluate(() => window.watches.every((watch) => watch.limit === null)),
       'Global task and conversation search request complete summaries',
     )
-    const taskInput = page.getByRole('combobox', { name: 'Go to task', exact: true })
+    const taskInput = page.getByRole('combobox', { name: 'Go to thread', exact: true })
     // Scope controls preserve normal Tab navigation and retain the query.
     await taskInput.press('Tab')
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Tasks')
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Threads')
     await page.keyboard.press('Tab')
     await page.waitForFunction(() => document.activeElement?.textContent === 'Messages')
     await page.keyboard.press('Shift+Tab')
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Tasks')
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Threads')
     await page.keyboard.press('Shift+Tab')
     assert.equal(await taskInput.evaluate((node) => node === document.activeElement), true)
     await taskInput.fill('Thread')
     await page.getByRole('button', { name: 'Messages', exact: true }).click()
     await input.waitFor()
     assert.equal(await input.inputValue(), 'Thread')
-    await page.getByRole('button', { name: 'Tasks', exact: true }).click()
+    await page.getByRole('button', { name: 'Threads', exact: true }).click()
     await taskInput.waitFor()
     assert.equal(await taskInput.inputValue(), 'Thread')
     await taskInput.fill('Older settled')

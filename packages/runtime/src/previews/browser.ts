@@ -120,9 +120,48 @@ type Session = {
   liveFrame?: Uint8Array
   dialog?: Dialog
   failedNavigation?: string
+  /** Epoch milliseconds of the last agent command; mirrored into recent state updates. */
+  agentActiveAt?: number
 }
 // Dots cannot appear in a legacy profile ID, keeping daily-browsing cookies separate.
 const WORKSPACE_PROFILES = 'browser-workspace.profiles'
+export type StudioBrowserKind = 'workspace' | 'thread' | 'agent' | 'studio'
+export type StudioSessionIdentity = {
+  kind: StudioBrowserKind
+  tabId?: string
+  profileId?: string
+  /** Agent-facing ID when it differs from the internal session key. */
+  alias?: string
+  private: boolean
+}
+/** Classify a browser session key for Studio Tools listing and agent addressing. */
+export function studioSessionIdentity(
+  resourceId: string,
+  owner: string | undefined,
+): StudioSessionIdentity {
+  if (resourceId.startsWith('[')) {
+    try {
+      const parts: unknown = JSON.parse(resourceId)
+      if (Array.isArray(parts)) {
+        const tabId = typeof parts[1] === 'string' ? parts[1] : undefined
+        const profileId = typeof parts[2] === 'string' ? parts[2] : undefined
+        const workspace = owner === STUDIO_BROWSER_SCOPE || parts[0] === STUDIO_BROWSER_SCOPE
+        return {
+          kind: workspace ? 'workspace' : 'thread',
+          ...(tabId ? { tabId } : {}),
+          ...(profileId ? { profileId } : {}),
+          ...(workspace && tabId ? { alias: `workspace:${tabId}` } : {}),
+          private: !!profileId && isPrivateBrowserProfile(profileId),
+        }
+      }
+    } catch {
+      /* Not a composite session key. */
+    }
+  }
+  if (resourceId.startsWith('agent-browser:')) return { kind: 'agent', private: false }
+  if (resourceId.startsWith('studio-browser:')) return { kind: 'studio', private: false }
+  return { kind: 'thread', private: false }
+}
 const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
   async activeMedia(resourceId: string) {
@@ -947,6 +986,9 @@ export class RemoteBrowsers {
         loading: session.loading,
         touch: true,
         primaryModifier: process.platform === 'darwin' ? 'Meta' : 'Control',
+        ...(session.agentActiveAt && Date.now() - session.agentActiveAt < 60000
+          ? { agentActiveAt: session.agentActiveAt }
+          : {}),
       }
       this.emit(session, session.state)
     } catch (error) {
@@ -1493,6 +1535,21 @@ export class RemoteBrowsers {
       })
     await operation
   }
+  /** Resolve an agent-facing workspace alias (`workspace:<tabId>`) to its session key. */
+  private resolveStudioSession(id: string) {
+    if (this.sessions.has(id)) return id
+    if (!id.startsWith('workspace:')) return undefined
+    const tabId = id.slice('workspace:'.length)
+    for (const key of this.sessions.keys()) {
+      const identity = studioSessionIdentity(key, this.owners.get(key))
+      if (identity.kind === 'workspace' && identity.tabId === tabId) return key
+    }
+    return undefined
+  }
+  private requireAgentAccessible(resource: string) {
+    if (studioSessionIdentity(resource, this.owners.get(resource)).private)
+      throw new HttpError(403, 'Private browser tabs are not available to agents.')
+  }
   /** Default task sessions are isolated. Studio Tools may explicitly attach to an existing tab. */
   async agentCommand(
     taskId: string,
@@ -1501,11 +1558,16 @@ export class RemoteBrowsers {
     resourceId?: string,
   ) {
     authorize()
-    const resource = resourceId ?? `agent-browser:${taskId}`
-    if (this.owners.get(resource) === STUDIO_BROWSER_SCOPE)
-      throw new HttpError(403, 'Shared Browser tabs are not available to agents.')
-    if (resourceId && !this.sessions.has(resourceId))
-      throw new HttpError(404, 'Browser session not found')
+    const resource =
+      (resourceId ? this.resolveStudioSession(resourceId) : undefined) ??
+      resourceId ??
+      `agent-browser:${taskId}`
+    this.requireAgentAccessible(resource)
+    if (resourceId && !this.sessions.has(resource))
+      throw new HttpError(
+        404,
+        'Browser session not found. For a Browser workspace tab, open it in Studio first, then list sessions again.',
+      )
     if (command.action === 'close') {
       await this.close(resource)
       return { ok: true as const }
@@ -1519,6 +1581,8 @@ export class RemoteBrowsers {
     session.queued++
     const operation = session.queue.then(async () => {
       authorize()
+      session.agentActiveAt = Date.now()
+      this.scheduleState(session)
       const page = session.page
       let scriptResult: unknown
       switch (command.action) {
@@ -1588,26 +1652,41 @@ export class RemoteBrowsers {
     return operation
   }
   async studioList() {
+    const entries = [...this.sessions]
+      .map(([id, pending]) => ({
+        id,
+        pending,
+        identity: studioSessionIdentity(id, this.owners.get(id)),
+      }))
+      .filter(({ identity }) => !identity.private)
     return Promise.all(
-      [...this.sessions]
-        .filter(([id]) => this.owners.get(id) !== STUDIO_BROWSER_SCOPE)
-        .map(async ([id, pending]) => {
-          const session = await pending
-          return {
-            id,
-            taskId: this.owners.get(id),
-            url: session.page.url(),
-            title: await session.page.title(),
-          }
-        }),
+      entries.map(async ({ id, pending, identity }) => {
+        const session = await pending
+        const owner = this.owners.get(id)
+        return {
+          id: identity.alias ?? id,
+          kind: identity.kind,
+          ...(owner && owner !== STUDIO_BROWSER_SCOPE ? { taskId: owner } : {}),
+          ...(identity.tabId ? { tabId: identity.tabId } : {}),
+          ...(identity.profileId ? { profileId: identity.profileId } : {}),
+          url: session.page.url(),
+          title: await session.page.title(),
+          ...(session.agentActiveAt
+            ? { agentActiveAt: new Date(session.agentActiveAt).toISOString() }
+            : {}),
+        }
+      }),
     )
   }
   async studioLogs(id: string) {
-    if (this.owners.get(id) === STUDIO_BROWSER_SCOPE)
-      throw new HttpError(403, 'Shared Browser tabs are not available to agents.')
-    const pending = this.sessions.get(id)
+    const resource = this.resolveStudioSession(id) ?? id
+    this.requireAgentAccessible(resource)
+    const pending = this.sessions.get(resource)
     if (!pending) throw new HttpError(404, 'Browser session not found')
-    return { entries: [...(await pending).logs] }
+    const session = await pending
+    session.agentActiveAt = Date.now()
+    this.scheduleState(session)
+    return { entries: [...session.logs] }
   }
   async closeTask(taskId: string) {
     await Promise.all(

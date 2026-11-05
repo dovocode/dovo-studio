@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext,useState} from 'react';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
     import {decode,runtimeDefaultsSchema,defaultTaskHarness} from '@dovo/protocol';
     import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
     // This navigation fixture has no active remote desktop sessions.
@@ -21,7 +22,7 @@ const mocks = {
     export const SettingsTargetProvider=({children})=>children;
     export const useAppPreferences=()=>({lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const updateAppPreferences=()=>{};
-    const confirmSettingsNavigation=()=>window.allowSettings;export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
+    const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
       const [defaults,setDefaults]=useState(null);
@@ -38,7 +39,7 @@ const mocks = {
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
     }
   `,
-  '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
+  '@dovo/studio-ui': `export {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
   // Pair registration has its own browser suite; this fixture tests thread navigation.
   './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
   // External-link destinations are covered by check-browser-profile-settings-browser.mjs.
@@ -50,8 +51,9 @@ const mocks = {
   './task-notifications': 'export const useTaskNotifications=open=>{window.notify=open;return {}};',
   './extension-catalog':
     'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
+  // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
   './activity-bar':
-    'export const ActivityBar=({views,onSelect,onDetachBrowser})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}{onDetachBrowser&&<button onClick={onDetachBrowser}>Detach browser</button>}</nav>;',
+    'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=({views,onSelect,onDetachBrowser})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}{onDetachBrowser&&<button onClick={onDetachBrowser}>Detach browser</button>}</nav>;',
   './settings-nav': 'export const SettingsNav=()=>null;',
   './title-bar': 'export const TitleBar=()=>null;',
   './command-palette':
@@ -201,9 +203,37 @@ try {
   })
   await section('Threads')
   await page.getByText('Settings section', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.host.goBack()),
+    true,
+    'Canceled Back is handled and must not trigger a caller fallback',
+  )
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.notify({ runtimeId: 'remote', viewId: 'tasks', entityId: 'remote-a' }),
+  )
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  assert.notEqual(
+    await page.evaluate(() => window.finishedSwitchId),
+    'remote',
+    'Canceled notification must not switch computers',
+  )
   await page.evaluate(() => {
     window.allowSettings = true
+    window.holdSettings = true
   })
+  await section('PRs')
+  await page.waitForFunction(() => !!window.finishSettings)
+  await page.evaluate(() => (window.holdSettings = false))
+  await section('Shortcuts')
+  await page.getByText('Shortcuts section', { exact: true }).waitFor()
+  await page.evaluate(() => window.finishSettings(true))
+  await page.getByText('Shortcuts section', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByText('PR section', { exact: true }).count(),
+    0,
+    'An older accepted decision must preserve newer navigation',
+  )
   await section('Threads')
   await selected('mac-a')
   await section('PRs')

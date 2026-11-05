@@ -119,6 +119,11 @@ try {
     'acp:installed',
   ])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
+  const modelFilter = page.getByRole('button', { name: 'All models', exact: true })
+  const favoriteFilter = page.getByRole('button', { name: 'Favorite models', exact: true })
+  const agentFilter = page.getByRole('button', { name: 'Custom configurations', exact: true })
+  if ((await modelFilter.getAttribute('aria-pressed')) !== 'true')
+    throw new Error('Model browsing has no active filter')
   await page.getByRole('button', { name: 'Installed ACP models', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Vibe models', exact: true }).waitFor()
   await absent(page.getByRole('button', { name: 'Cursor models', exact: true }))
@@ -130,15 +135,24 @@ try {
       .getAttribute('data-value')) !== 'gpt-6.1-sol'
   )
     throw new Error('Compact Codex label changed the model ID')
-  await page.getByRole('button', { name: 'Favorite models', exact: true }).click()
+  await favoriteFilter.click()
+  if (
+    (await favoriteFilter.getAttribute('aria-pressed')) !== 'true' ||
+    (await modelFilter.getAttribute('aria-pressed')) !== 'false'
+  )
+    throw new Error('Favorites did not become the active model filter')
   await page.getByRole('option', { name: 'favorite-model' }).waitFor()
   await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
   await absent(page.getByRole('option', { name: 'missing-model' }))
   await absent(page.getByRole('option', { name: 'Provider default' }))
   await absent(page.getByRole('option', { name: 'default', exact: true }))
-  await page.getByRole('button', { name: 'Custom configurations', exact: true }).click()
+  await agentFilter.click()
+  if ((await agentFilter.getAttribute('aria-pressed')) !== 'true')
+    throw new Error('Custom agents did not become the active model filter')
   await page.getByRole('option', { name: 'Custom Codex' }).waitFor()
   await absent(page.getByRole('option', { name: 'Missing Cursor' }))
+  await modelFilter.click()
+  await page.getByRole('option', { name: '6.1 Sol', exact: true }).waitFor()
   await page.evaluate(() => window.host('two'))
   await waitRequests(2)
   await absent(page.getByRole('button', { name: 'Codex models', exact: true }))

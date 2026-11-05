@@ -18,7 +18,9 @@ it('quotes existing dropped paths without submitting input and rejects unauthent
       { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], env: {} },
       'Drop paths',
     )
-    const write = vi.spyOn(runtime.services.terminals.get(terminal.id).process, 'write')
+    const shell = runtime.services.terminals.get(terminal.id).process
+    if (!shell) throw new Error('Expected a running terminal')
+    const write = vi.spyOn(shell, 'write')
     const call = (paths: string[], credential = token, id = terminal.id) =>
       fetch(`http://127.0.0.1:${runtime.port}/api/terminals/quote-paths`, {
         method: 'POST',

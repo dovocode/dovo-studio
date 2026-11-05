@@ -29,6 +29,26 @@ it('keeps review, failure and completion visible alongside the finish age', () =
   expect(taskPresentation(task('failed'), false, now).label).toBe('Failed · 5m ago')
   expect(taskPresentation(task('done'), false, now).label).toBe('Finished · 5m ago')
 })
+it('distinguishes attention from activity, failure, completion and neutral states', () => {
+  expect(taskPresentation(task('review'), false, now)).toMatchObject({
+    state: 'Review',
+    compactLabel: 'Review',
+    tone: 'attention',
+  })
+  expect(taskPresentation(task('running'), true, now)).toMatchObject({
+    state: 'Needs input',
+    tone: 'attention',
+  })
+  expect(taskPresentation(task('running'), false, now).tone).toBe('active')
+  expect(taskPresentation(task('failed'), false, now).tone).toBe('danger')
+  expect(taskPresentation(task('done'), false, now)).toMatchObject({
+    state: 'Finished',
+    compactLabel: 'Finished',
+    tone: 'success',
+  })
+  expect(taskPresentation(task('cancelled'), false, now).tone).toBe('neutral')
+  expect(taskPresentation(task('draft'), false, now).tone).toBe('neutral')
+})
 it('shows Done only until the latest successful turn is viewed', () => {
   for (const status of ['review', 'done'] as const) {
     const unread = {
@@ -38,6 +58,7 @@ it('shows Done only until the latest successful turn is viewed', () => {
     expect(taskPresentation(unread, false, now)).toMatchObject({
       state: 'Done',
       compactLabel: 'Done',
+      tone: 'success',
       label: 'Done · 5m ago',
     })
     expect(
@@ -51,7 +72,7 @@ it('shows Done only until the latest successful turn is viewed', () => {
       ),
     ).toMatchObject({
       state: status === 'review' ? 'Review' : 'Finished',
-      compactLabel: '5m',
+      compactLabel: status === 'review' ? 'Review' : 'Finished',
     })
     expect(
       taskPresentation(

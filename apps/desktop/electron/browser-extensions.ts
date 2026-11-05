@@ -174,8 +174,8 @@ const enabled = () => {
   return (
     !!settings &&
     typeof settings === 'object' &&
-    'browserWorkspaceEnabled' in settings &&
-    settings.browserWorkspaceEnabled === true
+    (('browserWorkspaceEnabled' in settings && settings.browserWorkspaceEnabled === true) ||
+      ('unifiedWorkspaceEnabled' in settings && settings.unifiedWorkspaceEnabled === true))
   )
 }
 const requireEnabled = () => {

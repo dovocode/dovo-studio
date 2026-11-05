@@ -305,6 +305,8 @@ export const browserCommandSchema = Schema.Union([
       Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
     ),
     taskId: Schema.optional(Schema.String),
+    /** Shared Browser workspace tab identity, so agents can address this exact tab. */
+    tabId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     agentAccess: Schema.optional(Schema.Boolean),
     /** Shared Browser activity only: queue new-tab requests, allow popups and forward tab shortcuts. */
     workspaceBrowser: Schema.optional(Schema.Boolean),
@@ -567,6 +569,8 @@ export type BrowserTabState = {
   camera: boolean
   microphone: boolean
   screenSharing: boolean
+  /** An agent CDP client is currently connected to this tab. */
+  agent?: boolean
 }
 export type BrowserFrameBridge = (
   key: string,
@@ -629,6 +633,8 @@ export const desktopBrowserHostSchema = mutableStruct({
   targets: mutableArray(
     mutableStruct({
       taskId: Schema.String,
+      /** Browser workspace tab ID when `taskId` is the shared-browser scope. */
+      tabId: Schema.optional(Schema.String),
       profileId: Schema.String,
       endpoint: Schema.String.pipe(
         Schema.check(

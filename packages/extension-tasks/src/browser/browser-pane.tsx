@@ -41,6 +41,8 @@ import {
   snoozeBrowserTab,
   tomorrowBrowserTabWake,
   cleanBrowserTabs,
+  STUDIO_BROWSER_SCOPE,
+  studioReference,
   browserTabActivitySchema,
   type BrowserTabCategory,
   type BrowserTabState,
@@ -50,11 +52,14 @@ import { Effect } from 'effect'
 import { useCommittedCallback } from '../detail/use-committed-callback'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useCallback,
   useEffect,
   useRef,
   useId,
   useState,
+  type Dispatch,
   type DragEvent,
+  type SetStateAction,
   type ReactNode,
   type RefObject,
 } from 'react'
@@ -128,6 +133,7 @@ import {
   Popover,
   HeaderContent,
   SidebarHeader,
+  Toggle,
   useNavigationSidebar,
 } from '@dovo/studio-ui'
 import { useScreenshotAttachment } from './screenshot-attachment'
@@ -141,7 +147,40 @@ import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
-type OpenLink = { id: string; url: string; remote?: boolean }
+export type BrowserWorkspaceControl = {
+  focusTabId?: string
+  onSelect: (id: string) => void
+  onTabsChange: (tabs: BrowserTab[], activeId: string) => void
+  newTabRequest?: string
+  /**
+   * Optional owner of the authoritative tab list (including previews). Until `tabs` is set,
+   * the pane keeps its own restored list and hands it to `onSetTabs` once to hydrate the owner.
+   */
+  tabs?: BrowserTab[]
+  onSetTabs?: Dispatch<SetStateAction<BrowserTab[]>>
+  /**
+   * False while another workspace item is shown. The pane stays mounted so tab cleanup, native
+   * sync and persistence keep running, but it releases the native view, header and shortcuts.
+   */
+  visible?: boolean
+  /** Runs the pane's own Pin / Settle / Snooze / Wake path once per request ID. */
+  lifecycleRequest?: BrowserLifecycleRequest
+  /** Called once each request has been applied, ignored (unknown page) or failed. */
+  onLifecycleHandled?: (requestId: string) => void
+  /** Errors raised while `visible` is false, when the pane's own banner cannot be seen. */
+  onError?: (message: string) => void
+}
+export type BrowserLifecycleRequest = { requestId: string; tabId: string } & (
+  | { action: 'pin' | 'unpin' | 'settle' | 'wake' }
+  | { action: 'snooze'; until: number }
+)
+type OpenLink = {
+  id: string
+  url: string
+  remote?: boolean
+  runtimeId?: string | null
+  profileId?: string
+}
 type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
@@ -150,18 +189,53 @@ const restorableTab = (tab: BrowserTab) =>
   !tab.previewOf &&
   !isPrivateBrowserProfile(tab.profileId) &&
   (!tab.url || /^https?:\/\//i.test(tab.url))
+const sharedBrowserScope = (windowId?: string) => `studio:browser:${windowId ?? 'main'}`
+/** Storage window for shared tabs; pop-out threads never overwrite the main browser workspace. */
+export function sharedBrowserWindowId(host: { browserWindowId?: string; threadWindow?: boolean }) {
+  return host.browserWindowId ?? (host.threadWindow ? threadBrowserWindowId : undefined)
+}
+/** Latest shared tabs for this renderer session, exactly as a remounted BrowserPane restores them. */
+export function restoredSharedBrowserTabs(windowId?: string): BrowserTab[] | undefined {
+  return (
+    savedTabs.get(sharedBrowserScope(windowId))?.tabs ?? readSharedBrowserTabs(windowId).state?.tabs
+  )
+}
+const emptyBrowserTab: BrowserTab = {
+  id: 'empty',
+  url: '',
+  title: '',
+  kind: 'web',
+  profileId: 'default',
+}
+/** Storage projection: an empty fallback replaces stale pages when nothing is restorable. */
+function persistedBrowserTabs(
+  tabs: BrowserTab[],
+  active: string,
+  closed: BrowserTab[],
+  fallback: BrowserTab,
+): BrowserTabs {
+  const restorable = tabs.filter(restorableTab)
+  const saved = restorable.length ? restorable : [fallback]
+  return {
+    tabs: saved,
+    active: saved.some((tab) => tab.id === active) ? active : saved[0].id,
+    closed: closed.filter(restorableTab),
+  }
+}
 export function BrowserPane({
   taskId,
   onClose,
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   taskId: string
   onClose?: () => void
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
 }) {
   return (
     <PreviewPane
@@ -171,6 +245,7 @@ export function BrowserPane({
       openLink={openLink}
       onLinkOpened={onLinkOpened}
       shared={shared}
+      workspaceControl={workspaceControl}
     />
   )
 }
@@ -184,6 +259,7 @@ function PreviewPane({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   taskId: string
   onClose?: () => void
@@ -191,15 +267,16 @@ function PreviewPane({
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
 }) {
   const { connection } = useWorkspace()
   const { browserWindowId, threadWindow } = useStudioHost()
   // Pop-out threads must not overwrite the main browser workspace.
-  const [storageWindowId] = useApplicationState(
-    () => browserWindowId ?? (threadWindow ? threadBrowserWindowId : undefined),
+  const [storageWindowId] = useApplicationState(() =>
+    sharedBrowserWindowId({ browserWindowId, threadWindow }),
   )
   const scope = shared
-    ? `studio:browser:${storageWindowId ?? 'main'}`
+    ? sharedBrowserScope(storageWindowId)
     : `${connection?.address ?? ''}:${taskId}`
   return (
     <BrowserContent
@@ -212,6 +289,7 @@ function PreviewPane({
       openLink={openLink}
       onLinkOpened={onLinkOpened}
       shared={shared}
+      workspaceControl={workspaceControl}
     />
   )
 }
@@ -224,12 +302,14 @@ function BrowserContent({
   openLink,
   onLinkOpened,
   shared = false,
+  workspaceControl,
 }: {
   scope: string
   storageWindowId?: string
   openLink?: OpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
+  workspaceControl?: BrowserWorkspaceControl
   initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
@@ -257,6 +337,33 @@ function BrowserContent({
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
+  // Shared workspace tabs join the desktop CDP host while Studio Browsers is on locally.
+  const localOverview = runtimes.find((entry) => entry.profile.id === store.localRuntimeId)
+  const studioBrowsersLocal =
+    (localOverview?.snapshot ?? (store.localRuntimeId === activeRuntimeId ? snapshot : null))
+      ?.studioTools?.browsers ?? false
+  /** Unified Studio reference + agent reachability for one sidebar tab. */
+  const tabStudio = (tab: BrowserTab) => {
+    if (isPrivateBrowserProfile(tab.profileId)) return {}
+    const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+    const reachable = tab.kind === 'remote' || !!browser
+    const agentAccessible = reachable && (owner?.snapshot?.studioTools?.browsers ?? false)
+    if (!reachable) return { agentAccessible }
+    const runtime =
+      owner?.snapshot?.runtimeId ?? owner?.profile.connection.runtimeId ?? tab.runtimeId ?? 'local'
+    try {
+      return {
+        agentAccessible,
+        studioId: studioReference(
+          runtime,
+          'browser',
+          tab.kind === 'web' ? `desktop:${tab.id}` : `workspace:${tab.id}`,
+        ),
+      }
+    } catch {
+      return { agentAccessible }
+    }
+  }
   const previewLinks = useRef(true)
   previewLinks.current = preferences.browserLinkOpening !== 'tab'
   const [homeEditor, setHomeEditor] = useApplicationState<{ tabId: string; url: string } | null>(
@@ -284,7 +391,7 @@ function BrowserContent({
     back: false,
     forward: false,
   })
-  const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
+  const [ownTabs, setOwnTabs] = useApplicationState<BrowserTab[]>(
     () =>
       saved?.tabs ?? [
         {
@@ -301,6 +408,24 @@ function BrowserContent({
         },
       ],
   )
+  // A workspace owner may hold the authoritative list so it stays current while this pane is hidden.
+  const tabsControl = useRef(workspaceControl)
+  tabsControl.current = workspaceControl
+  const tabs = (workspaceControl?.onSetTabs && workspaceControl.tabs) || ownTabs
+  const setTabs = useCallback<Dispatch<SetStateAction<BrowserTab[]>>>(
+    (action) => {
+      const control = tabsControl.current
+      if (control?.onSetTabs && control.tabs) control.onSetTabs(action)
+      else setOwnTabs(action)
+    },
+    [setOwnTabs],
+  )
+  const tabsHydrated = !!workspaceControl?.tabs
+  // Owners keep a hidden pane mounted as a background service; only presentation is gated.
+  const paneVisible = workspaceControl?.visible !== false
+  useEffect(() => {
+    if (!tabsHydrated) tabsControl.current?.onSetTabs?.(ownTabs)
+  }, [tabsHydrated, ownTabs])
   const [activeTab, setActiveTab] = useApplicationState(() => saved?.active ?? tabs[0].id)
   const activeTabRef = useRef(activeTab)
   activeTabRef.current = activeTab
@@ -401,14 +526,16 @@ function BrowserContent({
   const [zoomFactor, setZoomFactor] = useState(1)
   useEffect(
     () =>
-      onBrowserContextAction?.((action) => {
-        if (action.action === 'close-find' && action.key === browserKey) setFindOpen(false)
-        if (action.action === 'find' && action.key === browserKey) {
-          setFindOpen(true)
-          setFindRequest((value) => value + 1)
-        }
-      }),
-    [onBrowserContextAction, browserKey],
+      paneVisible
+        ? onBrowserContextAction?.((action) => {
+            if (action.action === 'close-find' && action.key === browserKey) setFindOpen(false)
+            if (action.action === 'find' && action.key === browserKey) {
+              setFindOpen(true)
+              setFindRequest((value) => value + 1)
+            }
+          })
+        : undefined,
+    [onBrowserContextAction, browserKey, paneVisible],
   )
   useEffect(() => {
     if (!browser || !shared) return
@@ -435,6 +562,13 @@ function BrowserContent({
       setError(`Remote sharing sources could not be updated: ${String(cause)}`),
     )
   }, [browser, shared, tabs, runtimes])
+  const openedWorkspaceTab = useRef('')
+  useEffect(() => {
+    const request = workspaceControl?.newTabRequest
+    if (!request || openedWorkspaceTab.current === request) return
+    openedWorkspaceTab.current = request
+    if (!newTab()) workspaceControl?.onSelect(activeTab)
+  }, [workspaceControl?.newTabRequest])
   const openedLink = useRef('')
   const controlsId = useId()
   const [frozenPage, setFrozenPage] = useApplicationState<{
@@ -463,10 +597,31 @@ function BrowserContent({
   useEffect(() => {
     savedTabs.set(scope, { tabs, active: activeTab, closed })
   }, [scope, tabs, activeTab, closed])
-  const selectTab = (tab: BrowserTab) => {
+  const workspaceControlRef = useRef(workspaceControl)
+  workspaceControlRef.current = workspaceControl
+  useEffect(() => {
+    workspaceControlRef.current?.onTabsChange(
+      tabs.filter((tab) => !tab.previewOf),
+      activeTab,
+    )
+  }, [tabs, activeTab])
+  useEffect(() => {
+    const tab = tabs.find((tab) => tab.id === workspaceControl?.focusTabId)
+    if (tab) selectTab(tab, false)
+  }, [workspaceControl?.focusTabId])
+  const selectTab = (tab: BrowserTab, notify = true) => {
+    // A hidden pane may follow native/agent focus, but never pulls the owner to the browser.
+    if (notify && paneVisible) workspaceControl?.onSelect(tab.id)
     previewRequest.current++
     setPendingPreview(undefined)
-    if (tab.id === activeTab) return
+    if (tab.id === activeTab) {
+      // A page settled or snoozed elsewhere while selected wakes when it is chosen again.
+      if (browserTabCategory(tab) !== 'active')
+        setTabs((previous) =>
+          previous.map((item) => (item.id === tab.id ? wakeBrowserTab(item) : item)),
+        )
+      return
+    }
     const now = Date.now()
     setTabs((previous) =>
       previous.map((item) =>
@@ -614,13 +769,21 @@ function BrowserContent({
     if (
       !newTab(
         previewUrl(openLink.url),
-        browser && !openLink.remote ? 'web' : 'remote',
-        browser && !openLink.remote
-          ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
-          : 'default',
+        browser &&
+          !openLink.remote &&
+          (!openLink.runtimeId || openLink.runtimeId === store.localRuntimeId)
+          ? 'web'
+          : 'remote',
+        openLink.profileId ??
+          (browser && !openLink.remote
+            ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
+            : 'default'),
+        openLink.runtimeId ?? activeRuntimeId ?? undefined,
       )
-    )
+    ) {
+      workspaceControl?.onSelect(activeTab)
       return
+    }
     openedLink.current = openLink.id
     onLinkOpened?.()
   }, [openLink?.id, browser, onLinkOpened, tabs.length])
@@ -628,12 +791,21 @@ function BrowserContent({
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(restored.error ?? library.error ?? ''),
     [reload, setReload] = useApplicationState(0)
+  const reportedError = useRef('')
+  /** Hidden panes hand failures to their owner; the banner still shows them once visible. */
+  const reportHidden = (message: string) => {
+    reportedError.current = message
+    if (message && !paneVisible) workspaceControlRef.current?.onError?.(message)
+  }
+  useEffect(() => {
+    if (error === reportedError.current) return
+    reportHidden(error)
+  }, [error])
   useEffect(() => {
     if (!shared) return
     let persisted = false
     try {
       // Extension pages require their existing native view; never restore stale extension URLs.
-      const restorable = tabs.filter(restorableTab)
       let source = selectedTab
       const seen = new Set<string>()
       while (source.previewOf && !seen.has(source.id)) {
@@ -642,24 +814,12 @@ function BrowserContent({
         if (!parent) break
         source = parent
       }
-      const fallback: BrowserTab = {
-        id: 'empty',
-        url: '',
-        title: '',
-        kind: browser ? 'web' : 'remote',
-        profileId: 'default',
-        runtimeId: activeRuntimeId ?? undefined,
-      }
       saveSharedBrowserTabs(
-        {
-          tabs: restorable.length ? restorable : [fallback],
-          active: restorable.some((tab) => tab.id === activeTab)
-            ? activeTab
-            : (restorable.find((tab) => tab.id === source.id)?.id ??
-              restorable[0]?.id ??
-              fallback.id),
-          closed: closed.filter(restorableTab),
-        },
+        persistedBrowserTabs(tabs, restorableTab(selectedTab) ? activeTab : source.id, closed, {
+          ...emptyBrowserTab,
+          kind: browser ? 'web' : 'remote',
+          runtimeId: activeRuntimeId ?? undefined,
+        }),
         storageWindowId,
       )
       persisted = true
@@ -841,13 +1001,13 @@ function BrowserContent({
     })
   })
   useEffect(() => {
-    if (!shared || !browser || !openBrowserWindow) return
+    if (!shared || !browser || !openBrowserWindow || !paneVisible) return
     return registerCommand({
       id: 'browser.detach',
       title: 'Detach browser',
       run: detachBrowser,
     })
-  }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser])
+  }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser, paneVisible])
   const loadDevices = async () => {
     const hosts = await request(
       '/api/device-hosts',
@@ -1182,7 +1342,7 @@ function BrowserContent({
     const update = () => {
       frame = undefined
       if (!alive) return
-      const rect = slot.current && nativeBrowserBounds(slot.current)
+      const rect = paneVisible && slot.current ? nativeBrowserBounds(slot.current) : undefined
       const occlusion = slot.current && rect && nativeBrowserOcclusion(slot.current, rect)
       const obscured = !!occlusion
       const command =
@@ -1192,8 +1352,11 @@ function BrowserContent({
               workspaceBrowser: shared,
               keepAwake: selectedTab.keepAwake,
               profileId,
-              taskId: shared ? undefined : taskId,
-              agentAccess: shared ? false : agentAccess,
+              taskId: shared ? STUDIO_BROWSER_SCOPE : taskId,
+              tabId: shared ? selectedTab.id : undefined,
+              agentAccess: shared
+                ? studioBrowsersLocal && !isPrivateBrowserProfile(profileId)
+                : agentAccess,
               key: browserKey,
               url: url || 'about:blank',
               viewport:
@@ -1324,7 +1487,10 @@ function BrowserContent({
     profileId,
     taskId,
     agentAccess,
+    studioBrowsersLocal,
+    selectedTab.id,
     selectedTab.keepAwake,
+    paneVisible,
   ])
   const deviceAction = (
     device: PreviewDevice,
@@ -1532,7 +1698,7 @@ function BrowserContent({
     preferences.browserAutoSettleMinutes,
     preferences.browserCloseSettledMinutes,
   ])
-  const moveTab = (tab: BrowserTab, until?: number) => {
+  const moveTab = (tab: BrowserTab, until?: number, notify = true) => {
     const now = Date.now()
     const next = currentTabs.current.map((item) =>
       item.id === tab.id
@@ -1547,8 +1713,9 @@ function BrowserContent({
     const available = recentBrowserTabs(next, sortByActivity).filter((item) => item.id !== tab.id)
     const target =
       available.find((item) => browserTabCategory(item, now) === 'active') ?? available[0]
-    if (target) selectTab(target)
-    else
+    if (target) selectTab(target, notify)
+    // A hidden pane never opens a page in front of the user; the settled page stays selected.
+    else if (notify)
       newTab(
         '',
         tab.kind,
@@ -1592,7 +1759,7 @@ function BrowserContent({
     if (key === 'd') toggleBookmark()
   }
   useEffect(() => {
-    if (!shared) return
+    if (!shared || !paneVisible) return
     const shortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
       if (
@@ -1658,6 +1825,37 @@ function BrowserContent({
       ),
     )
   }
+  const lifecycleRequest = workspaceControl?.lifecycleRequest
+  const handledLifecycle = useRef('')
+  useEffect(() => {
+    if (!lifecycleRequest || handledLifecycle.current === lifecycleRequest.requestId) return
+    handledLifecycle.current = lifecycleRequest.requestId
+    const tab = currentTabs.current.find((item) => item.id === lifecycleRequest.tabId)
+    try {
+      if (!tab) return
+      if (lifecycleRequest.action === 'pin' || lifecycleRequest.action === 'unpin') {
+        if (!!tab.pinned !== (lifecycleRequest.action === 'pin')) togglePin(tab)
+      } else if (lifecycleRequest.action === 'wake')
+        setTabs((previous) =>
+          previous.map((item) => (item.id === tab.id ? wakeBrowserTab(item) : item)),
+        )
+      // Same path as the pane's own menu: a selected page hands focus to the next active page,
+      // but only notifies the owner while visible so a hidden pane never steals focus.
+      else
+        moveTab(
+          tab,
+          lifecycleRequest.action === 'snooze' ? lifecycleRequest.until : undefined,
+          paneVisible,
+        )
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      // Report every failed request, even when it repeats the current banner message.
+      reportHidden(message)
+      setError(message)
+    } finally {
+      workspaceControlRef.current?.onLifecycleHandled?.(lifecycleRequest.requestId)
+    }
+  }, [lifecycleRequest?.requestId])
   const returnHome = (tab: BrowserTab) => {
     if (!tab.homeUrl) return
     selectTab(tab)
@@ -1706,6 +1904,7 @@ function BrowserContent({
       state={
         tab.kind === 'web' ? tabStates.find((state) => state.key === nativeKey(tab.id)) : undefined
       }
+      {...(shared ? tabStudio(tab) : {})}
       onMute={
         browser && tab.kind === 'web'
           ? () => {
@@ -1974,6 +2173,23 @@ function BrowserContent({
                     : 'Embedded website preview'}
               </p>
             </div>
+            {shared && (
+              <div className="ml-auto">
+                {' '}
+                <Popover.Close asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs"
+                    onClick={() => setLibraryView('history')}
+                  >
+                    <History size={16} />
+                    History
+                  </Button>
+                </Popover.Close>
+              </div>
+            )}
           </div>
           {mode === 'remote' && (
             <div className="space-y-2">
@@ -1994,18 +2210,6 @@ function BrowserContent({
           )}
           {shared && (
             <div className="studio-browser-settings-section space-y-2">
-              <Popover.Close asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="studio-browser-action-row"
-                  onClick={() => setLibraryView('history')}
-                >
-                  <History size={16} />
-                  History
-                </Button>
-              </Popover.Close>
               <label htmlFor={`${controlsId}-links`} className="text-xs font-medium">
                 Open links in
               </label>
@@ -2027,16 +2231,14 @@ function BrowserContent({
                 </select>
                 <ChevronDown size={14} aria-hidden="true" />
               </div>
-              <label className="studio-browser-activity-toggle">
-                <input
-                  type="checkbox"
-                  checked={sortByActivity}
-                  onChange={(event) =>
-                    updateAppPreferences({ browserSortByActivity: event.target.checked })
-                  }
-                />
+              <div className="studio-browser-activity-toggle">
                 <span>Order tabs by activity</span>
-              </label>
+                <Toggle
+                  label="Order tabs by activity"
+                  checked={sortByActivity}
+                  onChange={(checked) => updateAppPreferences({ browserSortByActivity: checked })}
+                />
+              </div>
               <p className="studio-browser-activity-description text-xs text-muted-foreground">
                 Pinned tabs always keep their manual order. Turn this off to drag other tabs into
                 order.
@@ -2046,7 +2248,7 @@ function BrowserContent({
           {shared && (
             <div className="studio-browser-settings-section space-y-2">
               <p className="text-xs font-medium">Browser location</p>
-              <div className="studio-browser-setting-control">
+              <div className="studio-browser-setting-control studio-browser-location-summary">
                 <span className="studio-browser-setting-icon" aria-hidden="true">
                   <Monitor size={17} />
                 </span>
@@ -2055,7 +2257,7 @@ function BrowserContent({
                   title="Location stays with this tab. Open another tab to use a different computer."
                 >
                   {mode === 'web'
-                    ? 'Local · this device'
+                    ? 'Local · this computer'
                     : `Remote · ${selectedRuntime ? runtimeComputerName(selectedRuntime) : 'Unavailable computer'}`}
                 </p>
               </div>
@@ -2353,7 +2555,10 @@ function BrowserContent({
             </div>
           )}
           <details className="studio-browser-more-actions">
-            <summary>Tab & page actions</summary>
+            <summary>
+              <ChevronDown size={14} aria-hidden="true" />
+              Tab & page actions
+            </summary>
             <div className="studio-browser-secondary-actions">
               {mode === 'web' && browser && url && (
                 <Button
@@ -2799,7 +3004,7 @@ function BrowserContent({
           : undefined
       }
       sidebar={
-        shared ? (
+        shared && !workspaceControl ? (
           <ResizableSidebar
             preference="browserSidebarWidth"
             side="left"
@@ -2975,7 +3180,7 @@ function BrowserContent({
         </Dialog>
       )}
 
-      {!shared && initialMode !== 'devices' && regularTabs.length > 1 && (
+      {!shared && !workspaceControl && initialMode !== 'devices' && regularTabs.length > 1 && (
         <div
           role="tablist"
           aria-label="Browser tabs"
@@ -3043,31 +3248,31 @@ function BrowserContent({
         </div>
       )}
       {initialMode === 'devices' && (
-        <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs">
-          <span className="inline-flex flex-1 items-center gap-1.5">
-            <Smartphone size={14} /> Devices
+        <div className="studio-thread-tools-header flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs">
+          <span className="inline-flex flex-1 items-center gap-2 font-medium">
+            <Smartphone size={16} className="text-muted-foreground" aria-hidden /> Devices
           </span>
           {onClose && (
             <IconButton label="Hide preview sidebar" className="size-7 shrink-0" onClick={onClose}>
-              <PanelRightClose size={15} />
+              <X size={14} />
             </IconButton>
           )}
         </div>
       )}
       {(mode === 'web' || mode === 'remote') &&
-        (shared ? (
-          <HeaderContent>
-            <header
-              className="studio-browser-header @container/browser"
-              data-window-edge
-              data-window-right-edge
-            >
-              {navigation}
-            </header>
-          </HeaderContent>
-        ) : (
-          navigation
-        ))}
+        (shared
+          ? paneVisible && (
+              <HeaderContent>
+                <header
+                  className="studio-browser-header @container/browser"
+                  data-window-edge
+                  data-window-right-edge
+                >
+                  {navigation}
+                </header>
+              </HeaderContent>
+            )
+          : navigation)}
       {mode === 'web' && browser && url && (
         <BrowserFindBar
           key={browserKey}
@@ -3076,7 +3281,7 @@ function BrowserContent({
           url={url}
           open={findOpen}
           onOpenChange={setFindOpen}
-          globalShortcut={shared}
+          globalShortcut={shared && paneVisible}
           focusRequest={findRequest}
           pageRevision={pageRevision}
         />
@@ -3127,7 +3332,8 @@ function BrowserContent({
                 profileId={tab.profileId}
                 initialUrl={tab.url}
                 tabId={tab.id}
-                active={mode === 'remote' && activeTab === tab.id}
+                // A background pane pauses the remote stream and input; tab state still updates.
+                active={paneVisible && mode === 'remote' && activeTab === tab.id}
                 reloadToken={activeTab === tab.id ? turnReload : undefined}
                 onClosed={() => closeTab(tab)}
                 onState={(state) => {
@@ -3283,7 +3489,7 @@ function BrowserContent({
                 {!browser && (
                   <iframe
                     key={reload}
-                    title="Task browser"
+                    title="Thread browser"
                     src={url}
                     className="h-full w-full border-0"
                     sandbox="allow-scripts allow-forms allow-same-origin"
@@ -3295,19 +3501,21 @@ function BrowserContent({
           )}
         </div>
       ) : mode === 'devices' ? (
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Choose a device</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy || !connected}
-              onClick={() => void act(loadDevices)}
-            >
-              Refresh
-            </Button>
-          </div>
+        <div className="min-h-0 flex-1 overflow-auto p-4 text-[13px]">
+          {hubEnabled !== false && (
+            <div className="mb-1 flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Choose a device</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy || !connected}
+                onClick={() => void act(loadDevices)}
+              >
+                Refresh
+              </Button>
+            </div>
+          )}
           {diagnostics.map((d) => (
             <p className="mb-3 text-xs text-muted-foreground" key={d}>
               {d}
@@ -3334,12 +3542,19 @@ function BrowserContent({
             </label>
           )}
           {hubEnabled === false && (
-            <p className="mb-3 text-sm text-muted-foreground">
-              Device Hub is off. Enable it in Settings → Computers → Device previews.
-            </p>
+            <div className="studio-panel-empty">
+              <Smartphone className="studio-panel-empty-icon" aria-hidden="true" />
+              <h3 className="text-sm font-medium">Device Hub is off</h3>
+              <p className="text-xs text-muted-foreground">
+                Enable device previews to connect a phone or simulator.
+              </p>
+              <Button size="sm" onClick={() => navigateStudio({ viewId: 'device-previews' })}>
+                Open device settings
+              </Button>
+            </div>
           )}
           {hubEnabled && !filteredDevices.length && !busy && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               No devices found. Connect a phone to the host or create a simulator.
             </p>
           )}

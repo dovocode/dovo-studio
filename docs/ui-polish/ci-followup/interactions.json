@@ -1,0 +1,154 @@
+[
+  {
+    "screen": "agents-dirty",
+    "mode": "dark",
+    "width": 1440,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents-dirty",
+    "mode": "dark",
+    "width": 1100,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents",
+    "mode": "dark",
+    "width": 1440,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents",
+    "mode": "dark",
+    "width": 1100,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents-dirty",
+    "mode": "light",
+    "width": 1440,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents-dirty",
+    "mode": "light",
+    "width": 1100,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents",
+    "mode": "light",
+    "width": 1440,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  },
+  {
+    "screen": "agents",
+    "mode": "light",
+    "width": 1100,
+    "keyboardTraversal": [
+      "Name",
+      "Profile icon",
+      "Model",
+      "Refresh models",
+      "Reasoning level",
+      "Advanced provider options",
+      "Model visibility & favorites",
+      "Access mode",
+      "Cloud integrations",
+      "Advanced · Full access",
+      "Instructions"
+    ],
+    "unobstructed": true
+  }
+]

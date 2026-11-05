@@ -1,3 +1,5 @@
+import { useConfirmation } from '@dovo/studio-core'
+import { Disclosure } from '@dovo/studio-ui'
 import { settingsChanges, supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -78,8 +80,18 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
   const dirty = !!settings && JSON.stringify(settings) !== JSON.stringify(baseline)
   protectDraft.current = dirty
   useSettingsDraft(dirty, busy)
-  const reloadSettings = () => {
-    if (dirty && !window.confirm('Discard your unsaved edits and load the latest saved settings?'))
+  const confirm = useConfirmation(JSON.stringify([settingsPath, settings, busy]))
+  const reloadSettings = async () => {
+    if (
+      dirty &&
+      !(await confirm({
+        title: 'Reload saved settings?',
+        description:
+          'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+        confirmLabel: 'Discard and reload',
+        destructive: true,
+      }))
+    )
       return
     setBaseline(settings)
     setReload((value) => value + 1)
@@ -105,7 +117,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           {selection
             ? 'Choose the utility model that selects projects, harnesses and coding models. By default it inherits the explicit title model.'
-            : 'Choose an explicit harness and model for task titles and dictation cleanup.'}
+            : 'Choose an explicit harness and model for thread titles and dictation cleanup.'}
         </p>
       </header>
       <div className="p-4">
@@ -148,6 +160,10 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 .finally(() => setBusy(false))
             }}
           >
+            <p className="text-[0.8125rem] leading-normal text-foreground/80">
+              Use {selection ? 'Save selection model' : 'Save title settings'} to apply edits on
+              this computer.
+            </p>
             <fieldset disabled={busy || !connected} className="min-w-0 space-y-4">
               <FormField layout="settings" label="Provider">
                 <ChoicePicker
@@ -218,10 +234,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 </p>
               </FormField>
               {settings.harness && !(selection && settings.inheritTitleModel) && (
-                <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Connection (optional)
-                  </summary>
+                <Disclosure title={<> Connection (optional) </>}>
                   <div className="mt-3 grid gap-3">
                     <FormField layout="settings" label="Executable or server URL">
                       <Input
@@ -257,7 +270,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                       </FormField>
                     )}
                   </div>
-                </details>
+                </Disclosure>
               )}
               {harness?.provider === 'acp' && (
                 <AcpRegistry
@@ -295,10 +308,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 </p>
               )}
               {selection && (
-                <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Additional prompts (optional)
-                  </summary>
+                <Disclosure title={<> Additional prompts (optional) </>}>
                   <div className="mt-3 grid gap-3">
                     <p className="text-xs text-muted-foreground">
                       Add preferences to the built-in selection instructions. Leave blank to use
@@ -323,7 +333,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                       </FormField>
                     ))}
                   </div>
-                </details>
+                </Disclosure>
               )}
               <SettingsSaveBar
                 saveLabel={selection ? 'Save selection model' : 'Save title settings'}
@@ -338,7 +348,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                     await request(`${settingsPath}/read`, {}, titleGenerationSettingsSchema),
                   )
                 }
-                description="Changes apply to new tasks. Save to apply."
+                description="Changes apply to new threads."
                 disabled={
                   !connected ||
                   (!(selection && settings.inheritTitleModel) &&

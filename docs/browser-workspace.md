@@ -21,6 +21,16 @@ Shared Browser sessions are separate from the thread's right-side preview. Profi
 reused across both surfaces, but their login cookies are isolated; signing in on one does not sign
 you in on the other.
 
+With **Studio Tools → Browsers** enabled on a tab's computer, agents can list and operate live
+workspace tabs through `studio_browsers` (remote tabs and desktop-local tabs alike; private tabs are
+always excluded). A bot badge marks tabs agents can reach, and lights up on desktop tabs while an
+agent is connected to one. Right-click a tab and choose **Copy Studio ID (for agents)** to copy its
+unified reference (`studio:<computer>:browser:<id>`); paste it into any thread to point an agent at
+that exact tab. Threads have the matching **Copy → Studio ID (for agents)**. Desktop tabs are
+reachable only while open in the desktop Browser workspace, over the same page-scoped CDP host used
+for thread previews; CSS and `text=` selectors are supported there, and no console logs are
+captured.
+
 The address bar searches Google for words, uses HTTPS for bare public domains and HTTP for local
 addresses such as `localhost:3000`. Explicit HTTP addresses stay HTTP. Local tabs reach services on
 the desktop computer; paired-runtime tabs resolve localhost against that runtime's host. HTTP over

@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useState } from 'react'
 import { Schema } from 'effect'
@@ -28,10 +29,10 @@ export function UsagePrices({
   if (!selected) return null
   const modelId = selected.key.split('\u0000')[1]
   return (
-    <details className="rounded-lg border bg-card p-4 text-xs">
-      <summary className="cursor-pointer rounded font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        Custom API-equivalent prices
-      </summary>
+    <Disclosure
+      className="rounded-lg border bg-card p-4 text-xs"
+      title={<>Custom API-equivalent prices</>}
+    >
       <p className="mt-2 text-muted-foreground">
         USD per million tokens, saved on selected computers and applied to recorded usage. These
         estimates do not change your subscription allowance.
@@ -58,7 +59,7 @@ export function UsagePrices({
         histories={histories}
         onSaved={onSaved}
       />
-    </details>
+    </Disclosure>
   )
 }
 function PriceForm({

@@ -41,19 +41,19 @@ export default function GeneralSettings() {
       <SettingsGroup title="Navigation & shortcuts">
         {taskLauncher && (
           <SettingRow
-            label="Global new task shortcut"
+            label="Global new thread shortcut"
             description={
               shortcutError ? (
                 <span role="alert" className="text-destructive">
                   {shortcutError}
                 </span>
               ) : (
-                'Open the task launcher from any app.'
+                'Open the thread launcher from any app.'
               )
             }
           >
             <SettingsSelect
-              label="Global new task shortcut"
+              label="Global new thread shortcut"
               value={preferences.taskLauncherShortcut || 'disabled'}
               options={[
                 ['CommandOrControl+Shift+Space', `${mod} + Shift + Space`],
@@ -85,6 +85,31 @@ export default function GeneralSettings() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup title="Experimental">
+        <SettingRow
+          label="Unified workspace"
+          description="Work with browser pages, threads and terminals in mixed tabs across paired computers. Experimental and off by default."
+        >
+          <Toggle
+            label="Enable experimental unified workspace"
+            checked={preferences.unifiedWorkspaceEnabled}
+            onChange={(unifiedWorkspaceEnabled) =>
+              updateAppPreferences({ unifiedWorkspaceEnabled })
+            }
+          />
+        </SettingRow>
+        <SettingRow
+          label="Hide normal modes"
+          description="Hide Threads, Browser and Terminals from the sidebar while the unified workspace is on. Turning off the unified workspace shows them again."
+        >
+          <Toggle
+            label="Hide normal modes while the unified workspace is on"
+            checked={preferences.unifiedWorkspaceHideNormalModes}
+            disabled={!preferences.unifiedWorkspaceEnabled}
+            onChange={(unifiedWorkspaceHideNormalModes) =>
+              updateAppPreferences({ unifiedWorkspaceHideNormalModes })
+            }
+          />
+        </SettingRow>
         <SettingRow
           label="Browser workspace"
           description="A shared browser with vertical tabs, profiles, bookmarks and page-to-thread actions. Experimental and off by default; thread previews stay available."

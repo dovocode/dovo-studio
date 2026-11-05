@@ -5,7 +5,7 @@ vi.mock('electron', () => ({ app: { getPath: () => '' } }))
 vi.mock('@dovo/protocol/local-settings', () => ({
   readLocalSettingsSection: () => settings.value,
 }))
-import { websiteSearchUrl } from './browser-language'
+import { websiteSearchUrl, websiteLinkProfile } from './browser-language'
 
 it('searches selected text using the clicked profile, including HTTP custom engines', () => {
   settings.value = {
@@ -39,4 +39,16 @@ it('uses the default search safely when saved preferences are absent or invalid'
     settings.value = value
     expect(websiteSearchUrl('default', 'a&b')).toBe('https://www.google.com/search?q=a%26b')
   }
+})
+
+it('applies website profile routing when only unified workspace is enabled', () => {
+  settings.value = {
+    browserWorkspaceEnabled: false,
+    unifiedWorkspaceEnabled: true,
+    browserProfiles: [
+      { id: 'default', name: 'Default' },
+      { id: 'work', name: 'Work', linkDomains: ['work.lan'] },
+    ],
+  }
+  expect(websiteLinkProfile('default', 'http://work.lan/page')).toBe('work')
 })

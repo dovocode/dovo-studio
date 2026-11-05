@@ -12,8 +12,8 @@ const mocks = {
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
-  '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  '@dovo/studio-core/state': `export {useApplicationState} from '../studio-core/src/runtime/application-state';`,
+  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
@@ -45,7 +45,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box;
+    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box,DialogFooter=Box;
+    export const SearchField=({onValueChange,...props})=><input {...props} onChange={event=>onValueChange?.(event.target.value)}/>;
     export const ProjectIcon=()=>null;
     export const Button=({children,onClick,disabled,type,variant,size,...props})=><button {...props} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
@@ -132,30 +133,36 @@ const built = await build({
   stdin: {
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
+      import {useApplicationState} from '@dovo/studio-core/state';
       import {WorkspaceValueProvider,createTask} from '@dovo/studio-core';
       import TasksView from '../extension-tasks/src/view';
-      window.requests=[];window.navigations=[];window.commands=new Map();
-      window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
+      window.requests=[];window.navigations=[];window.commands=new Map();window.commandRegistrations=0;window.commandDisposals=0;
+      // Workbench invalidates its palette on register/dispose. Unified may recreate the host
+      // object on that render while preserving registerCommand itself.
+      window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{if(window.commands.has(command.id))throw Error('Duplicate command: '+command.id);window.commands.set(command.id,command.run);window.commandRegistrations++;window.refreshCommands(value=>value+1);return ()=>{window.commands.delete(command.id);window.commandDisposals++;window.refreshCommands(value=>value+1)}}};
       const other=createTask({title:'Existing',objective:'',agentId:'',repositoryId:'scratch'});
       function App(){
+        const [commandVersion,refreshCommands]=useApplicationState(0);window.refreshCommands=refreshCommands;window.commandVersion=commandVersion;
+        window.host={...window.host};
         const [entity,setEntity]=useState(),[revision,setRevision]=useState(0),[active,setActive]=useState('mac');
         const repositories=id=>[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:id==='mac'?'local-project':'remote-project',name:'Shared project',path:'/project',branch:'main'}];
         const [workspace,setWorkspace]=useState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
         const snapshot={autoProjectSelectionEnabled:true,autoProjectModelSelection:"smart",questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
+        window.replaceCommandRegistry=()=>{const previous=window.host.registerCommand;window.host={...window.host,registerCommand:command=>previous(command)};setRevision(value=>value+1)};
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
-          if(path==='/api/tasks/title')return {title:'New task'};
+          if(path==='/api/tasks/title')return {title:'New thread'};
           if(path==='/api/tasks/side-thread/create'){const create=()=>{const child={...createTask({title:'Side chat '+input.childId.slice(0,4),objective:input.objective,agentId:'',repositoryId:'scratch'}),id:'side-'+input.childId,draft:input.objective,sideThread:{parentTaskId:input.id,objective:input.objective,contextMessageCount:0,source:'head',permissionCeiling:{permission:'workspace-write'}}};setWorkspace(current=>({...current,tasks:[...current.tasks,child]}));return {id:child.id}};if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve(create())});return create()};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
         return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceValueProvider>
       }
-      createRoot(document.getElementById('app')).render(<App/>);
+      const root=createRoot(document.getElementById('app'));window.unmount=()=>root.unmount();root.render(<App/>);
     `,
     resolveDir,
     loader: 'tsx',
@@ -197,8 +204,14 @@ try {
   })
   await page.setContent('<style>.hidden{display:none}</style><div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const editor = page.getByLabel('Message task', { exact: true })
+  const editor = page.getByLabel('Message thread', { exact: true })
   await editor.waitFor()
+  await page.waitForFunction(() => window.commandVersion === 4)
+  assert.deepEqual(
+    await page.evaluate(() => [window.commandRegistrations, window.commandDisposals]),
+    [4, 0],
+    'Palette invalidation and a recreated host settle after the four thread commands register',
+  )
   assert.equal(
     await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
     'true',
@@ -396,7 +409,7 @@ try {
   assert.equal(await besideParent.getByText('Side chat ·', { exact: true }).count(), 1)
   // Its own composer holds the question for review; the parent composer is cleared.
   assert.equal(
-    await besideParent.getByLabel('Message task', { exact: true }).inputValue(),
+    await besideParent.getByLabel('Message thread', { exact: true }).inputValue(),
     'Shortcut from the current thread',
   )
   assert.equal(await page.locator(`textarea[data-task-id="${sideTask}"]`).inputValue(), '')
@@ -408,7 +421,7 @@ try {
     ),
     false,
   )
-  await besideParent.getByRole('button', { name: /Close side-by-side task/ }).click()
+  await besideParent.getByRole('button', { name: /Close side-by-side thread/ }).click()
   // A late save must not open the panel for a different thread after navigation.
   await editor.fill('Question before switching threads')
   await page.evaluate(() => {
@@ -436,7 +449,7 @@ try {
   const count = await page.evaluate(() => window.saved.length)
   await page.getByRole('button', { name: 'Existing · draft', exact: true }).click()
   await page.waitForFunction(
-    () => !document.querySelector('[aria-current=true]')?.textContent.includes('New task'),
+    () => !document.querySelector('[aria-current=true]')?.textContent.includes('New thread'),
   )
   assert.equal(await page.evaluate(() => window.saved.length), count)
   // Exercise both reference producers through the actual TasksView → conversation → composer.
@@ -491,6 +504,20 @@ try {
       'Deleted code reference came back after switching threads',
     )
   }
+  assert.deepEqual(
+    await page.evaluate(() => [window.commandRegistrations, window.commandDisposals]),
+    [4, 0],
+    'Navigation, hydration and continued typing do not churn command subscriptions',
+  )
+  await page.evaluate(() => window.replaceCommandRegistry())
+  await page.waitForFunction(() => window.commandRegistrations === 8)
+  assert.equal(await page.evaluate(() => window.commandDisposals), 4)
+  await page.evaluate(() => window.unmount())
+  assert.deepEqual(
+    await page.evaluate(() => [window.commands.size, window.commandDisposals]),
+    [0, 8],
+    'Replacing the registry and unmounting both release their command subscriptions',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; agent side-chat shortcuts create an unsent draft beside the current thread and late creations respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',

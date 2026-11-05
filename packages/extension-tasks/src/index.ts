@@ -1,8 +1,22 @@
 import { defineStudioExtension } from '@dovo/studio-core'
 export const tasksExtension = defineStudioExtension(
-  { id: 'dovo.tasks', name: 'Tasks', version: '0.1.0' },
+  { id: 'dovo.tasks', name: 'Threads', version: '0.1.0' },
   [
-    { id: 'tasks', title: 'Tasks', icon: 'tasks', order: 0, load: () => import('./view') },
+    { id: 'tasks', title: 'Threads', icon: 'tasks', order: 0, load: () => import('./view') },
+    {
+      id: 'workspace',
+      title: 'Workspace',
+      icon: 'workspace',
+      order: -0.25,
+      load: () => import('./unified/workspace-view'),
+    },
+    {
+      id: 'terminals',
+      title: 'Terminals',
+      icon: 'terminal',
+      order: 0.4,
+      load: () => import('./terminal/terminal-workspace'),
+    },
     {
       id: 'browser',
       title: 'Browser',
@@ -20,7 +34,7 @@ export const tasksExtension = defineStudioExtension(
     },
     {
       id: 'archived-tasks',
-      title: 'Archived tasks',
+      title: 'Archived threads',
       icon: 'tasks',
       order: 9,
       navigationGroup: 'settings',

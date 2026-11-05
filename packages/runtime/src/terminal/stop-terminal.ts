@@ -1,9 +1,30 @@
 import { execFile } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
+import { basename } from 'node:path'
 import type { IPty } from 'node-pty'
 
 const execute = promisify(execFile)
+
+/** Be conservative: an idle agent must not take an unrelated background job to sleep. */
+export async function canSleepTerminal(pid: number, program: string) {
+  if (process.platform === 'win32') return false
+  const { stdout } = await execute('/bin/ps', ['-A', '-o', 'pid=,ppid=,comm='], {
+    encoding: 'utf8',
+    timeout: 2000,
+    maxBuffer: 2 * 1024 * 1024,
+  })
+  const entries = stdout.split('\n').flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line)
+    return match ? [{ pid: Number(match[1]), parent: Number(match[2]), command: match[3]! }] : []
+  })
+  if (!entries.some((entry) => entry.pid === pid)) return false
+  const children = entries.filter((entry) => entry.parent === pid)
+  if (!children.length) return true
+  // Unknown wrappers, helper processes and background jobs stay live.
+  if (children.length !== 1 || basename(children[0]!.command) !== program) return false
+  return !entries.some((entry) => entry.parent === children[0]!.pid)
+}
 type ProcessIdentity = {
   pid: number
   parent: number

@@ -59,7 +59,7 @@ try {
   await page.getByRole('button', { name: 'Link thread', exact: true }).click()
   await page.getByRole('button', { name: 'Close thread picker', exact: true }).click()
   await page.evaluate(() => window.render('https://github.com/o/r/pull/8'))
-  await page.getByRole('heading', { name: 'Linked threads · 0' }).waitFor()
+  await page.getByRole('heading', { name: 'No linked threads' }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'PR reverse links: source/additional associations, cross-computer routing, cached offline threads, example exclusion and empty states verified at mobile width.',

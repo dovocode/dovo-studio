@@ -1,0 +1,297 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "acceptance": {
+      "fp32": {
+        "correct": 109,
+        "total": 111,
+        "accuracy": 0.9819819819819819,
+        "confusion": {
+          "browser": {
+            "browser": 9,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 8,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 15
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 32,
+            "total": 32
+          },
+          "runtime": {
+            "correct": 32,
+            "total": 32
+          },
+          "project": {
+            "correct": 21,
+            "total": 23
+          },
+          "profile": {
+            "correct": 9,
+            "total": 9
+          },
+          "model": {
+            "correct": 15,
+            "total": 15
+          }
+        },
+        "completePlans": {
+          "correct": 30,
+          "total": 32
+        },
+        "mistakes": [
+          {
+            "input": "make my app accept claude -p \"prompt\" and accept dovocode.com",
+            "expected": "keep",
+            "actual": "dovo",
+            "ms": 19.767417001276044,
+            "logits": [
+              -1.6011744737625122, -17.641530990600586, 4.652092933654785, -20.570213317871094,
+              -20.443981170654297
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "dovo",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "shampoo",
+                "label": "project: Shampoo"
+              },
+              {
+                "id": "client",
+                "label": "project: Client Website"
+              }
+            ],
+            "caseId": 2,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 34884, 128001, 663, 294, 9173, 4802, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 365, 312, 1410, 2272,
+              36579, 25806, 341, 1492, 307, 85602, 309, 263, 2272, 333, 10450, 11478, 260, 549, 2
+            ]
+          },
+          {
+            "input": "Make my app open dovocode.com in the default profile",
+            "expected": "keep",
+            "actual": "dovo",
+            "ms": 19.748417002119822,
+            "logits": [
+              -2.046699285507202, -16.89510726928711, 0.7236952781677246, -20.73172950744629,
+              -19.369644165039062
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "dovo",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "shampoo",
+                "label": "project: Shampoo"
+              },
+              {
+                "id": "client",
+                "label": "project: Client Website"
+              }
+            ],
+            "caseId": 13,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 34884, 128001, 663, 294, 9173, 4802, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 1875, 312, 1410, 615,
+              333, 10450, 11478, 260, 549, 267, 262, 3520, 2604, 2
+            ]
+          }
+        ],
+        "medianMs": 19.059958998695947,
+        "p95Ms": 20.888167000521207
+      },
+      "q8": {
+        "correct": 109,
+        "total": 111,
+        "accuracy": 0.9819819819819819,
+        "confusion": {
+          "browser": {
+            "browser": 9,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 8,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 15
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 32,
+            "total": 32
+          },
+          "runtime": {
+            "correct": 32,
+            "total": 32
+          },
+          "project": {
+            "correct": 21,
+            "total": 23
+          },
+          "profile": {
+            "correct": 9,
+            "total": 9
+          },
+          "model": {
+            "correct": 15,
+            "total": 15
+          }
+        },
+        "completePlans": {
+          "correct": 30,
+          "total": 32
+        },
+        "mistakes": [
+          {
+            "input": "make my app accept claude -p \"prompt\" and accept dovocode.com",
+            "expected": "keep",
+            "actual": "dovo",
+            "ms": 41.66237499885028,
+            "logits": [
+              -1.9619436264038086, -17.58538055419922, 4.642351150512695, -20.504127502441406,
+              -20.35445213317871
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "dovo",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "shampoo",
+                "label": "project: Shampoo"
+              },
+              {
+                "id": "client",
+                "label": "project: Client Website"
+              }
+            ],
+            "caseId": 2,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 34884, 128001, 663, 294, 9173, 4802, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 365, 312, 1410, 2272,
+              36579, 25806, 341, 1492, 307, 85602, 309, 263, 2272, 333, 10450, 11478, 260, 549, 2
+            ]
+          },
+          {
+            "input": "Make my app open dovocode.com in the default profile",
+            "expected": "keep",
+            "actual": "dovo",
+            "ms": 38.76862499964773,
+            "logits": [
+              -2.561145782470703, -16.75026512145996, 0.5400038361549377, -20.7453556060791,
+              -19.130401611328125
+            ],
+            "task": "project",
+            "options": [
+              {
+                "id": "keep",
+                "label": "Keep the currently selected project; no available project requested"
+              },
+              {
+                "id": "none",
+                "label": "No Project; home folder; outside any repository"
+              },
+              {
+                "id": "dovo",
+                "label": "project: Dovo Studio"
+              },
+              {
+                "id": "shampoo",
+                "label": "project: Shampoo"
+              },
+              {
+                "id": "client",
+                "label": "project: Client Website"
+              }
+            ],
+            "caseId": 13,
+            "ids": [
+              1, 128001, 2876, 262, 1049, 2068, 663, 346, 363, 499, 663, 3973, 128001, 585, 2679,
+              346, 425, 5521, 346, 954, 356, 12499, 128001, 663, 294, 771, 10450, 5122, 128001, 663,
+              294, 34884, 128001, 663, 294, 9173, 4802, 128002, 4989, 262, 499, 663, 3973, 283, 262,
+              22440, 270, 291, 374, 260, 8524, 314, 266, 663, 280, 268, 601, 1585, 333, 298, 1971,
+              278, 260, 369, 425, 5521, 289, 363, 663, 269, 3973, 1003, 585, 2679, 260, 8159, 548,
+              262, 763, 663, 335, 363, 499, 663, 269, 3973, 260, 21863, 294, 1875, 312, 1410, 615,
+              333, 10450, 11478, 260, 549, 267, 262, 3520, 2604, 2
+            ]
+          }
+        ],
+        "medianMs": 37.40870900219306,
+        "p95Ms": 42.340750002040295
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 6.151199340820312e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "acceptanceSha256": "304e2542c79db0f192126cb67ae0306d1cbba0b00e48a715467b518d26b7524b",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-03/"
+}

@@ -295,7 +295,7 @@ export function ComposerProject({
             title={
               selectedProject
                 ? 'Choose a different project or Scope'
-                : 'Find the right projects for your task'
+                : 'Find the right projects for your thread'
             }
             onClick={() => {
               if (selectedProject) {
@@ -319,7 +319,7 @@ export function ComposerProject({
             type="button"
             variant="ghost"
             disabled={locked}
-            aria-label={prominent ? 'Choose project' : 'Task project'}
+            aria-label={prominent ? 'Choose project' : 'Thread project'}
             className={
               prominent
                 ? `min-h-11 min-w-11 ${autoAvailable ? 'rounded-l-none rounded-r-lg' : 'gap-2 rounded-lg'} border px-3 shadow-none ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`
@@ -486,7 +486,7 @@ export function ComposerProject({
             type="button"
             variant="ghost"
             disabled={locked}
-            aria-label="Task server"
+            aria-label="Thread server"
             className={
               prominent
                 ? 'min-h-11 min-w-0 max-w-56 gap-1.5 rounded-lg border border-border px-3 text-xs font-normal'
@@ -494,7 +494,9 @@ export function ComposerProject({
             }
           >
             <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
-            <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
+            <span className="max-w-48 truncate" title={current?.name ?? 'This server'}>
+              {current?.name ?? 'This server'}
+            </span>
             <ChevronDown className="size-3" />
           </Button>
         </Popover.Trigger>
@@ -558,7 +560,7 @@ export function ComposerProject({
                   setTransferring(true)
                 }}
               >
-                <Plus className="size-4" /> Add to another machine
+                <Plus className="size-4" /> Add to another computer
               </Button>
             )}
             {feedback}
@@ -586,7 +588,7 @@ export function ComposerProject({
               className={`startup-no-project inline-flex items-center justify-center gap-1.5 min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
             >
               <MessageCircleDashed className="size-4" aria-hidden="true" />
-              No Project
+              Without a project
             </button>
             {projectControl}
           </div>

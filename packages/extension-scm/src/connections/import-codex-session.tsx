@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { useCodexSessionImport, useWorkspace, useStudioHost } from '@dovo/studio-core'
-import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogHeader,
+  DialogFooter,
+  ChoicePicker,
+} from '@dovo/studio-ui'
 
 export function ImportCodexSession({
   repositoryId,
@@ -41,19 +50,21 @@ export function ImportCodexSession({
         }}
       >
         <DialogContent className="flex max-h-[85dvh] flex-col text-left">
-          <DialogTitle>Import Codex terminal session</DialogTitle>
-          <DialogDescription>
-            Preview a session from this project on the selected computer. Exit Codex before
-            importing. Send a new message after import to continue.
-          </DialogDescription>
+          <DialogHeader>
+            <DialogTitle>Import Codex terminal session</DialogTitle>
+            <DialogDescription>
+              Preview a session from this project on the selected computer. Exit Codex before
+              importing. Send a new message after import to continue.
+            </DialogDescription>
+          </DialogHeader>
           <label className="flex flex-col gap-1 text-xs">
             Codex configuration
-            <select
+            <ChoicePicker
               aria-label="Codex configuration"
-              className="rounded-md border bg-background p-2"
+              className="w-full"
               value={picker.agentId}
               disabled={picker.importing}
-              onChange={(event) => picker.setAgentId(event.target.value)}
+              onValueChange={picker.setAgentId}
             >
               <option value="">Project / default Codex home</option>
               {agents.map((agent) => (
@@ -61,9 +72,15 @@ export function ImportCodexSession({
                   {agent.name}
                 </option>
               ))}
-            </select>
+            </ChoicePicker>
           </label>
-          <Button variant="outline" size="sm" disabled={picker.importing} onClick={picker.refresh}>
+          <Button
+            className="self-end"
+            variant="outline"
+            size="sm"
+            disabled={picker.importing}
+            onClick={picker.refresh}
+          >
             Refresh sessions
           </Button>
           {picker.error && (
@@ -129,32 +146,37 @@ export function ImportCodexSession({
               </section>
             )}
           </div>
-          {picker.preview?.session.taskId ? (
-            <Button
-              onClick={() => {
-                const id = picker.preview?.session.taskId
-                if (id) navigate(id)
-              }}
-            >
-              Open existing thread
+          <DialogFooter>
+            <Button variant="outline" disabled={picker.importing} onClick={() => setOpen(false)}>
+              Cancel
             </Button>
-          ) : (
-            <Button
-              disabled={
-                picker.importing ||
-                picker.preview?.status !== 'available' ||
-                !picker.preview.messages.length ||
-                !store.connected
-              }
-              onClick={() => {
-                void picker.importSession().then((result) => {
-                  if (result) navigate(result.id)
-                })
-              }}
-            >
-              {picker.importing ? 'Importing…' : 'Import session'}
-            </Button>
-          )}
+            {picker.preview?.session.taskId ? (
+              <Button
+                onClick={() => {
+                  const id = picker.preview?.session.taskId
+                  if (id) navigate(id)
+                }}
+              >
+                Open existing thread
+              </Button>
+            ) : (
+              <Button
+                disabled={
+                  picker.importing ||
+                  picker.preview?.status !== 'available' ||
+                  !picker.preview.messages.length ||
+                  !store.connected
+                }
+                onClick={() => {
+                  void picker.importSession().then((result) => {
+                    if (result) navigate(result.id)
+                  })
+                }}
+              >
+                {picker.importing ? 'Importing…' : 'Import session'}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

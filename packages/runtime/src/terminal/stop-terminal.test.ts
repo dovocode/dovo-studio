@@ -8,13 +8,30 @@ vi.mock('node:child_process', async () => {
   const { promisify } = await import('node:util')
   return { execFile: Object.assign(vi.fn(), { [promisify.custom]: fixture.execute }) }
 })
-import { stopUnixTerminal } from './stop-terminal'
+import { canSleepTerminal, stopUnixTerminal } from './stop-terminal'
 afterEach(() => {
   vi.restoreAllMocks()
   fixture.execute.mockReset()
 })
 const row = (pid: number, parent: number, group: number, started: string) =>
   `${pid} ${parent} ${group} S ${started}\n`
+
+it.skipIf(process.platform === 'win32')(
+  'sleeps only a lone shell or idle agent without background jobs or helpers',
+  async () => {
+    for (const [stdout, expected] of [
+      ['101 1 /bin/bash\n', true],
+      ['101 1 /bin/bash\n102 101 /usr/bin/codex\n', true],
+      ['101 1 /bin/bash\n102 101 /usr/bin/sleep\n', false],
+      ['101 1 /bin/bash\n102 101 /usr/bin/codex\n103 101 /usr/bin/node\n', false],
+      ['101 1 /bin/bash\n102 101 /usr/bin/codex\n103 102 /usr/bin/node\n', false],
+      ['', false],
+    ] as const) {
+      fixture.execute.mockResolvedValueOnce({ stdout, stderr: '' })
+      expect(await canSleepTerminal(101, 'codex')).toBe(expected)
+    }
+  },
+)
 
 it('checks process identity before signalling, leaving a recycled child PID alone', async () => {
   const root = row(101, 1, 101, 'Wed Oct 8 09:00:00 2026')

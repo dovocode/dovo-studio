@@ -513,10 +513,11 @@ export function ChatThread({
             }
           >
             <ConversationContent
+              scrollClassName="studio-conversation-scroll"
               className={
                 emptyDraft
                   ? 'mx-auto h-full w-full max-w-[var(--chat-max)] gap-0 p-0'
-                  : 'mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:px-5'
+                  : 'studio-conversation-content mx-auto w-full max-w-[var(--chat-max)] gap-5 py-4'
               }
             >
               {liveTask.autoProjectFallback && (
@@ -684,6 +685,14 @@ export function ChatThread({
               </div>
               <TaskActivity
                 tools={activityGroups.unassigned}
+                working={
+                  connected &&
+                  task.status === 'running' &&
+                  !task.messages.some(
+                    (message) =>
+                      message.role === 'assistant' && turns.get(message.id)?.status === 'running',
+                  )
+                }
                 status={
                   task.status === 'running'
                     ? 'running'

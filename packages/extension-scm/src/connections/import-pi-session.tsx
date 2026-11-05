@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { useCodexSessionImport, useWorkspace, useStudioHost } from '@dovo/studio-core'
-import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogHeader,
+  DialogFooter,
+  ChoicePicker,
+} from '@dovo/studio-ui'
 
 export function ImportPiSession({
   repositoryId,
@@ -41,25 +50,27 @@ export function ImportPiSession({
         }}
       >
         <DialogContent className="flex max-h-[85dvh] flex-col text-left">
-          <DialogTitle>Import Pi terminal session</DialogTitle>
-          <DialogDescription>
-            Preview a session from this project on the selected computer. Dovo creates a private
-            copy for continuation and leaves the terminal source untouched. Pi tools are disabled
-            unless you choose full access; extensions and MCP remain disabled. Continuation requires
-            @earendil-works/pi-coding-agent 1.4 or newer.
-          </DialogDescription>
+          <DialogHeader>
+            <DialogTitle>Import Pi terminal session</DialogTitle>
+            <DialogDescription>
+              Preview a session from this project on the selected computer. Dovo creates a private
+              copy for continuation and leaves the terminal source untouched. Pi tools are disabled
+              unless you choose full access; extensions and MCP remain disabled. Continuation
+              requires @earendil-works/pi-coding-agent 1.4 or newer.
+            </DialogDescription>
+          </DialogHeader>
           <p className="text-xs text-muted-foreground">
             Install or update on this computer:{' '}
             <code>npm install -g --ignore-scripts @earendil-works/pi-coding-agent</code>
           </p>
           <label className="flex flex-col gap-1 text-xs">
             Pi configuration
-            <select
+            <ChoicePicker
               aria-label="Pi configuration"
-              className="rounded-md border bg-background p-2"
+              className="w-full"
               value={picker.agentId}
               disabled={picker.importing}
-              onChange={(event) => picker.setAgentId(event.target.value)}
+              onValueChange={picker.setAgentId}
             >
               <option value="">Project / default Pi home</option>
               {agents.map((agent) => (
@@ -67,9 +78,15 @@ export function ImportPiSession({
                   {agent.name}
                 </option>
               ))}
-            </select>
+            </ChoicePicker>
           </label>
-          <Button variant="outline" size="sm" disabled={picker.importing} onClick={picker.refresh}>
+          <Button
+            className="self-end"
+            variant="outline"
+            size="sm"
+            disabled={picker.importing}
+            onClick={picker.refresh}
+          >
             Refresh sessions
           </Button>
           {picker.error && (
@@ -135,32 +152,37 @@ export function ImportPiSession({
               </section>
             )}
           </div>
-          {picker.preview?.session.taskId ? (
-            <Button
-              onClick={() => {
-                const id = picker.preview?.session.taskId
-                if (id) navigate(id)
-              }}
-            >
-              Open existing thread
+          <DialogFooter>
+            <Button variant="outline" disabled={picker.importing} onClick={() => setOpen(false)}>
+              Cancel
             </Button>
-          ) : (
-            <Button
-              disabled={
-                picker.importing ||
-                picker.preview?.status !== 'available' ||
-                !picker.preview.messages.length ||
-                !store.connected
-              }
-              onClick={() => {
-                void picker.importSession().then((result) => {
-                  if (result) navigate(result.id)
-                })
-              }}
-            >
-              {picker.importing ? 'Importing…' : 'Import session'}
-            </Button>
-          )}
+            {picker.preview?.session.taskId ? (
+              <Button
+                onClick={() => {
+                  const id = picker.preview?.session.taskId
+                  if (id) navigate(id)
+                }}
+              >
+                Open existing thread
+              </Button>
+            ) : (
+              <Button
+                disabled={
+                  picker.importing ||
+                  picker.preview?.status !== 'available' ||
+                  !picker.preview.messages.length ||
+                  !store.connected
+                }
+                onClick={() => {
+                  void picker.importSession().then((result) => {
+                    if (result) navigate(result.id)
+                  })
+                }}
+              >
+                {picker.importing ? 'Importing…' : 'Import session'}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -9,6 +9,7 @@ export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';
 export const Button=({children,onClick})=><button onClick={onClick}>{children}</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const Text=({children})=><span>{children}</span>;export const View=({children})=><div>{children}</div>;
+export const SettingsPage=({title,description,children})=><section><h1>{title}</h1><p>{description}</p>{children}</section>;
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const ScreenHeader=({title,leading})=><header>{leading}<h1>{title}</h1></header>;
 export const ActivityIndicator=()=> <span>Loading</span>;export const Keyboard={dismiss:()=>{}};

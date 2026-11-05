@@ -1,0 +1,424 @@
+{
+  "description": "Frozen 16-choice catalog stress set, authored before run-06 results and before any blind-v2 evaluation. No exact input is used for training.",
+  "catalogs": {
+    "runtime": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected computer; no available computer requested"
+      },
+      {
+        "id": "foundry",
+        "label": "runtime: Foundry Server"
+      },
+      {
+        "id": "nomad",
+        "label": "runtime: Nomad Laptop"
+      },
+      {
+        "id": "runtime-decoy-0",
+        "label": "runtime: Maplebook"
+      },
+      {
+        "id": "runtime-decoy-1",
+        "label": "runtime: Bamboo Server"
+      },
+      {
+        "id": "runtime-decoy-2",
+        "label": "runtime: Yew Desktop"
+      },
+      {
+        "id": "runtime-decoy-3",
+        "label": "runtime: Palm Laptop"
+      },
+      {
+        "id": "runtime-decoy-4",
+        "label": "runtime: Willowbook"
+      },
+      {
+        "id": "runtime-decoy-5",
+        "label": "runtime: Pinecone Mac"
+      },
+      {
+        "id": "runtime-decoy-6",
+        "label": "runtime: Cactus Host"
+      },
+      {
+        "id": "runtime-decoy-7",
+        "label": "runtime: Moss Station"
+      },
+      {
+        "id": "runtime-decoy-8",
+        "label": "runtime: Fern PC"
+      },
+      {
+        "id": "runtime-decoy-9",
+        "label": "runtime: Lichen Node"
+      },
+      {
+        "id": "runtime-decoy-10",
+        "label": "runtime: Thistle Mini"
+      },
+      {
+        "id": "runtime-decoy-11",
+        "label": "runtime: Marigold Host"
+      },
+      {
+        "id": "marina",
+        "label": "runtime: Marina Mac"
+      }
+    ],
+    "model": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected AI model; no available model requested"
+      },
+      {
+        "id": "halite",
+        "label": "model: Halite Mini 4"
+      },
+      {
+        "id": "tourmaline",
+        "label": "model: Tourmaline Code 1"
+      },
+      {
+        "id": "amber",
+        "label": "model: Amber Pro 8"
+      },
+      {
+        "id": "model-decoy-0",
+        "label": "model: Atoll 2.2"
+      },
+      {
+        "id": "model-decoy-1",
+        "label": "model: Basin Code 3"
+      },
+      {
+        "id": "model-decoy-2",
+        "label": "model: Cove Mini 1"
+      },
+      {
+        "id": "model-decoy-3",
+        "label": "model: Dew Pro 6"
+      },
+      {
+        "id": "model-decoy-4",
+        "label": "model: Eddy 5.2"
+      },
+      {
+        "id": "model-decoy-5",
+        "label": "model: Foam Fast"
+      },
+      {
+        "id": "model-decoy-6",
+        "label": "model: Gulf 2.8"
+      },
+      {
+        "id": "model-decoy-7",
+        "label": "model: Hail Code"
+      },
+      {
+        "id": "model-decoy-8",
+        "label": "model: Inlet 9.3"
+      },
+      {
+        "id": "model-decoy-9",
+        "label": "model: Jetstream 4"
+      },
+      {
+        "id": "model-decoy-10",
+        "label": "model: Karst 7"
+      },
+      {
+        "id": "peregrine",
+        "label": "model: Peregrine 2.7"
+      }
+    ],
+    "project": [
+      {
+        "id": "keep",
+        "label": "Keep the currently selected project; no available project requested"
+      },
+      {
+        "id": "none",
+        "label": "No Project; home folder; outside any repository"
+      },
+      {
+        "id": "dahlia",
+        "label": "project: Dahlia Desktop"
+      },
+      {
+        "id": "juniper",
+        "label": "project: Juniper Tasks"
+      },
+      {
+        "id": "pebble",
+        "label": "project: Pebble Web"
+      },
+      {
+        "id": "project-decoy-0",
+        "label": "project: Button Docs"
+      },
+      {
+        "id": "project-decoy-1",
+        "label": "project: Ribbon Chat"
+      },
+      {
+        "id": "project-decoy-2",
+        "label": "project: Canvas CRM"
+      },
+      {
+        "id": "project-decoy-3",
+        "label": "project: Palette API"
+      },
+      {
+        "id": "project-decoy-4",
+        "label": "project: Brush Tasks"
+      },
+      {
+        "id": "project-decoy-5",
+        "label": "project: Ink Billing"
+      },
+      {
+        "id": "project-decoy-6",
+        "label": "project: Stencil Search"
+      },
+      {
+        "id": "project-decoy-7",
+        "label": "project: Crayon Mail"
+      },
+      {
+        "id": "project-decoy-8",
+        "label": "project: Pastel Mobile"
+      },
+      {
+        "id": "project-decoy-9",
+        "label": "project: Easel Reports"
+      },
+      {
+        "id": "brook",
+        "label": "project: Brook Finance"
+      }
+    ],
+    "profile": [
+      {
+        "id": "default",
+        "label": "Default browser profile; no available named profile requested"
+      },
+      {
+        "id": "cooking",
+        "label": "profile: Cooking"
+      },
+      {
+        "id": "photography",
+        "label": "profile: Photography"
+      },
+      {
+        "id": "reading",
+        "label": "profile: Reading Room"
+      },
+      {
+        "id": "profile-decoy-0",
+        "label": "profile: Gardening"
+      },
+      {
+        "id": "profile-decoy-1",
+        "label": "profile: Fishing"
+      },
+      {
+        "id": "profile-decoy-2",
+        "label": "profile: Sailing"
+      },
+      {
+        "id": "profile-decoy-3",
+        "label": "profile: Running"
+      },
+      {
+        "id": "profile-decoy-4",
+        "label": "profile: Swimming"
+      },
+      {
+        "id": "profile-decoy-5",
+        "label": "profile: Climbing"
+      },
+      {
+        "id": "profile-decoy-6",
+        "label": "profile: Skiing"
+      },
+      {
+        "id": "profile-decoy-7",
+        "label": "profile: Hiking"
+      },
+      {
+        "id": "profile-decoy-8",
+        "label": "profile: Drawing"
+      },
+      {
+        "id": "profile-decoy-9",
+        "label": "profile: Pottery"
+      },
+      {
+        "id": "profile-decoy-10",
+        "label": "profile: Baking"
+      },
+      {
+        "id": "consulting",
+        "label": "profile: Consulting"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "text": "Use Peregrine to review this refactor",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "peregrine",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Work in Brook Finance with Tourmaline Code 1 on Marina Mac",
+      "expected": {
+        "destination": "thread",
+        "runtime": "marina",
+        "model": "tourmaline",
+        "project": "brook"
+      }
+    },
+    {
+      "text": "Explain Halite Mini 4 without selecting a different model",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Use an unavailable model named Missing Model 700 to explain the logs",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Keep my current project and explain the name Dahlia Desktop",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Use Amber Pro 8 without a repository to explain this exception",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "amber",
+        "project": "none"
+      }
+    },
+    {
+      "text": "Explain why the screenshot mentions Marina Mac without changing computers",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Model: Halite Mini 4\nProject: Pebble Web\nComputer: Nomad Laptop\nImprove the splash screen",
+      "expected": {
+        "destination": "thread",
+        "runtime": "nomad",
+        "model": "halite",
+        "project": "pebble"
+      }
+    },
+    {
+      "text": "Open gallery.example.org in Consulting on Marina Mac",
+      "expected": {
+        "destination": "browser",
+        "runtime": "marina",
+        "profile": "consulting"
+      }
+    },
+    {
+      "text": "Visit http://100.80.71.3:6192 using Photography",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "photography"
+      }
+    },
+    {
+      "text": "docs.testhost.dev/start?workspace=large",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      }
+    },
+    {
+      "text": "Open https://docs.testhost.dev with the Unlisted browser profile",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      }
+    },
+    {
+      "text": "Use Reading Room on Foundry Server to open library.example.edu",
+      "expected": {
+        "destination": "browser",
+        "runtime": "foundry",
+        "profile": "reading"
+      }
+    },
+    {
+      "text": "On Marina Mac: ls -al ./fixtures",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "marina",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Computer: Nomad Laptop\nProject: No Project\nCommand: pwd",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "nomad",
+        "project": "none"
+      }
+    },
+    {
+      "text": "Computer: Foundry Server\nProject: Brook Finance\nCommand: pnpm --version",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "foundry",
+        "project": "brook"
+      }
+    },
+    {
+      "text": "claude -p \"explain catalog limits\"",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      }
+    },
+    {
+      "text": "Make my app handle commands like claude -p \"hello\" and addresses like library.example.edu",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      }
+    }
+  ]
+}

@@ -31,6 +31,7 @@ import {
   CloudOff,
   CircleX,
   CircleStop,
+  ClipboardCheck,
   FilePenLine,
   MessageCircleQuestion,
   MessageCircleDashed,
@@ -52,8 +53,11 @@ import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
 import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
+  Draft: FilePenLine,
   Working: CircleDashed,
   Done: CircleCheck,
+  Finished: CircleCheck,
+  Review: ClipboardCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -73,7 +77,6 @@ function TaskRowView({
   terminals,
   editable,
   disabled,
-  hideStatusLabel = false,
   selectedChildId,
   thread,
   selectedThreadKey,
@@ -90,7 +93,6 @@ function TaskRowView({
   terminals: number
   editable: boolean
   disabled: boolean
-  hideStatusLabel?: boolean
   selectedChildId?: string
   thread?: NestedThread
   selectedThreadKey?: string
@@ -168,13 +170,13 @@ function TaskRowView({
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
       <MessageCircleDashed
-        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-7')}
+        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-5')}
         aria-hidden="true"
       />
     ) : (
       <ProjectIcon
         repository={displayProject}
-        className={cn('shrink-0', compact ? 'size-4' : 'size-7 rounded-[7px] text-[10px]')}
+        className={cn('shrink-0', compact ? 'size-4' : 'size-5 rounded-[5px] text-[10px]')}
       />
     )
   const latest = task.turns?.at(-1)
@@ -209,25 +211,9 @@ function TaskRowView({
   const unread = hasUnreadTaskActivity(task)
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
-  const compactStatus = offline ? 'Offline' : presentation.compactLabel
-  const groupedStatus =
-    hideStatusLabel && !offline && ['Working', 'Waiting'].includes(presentation.state)
-  const visibleStatus = groupedStatus
-    ? presentation.state === 'Working'
-      ? presentation.time
-      : ''
-    : compactStatus
-  const StatusIcon = offline
-    ? CloudOff
-    : ['Review', 'Finished', 'Draft'].includes(presentation.state)
-      ? undefined
-      : (statusIcons[presentation.state] ?? CircleDashed)
-  const statusTone = cn(
-    !offline && presentation.state === 'Working' && 'text-primary',
-    !offline && ['Done', 'Settled'].includes(presentation.state) && 'text-status-success',
-    !offline && presentation.state === 'Failed' && 'text-destructive',
-    !offline && presentation.state === 'Needs input' && 'text-status-warning',
-  )
+  const visibleStatus = offline ? 'Offline' : presentation.compactLabel
+  const StatusIcon = offline ? CloudOff : (statusIcons[presentation.state] ?? CircleDashed)
+  const statusTone = offline ? 'neutral' : presentation.tone
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -248,7 +234,7 @@ function TaskRowView({
   const pullIndicators = !!linkedPulls.length && (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-0.5',
+        'inline-flex shrink-0 items-center gap-0.5 font-mono tabular-nums',
         pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
       )}
       aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
@@ -303,6 +289,7 @@ function TaskRowView({
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
               data-draft={draft || undefined}
+              data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
@@ -312,9 +299,7 @@ function TaskRowView({
                   ? 'mb-0'
                   : highlighted
                     ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                    : draft
-                      ? 'bg-status-warning/5 hover:bg-status-warning/10 group-hover/task:bg-status-warning/10'
-                      : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+                    : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
               )}
               onClick={onSelect}
               disabled={disabled}
@@ -336,12 +321,6 @@ function TaskRowView({
                         'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                     )}
                   >
-                    {draft && (
-                      <FilePenLine
-                        aria-label="Draft"
-                        className="size-3.5 shrink-0 text-status-warning"
-                      />
-                    )}
                     <span
                       className="min-w-0 flex-1 truncate"
                       title={`${statusDetail} · ${agentDetail}`}
@@ -350,11 +329,17 @@ function TaskRowView({
                     </span>
                     {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
                     <span
-                      className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}
-                      aria-label={groupedStatus ? status : undefined}
-                      title={groupedStatus ? status : undefined}
+                      className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                      data-tone={statusTone}
+                      data-thread-state={offline ? 'Offline' : presentation.state}
+                      title={status}
                     >
-                      {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
+                      {StatusIcon && (
+                        <StatusIcon
+                          className="studio-thread-status-icon size-3.5"
+                          aria-hidden="true"
+                        />
+                      )}
                       {visibleStatus}
                     </span>
                   </span>
@@ -365,7 +350,7 @@ function TaskRowView({
                     compact ? 'flex-1' : 'w-full',
                     highlighted || unread
                       ? 'text-foreground'
-                      : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
+                      : 'text-foreground/90 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
                     compact && editable && 'pr-24',
                   )}
                 >
@@ -377,20 +362,31 @@ function TaskRowView({
                 </span>
                 {compact && StatusIcon && (
                   <span
-                    className={cn('shrink-0', statusTone)}
-                    aria-label={compactStatus}
+                    className="studio-thread-status shrink-0"
+                    data-tone={statusTone}
+                    data-thread-state={offline ? 'Offline' : presentation.state}
+                    aria-label={visibleStatus}
                     title={status}
                   >
-                    <StatusIcon className="size-3.5" aria-hidden="true" />
+                    <StatusIcon className="studio-thread-status-icon size-3.5" aria-hidden="true" />
                   </span>
                 )}
                 {!compact && !general && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                     <GitBranch className="size-3 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                    <span
+                      className={cn('min-w-0 flex-1 truncate text-left', branch && 'font-mono')}
+                      dir={branch ? 'rtl' : undefined}
+                      data-thread-branch
+                    >
+                      {/* Keep the branch tail visible without reversing its text or metadata. */}
+                      <bdi dir="ltr">{branch || 'Local checkout'}</bdi>
+                    </span>
                     {pullIndicators}
-                    {executionIcons}
-                    {terminalIndicator}
+                    <span className="flex items-center gap-1">
+                      {executionIcons}
+                      {terminalIndicator}
+                    </span>
                   </span>
                 )}
               </span>

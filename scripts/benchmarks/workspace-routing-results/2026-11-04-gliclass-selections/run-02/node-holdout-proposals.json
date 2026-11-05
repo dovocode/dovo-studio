@@ -1,0 +1,330 @@
+{
+  "correct": 18,
+  "total": 18,
+  "results": [
+    {
+      "text": "Use Opus 5.5 without a project and investigate my broken sidebar",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "none"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "opus-5.5",
+          "project": "none"
+        }
+      },
+      "correct": true,
+      "ms": 706.6485970000001
+    },
+    {
+      "text": "Computer: Linux Server\nProject: home folder\nCommand: ls -lah",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "linux",
+        "project": "none"
+      },
+      "actual": {
+        "mode": "terminal",
+        "selections": {
+          "runtime": "linux",
+          "project": "none"
+        }
+      },
+      "correct": true,
+      "ms": 480.34427700000015
+    },
+    {
+      "text": "Start in my home directory on Mac Studio: pwd",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "mac-studio",
+        "project": "none"
+      },
+      "actual": {
+        "mode": "terminal",
+        "selections": {
+          "runtime": "mac-studio",
+          "project": "none"
+        }
+      },
+      "correct": true,
+      "ms": 421.37482699999987
+    },
+    {
+      "text": "Use Fable 5.1, no repository, and help me understand TLS",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "fable-5.1",
+        "project": "none"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "fable-5.1",
+          "project": "none"
+        }
+      },
+      "correct": true,
+      "ms": 649.40191
+    },
+    {
+      "text": "In project Shampoo with Opus 5.5, fix the settings panel",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "opus-5.5",
+        "project": "shampoo"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "opus-5.5",
+          "project": "shampoo"
+        }
+      },
+      "correct": true,
+      "ms": 479.62019699999973
+    },
+    {
+      "text": "Open https://example.net/settings in profile Personal on Linux Server",
+      "expected": {
+        "destination": "browser",
+        "runtime": "linux",
+        "profile": "personal"
+      },
+      "actual": {
+        "mode": "browser",
+        "selections": {
+          "runtime": "linux",
+          "profile": "personal"
+        }
+      },
+      "correct": true,
+      "ms": 448.3607790000001
+    },
+    {
+      "text": "Browse dovocode.com/?from=launcher using Work on Mac Studio",
+      "expected": {
+        "destination": "browser",
+        "runtime": "mac-studio",
+        "profile": "work"
+      },
+      "actual": {
+        "mode": "browser",
+        "selections": {
+          "runtime": "mac-studio",
+          "profile": "work"
+        }
+      },
+      "correct": true,
+      "ms": 367.2663940000007
+    },
+    {
+      "text": "https://dovocode.com/docs",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      },
+      "actual": {
+        "mode": "browser",
+        "selections": {
+          "runtime": "keep",
+          "profile": "default"
+        }
+      },
+      "correct": true,
+      "ms": 328.92288800000006
+    },
+    {
+      "text": "ls -la",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "terminal",
+        "selections": {
+          "runtime": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 319.35664500000075
+    },
+    {
+      "text": "claude -p \"explain project selection\"",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "terminal",
+        "selections": {
+          "runtime": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 355.0446359999996
+    },
+    {
+      "text": "Teach my CLI to understand ls -la and URLs like dovocode.com",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 488.95416099999966
+    },
+    {
+      "text": "Explain the No Project option without changing my project",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 468.02647100000013
+    },
+    {
+      "text": "Compare the Work and Personal browser profiles",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 502.4323119999999
+    },
+    {
+      "text": "Why does Mac Studio use more RAM than Linux Server?",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 496.7817640000003
+    },
+    {
+      "text": "Use Fable 5.1 on Linux Server to review Client Website",
+      "expected": {
+        "destination": "thread",
+        "runtime": "linux",
+        "model": "fable-5.1",
+        "project": "client"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "linux",
+          "model": "fable-5.1",
+          "project": "client"
+        }
+      },
+      "correct": true,
+      "ms": 492.6331059999993
+    },
+    {
+      "text": "Command: git status\nProject: Shampoo\nComputer: Mac Studio",
+      "expected": {
+        "destination": "terminal",
+        "runtime": "mac-studio",
+        "project": "shampoo"
+      },
+      "actual": {
+        "mode": "terminal",
+        "selections": {
+          "runtime": "mac-studio",
+          "project": "shampoo"
+        }
+      },
+      "correct": true,
+      "ms": 373.5601430000006
+    },
+    {
+      "text": "Visit dovocode.com with the Default browser profile",
+      "expected": {
+        "destination": "browser",
+        "runtime": "keep",
+        "profile": "default"
+      },
+      "actual": {
+        "mode": "browser",
+        "selections": {
+          "runtime": "keep",
+          "profile": "default"
+        }
+      },
+      "correct": true,
+      "ms": 366.2678169999999
+    },
+    {
+      "text": "Fix the rendering bug using a model called Unavailable-Model",
+      "expected": {
+        "destination": "thread",
+        "runtime": "keep",
+        "model": "keep",
+        "project": "keep"
+      },
+      "actual": {
+        "mode": "thread",
+        "selections": {
+          "runtime": "keep",
+          "model": "keep",
+          "project": "keep"
+        }
+      },
+      "correct": true,
+      "ms": 488.78176600000006
+    }
+  ]
+}

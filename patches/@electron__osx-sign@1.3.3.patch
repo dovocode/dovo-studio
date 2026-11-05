@@ -1,5 +1,5 @@
 diff --git a/dist/cjs/sign.js b/dist/cjs/sign.js
-index 080036e410e2e4b0445f841416b3d5966915c66a..9ac235fa843b00bd15cfb4a10d5aba6e5067683f 100644
+index 080036e410e2e4b0445f841416b3d5966915c66a..5242b7ba131dba6d208ab21880e289b0f0d8632e 100644
 --- a/dist/cjs/sign.js
 +++ b/dist/cjs/sign.js
 @@ -58,6 +58,9 @@ function validateOptsIgnore(ignore) {
@@ -25,7 +25,7 @@ index 080036e410e2e4b0445f841416b3d5966915c66a..9ac235fa843b00bd15cfb4a10d5aba6e
          }
          const perFileOptions = await mergeOptionsForFile(opts.optionsForFile ? opts.optionsForFile(filePath) : null, defaultOptionsForFile(filePath, opts.platform));
          // preAutoEntitlements should only be applied to the top level app bundle.
-@@ -265,6 +268,48 @@ async function signApplication(opts, identity) {
+@@ -265,6 +268,59 @@ async function signApplication(opts, identity) {
          }
          await (0, util_1.execFileAsync)('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
      }
@@ -42,14 +42,19 @@ index 080036e410e2e4b0445f841416b3d5966915c66a..9ac235fa843b00bd15cfb4a10d5aba6e
 +            if (shouldIgnoreFilePath(filePath)) continue;
 +            const canonical = await fs.realpath(filePath);
 +            if (canonical !== appPath && !unique.has(canonical)) {
-+                unique.set(canonical, { filePath, depth: canonical.split(path.sep).length });
++                unique.set(canonical, {
++                    filePath,
++                    depth: canonical.split(path.sep).length,
++                    bundleExecutable: path.dirname(canonical).endsWith(path.sep + path.join('Contents', 'MacOS'))
++                });
 +            }
 +        }
 +        const pending = [...unique.values()].sort((a, b) => b.depth - a.depth);
 +        while (pending.length) {
 +            const depth = pending[0].depth;
 +            const end = pending.findIndex((entry) => entry.depth !== depth);
-+            const group = pending.splice(0, end < 0 ? pending.length : end);
++            const entries = pending.splice(0, end < 0 ? pending.length : end);
++            const group = entries.filter((entry) => !entry.bundleExecutable);
 +            let next = 0;
 +            let failed = false;
 +            let failure;
@@ -68,6 +73,12 @@ index 080036e410e2e4b0445f841416b3d5966915c66a..9ac235fa843b00bd15cfb4a10d5aba6e
 +            // Drain every in-flight codesign before propagating failure to builder retries.
 +            await Promise.all(Array.from({ length: Math.min(concurrency, group.length) }, worker));
 +            if (failed) throw failure;
++            // codesign treats a Contents/MacOS executable as part of its bundle and
++            // inspects sibling files. Concurrent signatures leave transient .cstemp
++            // files there, so sign these executables only after all peers finish.
++            for (const entry of entries) {
++                if (entry.bundleExecutable) await signFile(entry.filePath);
++            }
 +        }
 +        await signFile(opts.app);
 +    }
@@ -92,7 +103,7 @@ index 398a93403811ad41681af7113ffc4c146d18cece..e55cc9a48ac8d38691cc028c0b4077c3
       * Array of paths to additional binaries that will be signed along with built-ins of Electron.
       *
 diff --git a/dist/esm/sign.js b/dist/esm/sign.js
-index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..051b830f6a8bcd69ecf0c2588b5d75cd0a54458a 100644
+index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..3cf28695ce0c0fc2380db9b80d73682758f6f678 100644
 --- a/dist/esm/sign.js
 +++ b/dist/esm/sign.js
 @@ -29,6 +29,9 @@ function validateOptsIgnore(ignore) {
@@ -118,7 +129,7 @@ index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..051b830f6a8bcd69ecf0c2588b5d75cd
          }
          const perFileOptions = await mergeOptionsForFile(opts.optionsForFile ? opts.optionsForFile(filePath) : null, defaultOptionsForFile(filePath, opts.platform));
          // preAutoEntitlements should only be applied to the top level app bundle.
-@@ -236,6 +239,48 @@ async function signApplication(opts, identity) {
+@@ -236,6 +239,59 @@ async function signApplication(opts, identity) {
          }
          await execFileAsync('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
      }
@@ -135,14 +146,19 @@ index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..051b830f6a8bcd69ecf0c2588b5d75cd
 +            if (shouldIgnoreFilePath(filePath)) continue;
 +            const canonical = await fs.realpath(filePath);
 +            if (canonical !== appPath && !unique.has(canonical)) {
-+                unique.set(canonical, { filePath, depth: canonical.split(path.sep).length });
++                unique.set(canonical, {
++                    filePath,
++                    depth: canonical.split(path.sep).length,
++                    bundleExecutable: path.dirname(canonical).endsWith(path.sep + path.join('Contents', 'MacOS'))
++                });
 +            }
 +        }
 +        const pending = [...unique.values()].sort((a, b) => b.depth - a.depth);
 +        while (pending.length) {
 +            const depth = pending[0].depth;
 +            const end = pending.findIndex((entry) => entry.depth !== depth);
-+            const group = pending.splice(0, end < 0 ? pending.length : end);
++            const entries = pending.splice(0, end < 0 ? pending.length : end);
++            const group = entries.filter((entry) => !entry.bundleExecutable);
 +            let next = 0;
 +            let failed = false;
 +            let failure;
@@ -161,6 +177,12 @@ index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..051b830f6a8bcd69ecf0c2588b5d75cd
 +            // Drain every in-flight codesign before propagating failure to builder retries.
 +            await Promise.all(Array.from({ length: Math.min(concurrency, group.length) }, worker));
 +            if (failed) throw failure;
++            // codesign treats a Contents/MacOS executable as part of its bundle and
++            // inspects sibling files. Concurrent signatures leave transient .cstemp
++            // files there, so sign these executables only after all peers finish.
++            for (const entry of entries) {
++                if (entry.bundleExecutable) await signFile(entry.filePath);
++            }
 +        }
 +        await signFile(opts.app);
 +    }

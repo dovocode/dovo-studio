@@ -266,7 +266,7 @@ export function NodeInspector({
               }}
             >
               <option value="main">Project checkout</option>
-              <option value="worktree">Dedicated task worktree</option>
+              <option value="worktree">Dedicated thread worktree</option>
             </ChoicePicker>
           </FormField>
           <LinkedCheckoutEditor

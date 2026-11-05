@@ -1,4 +1,5 @@
 import { TooltipProvider } from '../../../packages/studio-ui/src/components/ui/tooltip'
+import { StudioConfirmationProvider } from '../../../packages/studio-ui/src/confirmation-provider'
 import { Effect, Schema } from 'effect'
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import {
@@ -47,9 +48,9 @@ const claudeAgent = {
 }
 const attachment = {
   id: 'f8e2ad6f-951c-46c7-a3ac-8dcb4e778ac4',
-  name: 'preview.png',
+  name: 'workspace.png',
   mime: 'image/png',
-  size: 68,
+  size: 12400,
 }
 const initialTask = decode(taskSchema, {
   id: taskId,
@@ -445,11 +446,13 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
       <TooltipProvider>
         <StudioHostProvider api={hostApi}>
           <WorkspaceValueProvider value={value}>
-            <FixtureContext.Provider
-              value={{ task, requests, setTask, setFailNextRequest, setConnected }}
-            >
-              {children}
-            </FixtureContext.Provider>
+            <StudioConfirmationProvider>
+              <FixtureContext.Provider
+                value={{ task, requests, setTask, setFailNextRequest, setConnected }}
+              >
+                {children}
+              </FixtureContext.Provider>
+            </StudioConfirmationProvider>
           </WorkspaceValueProvider>
         </StudioHostProvider>
       </TooltipProvider>

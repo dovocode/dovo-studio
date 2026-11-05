@@ -43,18 +43,19 @@ window.WebSocket=Socket;
 function Diff(){const prefs=useDiffOptions();const [ready,setReady]=useState(false);
 useEffect(()=>{preloadStudioHighlighter('typescript').then(()=>setReady(true))},[]);
 return ready?<FileDiff fileDiff={diff} options={{...prefs.options,disableFileHeader:true}}/>:null}
-function App(){useAppearance();return <TooltipProvider><div className="flex h-screen flex-col bg-background text-foreground">
+function App(){useAppearance();return <TooltipProvider><div className="studio flex h-screen flex-col bg-background text-foreground">
 <TitleBar online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>
 <main className="flex min-h-0 flex-1"><Appearance/>
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
-<Button>Start task</Button>
+<Button>Start thread</Button>
 <div data-testid="effects" className="flex flex-col gap-2">
 <nav className="studio-navigation" aria-label="Main navigation"><button className="studio-navigation-item" aria-current="page">T</button></nav>
 <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button className="studio-navigation-item" aria-pressed="true">F</button></nav>
-<div className="studio-browser-sidebar"><button className="studio-browser-tab" data-active>Selected browser tab</button><details open className="studio-list-section"><summary className="studio-list-section-header">Browser section</summary></details></div>
+<div className="studio-browser-sidebar"><div className="studio-browser-tab" data-active><button className="studio-browser-tab-select">Selected browser tab</button></div><details open className="studio-list-section"><summary className="studio-list-section-header">Browser section</summary></details></div>
 <div className="studio-task-sidebar"><details open className="studio-list-section"><summary className="studio-list-section-header">Thread section</summary></details><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div><button className="studio-thread-child" aria-current="true">Selected child thread</button></div>
 <button className="studio-selected-surface rounded-lg border" aria-current="true">Selected artifact</button>
-<div className="studio-selected-surface rounded-lg border">Selected settings page</div>
+<div className="studio-nav-selected rounded-lg border">Selected settings page</div>
+<div className="studio-settings-target" data-override="true">Project override target</div>
 <Segmented label="Effects settings choice" value="selected" options={[["selected","Selected option"],["other","Other option"]]} onChange={()=>{}}/>
 <div className="task-composer"><div className="studio-composer"><textarea aria-label="Effects composer"/><button type="submit">Send</button><ComposerSubmit type="button" variant="destructive" className="studio-destructive-accent" data-composer-stop aria-label="Stop">■</ComposerSubmit></div></div>
 <div className="dovo-dialog-content p-3"><Button>Dialog action</Button></div>
@@ -185,8 +186,17 @@ try {
     })
   })
   const ready = () => page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor()
-  const choose = async (name) =>
-    page.getByRole('radio', { name, exact: true }).locator('..').click()
+  const palettePicker = page.locator('details[data-setting-label="Color palette choices"]')
+  const browsePalettes = palettePicker.locator('summary')
+  const openPalettes = async () => {
+    if ((await palettePicker.getAttribute('open')) === null) await browsePalettes.click()
+  }
+  const choose = async (name) => {
+    await openPalettes()
+    await page.getByRole('radio', { name, exact: true }).locator('..').click()
+    await browsePalettes.click()
+    await page.getByRole('img', { name: `Current color palette: ${name}`, exact: true }).waitFor()
+  }
   const mode = async (name) => {
     await page.getByRole('combobox', { name: 'Color scheme', exact: true }).click()
     await page.getByRole('option', { name, exact: true }).click()
@@ -218,12 +228,59 @@ try {
       .querySelector('[data-testid=diff] diffs-container')
       ?.shadowRoot?.textContent.includes('greet'),
   )
+  assert.equal(await palettePicker.getAttribute('open'), null, 'Palette browser starts collapsed')
+  assert.equal(
+    await page.getByRole('img', { name: 'Current color palette: Dovo', exact: true }).isVisible(),
+    true,
+  )
+  assert.equal(
+    await palettePicker.getByRole('radio').count(),
+    0,
+    'Palette choices stay out of the collapsed page',
+  )
+  if (process.env.DOVO_APPEARANCE_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', '-collapsed.png'),
+    })
+  await browsePalettes.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await palettePicker.getByRole('radio').count(),
+    await page.evaluate(() => window.paletteIds.length),
+  )
   assert.equal(await page.getByRole('radio', { name: 'Dovo', exact: true }).isChecked(), true)
+  if (process.env.DOVO_APPEARANCE_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', '-palettes.png'),
+    })
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await palettePicker.getAttribute('open'),
+    null,
+    'Palette browser closes from the keyboard',
+  )
   assert.equal(
     await page.locator('.studio-titlebar-brand img, .studio-titlebar-brand svg').count(),
     0,
   )
   assert.equal(await page.locator('.studio-titlebar-name').textContent(), 'Dovo Studio')
+  const glow = page.getByRole('slider', { name: 'Glow intensity', exact: true })
+  const gradients = page.getByRole('switch', { name: 'Gradients', exact: true })
+  const setGlow = async (value) => {
+    await glow.fill(String(value))
+    await page.waitForFunction(
+      (value) => document.documentElement.dataset.themeGlow === String(value),
+      value,
+    )
+  }
+  assert.equal(await glow.inputValue(), '0', 'New workspaces default to quiet surfaces')
+  assert.equal(await glow.getAttribute('aria-valuetext'), 'Off')
+  assert.equal(await glow.locator('..').locator('output').textContent(), 'Off')
+  assert.equal(await gradients.isChecked(), false)
+  await setGlow(0.5)
+  assert.equal(await glow.getAttribute('aria-valuetext'), '50 percent')
+  assert.equal(await glow.locator('..').locator('output').textContent(), '50%')
+  await gradients.click()
   const ids = await page.evaluate(() => window.paletteIds)
   for (const id of ids) {
     const palette = await page.evaluate((id) => window.palettes[id], id)
@@ -237,23 +294,32 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
+      // Navigation uses the palette's selection fill; filter-like choices keep
+      // the neutral fill. Both retain the selected effects when enabled.
       await page.waitForFunction(() => {
-        const root = document.querySelector('[data-testid=effects]')
-        const thread = getComputedStyle(root.querySelector('.studio-thread-card'))
-        return [
-          ...root.querySelectorAll(
-            '.studio-selected-surface, .studio-navigation-item, .studio-browser-tab[data-active], .studio-thread-child',
+        const probe = document.createElement('span')
+        probe.style.backgroundColor = 'var(--studio-selected-fill)'
+        probe.style.backgroundImage = 'var(--studio-selected-gradient)'
+        probe.style.boxShadow = 'var(--studio-glow)'
+        document.body.append(probe)
+        const expected = getComputedStyle(probe)
+        const neutralFill = expected.backgroundColor
+        probe.style.backgroundColor = 'var(--selection)'
+        const navigationFill = getComputedStyle(probe).backgroundColor
+        const settled = [
+          ...document.querySelectorAll(
+            '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-card, [data-testid=effects] .studio-thread-child',
           ),
         ].every((el) => {
           const selected = getComputedStyle(el)
-          return [
-            'backgroundColor',
-            'backgroundImage',
-            'boxShadow',
-            'borderColor',
-            'borderRadius',
-          ].every((key) => selected[key] === thread[key])
+          return (
+            selected.backgroundColor ===
+              (el.classList.contains('studio-selected-surface') ? neutralFill : navigationFill) &&
+            ['backgroundImage', 'boxShadow'].every((key) => selected[key] === expected[key])
+          )
         })
+        probe.remove()
+        return settled
       })
       const effects = await page.evaluate((primary) => {
         const probe = document.createElement('span')
@@ -271,18 +337,41 @@ try {
           primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
           tab: style('.studio-browser-tab').backgroundImage,
           tabShadow: style('.studio-browser-tab').boxShadow,
-          selections: [
-            ...document.querySelectorAll(
-              '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child',
-            ),
+          rails: [
+            ...document.querySelectorAll('[data-testid=effects] .studio-navigation-item'),
           ].map((el) => {
             const selected = getComputedStyle(el)
-            const thread = style('.studio-thread-card')
-            return Object.fromEntries(
-              ['backgroundColor', 'backgroundImage', 'boxShadow', 'borderColor', 'borderRadius']
-                .filter((key) => selected[key] !== thread[key])
-                .map((key) => [key, { selected: selected[key], thread: thread[key] }]),
-            )
+            const marker = getComputedStyle(el, '::before')
+            return {
+              background: selected.backgroundColor,
+              image: selected.backgroundImage,
+              shadow: selected.boxShadow,
+              marker: marker.backgroundColor,
+              markerWidth: marker.width,
+              markerHeight: marker.height,
+              markerContent: marker.content,
+            }
+          }),
+          accent: (() => {
+            probe.style.color = primary
+            document.body.append(probe)
+            const accent = getComputedStyle(probe).color
+            probe.remove()
+            return accent
+          })(),
+          threadEdgeWidth: style('.studio-thread-card').borderLeftWidth,
+          navigationMarkers: [
+            ...document.querySelectorAll(
+              '[data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-browser-tab-select, [data-testid=effects] .studio-thread-card, [data-testid=effects] .studio-thread-child',
+            ),
+          ].map((el) => {
+            const marker = getComputedStyle(el, '::before')
+            return {
+              color: marker.backgroundColor,
+              width: marker.width,
+              height: marker.height,
+              content: marker.content,
+            }
           }),
           sectionsMatch: [
             'backgroundImage',
@@ -317,16 +406,41 @@ try {
         id + ' ' + scheme + ' glow uses the theme accent',
       )
       assert.ok(
-        effects.selections.length >= 4 &&
-          effects.selections.every((diff) => Object.keys(diff).length === 0),
+        effects.rails.length === 2 &&
+          effects.rails.every(
+            (rail) =>
+              rail.background === 'rgba(0, 0, 0, 0)' &&
+              rail.image === 'none' &&
+              rail.shadow === 'none' &&
+              rail.marker === effects.accent &&
+              rail.markerWidth === '2px' &&
+              rail.markerHeight === '16px' &&
+              rail.markerContent === '""',
+          ),
         id +
           ' ' +
           scheme +
-          ' selected navigation, artifacts and settings match threads: ' +
-          JSON.stringify(effects.selections),
+          ' active rails use visible accent edge markers: ' +
+          JSON.stringify(effects.rails),
+      )
+      assert.equal(effects.threadEdgeWidth, '2px')
+      assert.ok(
+        effects.navigationMarkers.length === 4 &&
+          effects.navigationMarkers.every(
+            (marker) =>
+              marker.color === effects.accent &&
+              marker.width === '2px' &&
+              marker.height === '16px' &&
+              marker.content === '""',
+          ),
+        id +
+          ' ' +
+          scheme +
+          ' navigation keeps 2px accent markers: ' +
+          JSON.stringify(effects.navigationMarkers),
       )
       assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
-      assert.match(effects.dialog, /linear-gradient/)
+      assert.equal(effects.dialog, 'none', 'Dialogs keep a calm, flat surface with effects enabled')
       const actual = await page.evaluate(() => {
         const color = (value) => {
           const div = document.createElement('div')
@@ -337,7 +451,7 @@ try {
           return c
         }
         const root = getComputedStyle(document.documentElement)
-        const user = document.querySelector('.is-user > div')
+        const user = document.querySelector('.is-user .dovo-message-content')
         const terminal = window.terminals[0]
         return {
           background: root.getPropertyValue('--background').trim(),
@@ -349,6 +463,7 @@ try {
             (el) => getComputedStyle(el).color,
           ),
           user: color(getComputedStyle(user).backgroundColor),
+          neutralUser: color('color-mix(in srgb, var(--foreground) 5%, var(--background))'),
           userText: color(getComputedStyle(user).color),
           terminal: terminal.options.theme,
           buffer: terminal.viewport.lines.map((line) => line.text).join('\n'),
@@ -375,13 +490,17 @@ try {
       )
       assert.equal(
         await page
-          .getByRole('button', { name: 'Start task', exact: true })
+          .getByRole('button', { name: 'Start thread', exact: true })
           .evaluate((button) => getComputedStyle(button).color),
         rgb(expected['action-foreground']),
       )
-      assert.equal(actual.user, rgb(expected.secondary))
+      assert.equal(actual.user, actual.neutralUser, 'User messages use a neutral raised surface')
       assert.equal(actual.userText, rgb(expected.foreground))
-      assert.equal(actual.terminal.background, expected.card)
+      assert.equal(
+        actual.terminal.background,
+        expected.background,
+        'Terminal uses the workspace canvas',
+      )
       assert.equal(actual.terminal.foreground, expected.foreground)
       assert.equal(actual.sessions, 1, 'Changing themes must not reconnect the terminal')
       assert.ok(actual.buffer.includes('theme session preserved'))
@@ -420,12 +539,50 @@ try {
         })
     }
   }
+  const assertForcedColorMarkers = async (scheme) => {
+    const markers = await page.locator('[data-testid=effects]').evaluate((preview) => {
+      const probe = document.createElement('span')
+      probe.style.backgroundColor = 'Highlight'
+      probe.style.forcedColorAdjust = 'none'
+      document.body.append(probe)
+      const highlight = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return [
+        ...preview.querySelectorAll(
+          '.studio-navigation-item, .studio-nav-selected, .studio-browser-tab-select, .studio-thread-card, .studio-thread-child, .studio-settings-target',
+        ),
+      ].map((element) => {
+        const marker = getComputedStyle(element, '::before')
+        return {
+          color: marker.backgroundColor,
+          highlight,
+          width: marker.width,
+          height: marker.height,
+          content: marker.content,
+          target: element.classList.contains('studio-settings-target'),
+        }
+      })
+    })
+    assert.ok(
+      markers.length === 7 &&
+        markers.every(
+          (marker) =>
+            marker.color === marker.highlight &&
+            marker.width === '2px' &&
+            (marker.target ? parseFloat(marker.height) > 0 : marker.height === '16px') &&
+            marker.content === '""',
+        ),
+      scheme +
+        ' selected navigation and target markers survive forced colors: ' +
+        JSON.stringify(markers),
+    )
+  }
   for (const scheme of ['light', 'dark']) {
     await mode(scheme === 'dark' ? 'Dark' : 'Light')
     await page.emulateMedia({ forcedColors: 'active' })
     const selections = await page
       .locator(
-        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
       )
       .evaluateAll((elements) =>
         elements.map((el) => ({
@@ -443,6 +600,7 @@ try {
       ),
       scheme + ' selections stay visible without decorative effects in forced colors',
     )
+    await assertForcedColorMarkers(scheme)
     await page.emulateMedia({ forcedColors: 'none' })
   }
   await choose('Claude')
@@ -451,15 +609,6 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark')
   await page.emulateMedia({ colorScheme: 'light' })
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
-  const glow = page.getByRole('slider', { name: 'Glow intensity', exact: true })
-  const gradients = page.getByRole('switch', { name: 'Gradients', exact: true })
-  const setGlow = async (value) => {
-    await glow.fill(String(value))
-    await page.waitForFunction(
-      (value) => document.documentElement.dataset.themeGlow === String(value),
-      value,
-    )
-  }
   await mode('Dark')
   await setGlow(0.5)
   await page.waitForFunction(() =>
@@ -507,7 +656,9 @@ try {
       surfaces.every((surface) => surface.background === 'none'),
       'Flat mode removes decorative gradients',
     )
-    assert.notEqual(surfaces[1].fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
+    const selectedTab = surfaces.find((surface) => surface.element === 'studio-browser-tab')
+    assert.ok(selectedTab, 'Fixture includes a selected browser tab')
+    assert.notEqual(selectedTab.fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
     assert.ok(
       surfaces.every((surface) => surface.shadow === 'none'),
       'Zero glow removes all decorative surface shadows: ' + JSON.stringify(surfaces),
@@ -549,7 +700,7 @@ try {
     await page.emulateMedia({ forcedColors: 'active' })
     const selections = await page
       .locator(
-        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
+        '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-navigation-item, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-child, [data-composer-stop]',
       )
       .evaluateAll((elements) =>
         elements.map((el) => ({
@@ -567,26 +718,127 @@ try {
       ),
       scheme + ' selections stay visible without decorative effects in forced colors',
     )
+    await assertForcedColorMarkers(scheme)
     await page.emulateMedia({ forcedColors: 'none' })
   }
   await choose('Claude')
   await mode('System')
   await page.reload()
   await ready()
-  assert.equal(await page.getByRole('radio', { name: 'Claude', exact: true }).isChecked(), true)
+  assert.equal(
+    await page.getByRole('radio', { name: 'Claude', exact: true, includeHidden: true }).isChecked(),
+    true,
+  )
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
   await page.getByRole('combobox', { name: 'App font', exact: true }).fill('Georgia')
+  const fontPreviews = page.getByRole('group', { name: 'Font previews', exact: true })
+  assert.ok(
+    await fontPreviews
+      .getByText('A clear view of your next idea.', { exact: true })
+      .evaluate((el) => getComputedStyle(el).fontFamily.startsWith('Georgia')),
+  )
+  assert.doesNotMatch(
+    await page.getByRole('region', { name: 'Terminal font preview', exact: true }).innerText(),
+    /[\uE000-\uF8FF]/,
+    'System font preview uses ordinary characters without unsupported private-use glyphs',
+  )
   await page
     .getByRole('combobox', { name: 'Code font', exact: true })
     .fill('JetBrains Mono Nerd Font')
+  assert.ok(
+    await fontPreviews
+      .locator('code')
+      .evaluate((el) => getComputedStyle(el).fontFamily.includes('JetBrains Mono Nerd Font')),
+  )
   await page
     .getByRole('combobox', { name: 'Terminal font', exact: true })
     .fill('JetBrains Mono Nerd Font')
-  await page.getByRole('button', { name: 'Terminal font size', exact: true }).click()
-  await page.getByRole('option', { name: '18 px', exact: true }).click()
+  assert.match(
+    await page.getByRole('region', { name: 'Terminal font preview', exact: true }).innerText(),
+    /[\uE000-\uF8FF]/,
+    'Bundled Nerd Font preview includes its developer icons',
+  )
+  const terminalSize = page.getByRole('spinbutton', { name: 'Terminal font size', exact: true })
+  const decreaseSize = page.getByRole('button', {
+    name: 'Decrease terminal font size',
+    exact: true,
+  })
+  const increaseSize = page.getByRole('button', {
+    name: 'Increase terminal font size',
+    exact: true,
+  })
+  for (const viewport of [
+    { width: 1280, height: 1000 },
+    { width: 390, height: 480 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await terminalSize.scrollIntoViewIfNeeded()
+    const stepperGeometry = await terminalSize.evaluate((input) => {
+      const bounds = input.parentElement.getBoundingClientRect()
+      const control = input.closest('.studio-setting-control').getBoundingClientRect()
+      return {
+        width: bounds.width,
+        controlWidth: control.width,
+        insideViewport:
+          bounds.left >= -1 &&
+          bounds.top >= -1 &&
+          bounds.right <= innerWidth + 1 &&
+          bounds.bottom <= innerHeight + 1,
+      }
+    })
+    assert.equal(
+      stepperGeometry.width,
+      stepperGeometry.controlWidth,
+      'Terminal font stepper fills the shared settings control width',
+    )
+    assert.ok(stepperGeometry.insideViewport, 'Terminal font stepper fits the viewport')
+  }
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  for (let size = 8; size <= 32; size++) {
+    await terminalSize.fill(String(size))
+    await page.waitForFunction((size) => window.terminals[0].options.fontSize === size, size)
+  }
+  assert.equal(await increaseSize.isDisabled(), true)
+  await decreaseSize.click()
+  assert.equal(await terminalSize.inputValue(), '31')
+  await terminalSize.press('ArrowUp')
+  assert.equal(await terminalSize.inputValue(), '32')
+  await terminalSize.fill('8')
+  assert.equal(await decreaseSize.isDisabled(), true)
+  await increaseSize.click()
+  assert.equal(await terminalSize.inputValue(), '9')
+  await terminalSize.press('ArrowDown')
+  assert.equal(await terminalSize.inputValue(), '8')
+  await terminalSize.fill('18')
+  for (const invalid of ['', '7', '33', '18.5', '-1']) {
+    await terminalSize.fill(invalid)
+    assert.equal(await terminalSize.getAttribute('aria-invalid'), 'true')
+    assert.equal(
+      await page.evaluate(
+        () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).terminalFontSize,
+      ),
+      18,
+      'Invalid terminal sizes never change saved preferences',
+    )
+    assert.equal(await page.evaluate(() => window.terminals[0].options.fontSize), 18)
+    await terminalSize.blur()
+    assert.equal(
+      await terminalSize.inputValue(),
+      '18',
+      'Leaving an invalid entry restores the saved size',
+    )
+  }
+  await terminalSize.fill('33')
+  await terminalSize.press('Escape')
+  assert.equal(await terminalSize.inputValue(), '18')
+  await terminalSize.fill('')
+  await terminalSize.press('Enter')
+  assert.equal(await terminalSize.inputValue(), '18')
+  await terminalSize.fill('32')
+  await terminalSize.press('Enter')
   await page.waitForFunction(
     () =>
-      window.terminals[0].options.fontSize === 18 &&
+      window.terminals[0].options.fontSize === 32 &&
       window.terminals[0].options.fontFamily.includes('JetBrains Mono Nerd Font'),
   )
   const fontState = await page.evaluate(async () => {
@@ -630,6 +882,12 @@ try {
     assert.ok(Math.abs(width - fontState.widths[0]) < 0.1, 'Nerd icons fit one monospace cell')
   assert.equal(fontState.sockets, 1, 'Changing fonts must not reconnect the terminal')
   assert.ok(fontState.buffer.includes('theme session preserved'))
+  if (process.env.DOVO_APPEARANCE_SCREENSHOT) {
+    await fontPreviews.scrollIntoViewIfNeeded()
+    await page.screenshot({
+      path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', '-fonts.png'),
+    })
+  }
   await page.reload()
   await ready()
   assert.equal(
@@ -644,7 +902,7 @@ try {
     await page.getByRole('combobox', { name: 'Terminal font', exact: true }).inputValue(),
     'JetBrains Mono Nerd Font',
   )
-  await page.waitForFunction(() => window.terminals[0].options.fontSize === 18)
+  await page.waitForFunction(() => window.terminals[0].options.fontSize === 32)
   // A generic family works as CSS, and clearing a field restores the device default.
   await page.getByRole('combobox', { name: 'App font', exact: true }).fill('serif')
   assert.ok(
@@ -658,9 +916,17 @@ try {
     window.terminals[0].options.fontFamily.startsWith('ui-monospace'),
   )
   // Native radio cards support keyboard navigation as well as pointer selection.
+  await openPalettes()
   await page.getByRole('radio', { name: 'Claude', exact: true }).focus()
   await page.keyboard.press('ArrowRight')
   assert.equal(await page.getByRole('radio', { name: 'T3 Code', exact: true }).isChecked(), true)
+  await browsePalettes.click()
+  assert.equal(
+    await page
+      .getByRole('img', { name: 'Current color palette: T3 Code', exact: true })
+      .isVisible(),
+    true,
+  )
   for (const width of [320, 390, 768]) {
     await page.setViewportSize({ width, height: 844 })
     if (process.env.DOVO_APPEARANCE_SCREENSHOT)
@@ -671,6 +937,14 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       `Appearance fits ${width}px screens`,
     )
+    for (const preview of [
+      fontPreviews,
+      page.getByRole('region', { name: 'Terminal font preview', exact: true }),
+    ])
+      assert.ok(
+        await preview.evaluate((el) => el.clientWidth <= el.parentElement.clientWidth),
+        `Font previews fit ${width}px screens`,
+      )
     assert.ok(
       await page
         .getByRole('combobox', { name: 'Color scheme', exact: true })
@@ -679,7 +953,17 @@ try {
           const label = control.parentElement.previousElementSibling.getBoundingClientRect()
           return buttons.left >= label.right || buttons.top >= label.bottom
         }),
-      'Color scheme buttons must not overlap their description',
+      'Color scheme buttons must not overlap their description at ' +
+        width +
+        ': ' +
+        JSON.stringify(
+          await page
+            .getByRole('combobox', { name: 'Color scheme', exact: true })
+            .evaluate((control) => ({
+              control: control.getBoundingClientRect().toJSON(),
+              label: control.parentElement.previousElementSibling.getBoundingClientRect().toJSON(),
+            })),
+        ),
     )
   }
   await page.setViewportSize({ width: 390, height: 844 })

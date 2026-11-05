@@ -10,7 +10,7 @@ export default function AboutSettings() {
     <SettingsPage
       local
       title="Updates & about"
-      description="Check your version, choose a release channel and manage update checks."
+      description="Check your version and manage update preferences."
     >
       <SettingsGroup title="Dovo Studio">
         <SettingRow

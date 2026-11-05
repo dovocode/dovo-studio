@@ -526,6 +526,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/projects/select')
         return yield* s.titles.selectProjectsEffect(yield* serviceResult(body(request)))
+      if (method === 'POST' && path === '/api/tasks/workspace/route')
+        return yield* s.titles.routeWorkspaceEffect(yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/tasks/title') {
         const input = yield* serviceResult(body(request))
         const taskInput = decodeResult(

@@ -34,11 +34,11 @@ export default function ConversationSettings() {
           />
         </SettingRow>
         <SettingRow
-          label="Follow-ups while a task runs"
+          label="Follow-ups while a thread runs"
           description="Queue sends after the current turn finishes. Steer sends immediately to guide the running turn."
         >
           <SettingsSelect
-            label="Follow-ups while a task runs"
+            label="Follow-ups while a thread runs"
             value={preferences.followUp}
             options={[
               ['queue', 'Queue'],

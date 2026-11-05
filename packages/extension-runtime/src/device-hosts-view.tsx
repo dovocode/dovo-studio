@@ -1,3 +1,4 @@
+import { useConfirmation } from '@dovo/studio-core'
 import { useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useSettingsDraft, useWorkspace } from '@dovo/studio-core'
@@ -43,6 +44,7 @@ function DeviceHostSettings() {
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
+  const confirm = useConfirmation(JSON.stringify([settings, draft, busy]))
   const generation = useRef(0)
   const lock = useRef(false)
   useSettingsDraft(draft !== null, busy)
@@ -128,6 +130,12 @@ function DeviceHostSettings() {
   }
   return (
     <div className="space-y-5">
+      {connected && settings && !error && (
+        <p className="text-[0.8125rem] leading-normal text-foreground/80">
+          Device Hub and default host choices save immediately on this computer. Host edits use Save
+          host.
+        </p>
+      )}
       <SettingsGroup
         title="Device Hub"
         description="Optional device previews and controls on this runtime. Off by default."
@@ -203,8 +211,15 @@ function DeviceHostSettings() {
                     size="sm"
                     variant="outline"
                     disabled={busy || !!draft}
-                    onClick={() => {
-                      if (window.confirm(`Remove ${host.name}? Its devices will keep running.`))
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: `Remove ${host.name}?`,
+                          description: 'Its devices will keep running.',
+                          confirmLabel: 'Remove host',
+                          destructive: true,
+                        })
+                      )
                         void act(() =>
                           updateSettings({
                             hosts: settings.hosts.filter((entry) => entry.id !== host.id),
@@ -457,8 +472,16 @@ function DeviceHostSettings() {
               variant="outline"
               size="sm"
               disabled={busy}
-              onClick={() => {
-                if (!draft || window.confirm('Discard the draft and reload device settings?'))
+              onClick={async () => {
+                if (
+                  !draft ||
+                  (await confirm({
+                    title: 'Reload device settings?',
+                    description: 'Your unsaved device host draft will be discarded.',
+                    confirmLabel: 'Discard and reload',
+                    destructive: true,
+                  }))
+                )
                   setRetry((value) => value + 1)
               }}
             >

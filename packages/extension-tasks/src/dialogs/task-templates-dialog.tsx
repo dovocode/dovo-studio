@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { confirmDiscardChanges } from './unsaved-changes'
+import { useConfirmDiscardChanges } from './unsaved-changes'
 import { Trash2 } from 'lucide-react'
 import type { TaskTemplate } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
@@ -31,8 +31,13 @@ export function TaskTemplatesDialog({
   const [validated, setValidated] = useState(false)
   const [focusId, setFocusId] = useState('')
   const fields = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>())
-  const close = () => {
-    if (confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
+  const confirmDiscardChanges = useConfirmDiscardChanges(
+    repositoryId,
+    'thread template',
+    JSON.stringify(rows),
+  )
+  const close = async () => {
+    if (await confirmDiscardChanges(JSON.stringify(rows) !== JSON.stringify(initialRows))) onClose()
   }
   const normalizedName = (name: string) => name.trim()
   const issues = new Map<string, string>()
@@ -90,10 +95,10 @@ export function TaskTemplatesDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent className="max-w-2xl">
-        <DialogTitle>Task templates</DialogTitle>
+        <DialogTitle>Thread templates</DialogTitle>
         <DialogDescription>
-          Starting points for new tasks in {repository?.name ?? 'this project'}. Right-click a task
-          and choose Save as template to add one.
+          Starting points for new threads in {repository?.name ?? 'this project'}. Right-click a
+          thread and choose Save as template to add one.
         </DialogDescription>
         <div className="max-h-[55vh] space-y-3 overflow-y-auto">
           {rows.map((row, index) => (
@@ -162,7 +167,7 @@ export function TaskTemplatesDialog({
           ))}
           {!rows.length && (
             <p className="py-6 text-center text-xs text-muted-foreground">
-              No templates yet. Open a task’s menu and choose “Save as template…” to create your
+              No templates yet. Open a thread’s menu and choose “Save as template…” to create your
               first starting point.
             </p>
           )}

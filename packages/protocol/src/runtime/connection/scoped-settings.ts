@@ -248,10 +248,10 @@ export const settingsScopes: readonly SettingsScope[] = [
   'environment-project',
 ]
 export const settingsScopeLabels: Record<SettingsScope, string> = {
-  global: 'All machines & projects',
-  environment: 'Machine',
+  global: 'All computers & projects',
+  environment: 'Computer',
   project: 'Project',
-  'environment-project': 'Project on machine',
+  'environment-project': 'Project on computer',
 }
 
 export function settingsScopeSummary(
@@ -263,30 +263,30 @@ export function settingsScopeSummary(
   switch (scope) {
     case 'global':
       return {
-        title: 'All projects on all machines',
+        title: 'All projects on all computers',
         description:
-          'Defaults for all projects on all machines. More-specific overrides keep their own values.',
-        storage: 'Shared across paired machines',
+          'Defaults for all projects on all computers. More-specific overrides keep their own values.',
+        storage: 'Shared across paired computers',
       }
     case 'environment':
       return {
         title: `${computer} defaults`,
         description:
-          'Defaults for projects on this machine. Project defaults override machine defaults.',
+          'Defaults for projects on this computer. Project defaults override computer defaults.',
         storage: `Saved on ${computer}`,
       }
     case 'project':
       return {
         title: `${project} project defaults`,
         description:
-          'Defaults for this project across machines. Project-on-machine overrides keep their own values.',
-        storage: 'Shared across paired machines',
+          'Defaults for this project across computers. Project-on-computer overrides keep their own values.',
+        storage: 'Shared across paired computers',
       }
     case 'environment-project':
       return {
         title: `${project} on ${computer}`,
         description:
-          'Changes apply only to this project on this machine. This is the most specific level.',
+          'Changes apply only to this project on this computer. This is the most specific level.',
         storage: `Saved on ${computer}`,
       }
   }
@@ -610,13 +610,13 @@ export type SettingsChange = { key: string; label: string; before: string; after
 const changeLabels: Record<string, string> = {
   inactiveDays: 'Days of inactivity before settling',
   archiveAfterSettledDays: 'Days in Settled before archiving',
-  autoArchiveSettled: 'Auto-archive settled tasks',
+  autoArchiveSettled: 'Auto-archive settled threads',
   continueAfterRestart: 'Continue after restarts',
-  settleMerged: 'Auto-settle merged tasks',
-  settleClosed: 'Auto-settle closed tasks',
-  settleInactive: 'Auto-settle inactive tasks',
-  quotaResume: 'Auto-resume limited tasks',
-  quotaSnooze: 'Snooze limited tasks',
+  settleMerged: 'Auto-settle merged threads',
+  settleClosed: 'Auto-settle closed threads',
+  settleInactive: 'Auto-settle inactive threads',
+  quotaResume: 'Auto-resume limited threads',
+  quotaSnooze: 'Snooze limited threads',
   defaultServerId: 'Default computer',
   modelSelection: 'Model selection',
   agentId: 'Agent',

@@ -34,8 +34,10 @@ export function ComposerWorkspace({
   onMachineMoving,
   onSelectRemote,
   children,
+  showBranch = true,
 }: {
   children?: ReactNode
+  showBranch?: boolean
   task: Task
   disabled: boolean
   onMachineMoving: (moving: boolean) => void
@@ -298,171 +300,173 @@ export function ComposerWorkspace({
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       ) : null}
-      <Popover.Root
-        open={open}
-        onOpenChange={(value) => {
-          setOpen(value)
-          if (value)
-            void act(() =>
-              request(
-                '/api/scm/branches',
-                {
-                  repositoryId: task.repositoryId,
-                  taskId: choosingBase ? undefined : task.id,
-                },
-                branchesSchema,
-              ),
-            )
-        }}
-      >
-        <Popover.Trigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label="Checkout branch"
-            disabled={
-              disabled ||
-              !connected ||
-              !!task.existingWorktreePath ||
-              task.status === 'running' ||
-              (task.execution === 'worktree' && !task.checkoutBranch && !choosingBase)
-            }
-            className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[0.6875rem] font-normal"
-          >
-            <GitBranch className="size-3" />
-            <span className="truncate">
-              {task.existingWorktreePath
-                ? task.existingWorktreePath.split('/').at(-1)
-                : choosingBase
-                  ? task.worktreeIncludeChanges
-                    ? 'Current files + changes'
-                    : `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
-                  : (task.checkoutBranch ??
-                    (task.pullRequest
-                      ? `${task.pullRequest.checkoutMode === 'pr-branch' ? 'PR branch' : 'From'} ${task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}`
-                      : repository?.branch) ??
-                    'Branch')}
-            </span>
-            <ChevronDown className="size-3" />
-          </Button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            align="end"
-            sideOffset={8}
-            className="z-50 max-h-72 w-64 overflow-y-auto rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
-            aria-label="Checkout branches"
-          >
-            <p className="px-2 py-1 text-xs text-muted-foreground">
-              {choosingBase ? 'Create worktree from branch' : 'Switch branch'}
-            </p>
-            {choosingBase && (
-              <label className="flex gap-2 px-2 py-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={task.worktreeIncludeChanges ?? false}
-                  onChange={(event) => {
-                    const checked = event.currentTarget.checked
-                    setWorkspace((w) =>
-                      updateTask(w, task.id, (current) =>
-                        canChangeTaskCheckout(current)
-                          ? {
-                              ...current,
-                              worktreeIncludeChanges: checked,
-                              worktreeBaseBranch: undefined,
-                            }
-                          : current,
-                      ),
-                    )
-                  }}
-                />
-                <span>
-                  Include uncommitted changes
-                  <span className="block text-muted-foreground">
-                    Starts from current files. Source stays unchanged.
-                  </span>
-                </span>
-              </label>
-            )}
-            {choosingBase && branches && !branches.branches.length && (
+      {showBranch && (
+        <Popover.Root
+          open={open}
+          onOpenChange={(value) => {
+            setOpen(value)
+            if (value)
+              void act(() =>
+                request(
+                  '/api/scm/branches',
+                  {
+                    repositoryId: task.repositoryId,
+                    taskId: choosingBase ? undefined : task.id,
+                  },
+                  branchesSchema,
+                ),
+              )
+          }}
+        >
+          <Popover.Trigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Checkout branch"
+              disabled={
+                disabled ||
+                !connected ||
+                !!task.existingWorktreePath ||
+                task.status === 'running' ||
+                (task.execution === 'worktree' && !task.checkoutBranch && !choosingBase)
+              }
+              className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[0.6875rem] font-normal"
+            >
+              <GitBranch className="size-3" />
+              <span className="truncate">
+                {task.existingWorktreePath
+                  ? task.existingWorktreePath.split('/').at(-1)
+                  : choosingBase
+                    ? task.worktreeIncludeChanges
+                      ? 'Current files + changes'
+                      : `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
+                    : (task.checkoutBranch ??
+                      (task.pullRequest
+                        ? `${task.pullRequest.checkoutMode === 'pr-branch' ? 'PR branch' : 'From'} ${task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}`
+                        : repository?.branch) ??
+                      'Branch')}
+              </span>
+              <ChevronDown className="size-3" />
+            </Button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="end"
+              sideOffset={8}
+              className="z-50 max-h-72 w-64 overflow-y-auto rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+              aria-label="Checkout branches"
+            >
               <p className="px-2 py-1 text-xs text-muted-foreground">
-                No commits yet. An empty starting commit will be created only on the new task
-                branch.
+                {choosingBase ? 'Create worktree from branch' : 'Switch branch'}
               </p>
-            )}
-            {branches?.branches.map((branch) => (
-              <Button
-                key={branch.ref}
-                type="button"
-                variant="ghost"
-                disabled={
-                  busy ||
-                  (choosingBase && !!task.worktreeIncludeChanges) ||
-                  (!choosingBase && (branch.name === branches.current || branch.checkedOut))
-                }
-                className="h-8 w-full justify-between text-xs font-normal"
-                onClick={() =>
-                  void act(async () => {
-                    if (choosingBase) {
+              {choosingBase && (
+                <label className="flex gap-2 px-2 py-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={task.worktreeIncludeChanges ?? false}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked
                       setWorkspace((w) =>
-                        updateTask(w, task.id, (t) =>
-                          canChangeTaskCheckout(t) ? { ...t, worktreeBaseBranch: branch.ref } : t,
+                        updateTask(w, task.id, (current) =>
+                          canChangeTaskCheckout(current)
+                            ? {
+                                ...current,
+                                worktreeIncludeChanges: checked,
+                                worktreeBaseBranch: undefined,
+                              }
+                            : current,
                         ),
                       )
+                    }}
+                  />
+                  <span>
+                    Include uncommitted changes
+                    <span className="block text-muted-foreground">
+                      Starts from current files. Source stays unchanged.
+                    </span>
+                  </span>
+                </label>
+              )}
+              {choosingBase && branches && !branches.branches.length && (
+                <p className="px-2 py-1 text-xs text-muted-foreground">
+                  No commits yet. An empty starting commit will be created only on the new thread
+                  branch.
+                </p>
+              )}
+              {branches?.branches.map((branch) => (
+                <Button
+                  key={branch.ref}
+                  type="button"
+                  variant="ghost"
+                  disabled={
+                    busy ||
+                    (choosingBase && !!task.worktreeIncludeChanges) ||
+                    (!choosingBase && (branch.name === branches.current || branch.checkedOut))
+                  }
+                  className="h-8 w-full justify-between text-xs font-normal"
+                  onClick={() =>
+                    void act(async () => {
+                      if (choosingBase) {
+                        setWorkspace((w) =>
+                          updateTask(w, task.id, (t) =>
+                            canChangeTaskCheckout(t) ? { ...t, worktreeBaseBranch: branch.ref } : t,
+                          ),
+                        )
+                        setOpen(false)
+                        return branches
+                      }
+                      const next = await request(
+                        '/api/scm/branch',
+                        {
+                          repositoryId: task.repositoryId,
+                          taskId: task.id,
+                          action: 'switch',
+                          name: branch.ref,
+                          revision: branches.revision,
+                        },
+                        branchesSchema,
+                      )
                       setOpen(false)
-                      return branches
-                    }
-                    const next = await request(
-                      '/api/scm/branch',
-                      {
-                        repositoryId: task.repositoryId,
-                        taskId: task.id,
-                        action: 'switch',
-                        name: branch.ref,
-                        revision: branches.revision,
-                      },
-                      branchesSchema,
-                    )
-                    setOpen(false)
-                    return next
-                  })
-                }
-              >
-                {branch.name}
-                {(choosingBase
-                  ? [branch.ref, branch.name].includes(
-                      task.worktreeBaseBranch ??
-                        defaultWorktreeBase(
-                          branches.branches,
-                          branches.current,
-                          task.worktreeFromOrigin,
-                          branches.originDefault,
-                        ) ??
-                        '',
-                    )
-                  : branch.name === branches.current) && <Check className="size-3" />}
-              </Button>
-            ))}
-            {busy && (
-              <p role="status" className="p-2 text-xs">
-                Loading branches…
-              </p>
-            )}
-            {error && (
-              <p role="alert" className="p-2 text-xs text-destructive">
-                {error}
-              </p>
-            )}
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+                      return next
+                    })
+                  }
+                >
+                  {branch.name}
+                  {(choosingBase
+                    ? [branch.ref, branch.name].includes(
+                        task.worktreeBaseBranch ??
+                          defaultWorktreeBase(
+                            branches.branches,
+                            branches.current,
+                            task.worktreeFromOrigin,
+                            branches.originDefault,
+                          ) ??
+                          '',
+                      )
+                    : branch.name === branches.current) && <Check className="size-3" />}
+                </Button>
+              ))}
+              {busy && (
+                <p role="status" className="p-2 text-xs">
+                  Loading branches…
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="p-2 text-xs text-destructive">
+                  {error}
+                </p>
+              )}
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      )}
       <Dialog open={worktreePicker} onOpenChange={setWorktreePicker}>
         <DialogContent className="max-w-lg">
           <DialogTitle>Use an existing worktree</DialogTitle>
           <p className="text-xs text-muted-foreground">
-            The new task works in this checkout, including its uncommitted files. Only one task can
-            run there at a time.
+            The new thread works in this checkout, including its uncommitted files. Only one thread
+            can run there at a time.
           </p>
           {worktreeError && (
             <p role="alert" className="text-xs text-destructive">

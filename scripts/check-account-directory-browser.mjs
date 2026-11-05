@@ -63,7 +63,7 @@ const app=createRoot(document.getElementById('app'));window.renderApp=()=>app.re
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';export * from '${root}/packages/studio-ui/src/components/ui/input.tsx';export * from '${root}/packages/studio-ui/src/components/form-field.tsx';export {cn} from '${root}/packages/studio-ui/src/lib/utils.ts';export const MessageResponse=({children})=>children;export const ChoicePicker=({children,value,onValueChange,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;`,
+      contents: `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';export * from '${root}/packages/studio-ui/src/components/ui/input.tsx';export * from '${root}/packages/studio-ui/src/components/form-field.tsx';export {cn} from '${root}/packages/studio-ui/src/lib/utils.ts';export const MessageResponse=({children})=>children;export const ChoicePicker=({children,value,onValueChange,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;`,
     },
     {
       path: 'react-native',

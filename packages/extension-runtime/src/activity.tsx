@@ -1,3 +1,5 @@
+import { Disclosure } from '@dovo/studio-ui'
+import { SearchField } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Effect, Schema } from 'effect'
 import { useEffect, useState } from 'react'
@@ -8,7 +10,7 @@ import {
   formatDateTime,
   useAppPreferences,
 } from '@dovo/studio-core'
-import { Button, Input } from '@dovo/studio-ui'
+import { Button } from '@dovo/studio-ui'
 export function ActivityLog() {
   const { showToolDetails } = useAppPreferences()
   const { requestEffect: request, connected } = useWorkspace(),
@@ -71,12 +73,12 @@ export function ActivityLog() {
           Recent requests, messages and commands. Expand an entry to see its details.
         </p>
       </div>
-      <Input
+      <SearchField
         aria-label="Search activity"
-        placeholder="Search messages, tasks and commands…"
+        placeholder="Search messages, threads and commands…"
         value={query}
-        onChange={(e) => {
-          setQuery(e.target.value)
+        onValueChange={(value) => {
+          setQuery(value)
           setOffset(0)
         }}
       />
@@ -112,14 +114,19 @@ export function ActivityLog() {
         aria-label="Activity entries"
       >
         {data.events.map((e) => (
-          <details key={e.id} className="border-b py-2 text-xs">
-            <summary className="cursor-pointer break-words py-1 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">
-              {formatDateTime(e.time)} · {e.kind} · {e.summary}
-            </summary>
+          <Disclosure
+            key={e.id}
+            className="border-b py-2 text-xs"
+            title={
+              <>
+                {formatDateTime(e.time)} · {e.kind} · {e.summary}
+              </>
+            }
+          >
             <pre className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3">
               {e.payload}
             </pre>
-          </details>
+          </Disclosure>
         ))}
       </div>
       <div className="flex items-center gap-2">

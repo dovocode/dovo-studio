@@ -88,13 +88,11 @@ export async function checkScreenInteractions(page, origin) {
     }
 
     await open('dovo-screens-desktop--jira')
-    await page.getByRole('button', { name: 'Filters', exact: true }).click()
-    const statusFilters = page.getByRole('group', { name: 'Status category' })
-    await statusFilters.getByRole('button', { name: 'Done', exact: true }).click()
-    await page.keyboard.press('Escape')
-    const activeFilters = page.getByRole('group', { name: 'Active Jira filters' })
-    await activeFilters.getByRole('button', { name: /Done/ }).waitFor()
-    await page.getByRole('region', { name: 'Jira issue results' }).waitFor({ state: 'attached' })
+    const jiraFilters = page.getByRole('button', { name: 'Filters', exact: true })
+    await jiraFilters.waitFor()
+    assert.equal(await jiraFilters.isDisabled(), true, 'Unconfigured Jira cannot filter a source')
+    await page.getByRole('button', { name: 'Connect Jira', exact: true }).waitFor()
+    // Configured-source filters and chips are exercised by check-jira-views-browser.mjs.
     await open('dovo-screens-desktop--usage')
     const usageChart = page.getByRole('region', { name: 'Daily usage', exact: true })
     await usageChart.getByRole('status').filter({ hasText: 'No usage in this period.' }).waitFor()

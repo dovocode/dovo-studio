@@ -2,7 +2,14 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
 import { conversationPageSchema, createRuntimeClient, threadContextSnapshot } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
-import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
+import {
+  SearchField,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@dovo/studio-ui'
 
 export function ThreadContextPicker({
   taskId,
@@ -94,11 +101,12 @@ export function ThreadContextPicker({
             Attach a snapshot from this computer, up to 5 MB. Review it before sending; existing
             attachments are listed by name only.
           </DialogDescription>
-          <input
+          <SearchField
             aria-label="Search threads"
+            placeholder="Search threads…"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded border bg-background p-2 text-sm"
+            onValueChange={setQuery}
+            className="w-full"
           />
           {error && (
             <p role="alert" className="text-sm text-destructive">

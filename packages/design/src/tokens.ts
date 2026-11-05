@@ -2,17 +2,17 @@
 export const dovoColors = {
   dark: {
     background: '#080808',
-    foreground: '#ededed',
+    foreground: '#e6e6e6',
     sidebar: '#0c0c0c',
-    card: '#101010',
-    popover: '#101010',
-    secondary: '#102432',
-    'muted-foreground': '#a1a1a1',
-    border: '#202020',
+    card: '#131313',
+    popover: '#131313',
+    secondary: '#121a22',
+    'muted-foreground': '#a3a3a3',
+    border: '#1e1e1e',
     primary: '#7cc9ff',
     'primary-foreground': '#080808',
-    selection: '#102432',
-    action: '#ededed',
+    selection: '#121a22',
+    action: '#e6e6e6',
     'action-foreground': '#080808',
     signal: '#bcefff',
     pink: '#7cc9ff',
@@ -20,23 +20,23 @@ export const dovoColors = {
     'syntax-keyword': '#7cc9ff',
   },
   light: {
-    background: '#ffffff',
-    foreground: '#151515',
-    sidebar: '#f7f7f7',
+    background: '#fafbfc',
+    foreground: '#242933',
+    sidebar: '#f3f4f6',
     card: '#ffffff',
     popover: '#ffffff',
-    secondary: '#e7f3ff',
-    'muted-foreground': '#666666',
-    border: '#e8e8e8',
-    primary: '#0965b5',
+    secondary: '#e8eff9',
+    'muted-foreground': '#5d6674',
+    border: '#e6e8ec',
+    primary: '#3565a1',
     'primary-foreground': '#ffffff',
-    selection: '#e7f3ff',
-    action: '#151515',
+    selection: '#e8eff9',
+    action: '#242933',
     'action-foreground': '#ffffff',
-    signal: '#005f76',
-    pink: '#0965b5',
-    'syntax-function': '#0965b5',
-    'syntax-keyword': '#0965b5',
+    signal: '#275e80',
+    pink: '#3565a1',
+    'syntax-function': '#3565a1',
+    'syntax-keyword': '#3565a1',
   },
 } as const
 
@@ -117,7 +117,14 @@ export const designTokens = {
     sans: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   },
-  radius: { control: 6, card: 12, composer: 12 },
+  typography: {
+    page: { size: 20, line: 28, weight: 600 },
+    section: { size: 14, line: 20, weight: 600 },
+    row: { size: 13, line: 18, weight: 500 },
+    meta: { size: 12, line: 16, weight: 400 },
+    machine: { size: 12, line: 16, weight: 400 },
+  },
+  radius: { control: 8, card: 12, composer: 16 },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, section: 32 },
   touchTarget: 44,
   focusWidth: 2,
@@ -136,6 +143,12 @@ export function cssVariables(mode: keyof typeof dovoColors) {
     ';--dovo-font-mono:' +
     designTokens.font.mono +
     ';' +
+    Object.entries(designTokens.typography)
+      .map(
+        ([name, value]) =>
+          `--dovo-type-${name}-size:${value.size / 16}rem;--dovo-type-${name}-line:${value.line / 16}rem;--dovo-type-${name}-weight:${value.weight};`,
+      )
+      .join('') +
     Object.entries(designTokens.radius)
       .map(([name, value]) => '--dovo-radius-' + name + ':' + value + 'px;')
       .join('')

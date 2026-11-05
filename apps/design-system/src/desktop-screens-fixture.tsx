@@ -9,7 +9,10 @@ import {
 } from '@dovo/studio-core'
 import {
   resolveScopedSettings,
+  scopedAgentEntries,
   scopedSettingsReadSchema,
+  stagingFilePreviewQuerySchema,
+  type FilePreview,
   type RuntimeReadCache,
 } from '../../../packages/protocol/src'
 import {
@@ -19,8 +22,23 @@ import {
   screenPipeline,
   screenIssuePage,
   screenPipelinePage,
+  denseScreenPullPage,
+  denseScreenIssuePage,
 } from './desktop-screens-data'
+import { denseGitComparisons, denseGitFiles } from './desktop-review-density'
+import sampleImage from './assets/ui-polish-image.png'
 import { ComposerFixtureProvider } from './composer-fixture'
+import {
+  busyDesktopDraft,
+  busyDesktopQuestion,
+  busyDesktopWorkspace,
+} from './desktop-busy-workspace'
+
+const gitNavigationContents = {
+  head: 'export const label = "Tasks"\n',
+  index: 'export const label = "Projects"\n',
+  working: 'export const label = "Threads"\n',
+}
 
 const readCache: RuntimeReadCache = {
   closed: false,
@@ -36,7 +54,19 @@ const readCache: RuntimeReadCache = {
   close: async () => undefined,
 }
 
-export type DesktopScreenState = 'populated' | 'empty' | 'loading' | 'error' | 'offline'
+export type DesktopScreenState =
+  | 'git-changes'
+  | 'git-review-dense'
+  | 'lists-dense'
+  | 'legacy'
+  | 'populated'
+  | 'busy'
+  | 'busy-long-draft'
+  | 'idle'
+  | 'empty'
+  | 'loading'
+  | 'error'
+  | 'offline'
 
 function ScreenWorkspace({
   children,
@@ -49,16 +79,66 @@ function ScreenWorkspace({
 }) {
   const root = useWorkspace()
   const value = useMemo<WorkspaceContextValue>(() => {
+    const source =
+      state === 'busy' || state === 'busy-long-draft'
+        ? busyDesktopWorkspace(
+            root.workspace,
+            state === 'busy-long-draft' ? busyDesktopDraft : undefined,
+          )
+        : root.workspace
     const workspace =
       state === 'empty'
         ? { ...root.workspace, tasks: [], repositories: [], agents: [], automations: [] }
         : {
-            ...root.workspace,
+            ...source,
+            tasks:
+              state === 'idle'
+                ? root.workspace.tasks.map((task) => ({
+                    ...task,
+                    status: 'done' as const,
+                    activeRunId: undefined,
+                    pullRequest: undefined,
+                    workItem: undefined,
+                  }))
+                : source.tasks,
+            // Live runtimes always include a scratch project for the welcome composer.
+            repositories: [
+              ...source.repositories,
+              {
+                id: 'preview-scratch',
+                kind: 'scratch' as const,
+                name: 'No project',
+                path: '/preview/scratch',
+                branch: '',
+              },
+            ],
             automations: root.workspace.automations.length
               ? root.workspace.automations
               : [screenAutomation],
           }
-    const snapshot = root.snapshot ? { ...root.snapshot, workspace, artifactsEnabled: true } : null
+    const snapshot = root.snapshot
+      ? {
+          ...root.snapshot,
+          workspace,
+          questions:
+            state === 'busy' || state === 'busy-long-draft'
+              ? [...root.snapshot.questions, busyDesktopQuestion]
+              : root.snapshot.questions,
+          artifactsEnabled: true,
+          remoteDesktopEnabled: state === 'legacy' ? undefined : false,
+          scopedAgentsSupported: state !== 'legacy',
+          taskBehaviorSupported: state !== 'legacy',
+          threadBehaviorSupported: state !== 'legacy',
+          terminals: [
+            {
+              id: 'preview-terminal',
+              taskId: 'preview-task',
+              title: 'Project shell',
+              exited: false,
+            },
+          ],
+        }
+      : null
     const profile = root.runtimeRegistry.profiles[0]
     const unavailable = async (): Promise<never> => {
       throw new Error('Catalog preview: runtime and account mutations are disabled.')
@@ -71,6 +151,15 @@ function ScreenWorkspace({
         )
       const reads: Record<string, unknown> = {
         '/api/runtime/preferences/read': {},
+        '/api/tasks/codex-sessions/list': { sessions: [] },
+        '/api/tasks/pi-sessions/list': { sessions: [] },
+        '/api/scm/work/pipelines/definitions': { items: [{ id: 'checks.yml', name: 'Checks' }] },
+        '/api/scm/repositories/git-status': { initialized: true, remotes: ['origin'] },
+        '/api/scm/instructions/read': {
+          text: '# Project instructions\n\nKeep changes focused. Run the relevant checks before opening a pull request.\n',
+          version: 'preview-1',
+        },
+        '/api/tasks/commits/read': { commits: [], hasMore: false },
         '/api/commands/read': { settings: {}, defaultShell: '/bin/bash' },
         '/api/runtime/diagnostics': {
           ready: true,
@@ -111,6 +200,73 @@ function ScreenWorkspace({
         '/api/snapshot': snapshot,
         '/api/artifacts/list': { artifacts: [], links: [] },
         '/api/tasks/files/list': { files: ['src/navigation.tsx', 'README.md'] },
+        '/api/scm/changes': {
+          files:
+            state === 'git-review-dense'
+              ? denseGitFiles
+              : state === 'git-changes'
+                ? [
+                    {
+                      path: 'src/navigation.tsx',
+                      before: gitNavigationContents.head,
+                      after: gitNavigationContents.working,
+                      viewed: false,
+                      gitStatus: { index: 'modified', workingTree: 'modified' },
+                    },
+                    {
+                      path: 'README.md',
+                      before: '# Workspace\n',
+                      after: '# Dovo workspace\n',
+                      viewed: false,
+                      gitStatus: { index: 'unchanged', workingTree: 'modified' },
+                    },
+                  ]
+                : [],
+        },
+        '/api/scm/inspect': { path: '/workspace/dovo-studio', branch: 'main' },
+        '/api/terminals/ticket': { ticket: 'catalog-preview' },
+        '/api/terminals/shells': {
+          shells: [{ id: 'default', label: 'Default shell', path: '/bin/bash', args: [] }],
+        },
+        '/api/review/read': { files: [], groups: [] },
+        '/api/tasks/waiting': { dependencies: [] },
+        '/api/artifacts/library': { artifacts: [] },
+        '/api/agents/title-settings/read': {},
+        '/api/usage/history/read': { sourceId: 'preview', records: [], notices: [] },
+        '/api/scm/connections/read': { connections: [] },
+        '/api/scm/connections/github/read': {
+          status: 'verified',
+          stage: 'account',
+          host: 'github.com',
+          login: 'preview-author',
+          checkedAt: '2026-10-21T10:00:00.000Z',
+          message: 'Connected',
+        },
+        '/api/scm/worktrees/read': { root: '/preview/worktrees', worktrees: [] },
+        '/api/commands/cua/check': {
+          path: null,
+          available: false,
+          version: null,
+          detail: 'Computer use is not installed on this preview computer.',
+          daemon: null,
+          permissions: null,
+          platform: 'linux',
+        },
+        '/api/tasks/files/directory': {
+          entries: [
+            { path: 'README.md', kind: 'file' },
+            { path: 'src', kind: 'directory' },
+          ],
+          truncated: false,
+        },
+        '/api/scm/action-state': {
+          dirty: state === 'git-changes' || state === 'git-review-dense',
+          branch: 'main',
+          ahead: 0,
+          behind: 0,
+          tracking: true,
+          canPush: true,
+        },
 
         '/api/device-hosts': { enabled: false, hosts: [] },
         '/api/previews/browser/profiles/read': { profiles: [{ id: 'default', name: 'Default' }] },
@@ -121,18 +277,64 @@ function ScreenWorkspace({
           destination: 'preview-destination',
         },
         '/api/scm/pulls/detail': screenPull,
-        '/api/scm/pulls/overview': { pulls: [screenPull.pull], page: 1, hasMore: false },
+        '/api/scm/pulls/overview':
+          state === 'lists-dense'
+            ? denseScreenPullPage
+            : { pulls: [screenPull.pull], page: 1, hasMore: false },
         '/api/scm/work/options': {
           provider: 'github',
           issues: true,
           pipelines: true,
           pipelineActions: [],
         },
-        '/api/scm/work/issues/list': screenIssuePage,
+        '/api/scm/work/issues/list':
+          state === 'lists-dense' ? denseScreenIssuePage : screenIssuePage,
         '/api/scm/work/issues/detail': screenIssue,
         '/api/scm/work/pipelines/list': screenPipelinePage,
         '/api/scm/work/pipelines/detail': screenPipeline,
         '/api/scm/work/issues/discussion': screenIssue,
+      }
+      if (
+        path === '/api/attachments/read' &&
+        typeof input === 'object' &&
+        input !== null &&
+        'id' in input &&
+        (input.id === 'e173b499-5caf-45ab-884c-355ee729af43' ||
+          input.id === 'f8e2ad6f-951c-46c7-a3ac-8dcb4e778ac4')
+      )
+        return Schema.decodeUnknownSync(schema)({
+          attachment: {
+            id: input.id,
+            name: 'workspace.png',
+            mime: 'image/png',
+            size: 12400,
+          },
+          data: btoa(
+            String.fromCharCode(...new Uint8Array(await (await fetch(sampleImage)).arrayBuffer())),
+          ),
+        })
+      if (path === '/api/scm/file-preview') {
+        const query = Schema.decodeUnknownSync(stagingFilePreviewQuerySchema)(input)
+        if (state === 'git-review-dense') {
+          const comparisons = Object.entries(denseGitComparisons).find(
+            ([path]) => path === query.path,
+          )?.[1]
+          if (!comparisons) throw new Error('Catalog preview: no Git comparison for this file.')
+          return Schema.decodeUnknownSync(schema)(comparisons[query.comparison])
+        }
+        if (state !== 'git-changes' || query.path !== 'src/navigation.tsx')
+          throw new Error('Catalog preview: no Git comparison for this file.')
+        const before =
+          query.comparison === 'staged' ? gitNavigationContents.head : gitNavigationContents.index
+        const after =
+          query.comparison === 'staged'
+            ? gitNavigationContents.index
+            : gitNavigationContents.working
+        return Schema.decodeUnknownSync(schema)({
+          before: { kind: 'text', size: before.length, text: before, truncated: false },
+          after: { kind: 'text', size: after.length, text: after, truncated: false },
+          patch: `--- a/${query.path}\n+++ b/${query.path}\n@@ -1 +1 @@\n-${before}+${after}`,
+        } satisfies FilePreview)
       }
       if (path === '/api/tasks/files/read') {
         const file = Schema.decodeUnknownSync(Schema.Struct({ path: Schema.String }))(input)
@@ -151,7 +353,19 @@ function ScreenWorkspace({
         )
         return Schema.decodeUnknownSync(schema)({
           value: {},
-          inherited: resolveScopedSettings(snapshot.defaults, repository, inputValue.scope),
+          inherited: {
+            ...resolveScopedSettings(snapshot.defaults, repository, inputValue.scope),
+            ...(inputValue.includeAgents
+              ? {
+                  agents: scopedAgentEntries(
+                    snapshot.defaults,
+                    repository,
+                    workspace.agents,
+                    inputValue.scope,
+                  ).map(({ agent }) => agent),
+                }
+              : {}),
+          },
         })
       }
       // Only the composer's explicitly implemented synthetic read endpoints are allowed.
@@ -167,7 +381,7 @@ function ScreenWorkspace({
           '/api/attachments/read',
         ].includes(path)
       )
-        return unavailable()
+        throw new Error(`Catalog preview: no response for ${path}.`)
       return root.request(path, input, schema, method)
     }
     return {
@@ -209,6 +423,7 @@ function ScreenWorkspace({
       navigate: (target) => navigate(target.viewId),
       registerCommand: () => () => undefined,
       appInfo: { version: 'Catalog preview', channel: 'dev' },
+      browser: async () => ({ url: '', title: 'New tab', back: false, forward: false }),
     }),
     [navigate],
   )

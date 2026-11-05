@@ -1,0 +1,149 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "regression": {
+      "fp32": {
+        "correct": 24,
+        "total": 25,
+        "accuracy": 0.96,
+        "confusion": {
+          "browser": {
+            "browser": 5,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 11,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 1,
+            "thread": 8
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 24,
+            "total": 25
+          }
+        },
+        "mistakes": [
+          {
+            "input": "hello",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 21.26279100048123,
+            "logits": [-17.992321014404297, 10.64129638671875, -12.831700325012207],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 12018, 2
+            ]
+          }
+        ],
+        "medianMs": 22.029416999430396,
+        "p95Ms": 30.731625000044005
+      },
+      "q8": {
+        "correct": 24,
+        "total": 25,
+        "accuracy": 0.96,
+        "confusion": {
+          "browser": {
+            "browser": 5,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 11,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 1,
+            "thread": 8
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 24,
+            "total": 25
+          }
+        },
+        "mistakes": [
+          {
+            "input": "hello",
+            "expected": "thread",
+            "actual": "terminal",
+            "ms": 38.610208001045976,
+            "logits": [-17.875988006591797, 10.560895919799805, -12.776201248168945],
+            "task": "destination",
+            "options": [
+              {
+                "id": "browser",
+                "label": "browser: A website address or a simple request to open a website"
+              },
+              {
+                "id": "terminal",
+                "label": "terminal: A shell command or command-line invocation with program flags"
+              },
+              {
+                "id": "thread",
+                "label": "thread: A question, conversation, coding task or request to analyze or change something"
+              }
+            ],
+            "caseId": null,
+            "ids": [
+              1, 128001, 2672, 294, 336, 624, 990, 289, 266, 860, 1409, 264, 615, 266, 624, 128001,
+              6304, 294, 336, 6152, 3282, 289, 3282, 271, 2291, 44996, 275, 655, 11058, 128001,
+              3676, 294, 336, 900, 261, 2540, 261, 9243, 2204, 289, 1409, 264, 6647, 289, 575, 491,
+              128002, 4989, 262, 22440, 270, 262, 3210, 260, 23197, 7851, 4635, 263, 860, 4115, 264,
+              615, 266, 624, 260, 14893, 7851, 6152, 8466, 261, 500, 11212, 655, 11058, 260, 17061,
+              7851, 841, 261, 9243, 3344, 263, 4115, 264, 6647, 289, 575, 479, 261, 402, 335, 8466,
+              289, 24257, 281, 1979, 260, 17916, 3210, 283, 514, 260, 21863, 294, 12018, 2
+            ]
+          }
+        ],
+        "medianMs": 44.469959000707604,
+        "p95Ms": 51.10733400215395
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 7.534027099609375e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "challengeSha256": "2114a7cf11eaf6ff2427ea4bc190bd7d0719a06a7a11b19a3c315539c1ed3682",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-03/"
+}

@@ -1,0 +1,356 @@
+{
+  "epoch": 1,
+  "validation": {
+    "correct": 1540,
+    "total": 1591,
+    "accuracy": 0.9679446888749215,
+    "confusion": {
+      "browser": {
+        "browser": 263,
+        "terminal": 0,
+        "thread": 18
+      },
+      "terminal": {
+        "browser": 0,
+        "terminal": 261,
+        "thread": 2
+      },
+      "thread": {
+        "browser": 1,
+        "terminal": 0,
+        "thread": 261
+      }
+    },
+    "byTask": {
+      "destination": {
+        "correct": 785,
+        "total": 806
+      },
+      "project": {
+        "correct": 240,
+        "total": 260
+      },
+      "model": {
+        "correct": 198,
+        "total": 205
+      },
+      "runtime": {
+        "correct": 174,
+        "total": 175
+      },
+      "profile": {
+        "correct": 143,
+        "total": 145
+      }
+    },
+    "mistakes": [
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:25:0"
+      },
+      {
+        "input": "Tell me whether Juniper 2 is a good fit for Beacon Dashboard",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:17:2"
+      },
+      {
+        "input": "Tell me whether Fable 5 is a good fit for Meridian Chat",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:11:2"
+      },
+      {
+        "input": "Tell me about Support, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:115:0"
+      },
+      {
+        "input": "Tell me whether Fable 5 is a good fit for Harbor Desktop",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:38:3"
+      },
+      {
+        "input": "Tell me whether Muse 1 is a good fit for Beacon Dashboard",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:32:2"
+      },
+      {
+        "input": "Tell me whether Raven Mini is a good fit for Orchid Server",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:59:2"
+      },
+      {
+        "input": "Tell me whether Raven Mini is a good fit for Meridian Chat",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:50:2"
+      },
+      {
+        "input": "Tell me whether Kestrel Plus is a good fit for Orchid Server",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:14:0"
+      },
+      {
+        "input": "could you open https://cypress.app/help",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "APP_ENV=staging pnpm why react",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me whether Kestrel Plus is a good fit for Orchid Server",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:56:3"
+      },
+      {
+        "input": "Tell me about Support, without changing anything",
+        "task": "profile",
+        "expected": "default",
+        "actual": "profile:validation:15:1"
+      },
+      {
+        "input": "could you open localhost:7239/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:85:2"
+      },
+      {
+        "input": "Tell me whether Muse 1 is a good fit for Cypress Docs",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:26:3"
+      },
+      {
+        "input": "could you open http://backup.lan:7303/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me whether Raven Mini is a good fit for Cypress Docs",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:8:2"
+      },
+      {
+        "input": "Tell me whether Ember 3 is a good fit for Orchid Server",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:2:2"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open https://cypress.app/help/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me whether Ember 3 is a good fit for Cypress Docs",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:41:2"
+      },
+      {
+        "input": "Tell me about Juniper 2, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:45:3"
+      },
+      {
+        "input": "Tell me whether Juniper 2 is a good fit for Saffron Web",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:47:0"
+      },
+      {
+        "input": "Tell me about Study PC, without changing anything",
+        "task": "runtime",
+        "expected": "keep",
+        "actual": "runtime:validation:35:3"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:30:2"
+      },
+      {
+        "input": "Tell me about Fable 5, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:70:0"
+      },
+      {
+        "input": "could you open http://10.91.83.5:6821",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me whether Raven Mini is a good fit for Orchid Server",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:44:1"
+      },
+      {
+        "input": "Tell me about Muse 1, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:75:0"
+      },
+      {
+        "input": "open the app in a browser",
+        "task": "destination",
+        "expected": "thread",
+        "actual": "browser"
+      },
+      {
+        "input": "Tell me whether Ember 3 is a good fit for Harbor Desktop",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:53:0"
+      },
+      {
+        "input": "Tell me whether Fable 5 is a good fit for Harbor Desktop",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:5:3"
+      },
+      {
+        "input": "Tell me whether Fable 5 is a good fit for Harbor Desktop",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:29:2"
+      },
+      {
+        "input": "Tell me whether Kestrel Plus is a good fit for Saffron Web",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:20:2"
+      },
+      {
+        "input": "could you open meridian.acme.dev",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me whether Juniper 2 is a good fit for Cypress Docs",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:23:0"
+      },
+      {
+        "input": "could you open https://cypress.app/help/docs#install",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open meridian.acme.dev/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open docs.orchid.io/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me whether Muse 1 is a good fit for Harbor Desktop",
+        "task": "project",
+        "expected": "keep",
+        "actual": "project:validation:distractor:35:3"
+      },
+      {
+        "input": "file logo.png",
+        "task": "destination",
+        "expected": "terminal",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open localhost:7239/?view=home",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "could you open http://backup.lan:7303",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      },
+      {
+        "input": "Tell me about Ember 3, without changing anything",
+        "task": "model",
+        "expected": "keep",
+        "actual": "model:validation:80:0"
+      },
+      {
+        "input": "could you open docs.orchid.io",
+        "task": "destination",
+        "expected": "browser",
+        "actual": "thread"
+      }
+    ],
+    "loss": 0.37762705471496755
+  }
+}

@@ -106,10 +106,10 @@ export function ProjectSelectionDialog({
       }}
     >
       <DialogContent className="max-w-md">
-        <DialogTitle>{noProject ? 'New task without a project' : 'New task'}</DialogTitle>
+        <DialogTitle>{noProject ? 'New thread without a project' : 'New thread'}</DialogTitle>
         <DialogDescription>
           {noProject
-            ? 'Choose the machine where this task should run.'
+            ? 'Choose the computer where this thread should run.'
             : 'Choose a project. Nothing runs until you send your first message.'}
         </DialogDescription>
         {error && (
@@ -121,7 +121,7 @@ export function ProjectSelectionDialog({
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <RuntimeIcon icon={machineSources[0]?.snapshot?.runtimeIcon} className="size-4" />
             <select
-              aria-label="New thread machine"
+              aria-label="New thread computer"
               value={selectedMachine ?? ''}
               disabled={busy}
               className="min-w-0 flex-1 bg-transparent"
@@ -245,7 +245,7 @@ export function ProjectSelectionDialog({
               source.workspace.repositories.some((repository) => repository.kind !== 'scratch'),
             ) && (
               <p className="py-4 text-sm text-muted-foreground">
-                Add a project from the Projects menu to start a task.
+                Add a project from the Projects menu to start a thread.
               </p>
             )}
         </div>

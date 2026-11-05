@@ -16,6 +16,8 @@ export type TaskSource = {
  * task content streams, so memoized rows neither re-render nor retain old workspace snapshots.
  */
 export type TaskOwner = Pick<TaskSource, 'runtimeId' | 'address' | 'name' | 'online'> & {
+  /** Portable runtime identity for unified Studio references, when known. */
+  runtimeIdentity?: string
   agents: Workspace['agents']
   repositories: Workspace['repositories']
   runtimeIcon: RuntimeSnapshot['runtimeIcon']
@@ -131,6 +133,7 @@ export function retainTaskOwner(previous: TaskOwner | undefined, source: TaskSou
   const acpInstallations = source.snapshot?.acpInstallations ?? []
   const next: TaskOwner = {
     runtimeId: source.runtimeId,
+    runtimeIdentity: source.snapshot?.runtimeId ?? source.connection?.runtimeId,
     address: source.address,
     name: source.name,
     online: source.online,

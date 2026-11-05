@@ -13,13 +13,23 @@ if(m.type==='fixture-favicon'){favicon=m.favicon;state()}
 if(m.type==='snapshot')window.parent.postMessage({channel:'dovo-browser',type:'snapshot',id:m.id,image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='},'*');
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
+if(m.type==='visibility')window.parent.postMessage({channel:'fixture',visibility:m.visible},'*');
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useState} from 'react';import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane,restoredSharedBrowserTabs,sharedBrowserWindowId} from './src/browser/browser-pane.tsx';window.browserWorkspaceTabs={restored:restoredSharedBrowserTabs,windowId:sharedBrowserWindowId};import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {useCallback,useState} from 'react';
+// Mirrors the unified workspace: an owner holds the authoritative tab list for a pane that may be hidden.
+import UnifiedWorkspace from './src/unified/workspace-view';
+function ControlledBrowser(){
+  const [tabs,setTabs]=useState(()=>window.browserWorkspaceTabs.restored(window.fixtureControlledWindowId));
+  window.controlledTabs=tabs;window.setControlledTabs=setTabs;
+  const onSetTabs=useCallback(action=>{window.ownerWrites=(window.ownerWrites||0)+1;setTabs(previous=>typeof action==='function'?action(previous??[]):action)},[]);
+  // Like the unified workspace, the pane stays mounted and laid out; visible:false alone hides it.
+  return <div className="flex min-h-0 flex-1 flex-col"><BrowserPane taskId="studio:browser" shared workspaceControl={{...window.fixtureWorkspaceControl,tabs,onSetTabs,visible:!window.fixtureBackground}}/></div>
+}import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
 function Fixture(){
   const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
-  const content=window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>;
+  const content=window.fixtureUnified ? <UnifiedWorkspace/> : window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
   if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}</>;
   const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
   return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
@@ -39,6 +49,29 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
     {
       name: 'fixture',
       setup(builder) {
+        // Keep UnifiedWorkspace, BrowserPane and Effect state real. Isolate unrelated thread,
+        // terminal and composer surfaces so this checks the actual controlled-tab integration.
+        const unifiedBoundaries = {
+          '../view': 'export default function Thread(){return <div>Thread surface</div>}',
+          '../list/task-row-actions':
+            'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',
+          '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminalDialog=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
+          './workspace-input':
+            'export const WorkspaceInput=()=> <textarea aria-label="Workspace draft"/>',
+          './workspace-resource-menu': 'export const WorkspaceResourceMenu=()=>null',
+          './workspace-rows':
+            'export const WorkspacePageRow=({title,onSelect})=><button onClick={onSelect}>{title}</button>;export const WorkspaceThreadRow=WorkspacePageRow;export const WorkspaceTerminalRow=WorkspacePageRow',
+        }
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) =>
+          importer.endsWith('/unified/workspace-view.tsx') && path in unifiedBoundaries
+            ? { path, namespace: 'fixture-unified-boundary' }
+            : undefined,
+        )
+        builder.onLoad({ filter: /.*/, namespace: 'fixture-unified-boundary' }, ({ path }) => ({
+          contents: unifiedBoundaries[path],
+          loader: 'tsx',
+          resolveDir: root + 'packages/extension-tasks',
+        }))
         builder.onResolve({ filter: /^\.\.\/detail\/task-conversation$/ }, () => ({
           path: 'conversation',
           namespace: 'fixture-conversation',
@@ -52,8 +85,9 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
         builder.onResolve(
           { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
           ({ path }) => ({
-            path: path.endsWith('/state') ? path : '@dovo/studio-core',
-            namespace: 'fixture',
+            ...(path.endsWith('/state')
+              ? { path: root + 'packages/studio-core/src/runtime/application-state.ts' }
+              : { path: '@dovo/studio-core', namespace: 'fixture' }),
           }),
         )
         builder.onResolve(
@@ -66,9 +100,8 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
-          contents: path.endsWith('/state')
-            ? `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const current=useRef(value);current.current=value;const set=next=>{current.current=typeof next==='function'?next(current.current):next;setValue(current.current)};return [value,set,current]}`
-            : path === './screenshot-attachment'
+          contents:
+            path === './screenshot-attachment'
               ? 'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async()=>{}});'
               : path === './device-list'
                 ? 'export const DeviceList=()=>null;'
@@ -79,6 +112,7 @@ import {createContext,createElement,useContext,useState,useSyncExternalStore} fr
 import {resolveSettingsTarget,decode,browserCommandSchema} from '@dovo/protocol';
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
@@ -87,7 +121,7 @@ export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget}
 export const useCachedTask=task=>({task,loaded:true,error:""});export const formatDateTime=()=>"";export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-work',name:'LAN Work'},{id:'remote-personal',name:'LAN Personal'}],mac:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}]};
-window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
+window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport);if(event.data.visibility!==undefined)window.remoteVisibility.push(event.data.visibility)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
 const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:window.tabActivityStates||[]}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:window.tabActivityStates||[],focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
@@ -95,7 +129,7 @@ const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFol
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
-const snapshot={runtimeHost:'LAN runtime',workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
+const snapshot={runtimeHost:'LAN runtime',terminals:[],workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
 const otherProfile={id:'mac',name:'Mac Studio',connection:{address:'http://mac.local',token:'paired-mac-token-at-least-20-characters'}};
 const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...task,id:'remote-target',title:'Mac thread',draft:'Remote draft'}]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
@@ -118,7 +152,8 @@ export const useSettingsTarget=()=>{
 };
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
 window.studioCommands=new Map();const registerCommand=command=>{window.studioCommands.set(command.id,command);return ()=>window.studioCommands.delete(command.id)};
-export const useStudioHost=()=>({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+const HostContext=createContext(null);export const StudioHostProvider=({api,children})=>createElement(HostContext.Provider,{value:api},children);
+export const useStudioHost=()=>useContext(HostContext)||({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -350,6 +385,632 @@ async function checkAddressSelection() {
     }
   }
 }
+async function checkUnifiedBrowserControl() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<div id="app" style="height:800px"></div>',
+      }),
+    )
+    await page.goto('http://localhost/unified-browser')
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'existing',
+          tabs: [
+            {
+              id: 'existing',
+              url: 'http://lan.local:3000/',
+              title: 'Existing page',
+              kind: 'web',
+              runtimeId: 'runtime',
+              profileId: 'default',
+            },
+          ],
+        }),
+      )
+      window.controlSelections = []
+      window.fixtureWorkspaceControl = {
+        newTabRequest: 'first',
+        onSelect: (id) => window.controlSelections.push(id),
+        onTabsChange: (tabs, active) => {
+          window.controlTabs = tabs
+          window.controlActive = active
+        },
+      }
+    })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.waitForFunction(
+      () =>
+        window.controlSelections.length === 1 &&
+        window.controlTabs.some((tab) => tab.id === window.controlSelections[0]) &&
+        window.controlActive === window.controlSelections[0],
+    )
+    assert.equal(
+      await page.getByRole('complementary', { name: 'Recent browser tabs' }).count(),
+      0,
+      'Mixed workspace supplies the page list',
+    )
+    await page.evaluate(() => window.renderBrowser())
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      1,
+      'A render does not repeat the new-page request',
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.newTabRequest = 'second'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(
+      () =>
+        window.controlSelections.length === 2 &&
+        window.controlActive === window.controlSelections[1],
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'existing'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActive === 'existing')
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      2,
+      'External page focus does not echo a selection back to the parent',
+    )
+  } finally {
+    await page.close()
+  }
+}
+async function checkRealUnifiedBrowserIntegration() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<div id="app" style="height:800px"></div>',
+      }),
+    )
+    await page.goto('http://localhost/real-unified-browser')
+    await page.evaluate(() => {
+      window.fixtureUnified = true
+      window.fixtureHeader = true
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'existing',
+          tabs: [
+            {
+              id: 'existing',
+              url: 'http://lan.local:3000/',
+              title: 'Existing page',
+              kind: 'web',
+              runtimeId: 'previous-computer',
+              profileId: 'default',
+            },
+          ],
+        }),
+      )
+    })
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.evaluate(() => window.setCleanup({ unifiedWorkspaceEnabled: true }))
+    const workspace = page.getByRole('region', { name: 'Unified workspace' })
+    await workspace.waitFor()
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs[0].runtimeId ===
+        'runtime',
+    )
+    await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
+    await page.waitForFunction(() =>
+      window.calls.some((call) => call.action === 'show' && call.tabId === 'existing'),
+    )
+    await workspace.getByRole('button', { name: 'New browser', exact: true }).first().click()
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 2,
+    )
+    await workspace.getByRole('button', { name: 'Workspace home', exact: true }).click()
+    await workspace.getByRole('button', { name: 'Existing page', exact: true }).first().click()
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active === 'existing',
+    )
+    // React's passive effects and external-store subscriptions must settle after selection.
+    const syncCount = () =>
+      page.evaluate(() => window.calls.filter((call) => call.action === 'sync-tabs').length)
+    const before = await syncCount()
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    assert.equal(
+      await syncCount(),
+      before,
+      'Controlled tabs stop publishing once selection has settled',
+    )
+    assert.deepEqual(
+      errors,
+      [],
+      'Real UnifiedWorkspace + BrowserPane renders without update-depth failures',
+    )
+  } finally {
+    await page.close()
+  }
+}
+async function openControlledBrowser(seed, flags = {}) {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:800px"></div>' }),
+  )
+  await page.goto('http://localhost/controlled-browser')
+  await page.evaluate(
+    ({ seed, flags }) => {
+      Object.assign(window, flags)
+      if (seed) localStorage.setItem('dovo.shared-browser-tabs.v1', JSON.stringify(seed))
+      window.fixtureControlled = true
+      window.controlSelections = []
+      window.controlErrors = []
+      window.handledRequests = []
+      window.fixtureWorkspaceControl = {
+        onSelect: (id) => window.controlSelections.push(id),
+        onError: (message) => window.controlErrors.push(message),
+        onLifecycleHandled: (id) => window.handledRequests.push(id),
+        onTabsChange: (tabs, active) => {
+          window.controlActive = active
+        },
+      }
+    },
+    { seed, flags },
+  )
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  return { page, errors }
+}
+async function checkControlledBrowserTabs() {
+  // Without saved tabs the owner starts empty; the pane hands its own list over once.
+  {
+    const { page, errors } = await openControlledBrowser()
+    try {
+      await page.waitForFunction(() => window.controlledTabs?.length === 1)
+      assert.ok(
+        await page.evaluate(() => window.ownerWrites >= 1),
+        'Pane hydrates the owner through onSetTabs',
+      )
+      await page.waitForFunction(
+        () =>
+          JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1') ?? 'null')?.tabs[0]?.id ===
+          window.controlledTabs[0].id,
+      )
+      assert.deepEqual(errors, [])
+    } finally {
+      await page.close()
+    }
+  }
+  const privateProfile = 'private-0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e'
+  const tab = (id, extra = {}) => ({
+    id,
+    url: `http://lan.local:3000/${id}`,
+    title: `Page ${id}`,
+    kind: 'web',
+    runtimeId: 'runtime',
+    profileId: 'default',
+    ...extra,
+  })
+  const closedTab = tab('closed-one')
+  const { page, errors } = await openControlledBrowser({
+    active: 'alpha',
+    tabs: [tab('alpha'), tab('beta')],
+    closed: [closedTab],
+  })
+  const saved = () =>
+    page.evaluate(() => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')))
+  try {
+    await page.waitForFunction(() => window.controlActive === 'alpha')
+    assert.deepEqual(
+      await page.evaluate(() => window.controlledTabs.map((tab) => tab.id)),
+      ['alpha', 'beta'],
+      'Owner restores the same saved tabs the pane would',
+    )
+    // Owner-side lifecycle edits reach the visible pane without changing its selection.
+    const home = page.getByRole('button', { name: 'Return to tab home' })
+    assert.equal(await home.count(), 0)
+    await page.evaluate(() =>
+      window.setControlledTabs((tabs) =>
+        tabs.map((tab) =>
+          tab.id === 'alpha'
+            ? { ...tab, pinned: true, homeUrl: tab.url }
+            : { ...tab, settledAt: Date.now() },
+        ),
+      ),
+    )
+    await home.waitFor({ state: 'visible' })
+    await page.waitForFunction(() => {
+      const sync = window.calls.findLast((call) => call.action === 'sync-tabs')
+      return (
+        sync?.tabs.find((entry) => entry.tab.id === 'alpha')?.tab.pinned === true &&
+        sync.tabs.find((entry) => entry.tab.id === 'beta')?.tab.settledAt !== undefined
+      )
+    })
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+      return state.tabs[0].pinned === true && state.tabs[1].settledAt !== undefined
+    })
+    assert.deepEqual(
+      await page.evaluate(() => [window.controlSelections, window.controlActive]),
+      [[], 'alpha'],
+      'Owner lifecycle edits never steal focus',
+    )
+    // Pane-side edits are written to the owner, not to a private pane copy.
+    const address = page.getByLabel('Preview URL', { exact: true })
+    const writesBefore = await page.evaluate(() => window.ownerWrites ?? 0)
+    await address.fill('http://lan.local:3000/alpha-next')
+    await address.press('Enter')
+    await page.waitForFunction(
+      () =>
+        window.controlledTabs.find((tab) => tab.id === 'alpha')?.url ===
+        'http://lan.local:3000/alpha-next',
+    )
+    assert.ok(
+      (await page.evaluate(() => window.ownerWrites)) > writesBefore,
+      'Pane writes through onSetTabs',
+    )
+
+    // A hidden pane stays mounted and persists the owner's changes itself.
+    await page.evaluate(() => {
+      window.fixtureBackground = true
+      window.renderBrowser()
+    })
+    await page.getByLabel('Preview URL', { exact: true }).waitFor({ state: 'detached' })
+    const snoozedUntil = await page.evaluate((privateProfile) => {
+      const until = Date.now() + 3600000
+      window.setControlledTabs((tabs) => [
+        ...tabs.map((tab) =>
+          tab.id === 'beta' ? { ...tab, settledAt: undefined, snoozedUntil: until } : tab,
+        ),
+        {
+          id: 'secret',
+          url: 'http://lan.local:3000/secret',
+          title: 'Private page',
+          kind: 'web',
+          runtimeId: 'runtime',
+          profileId: privateProfile,
+          pinned: true,
+        },
+      ])
+      return until
+    }, privateProfile)
+    await page.waitForFunction(
+      (until) =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+          (tab) => tab.id === 'beta',
+        )?.snoozedUntil === until,
+      snoozedUntil,
+    )
+    let state = await saved()
+    assert.deepEqual(
+      state.tabs.map((tab) => tab.id),
+      ['alpha', 'beta'],
+      'Private pages are never stored',
+    )
+    assert.equal(state.tabs[1].settledAt, undefined, 'Snoozing clears the saved settle time')
+    assert.equal(state.active, 'alpha', 'Hidden saves keep the pane selection')
+    assert.deepEqual(
+      state.closed.map((tab) => tab.id),
+      ['closed-one'],
+      'Hidden saves keep recently closed pages',
+    )
+    assert.ok(!JSON.stringify(state).includes(privateProfile), 'No private data reaches storage')
+    await page.waitForFunction(() => {
+      const sync = window.calls.findLast((call) => call.action === 'sync-tabs')
+      return sync?.persisted === true && sync.tabs.length === 3
+    })
+    assert.deepEqual(
+      await page.evaluate(() => window.browserWorkspaceTabs.restored().map((tab) => tab.id)),
+      ['alpha', 'beta', 'secret'],
+      'The in-session copy keeps private pages for this renderer only',
+    )
+    assert.deepEqual(
+      await page.evaluate(() => [window.controlSelections, window.controlActive]),
+      [[], 'alpha'],
+      'Hidden owner changes do not change selection',
+    )
+    // With only private pages left, stale saved pages are replaced by the empty fallback.
+    await page.evaluate(() =>
+      window.setControlledTabs((tabs) => tabs.filter((tab) => tab.id === 'secret')),
+    )
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs[0].id === 'empty',
+    )
+    state = await saved()
+    assert.deepEqual(
+      state.tabs.map((tab) => [tab.id, tab.url, tab.profileId]),
+      [['empty', '', 'default']],
+      'A private-only list saves the empty fallback',
+    )
+    assert.equal(state.active, 'empty')
+    assert.ok(
+      !JSON.stringify(state).includes(privateProfile),
+      'The fallback stores no private browsing data',
+    )
+    // Owners resolve the same storage window as the pane; pop-outs get a stable session UUID.
+    const windows = await page.evaluate(() => {
+      const { windowId } = window.browserWorkspaceTabs
+      const popout = windowId({ threadWindow: true })
+      return {
+        popout,
+        stable: windowId({ threadWindow: true }) === popout,
+        explicit: windowId({ browserWindowId: 'explicit', threadWindow: true }),
+        main: windowId({}),
+      }
+    })
+    assert.match(windows.popout, /^[0-9a-f-]{36}$/i, 'Pop-out windows get a session UUID')
+    assert.ok(windows.stable, 'Pop-out window identity is stable for the renderer')
+    assert.equal(windows.explicit, 'explicit', 'An explicit browser window ID wins')
+    assert.equal(windows.main, undefined, 'The main window keeps the main storage key')
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+async function checkBackgroundBrowserService() {
+  const old = Date.now() - 3600000
+  const tab = (id, extra = {}) => ({
+    id,
+    url: `http://lan.local:3000/${id}`,
+    title: `Page ${id}`,
+    kind: 'web',
+    runtimeId: 'runtime',
+    profileId: 'default',
+    ...extra,
+  })
+  const { page, errors } = await openControlledBrowser(
+    { active: 'alpha', tabs: [tab('alpha'), tab('beta'), tab('gamma', { lastActiveAt: old })] },
+    { fixtureBackground: false },
+  )
+  const tabOf = (id) =>
+    page.evaluate((id) => window.controlledTabs.find((tab) => tab.id === id), id)
+  const request = (change) =>
+    page.evaluate((change) => {
+      const requestId = crypto.randomUUID()
+      window.fixtureWorkspaceControl.lifecycleRequest = { requestId, ...change }
+      window.renderBrowser()
+      return requestId
+    }, change)
+  const handled = (requestId) =>
+    page.waitForFunction((id) => window.handledRequests.includes(id), requestId)
+  const control = (change) =>
+    page.evaluate((change) => {
+      Object.assign(window, change)
+      window.renderBrowser()
+    }, change)
+  const nativeShown = (id) =>
+    page.evaluate(
+      (key) => window.calls.some((call) => call.key === key && call.action === 'show'),
+      `studio:browser:main:${id}`,
+    )
+  try {
+    await page.waitForFunction(() => window.controlActive === 'alpha')
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) => call.action === 'show' && call.key === 'studio:browser:main:alpha',
+      ),
+    )
+    assert.ok(
+      await page.evaluate(() => window.studioCommands.has('browser.detach')),
+      'A visible pane registers its commands',
+    )
+    // A visible pane shows its own errors; the owner only hears about hidden failures.
+    await handled(await request({ tabId: 'beta', action: 'snooze', until: Date.now() - 1000 }))
+    await page.getByText('Choose a future time for this tab.').waitFor()
+    assert.deepEqual(await page.evaluate(() => window.controlErrors), [])
+    // Unknown pages are acknowledged without changing anything.
+    await handled(await request({ tabId: 'missing', action: 'settle' }))
+    // A visible selected page settles through the pane's own path: the next page is selected.
+    await handled(await request({ tabId: 'alpha', action: 'settle' }))
+    await page.waitForFunction(() => window.controlActive === 'beta')
+    assert.ok((await tabOf('alpha')).settledAt > 0, 'Settle request stores settle time')
+    assert.deepEqual(
+      await page.evaluate(() => window.controlSelections),
+      ['beta'],
+      'A visible pane moves the owner to the next active page',
+    )
+    // Choosing the settled page again wakes it.
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'alpha'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActive === 'alpha')
+    assert.equal((await tabOf('alpha')).settledAt, undefined, 'Selecting a settled page wakes it')
+    // A selected page settled by metadata alone also wakes when chosen again.
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = undefined
+      window.renderBrowser()
+      window.setControlledTabs((tabs) =>
+        tabs.map((tab) => (tab.id === 'alpha' ? { ...tab, settledAt: Date.now() } : tab)),
+      )
+    })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'alpha').settledAt > 0,
+    )
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = 'alpha'
+      window.renderBrowser()
+    })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'alpha').settledAt === undefined,
+    )
+    assert.equal(await page.evaluate(() => window.controlActive), 'alpha')
+
+    // Background: mounted but not visible. Presentation is released; services keep running.
+    const selections = (await page.evaluate(() => window.controlSelections)).length
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.focusTabId = undefined
+    })
+    await control({ fixtureBackground: true })
+    await page.waitForFunction(() => {
+      const last = window.calls.findLast(
+        (call) => call.key === 'studio:browser:main:alpha' && /^(show|hide)$/.test(call.action),
+      )
+      return last?.action === 'hide'
+    })
+    assert.equal(
+      await page.getByLabel('Preview URL', { exact: true }).count(),
+      0,
+      'A background pane releases the shared header',
+    )
+    assert.equal(
+      await page.evaluate(() => window.studioCommands.has('browser.detach')),
+      false,
+      'A background pane releases its commands',
+    )
+    const tabCount = await page.evaluate(() => window.controlledTabs.length)
+    await page.keyboard.press('Control+t')
+    await page.waitForTimeout(200)
+    assert.equal(
+      await page.evaluate(() => window.controlledTabs.length),
+      tabCount,
+      'A background pane ignores browser shortcuts',
+    )
+    // Find and native menu actions belong to the visible workspace item, not the background pane.
+    const findClaimed = await page.evaluate(() => {
+      const outside = document.createElement('button')
+      document.body.append(outside)
+      const event = new KeyboardEvent('keydown', {
+        key: 'f',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      outside.dispatchEvent(event)
+      outside.remove()
+      return event.defaultPrevented
+    })
+    assert.equal(findClaimed, false, 'A background pane leaves Ctrl+F to the visible item')
+    await page.evaluate(() =>
+      window.contextAction({ action: 'find', key: 'studio:browser:main:alpha' }),
+    )
+    await page.waitForTimeout(200)
+    assert.equal(
+      await page.getByPlaceholder('Find on page').count(),
+      0,
+      'A background pane ignores native find actions',
+    )
+    // Automatic settling and native sync continue while the pane is not shown.
+    const syncsBefore = await page.evaluate(
+      () => window.calls.filter((call) => call.action === 'sync-tabs').length,
+    )
+    await page.evaluate(() => window.setCleanup({ browserAutoSettleMinutes: 30 }))
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'gamma').settledAt > 0,
+    )
+    await page.waitForFunction((before) => {
+      const syncs = window.calls.filter((call) => call.action === 'sync-tabs')
+      return (
+        syncs.length > before &&
+        syncs.at(-1).tabs.find((entry) => entry.tab.id === 'gamma')?.tab.settledAt > 0
+      )
+    }, syncsBefore)
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+          (tab) => tab.id === 'gamma',
+        )?.settledAt > 0,
+    )
+    // Hidden failures reach the owner, every time, even with an identical message.
+    for (let attempt = 0; attempt < 2; attempt++)
+      await handled(await request({ tabId: 'beta', action: 'snooze', until: Date.now() - 1000 }))
+    assert.deepEqual(
+      await page.evaluate(() => window.controlErrors),
+      ['Choose a future time for this tab.', 'Choose a future time for this tab.'],
+      'Hidden lifecycle errors are reported to the owner',
+    )
+    // Lifecycle and native focus changes in the background never pull the owner to the browser.
+    await request({ tabId: 'alpha', action: 'snooze', until: Date.now() + 3600000 })
+    await page.waitForFunction(() => window.controlActive === 'beta')
+    assert.ok((await tabOf('alpha')).snoozedUntil > Date.now(), 'Hidden snooze is stored')
+    await page.evaluate(() => {
+      window.focusedTabKey = 'studio:browser:main:gamma'
+    })
+    await page.evaluate(() => window.pollBrowser())
+    await page.waitForFunction(() => window.controlActive === 'gamma')
+    assert.equal(
+      (await page.evaluate(() => window.controlSelections)).length,
+      selections,
+      'Background lifecycle and native focus changes do not steal focus',
+    )
+    assert.equal(await nativeShown('gamma'), false, 'A background page is never shown')
+    await request({ tabId: 'alpha', action: 'wake' })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'alpha').snoozedUntil === undefined,
+    )
+    await request({ tabId: 'beta', action: 'pin' })
+    await page.waitForFunction(
+      () => window.controlledTabs.find((tab) => tab.id === 'beta').pinned === true,
+    )
+    // Revealing the pane restores presentation for the page it followed.
+    await control({ fixtureBackground: false })
+    await page.getByLabel('Preview URL', { exact: true }).waitFor({ state: 'visible' })
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) => call.action === 'show' && call.key === 'studio:browser:main:gamma',
+      ),
+    )
+    assert.ok(await page.evaluate(() => window.studioCommands.has('browser.detach')))
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+async function checkBackgroundRemoteBrowser() {
+  const { page, errors } = await openControlledBrowser({
+    active: 'remote-one',
+    tabs: [
+      {
+        id: 'remote-one',
+        url: 'http://lan.local:3000/remote',
+        title: 'Remote page',
+        kind: 'remote',
+        runtimeId: 'runtime',
+        profileId: 'default',
+      },
+    ],
+  })
+  const visibility = () => page.evaluate(() => window.remoteVisibility.at(-1))
+  try {
+    await page.waitForFunction(() => window.remoteVisibility.at(-1) === true)
+    await page.evaluate(() => {
+      window.fixtureBackground = true
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.remoteVisibility.at(-1) === false)
+    assert.equal(await visibility(), false, 'A background pane pauses the remote stream')
+    // Lifecycle work still runs against the paused remote page.
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.lifecycleRequest = {
+        requestId: 'remote-pin',
+        tabId: 'remote-one',
+        action: 'pin',
+      }
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlledTabs[0].pinned === true)
+    assert.equal(await visibility(), false, 'Lifecycle work does not resume the stream')
+    await page.evaluate(() => {
+      window.fixtureBackground = false
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.remoteVisibility.at(-1) === true)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
 async function checkAwakeDefaultsAndDetaching() {
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
   const errors = []
@@ -512,7 +1173,21 @@ async function checkAwakeDefaultsAndDetaching() {
     await page.close()
   }
 }
+if (process.argv.includes('--unified-integration-only')) {
+  try {
+    await checkRealUnifiedBrowserIntegration()
+    console.log('Real UnifiedWorkspace + BrowserPane + Effect state integration passed.')
+  } finally {
+    await browser.close()
+  }
+  process.exit(0)
+}
 try {
+  await checkRealUnifiedBrowserIntegration()
+  await checkControlledBrowserTabs()
+  await checkBackgroundBrowserService()
+  await checkBackgroundRemoteBrowser()
+  await checkUnifiedBrowserControl()
   await checkAwakeDefaultsAndDetaching()
   await checkAddressSelection()
   await captureBrowserSidebar(browser)
@@ -1529,6 +2204,13 @@ try {
     'Changing profiles loads the current redirected URL',
   )
   const sourceBeforeOpen = await selected()
+  assert.equal(
+    await page
+      .locator(`[data-browser-tab-id="${sourceBeforeOpen.id}"] .studio-browser-tab-profile`)
+      .textContent(),
+    'This computer · Local Work',
+    'Regular tabs show readable names for nondefault profiles',
+  )
   await page.evaluate(async () => {
     window.openedLinks.push('http://localhost:3000/new-window')
     await window.pollBrowser()
@@ -2841,6 +3523,23 @@ try {
     'Home stays in the URL bar, not the pinned-tab panel',
   )
   await pins.first().getByLabel('This computer · Local Default').waitFor()
+  assert.equal(
+    await pins.first().getByLabel('This computer · Local Default').textContent(),
+    '',
+    'Default pins retain machine identity without cryptic profile initials',
+  )
+  assert.equal(
+    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
+    'LW',
+    'Nondefault pins retain compact profile identity',
+  )
+  assert.equal(
+    await compactSidebar
+      .locator('[data-browser-tab-id="compact-4"] .studio-browser-tab-profile')
+      .textContent(),
+    'This computer',
+    'Default regular tabs show readable machine identity without redundant profile initials',
+  )
   await controlsPage.evaluate(() =>
     window.setCleanup({
       browserProfiles: [
@@ -3318,7 +4017,7 @@ try {
     'Selecting a pin must not reorder it',
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.equal(await row('normal-b').getAttribute('draggable'), 'true')
   await row('normal-c').dragTo(row('normal-a'), { targetPosition: { x: 30, y: 3 } })
@@ -3336,7 +4035,7 @@ try {
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.map((tab) => tab.id),
   )
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).check()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).check()
   await orderPage.keyboard.press('Escape')
   await row('normal-b').getByRole('button').first().click()
   assert.equal((await visibleOrder())[2], 'normal-a', 'Activity mode ignores selection')
@@ -3348,7 +4047,7 @@ try {
   )
   assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows navigation')
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.getByRole('switch', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')
   assert.deepEqual(await visibleOrder(), savedOrder, 'Returning to manual mode restores its order')
   await loadOrderPage()

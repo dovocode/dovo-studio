@@ -28,9 +28,9 @@ const browser=await chromium.launch({headless:true});
 try {
  const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.route('https://dovo.test/**',route=>route.fulfill({contentType:'text/html',body:'<div id="app"></div>'}));
- const load=async()=>{await page.goto('https://dovo.test/');await page.addScriptTag({content:built.outputFiles[0].text});await page.getByRole('textbox',{name:'Message task'}).waitFor()};
+ const load=async()=>{await page.goto('https://dovo.test/');await page.addScriptTag({content:built.outputFiles[0].text});await page.getByRole('textbox',{name:'Message thread'}).waitFor()};
  const start=async()=>{await page.getByRole('button',{name:'More message actions',exact:true}).click();const item=page.getByRole('menuitem',{name:'Start in background'});assert.equal(await item.isEnabled(),true);await item.click();await page.waitForFunction(()=>window.finish!==null)};
- const input=page.getByRole('textbox',{name:'Message task'});
+ const input=page.getByRole('textbox',{name:'Message thread'});
  await load();
  const original=await page.evaluate(()=>window.draft.id);
  assert.equal(await page.evaluate(()=>window.draft.autoProject),true);

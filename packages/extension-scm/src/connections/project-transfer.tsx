@@ -262,9 +262,16 @@ export function ProjectTransferSettings({
   if (repository.kind === 'scratch') return null
   if (!store.snapshot?.projectTransfersSupported)
     return (
-      <p className="text-xs text-muted-foreground">
-        Update this computer to copy projects to another computer.
-      </p>
+      <div className="grid gap-4">
+        <p className="text-xs text-muted-foreground">
+          Update this computer to copy projects to another computer.
+        </p>
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => host.navigate({ viewId: 'runtime' })}>
+            Open Devices & runtime
+          </Button>
+        </div>
+      </div>
     )
   const start = (retry = false) =>
     act(async () => {
@@ -734,9 +741,9 @@ export function ProjectTransferDialog({
         <DialogTitle>
           {sourceTask
             ? sourceTask.execution === 'worktree'
-              ? 'Copy worktree to another machine'
-              : 'Copy project checkout to another machine'
-            : 'Add to another machine'}
+              ? 'Copy worktree to another computer'
+              : 'Copy project checkout to another computer'
+            : 'Add to another computer'}
         </DialogTitle>
         <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />
       </DialogContent>

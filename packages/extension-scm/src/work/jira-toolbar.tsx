@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { JiraBrowseControls } from './jira-browse-controls'
 import { SlidersHorizontal, X, List, Columns3 } from 'lucide-react'
 import { hasJiraIssueFilters, type ForgeIssue, type JiraIssueFilters } from '@dovo/protocol'
-import { Button, Input, Popover, ChoicePicker } from '@dovo/studio-ui'
+import { Button, Input, Popover, ChoicePicker, cn } from '@dovo/studio-ui'
 import type { WorkSource } from './work-sources'
 import { matchesWorkSource } from './work-source-identity'
 
@@ -74,22 +74,29 @@ export function JiraToolbar({
       <X className="size-3" />
     </Button>
   )
+  const activeFilters =
+    Number(!!source) +
+    Number(linked !== 'all') +
+    Number(sort !== 'updated') +
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== 'all').length +
+    Number(!['open', 'closed'].includes(state))
+  const hasActiveFilters =
+    !!source ||
+    linked !== 'all' ||
+    state !== 'open' ||
+    hasJiraIssueFilters(filters) ||
+    sort !== 'updated'
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <div className="flex flex-wrap gap-1" role="group" aria-label="Jira quick views">
+    <fieldset disabled={!sources.length} className="m-0 min-w-0 space-y-2 border-0 p-0">
+      <div className="studio-list-toolbar flex-wrap">
+        <div className="studio-list-quick-views" role="group" aria-label="Jira quick views">
           {presets.map((preset) => (
             <Button
               key={preset.name}
               type="button"
               size="sm"
-              variant={
-                state === preset.state &&
-                (filters.assignee ?? 'all') === preset.assignee &&
-                !filters.statusCategory
-                  ? 'secondary'
-                  : 'ghost'
-              }
+              variant="ghost"
+              className="studio-list-quick-filter"
               aria-pressed={
                 state === preset.state &&
                 (filters.assignee ?? 'all') === preset.assignee &&
@@ -104,11 +111,39 @@ export function JiraToolbar({
             </Button>
           ))}
         </div>
-        <Popover.Root open={open} onOpenChange={setOpen}>
+        <div className="flex gap-1" role="group" aria-label="Jira layout">
+          {(['list', 'board'] as const).map((layout) => (
+            <Button
+              key={layout}
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="studio-list-quick-filter"
+              aria-pressed={view === layout}
+              onClick={() => onView(layout)}
+            >
+              {layout === 'list' ? (
+                <List className="size-3.5" />
+              ) : (
+                <Columns3 className="size-3.5" />
+              )}
+              {layout === 'list' ? 'List' : 'Board'}
+            </Button>
+          ))}
+        </div>
+        <Popover.Root open={open && !!sources.length} onOpenChange={setOpen}>
           <Popover.Trigger asChild>
-            <Button type="button" size="sm" variant="outline">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="studio-list-filter-trigger"
+              aria-label="Filters"
+              data-active={activeFilters > 0 || undefined}
+            >
               <SlidersHorizontal className="size-3.5" />
               Filters
+              {!!activeFilters && <span className="studio-list-filter-count">{activeFilters}</span>}
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
@@ -132,11 +167,8 @@ export function JiraToolbar({
                     type="button"
                     key={value}
                     size="sm"
-                    variant={
-                      (filters.statusCategory ?? 'all') === value && state === 'all'
-                        ? 'secondary'
-                        : 'ghost'
-                    }
+                    variant="ghost"
+                    className="studio-list-quick-filter"
                     aria-pressed={(filters.statusCategory ?? 'all') === value && state === 'all'}
                     onClick={() => {
                       onState('all')
@@ -190,7 +222,8 @@ export function JiraToolbar({
                         type="button"
                         key={value}
                         size="sm"
-                        variant={state === value ? 'secondary' : 'ghost'}
+                        variant="ghost"
+                        className="studio-list-quick-filter"
                         aria-pressed={state === value}
                         onClick={() => {
                           onState(value)
@@ -234,8 +267,11 @@ export function JiraToolbar({
                           key={value}
                           type="button"
                           size="sm"
-                          className="max-w-full whitespace-normal break-words text-left text-xs"
-                          variant={filters[group.key] === value ? 'secondary' : 'ghost'}
+                          className={cn(
+                            'studio-list-quick-filter',
+                            'max-w-full whitespace-normal break-words text-left',
+                          )}
+                          variant="ghost"
                           aria-pressed={filters[group.key] === value}
                           onClick={() =>
                             onFilters({
@@ -276,25 +312,6 @@ export function JiraToolbar({
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
-        <div className="ml-auto flex gap-1" role="group" aria-label="Jira layout">
-          {(['list', 'board'] as const).map((layout) => (
-            <Button
-              key={layout}
-              type="button"
-              size="sm"
-              variant={view === layout ? 'secondary' : 'ghost'}
-              aria-pressed={view === layout}
-              onClick={() => onView(layout)}
-            >
-              {layout === 'list' ? (
-                <List className="size-3.5" />
-              ) : (
-                <Columns3 className="size-3.5" />
-              )}
-              {layout === 'list' ? 'List' : 'Board'}
-            </Button>
-          ))}
-        </div>
       </div>
       {!!filters.board && !filters.sprint && (
         <p role="status" className="text-xs text-muted-foreground">
@@ -302,49 +319,53 @@ export function JiraToolbar({
           columns and filters are available in Jira.
         </p>
       )}
-      <div role="group" className="flex flex-wrap gap-1.5" aria-label="Active Jira filters">
-        {filters.assignee &&
-          filters.assignee !== 'all' &&
-          chip(filters.assignee === 'mine' ? 'Assigned to me' : 'Unassigned', () =>
-            onFilters({ ...filters, assignee: undefined }),
+      {hasActiveFilters && (
+        <div role="group" className="flex flex-wrap gap-1.5" aria-label="Active Jira filters">
+          {filters.assignee &&
+            filters.assignee !== 'all' &&
+            chip(filters.assignee === 'mine' ? 'Assigned to me' : 'Unassigned', () =>
+              onFilters({ ...filters, assignee: undefined }),
+            )}
+          {source &&
+            chip(sources.find((entry) => matchesWorkSource(entry, source))?.name ?? 'Source', () =>
+              onSource(''),
+            )}
+          {!['open', 'all', 'closed'].includes(state) &&
+            chip(`Status: ${state}`, () => onState('open'))}
+          {state === 'all' &&
+            !filters.statusCategory &&
+            chip('All statuses', () => onState('open'))}
+          {filters.statusCategory &&
+            chip(
+              filters.statusCategory === 'todo'
+                ? 'To do'
+                : filters.statusCategory === 'done'
+                  ? 'Done'
+                  : 'In progress',
+              () => onFilters({ ...filters, statusCategory: undefined }),
+            )}
+          {filters.board &&
+            chip(`Board: ${filters.board}`, () =>
+              onFilters({ ...filters, board: undefined, sprint: undefined }),
+            )}
+          {filters.sprint &&
+            chip(`Sprint: ${filters.sprint}`, () => onFilters({ ...filters, sprint: undefined }))}
+          {choices.map((group) =>
+            filters[group.key]
+              ? chip(`${group.name}: ${filters[group.key]}`, () =>
+                  onFilters({ ...filters, [group.key]: undefined }),
+                )
+              : null,
           )}
-        {source &&
-          chip(sources.find((entry) => matchesWorkSource(entry, source))?.name ?? 'Source', () =>
-            onSource(''),
-          )}
-        {!['open', 'all', 'closed'].includes(state) &&
-          chip(`Status: ${state}`, () => onState('open'))}
-        {state === 'all' && !filters.statusCategory && chip('All statuses', () => onState('open'))}
-        {filters.statusCategory &&
-          chip(
-            filters.statusCategory === 'todo'
-              ? 'To do'
-              : filters.statusCategory === 'done'
-                ? 'Done'
-                : 'In progress',
-            () => onFilters({ ...filters, statusCategory: undefined }),
-          )}
-        {filters.board &&
-          chip(`Board: ${filters.board}`, () =>
-            onFilters({ ...filters, board: undefined, sprint: undefined }),
-          )}
-        {filters.sprint &&
-          chip(`Sprint: ${filters.sprint}`, () => onFilters({ ...filters, sprint: undefined }))}
-        {choices.map((group) =>
-          filters[group.key]
-            ? chip(`${group.name}: ${filters[group.key]}`, () =>
-                onFilters({ ...filters, [group.key]: undefined }),
-              )
-            : null,
-        )}
-        {linked !== 'all' &&
-          chip(linked === 'linked' ? 'Linked project' : 'No linked project', () => onLinked('all'))}
-        {(source || linked !== 'all' || state !== 'open' || hasJiraIssueFilters(filters)) && (
+          {linked !== 'all' &&
+            chip(linked === 'linked' ? 'Linked project' : 'No linked project', () =>
+              onLinked('all'),
+            )}
           <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={onClear}>
             Clear filters
           </Button>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </fieldset>
   )
 }

@@ -141,7 +141,7 @@ export function AutomationDetail({
                   Validate automation
                 </DropdownMenu.Item>
                 <DropdownMenu.Item className={menuItem} onSelect={drafts}>
-                  Create task drafts
+                  Create thread drafts
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   className={cn(menuItem, 'text-destructive data-[disabled]:opacity-50')}
@@ -296,7 +296,7 @@ export function AutomationDetail({
                             {kind === 'trigger'
                               ? 'Trigger'
                               : kind === 'task'
-                                ? 'Agent task'
+                                ? 'Agent thread'
                                 : 'Review gate'}
                           </DropdownMenu.Item>
                         ))}

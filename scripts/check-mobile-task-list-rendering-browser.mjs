@@ -102,6 +102,11 @@ export const startRuntimeSync=(connection,options)=>{
     contents: `export const useNavigation=()=>window.navigation;`,
   },
   {
+    path: '../workspace/workspace-modes',
+    importer: mobile + 'screens/tasks.tsx',
+    contents: 'export const WorkspaceModes=()=>null;',
+  },
+  {
     path: '../tasks/list/section-order-sheet',
     importer: mobile + 'screens/tasks.tsx',
     contents: `export const SectionOrderSheet=({onClose})=><div role="dialog" aria-label="Organize sections"><button onClick={onClose}>Close section order</button></div>;`,

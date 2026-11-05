@@ -6,7 +6,7 @@ import {
 import { createPortal } from 'react-dom'
 import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
-import { conversationPageSchema, draftStashScope } from '@dovo/protocol'
+import { canChangeTaskCheckout, conversationPageSchema, draftStashScope } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { QueueEditContext } from './queue-edit'
 import { useThreadInfoContext } from '../../detail/thread-info-context'
@@ -28,6 +28,8 @@ import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  useConfirmation,
+  clientScopeKey,
   generatedTitleSchema,
   readAppPreferences,
   resolveTaskAgent,
@@ -131,6 +133,8 @@ export function Composer({
     flush,
     snapshot,
     activeRuntimeId,
+    runtimeRegistry,
+    refreshRuntime,
   } = useWorkspace()
   const loadComposerHistory = useCommittedCallback((before: string, signal: AbortSignal) => {
     if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
@@ -390,6 +394,34 @@ export function Composer({
   const [command, setCommand] = useState<'new-session' | 'undo' | null>(null)
   const [commandBusy, setCommandBusy] = useState(false)
   const [commandError, setCommandError] = useState('')
+  const [commandRefreshing, setCommandRefreshing] = useState(false)
+  const [commandNeedsRefresh, setCommandNeedsRefresh] = useState(false)
+  const commandWorking = useRef(false)
+  const commandTarget = useRef<{
+    taskId: string
+    runtimeId: typeof activeRuntimeId
+    connection: typeof connection
+    turnId: string | undefined
+  } | null>(null)
+  const commandIsCurrent = useCommittedCallback(
+    (target: NonNullable<typeof commandTarget.current>) =>
+      commandTarget.current === target &&
+      target.taskId === task.id &&
+      target.runtimeId === activeRuntimeId &&
+      target.connection === connection,
+  )
+  useEffect(() => {
+    commandTarget.current = null
+    commandWorking.current = false
+    setCommand(null)
+    setCommandBusy(false)
+    setCommandRefreshing(false)
+    setCommandNeedsRefresh(false)
+    setCommandError('')
+    return () => {
+      commandTarget.current = null
+    }
+  }, [task.id, activeRuntimeId, connection])
   const [compactBusy, setCompactBusy] = useState(false)
   const meter = contextMeter(task)
   const compactDisabled =
@@ -415,6 +447,7 @@ export function Composer({
     undoable?.id ??
     task.historyTotals?.undoableTurnId
   const runCommand = (id: ComposerCommandId) => {
+    if (commandWorking.current) return
     setCommandError('')
     if (id === 'review')
       void request(
@@ -423,28 +456,100 @@ export function Composer({
         responses.ok,
       ).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
     else if (id === 'compact') compact()
-    else setCommand(id)
+    else {
+      commandTarget.current = {
+        taskId: task.id,
+        runtimeId: activeRuntimeId,
+        connection,
+        turnId: undoableId,
+      }
+      setCommand(id)
+    }
   }
+  const closeCommand = () => {
+    if (commandWorking.current) return
+    commandTarget.current = null
+    setCommand(null)
+  }
+  const canUndoCommand = !!undoableId && commandTarget.current?.turnId === undoableId
   const confirmCommand = () => {
-    if (!command || commandBusy) return
+    const target = commandTarget.current
+    if (
+      !command ||
+      !target ||
+      !commandIsCurrent(target) ||
+      commandWorking.current ||
+      !connected ||
+      task.status === 'running' ||
+      (command === 'undo' && (!canUndoCommand || commandNeedsRefresh))
+    )
+      return
+    commandWorking.current = true
     setCommandBusy(true)
     setCommandError('')
     const work =
       command === 'new-session'
-        ? request('/api/tasks/new-session', { id: task.id }, responses.ok)
-        : undoableId
+        ? request('/api/tasks/new-session', { id: target.taskId }, responses.ok)
+        : target.turnId
           ? request(
               '/api/tasks/turn/restore',
-              { id: task.id, turnId: undoableId, direction: 'undo' },
+              { id: target.taskId, turnId: target.turnId, direction: 'undo' },
               responses.ok,
             )
           : Promise.reject(new Error('There is no turn with file changes to undo.'))
     void work
-      .then(() => setCommand(null))
-      .catch((cause: unknown) =>
-        setCommandError(cause instanceof Error ? cause.message : String(cause)),
-      )
-      .finally(() => setCommandBusy(false))
+      .then(() => {
+        if (!commandIsCurrent(target)) return
+        commandTarget.current = null
+        commandWorking.current = false
+        setCommandBusy(false)
+        setCommand(null)
+      })
+      .catch((cause: unknown) => {
+        if (!commandIsCurrent(target)) return
+        setCommandError(cause instanceof Error ? cause.message : String(cause))
+        if (command === 'undo') setCommandNeedsRefresh(true)
+      })
+      .finally(() => {
+        if (!commandIsCurrent(target)) return
+        commandWorking.current = false
+        setCommandBusy(false)
+      })
+  }
+  const refreshCommand = () => {
+    const target = commandTarget.current
+    if (!target || !commandIsCurrent(target) || commandWorking.current || !connected) return
+    const profile = runtimeRegistry.profiles.find((entry) => entry.id === target.runtimeId)
+    if (!profile) {
+      setCommandError('This thread’s computer is no longer saved. Reopen the thread to continue.')
+      return
+    }
+    commandWorking.current = true
+    setCommandRefreshing(true)
+    setCommandError('')
+    // Flush and merge the captured runtime's snapshot; never discard local edits or reconnect.
+    void Promise.resolve()
+      .then(() => {
+        if (!commandIsCurrent(target)) return
+        composerDraft.flush()
+        return flush()
+      })
+      .then(() => {
+        if (!commandIsCurrent(target)) return
+        return refreshRuntime(profile)
+      })
+      .then(() => {
+        if (commandIsCurrent(target)) setCommandNeedsRefresh(false)
+      })
+      .catch((cause: unknown) => {
+        if (commandIsCurrent(target))
+          setCommandError(cause instanceof Error ? cause.message : String(cause))
+      })
+      .finally(() => {
+        if (!commandIsCurrent(target)) return
+        commandWorking.current = false
+        setCommandRefreshing(false)
+      })
   }
   const resources = useMemo(
     () =>
@@ -559,7 +664,7 @@ export function Composer({
   const planIssue = !plan
     ? undefined
     : !planSupported
-      ? 'Update the task computer to use plan mode.'
+      ? 'Update the thread computer to use plan mode.'
       : planModeIssue(agent)
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
   const preferences = useAppPreferences()
@@ -614,31 +719,43 @@ export function Composer({
     (stagingGapActive || (!!task.queue?.length && !!(task.queuePaused || task.queue[0]?.paused)))
   const backgroundPreview = hasBackgroundAction && altPressed
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
+  const stopLock = useRef(false)
+  const stopScope = JSON.stringify([
+    activeRuntimeId,
+    clientScopeKey(connection),
+    task.id,
+    task.activeRunId,
+    connected,
+  ])
+  const confirm = useConfirmation(stopScope)
+  const currentStopScope = useRef(stopScope)
+  currentStopScope.current = stopScope
   const stop = async () => {
+    if (stopLock.current || !connected) return
     const runId = task.activeRunId
-    // Settings → General → Confirm before stopping a running task.
-    if (
-      readAppPreferences().confirmStop &&
-      !window.confirm(
-        `Stop “${task.title}”? Queued messages stay paused until you continue or send a follow-up.`,
-      )
-    )
-      return
+    const taskId = task.id
+    const isCurrent = () => mounted.current && currentStopScope.current === stopScope
+    stopLock.current = true
     setStopping(true)
-    setError('')
     try {
-      await request(
-        '/api/tasks/cancel',
-        {
-          id: task.id,
-          runId,
-        },
-        responses.ok,
+      if (
+        readAppPreferences().confirmStop &&
+        !(await confirm({
+          title: `Stop “${task.title}”?`,
+          description: 'Queued messages stay paused until you continue or send a follow-up.',
+          confirmLabel: 'Stop thread',
+          destructive: true,
+        }))
       )
+        return
+      if (!isCurrent()) return
+      setError('')
+      await request('/api/tasks/cancel', { id: taskId, runId }, responses.ok)
     } catch (e) {
-      setError(String(e))
+      if (isCurrent()) setError(String(e))
     } finally {
-      setStopping(false)
+      stopLock.current = false
+      if (mounted.current) setStopping(false)
     }
   }
   const beginEdit = (message: Task['messages'][number]) => {
@@ -666,7 +783,7 @@ export function Composer({
     )
       return
     if (editing.settings?.harness && !snapshot?.fullTurnSettingsSupported) {
-      setError('Update the task computer to use all settings for this turn.')
+      setError('Update the thread computer to use all settings for this turn.')
       return
     }
     if (policyIssue || planIssue) {
@@ -717,11 +834,11 @@ export function Composer({
     if (mode === 'stage' && (!connected || snapshot?.promptQueueStagingSupported !== true)) return
     if (mode === 'direct' && (!connected || snapshot?.directMessageSupported !== true)) return
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
-      setError('Update the task computer to choose a model for this turn.')
+      setError('Update the thread computer to choose a model for this turn.')
       return
     }
     if (turnSettings?.harness && !snapshot?.fullTurnSettingsSupported) {
-      setError('Update the task computer to use all settings for this turn.')
+      setError('Update the thread computer to use all settings for this turn.')
       return
     }
     if (turnSettings && mode === 'steer') {
@@ -844,7 +961,7 @@ export function Composer({
           text ||
           `Work with the attached files: ${attachments.files.map((file) => file.name).join(', ')}`
         const title =
-          attempt.current.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
+          attempt.current.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New thread')
         attempt.current.title = title
         if (!snapshot?.messageSetupSupported) {
           setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, title })))
@@ -1106,10 +1223,26 @@ export function Composer({
       />
     </>
   )
+  const submitDisabled =
+    (!!editing && !task.queue?.some((message) => message.id === editing.message.id)) ||
+    !!policyIssue ||
+    !!planIssue ||
+    (!composerDraft.hasText && !(editing ? editing.files.length : attachments.files.length)) ||
+    sending ||
+    !!awaitingQueuedSubmission ||
+    hasFailedSubmissionAttachments ||
+    stopping ||
+    attachments.busy ||
+    !!task.archivedAt ||
+    (!!connection && !connected) ||
+    (firstMessage && (!connected || !task.repositoryId || !agent))
+  // Keep data-labeled on icon actions: it also opts out of legacy accent and glow styles.
+  const iconOnlySubmit = !editing && (stageFirst || task.status === 'running')
   const settingsContainer = projectSettings?.container ?? infoContainer
   const workspaceSettings = workspaceControls?.(accessSlot) ?? (
     <ComposerWorkspace
       task={task}
+      showBranch={canChangeTaskCheckout(task)}
       disabled={sending || !!task.archived}
       onMachineMoving={setMachineMoving}
       onSelectRemote={onSelectRemote}
@@ -1300,21 +1433,26 @@ export function Composer({
             )}
             {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
               <div
-                className="composer-send-group flex shrink-0 items-center"
+                className="composer-send-group flex shrink-0 items-center data-[ready]:bg-action!"
                 data-options={showSendOptions || undefined}
+                data-ready={!submitDisabled || undefined}
                 role="group"
                 aria-label="Send message"
               >
                 <ComposerSubmit
                   busy={sending}
-                  data-labeled={editing || task.status === 'running' || stageFirst ? '' : undefined}
-                  className={
-                    editing
-                      ? 'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]'
-                      : task.status === 'running' || stageFirst
-                        ? 'h-8 w-auto gap-1.5 rounded-full bg-muted px-3 text-[0.6875rem] text-foreground hover:bg-accent'
-                        : undefined
-                  }
+                  data-labeled=""
+                  className={cn(
+                    'h-8 rounded-full text-[0.6875rem]',
+                    iconOnlySubmit ? 'w-8 p-0' : 'w-auto gap-1.5 px-3',
+                    !editing &&
+                      task.status !== 'running' &&
+                      !stageFirst &&
+                      'max-[360px]:w-8 max-[360px]:px-0',
+                    submitDisabled
+                      ? 'bg-muted text-muted-foreground hover:bg-muted'
+                      : 'bg-action text-action-foreground hover:bg-action/90',
+                  )}
                   title={
                     editing
                       ? 'Save changes (Enter)'
@@ -1341,24 +1479,9 @@ export function Composer({
                               ? 'Queue follow-up'
                               : connected
                                 ? 'Send to agent'
-                                : 'Save message to task'
+                                : 'Save message to thread'
                   }
-                  disabled={
-                    (!!editing &&
-                      !task.queue?.some((message) => message.id === editing.message.id)) ||
-                    !!policyIssue ||
-                    !!planIssue ||
-                    (!composerDraft.hasText &&
-                      !(editing ? editing.files.length : attachments.files.length)) ||
-                    sending ||
-                    !!awaitingQueuedSubmission ||
-                    hasFailedSubmissionAttachments ||
-                    stopping ||
-                    attachments.busy ||
-                    !!task.archivedAt ||
-                    (!!connection && !connected) ||
-                    (firstMessage && (!connected || !task.repositoryId || !agent))
-                  }
+                  disabled={submitDisabled}
                 >
                   {sending ? (
                     <LoaderCircle className="size-4 animate-spin" />
@@ -1369,11 +1492,11 @@ export function Composer({
                   ) : (
                     <ArrowUp className={cn('size-4', backgroundPreview && 'rotate-45')} />
                   )}
-                  {editing
-                    ? 'Save changes'
-                    : stageFirst
-                      ? 'Add to queue'
-                      : task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
+                  {editing ? (
+                    'Save changes'
+                  ) : !iconOnlySubmit ? (
+                    <span className="max-[360px]:sr-only">Send</span>
+                  ) : null}
                 </ComposerSubmit>
                 {showSendOptions && (
                   <DropdownMenu.Root>
@@ -1383,7 +1506,10 @@ export function Composer({
                         variant="ghost"
                         aria-label="More message actions"
                         title="Other ways to send this message"
-                        className="composer-send-options h-8 w-5 rounded-none p-0 text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                        className={cn(
+                          'composer-send-options h-8 w-5 rounded-none p-0 text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground',
+                          !submitDisabled && 'text-action-foreground!',
+                        )}
                         disabled={
                           !connected ||
                           sending ||
@@ -1511,16 +1637,17 @@ export function Composer({
             {task.status === 'running' && (
               <ComposerSubmit
                 type="button"
-                variant="destructive"
+                variant="outline"
                 data-composer-stop=""
-                className="studio-destructive-accent"
+                data-labeled=""
+                className="studio-destructive-accent h-8 w-8 rounded-full border border-border bg-transparent p-0 text-xs text-foreground shadow-none hover:bg-muted"
                 aria-label="Stop"
                 aria-busy={stopping}
                 title="Stop the agent and pause queued messages"
                 disabled={!connected || stopping || task.archived}
                 onClick={() => void stop()}
               >
-                <Square className="size-3.5 fill-current" />
+                <Square className="size-3.5 fill-current text-destructive" />
               </ComposerSubmit>
             )}
           </>
@@ -1593,7 +1720,7 @@ export function Composer({
             Drop files to attach
           </div>
         )}
-        <div className={cn('px-3', pendingQuestion && 'hidden')}>
+        <div data-composer-attachments className={cn('px-3', pendingQuestion && 'hidden')}>
           <MessageAttachments
             compact
             taskId={task.id}
@@ -1714,12 +1841,15 @@ export function Composer({
       <ComposerCommandDialog
         command={command}
         commandBusy={commandBusy}
-        canUndo={!!undoableId}
+        refreshing={commandRefreshing}
+        needsRefresh={commandNeedsRefresh}
+        canUndo={canUndoCommand}
         connected={connected}
         running={task.status === 'running'}
         error={commandError}
-        onClose={() => setCommand(null)}
+        onClose={closeCommand}
         onConfirm={confirmCommand}
+        onRefresh={refreshCommand}
       />
       {startup ? (
         <div className={pendingQuestion ? 'hidden' : undefined} inert={machineMoving || undefined}>

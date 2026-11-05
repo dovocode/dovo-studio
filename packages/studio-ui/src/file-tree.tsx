@@ -196,8 +196,7 @@ export function FileBrowserTree({
           onClick={() => onSelect(node.path)}
           className={cn(
             'relative flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50',
-            selected === node.path &&
-              'bg-accent text-accent-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary',
+            selected === node.path && 'studio-nav-selected',
             node.viewed && selected !== node.path && 'text-muted-foreground',
           )}
         >

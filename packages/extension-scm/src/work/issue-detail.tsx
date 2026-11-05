@@ -200,7 +200,7 @@ export function IssueDetail({
       {!comments.length &&
         (!discussionState || (discussionState.ready && !discussionState.error)) && (
           <p className="text-sm text-muted-foreground">
-            No comments yet. Add context or start a linked task.
+            No comments yet. Add context or start a linked thread.
           </p>
         )}
       <div className="space-y-3">
@@ -224,7 +224,7 @@ export function IssueDetail({
       {preview && (
         <details className="border-t pt-4 text-xs">
           <summary className="w-fit cursor-pointer py-1.5 text-muted-foreground hover:text-foreground">
-            Dovo project and linked tasks
+            Dovo project and linked threads
           </summary>
           <div className="pt-3">{taskLinks}</div>
         </details>

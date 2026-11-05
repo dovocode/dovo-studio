@@ -43,7 +43,7 @@ export function useAutomation(automationId: string) {
       tasks: [...tasks, ...current.tasks],
     }))
     setMessages([
-      `Created ${tasks.length} task draft${tasks.length === 1 ? '' : 's'}. No work has executed; graph order and review gates apply when a runtime is connected.`,
+      `Created ${tasks.length} thread draft${tasks.length === 1 ? '' : 's'}. No work has executed; graph order and review gates apply when a runtime is connected.`,
     ])
   }
   return {

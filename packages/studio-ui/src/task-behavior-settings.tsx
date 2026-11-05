@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useConfirmation } from '@dovo/studio-core'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   settingsChangeCount,
   settingsChanges,
   validSettingsDays,
   runtimePreferencesSchema,
+  runtimeComputerName,
   scopedSettingsResultSchema,
   taskBehaviorOrigin,
   type Repository,
@@ -26,37 +28,37 @@ import { SettingSource } from './setting-source'
 const fields = [
   [
     'quotaResume',
-    'Auto-resume limited tasks',
-    'Continue at the provider’s reported reset time. Each task can cancel its continuation.',
+    'Auto-resume limited threads',
+    'Continue at the provider’s reported reset time. Each thread can cancel its continuation.',
   ],
   [
     'quotaSnooze',
-    'Snooze limited tasks',
+    'Snooze limited threads',
     'Hide quota stops until their reported reset time. Combine with auto-resume to continue when they wake.',
   ],
   [
     'settleMerged',
-    'Auto-settle merged tasks',
-    'Move idle tasks to Settled when their pull request merges.',
+    'Auto-settle merged threads',
+    'Move idle threads to Settled when their pull request merges.',
   ],
   [
     'settleClosed',
-    'Auto-settle closed tasks',
-    'Move idle tasks to Settled when their pull request closes.',
+    'Auto-settle closed threads',
+    'Move idle threads to Settled when their pull request closes.',
   ],
   [
     'settleInactive',
-    'Auto-settle inactive tasks',
-    'Settle idle tasks after the selected period. Pins, drafts and pending work are protected.',
+    'Auto-settle inactive threads',
+    'Settle idle threads after the selected period. Pins, drafts and pending work are protected.',
   ],
   [
     'autoArchiveSettled',
-    'Auto-archive settled tasks',
-    'Archive tasks after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.',
+    'Auto-archive settled threads',
+    'Archive threads after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.',
   ],
   [
     'continueAfterRestart',
-    'Continue tasks after restarts',
+    'Continue threads after restarts',
     'Resume interrupted turns after a runtime update, crash or computer restart.',
   ],
 ] as const
@@ -64,11 +66,17 @@ const fields = [
 export function TaskBehaviorSettings({
   scope,
   repository,
+  onOpenRuntime,
 }: {
   scope: SettingsScope
   repository?: Repository
+  onOpenRuntime?: () => void
 }) {
-  const { request, connected, snapshot } = useWorkspace()
+  const id = useId()
+  const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace()
+  const computer = runtimeComputerName(
+    runtimes.find((entry) => entry.profile.id === activeRuntimeId) ?? { snapshot },
+  )
   const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
   const [draft, setDraft] = useState<TaskBehavior>({})
   const [error, setError] = useState('')
@@ -81,10 +89,12 @@ export function TaskBehaviorSettings({
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [legacy, setLegacy] = useState<typeof runtimePreferencesSchema.Type | null>(null)
+  const [policyError, setPolicyError] = useState('')
   const [retry, setRetry] = useState(0)
   const dirty =
     !!loaded &&
     (invalidDays || JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {}))
+  const confirm = useConfirmation(JSON.stringify([scope, repository?.id, draft, dayInputs, busy]))
   const protectDraft = useRef(false)
   const loadedTarget = useRef('')
   protectDraft.current = dirty
@@ -95,13 +105,17 @@ export function TaskBehaviorSettings({
     if (protectDraft.current && loadedTarget.current === target) return
     setLoaded(null)
     setError('')
+    setLegacy(null)
+    setPolicyError('')
     if (connected)
       void request('/api/runtime/preferences/read', {}, runtimePreferencesSchema).then(
         (value) => {
           if (active) setLegacy(value)
         },
         (cause) => {
-          if (active) setError(cause instanceof Error ? cause.message : String(cause))
+          if (active) {
+            setPolicyError(cause instanceof Error ? cause.message : String(cause))
+          }
         },
       )
     if (connected)
@@ -132,13 +146,21 @@ export function TaskBehaviorSettings({
   const fallback = (key: (typeof fields)[number][0]) =>
     inherited?.[key] ??
     (key === 'continueAfterRestart'
-      ? legacy?.autoContinueAfterRestart
+      ? legacy
+        ? (legacy.autoContinueAfterRestart ?? false)
+        : undefined
       : key === 'settleMerged' || key === 'settleClosed'
-        ? legacy?.settleOnPullClose
-        : false) ??
-    false
+        ? legacy
+          ? (legacy.settleOnPullClose ?? false)
+          : undefined
+        : false)
+  const pendingPolicy = !connected
+    ? `Computer offline · ${computer}`
+    : policyError
+      ? `Computer policy unavailable · ${computer}`
+      : `Checking ${computer}…`
   const archivePolicy = !legacy
-    ? 'Computer policy · loading…'
+    ? pendingPolicy
     : legacy.autoArchiveDays
       ? `Computer policy · ${legacy.autoArchiveDays} days of inactivity`
       : 'Computer policy · Never'
@@ -173,16 +195,29 @@ export function TaskBehaviorSettings({
     }
   }
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       {!supported && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Update this computer’s runtime to configure scoped lifecycle settings.
-        </p>
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
+        >
+          <p>Update Dovo on {computer} to edit lifecycle settings at every settings level.</p>
+          {onOpenRuntime && (
+            <Button variant="outline" size="sm" onClick={onOpenRuntime}>
+              Open Devices & runtime
+            </Button>
+          )}
+        </div>
       )}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Computer-policy fallbacks shown here are reported by {computer}. Each computer uses its own
+        policies.
+      </p>
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
-          title="Task lifecycle"
-          description="Applies to existing tasks as well as new ones. Choose Inherit to follow the earlier settings level."
+          title="Automation & limits"
+          saveRequired={supported && connected && !!loaded}
+          description="Applies to existing and new threads. Inherit uses the parent scope."
         >
           {fields.map(([key, label, description]) => (
             <SettingRow
@@ -200,7 +235,7 @@ export function TaskBehaviorSettings({
                     inheritedValue:
                       key === 'autoArchiveSettled' && inherited?.[key] === undefined
                         ? archivePolicy
-                        : fallback(key),
+                        : (fallback(key) ?? pendingPolicy),
                   }}
                   origin={taskBehaviorOrigin(
                     snapshot?.defaults,
@@ -217,30 +252,49 @@ export function TaskBehaviorSettings({
                 />
               }
             >
-              <Select
-                disabled={key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported}
-                value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
-                onValueChange={(value) =>
-                  change({ ...draft, [key]: value === 'inherit' ? undefined : value === 'on' })
-                }
-              >
-                <SelectTrigger aria-label={label}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">
-                    Inherit (
-                    {key === 'autoArchiveSettled' && inherited?.[key] === undefined
-                      ? archivePolicy
-                      : fallback(key)
-                        ? 'On'
-                        : 'Off'}
-                    )
-                  </SelectItem>
-                  <SelectItem value="on">On</SelectItem>
-                  <SelectItem value="off">Off</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-full space-y-1.5">
+                <Select
+                  disabled={key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported}
+                  value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
+                  onValueChange={(value) =>
+                    change({ ...draft, [key]: value === 'inherit' ? undefined : value === 'on' })
+                  }
+                >
+                  <SelectTrigger
+                    aria-label={label}
+                    className="w-full"
+                    aria-describedby={
+                      draft[key] === undefined &&
+                      ((key === 'autoArchiveSettled' && inherited?.[key] === undefined) ||
+                        fallback(key) === undefined)
+                        ? `${id}-${key}-policy`
+                        : undefined
+                    }
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      {(key === 'autoArchiveSettled' && inherited?.[key] === undefined) ||
+                      fallback(key) === undefined
+                        ? 'Inherit'
+                        : `Inherit (${fallback(key) ? 'On' : 'Off'})`}
+                    </SelectItem>
+                    <SelectItem value="on">On</SelectItem>
+                    <SelectItem value="off">Off</SelectItem>
+                  </SelectContent>
+                </Select>
+                {draft[key] === undefined &&
+                  ((key === 'autoArchiveSettled' && inherited?.[key] === undefined) ||
+                    fallback(key) === undefined) && (
+                    <p
+                      id={`${id}-${key}-policy`}
+                      className="text-xs leading-relaxed text-muted-foreground"
+                    >
+                      {key === 'autoArchiveSettled' ? archivePolicy : pendingPolicy}
+                    </p>
+                  )}
+              </div>
             </SettingRow>
           ))}
           <SettingRow
@@ -364,21 +418,27 @@ export function TaskBehaviorSettings({
           </SettingRow>
         </SettingsGroup>
       </fieldset>
-      {connected && supported && !loaded && !error && (
+      {connected && supported && !loaded && !error && !policyError && (
         <p role="status" className="text-xs text-muted-foreground">
           Loading lifecycle settings…
         </p>
       )}
-      {error && (
+      {(error || policyError) && (
         <p role="alert" className="text-xs text-destructive">
-          {error}{' '}
+          {error || policyError}{' '}
           <Button
             variant="ghost"
             disabled={!connected || busy}
-            onClick={() => {
+            onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+                !(await confirm({
+                  title: 'Reload saved settings?',
+                  description:
+                    'Your unsaved edits will be discarded and replaced with the latest saved settings.',
+                  confirmLabel: 'Discard and reload',
+                  destructive: true,
+                }))
               )
                 return
               protectDraft.current = false
@@ -417,7 +477,7 @@ export function TaskBehaviorSettings({
         saving={busy}
         disabled={!supported || !loaded || !connected || invalidDays}
         saved={saved}
-        description="Changes apply to existing tasks too. Save to apply."
+        description="Changes apply to existing threads too."
         onSave={() => void save()}
         onDiscard={() => {
           setDraft(loaded?.value.taskBehavior ?? {})

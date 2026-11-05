@@ -1,0 +1,11 @@
+{
+  "platform": "macOS-27.3-arm64-arm-64bit",
+  "onnxruntime": "1.31.1",
+  "cpuThreads": 4,
+  "cases": 90,
+  "correct": 89,
+  "medianMs": 36.72139600166702,
+  "p95Ms": 40.78374999880907,
+  "peakRssBytes": 1037926400,
+  "notes": "Isolated final Mac CPU timing, 10 warmups; Rust tokenizers plus int64 feeds, ORT inference and argmax. No torch import."
+}

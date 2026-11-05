@@ -26,14 +26,13 @@ import {
   Shapes,
   GitPullRequest,
   MessageSquare,
-  MessageCircleQuestion,
+  MessagesSquare,
   Smartphone,
-  PanelRight,
-  PanelBottom,
   Terminal,
   FolderSymlink,
   ChevronDown,
   Info,
+  GitBranch,
 } from 'lucide-react'
 import {
   HeaderContent,
@@ -73,10 +72,6 @@ export function TaskHeader({
   compact,
   sidebarVisible,
   hasDiff,
-  toolsExpanded,
-  onTools,
-  bottomTerminalOpen,
-  onBottomTerminal,
   projectPanelOpen,
   onProjectPanel,
   onCreate,
@@ -97,10 +92,6 @@ export function TaskHeader({
   compact: boolean
   sidebarVisible: boolean
   hasDiff: boolean
-  toolsExpanded: boolean
-  onTools: () => void
-  bottomTerminalOpen: boolean
-  onBottomTerminal: () => void
 }) {
   const { workspace, snapshot, connected, connection, runtimes, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
@@ -187,7 +178,7 @@ export function TaskHeader({
     [
       'side-chats',
       'Side chats',
-      MessageCircleQuestion,
+      MessagesSquare,
       (task.sideChats?.length ?? 0) + sideThreadsOf(workspace.tasks, task.id).length,
     ],
   ] as const
@@ -206,26 +197,28 @@ export function TaskHeader({
       onProjectDeleted={onProjectDeleted}
       onError={setMenuError}
       toolsMenu={
-        <>
-          <DropdownMenu.Label className="px-2.5 py-1.5 text-[0.625rem] font-medium text-muted-foreground">
-            Tools
-          </DropdownMenu.Label>
-          {surfaces.map(([id, label, Icon]) => (
-            <DropdownMenu.Item
-              key={id}
-              className="flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65"
-              aria-current={surface === id ? 'page' : undefined}
-              onSelect={() => onSurface(id)}
-            >
-              <Icon className="size-3.5 text-muted-foreground" />
-              {label}
-              {id === 'side-chats' && sideAttention && (
-                <SideThreadAttentionBadge kind={sideAttention} />
-              )}
-            </DropdownMenu.Item>
-          ))}
-          <DropdownMenu.Separator className="my-1 h-px bg-border/70" />
-        </>
+        compact && (
+          <>
+            <DropdownMenu.Label className="px-2.5 py-1.5 text-[0.625rem] font-medium text-muted-foreground">
+              Tools
+            </DropdownMenu.Label>
+            {surfaces.map(([id, label, Icon]) => (
+              <DropdownMenu.Item
+                key={id}
+                className="flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65"
+                aria-current={surface === id ? 'page' : undefined}
+                onSelect={() => onSurface(id)}
+              >
+                <Icon className="size-3.5 text-muted-foreground" />
+                {label}
+                {id === 'side-chats' && sideAttention && (
+                  <SideThreadAttentionBadge kind={sideAttention} />
+                )}
+              </DropdownMenu.Item>
+            ))}
+            <DropdownMenu.Separator className="my-1 h-px bg-border/70" />
+          </>
+        )
       }
     >
       <button
@@ -238,15 +231,52 @@ export function TaskHeader({
       </button>
     </TaskContextMenu>
   )
+  const branch =
+    repo?.kind === 'scratch'
+      ? 'No project'
+      : task.checkoutBranch ||
+        (task.execution === 'worktree' ? 'Worktree' : repo?.branch || 'Local checkout')
   const actions = (
     <Popover.Trigger asChild>
-      <IconButton
-        label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
-        aria-pressed={projectPanelOpen}
-        className={cn('size-7', projectPanelOpen && 'bg-accent text-accent-foreground')}
-      >
-        <Info size={15} />
-      </IconButton>
+      {compact ? (
+        <IconButton
+          label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
+          aria-pressed={projectPanelOpen}
+          className={cn('size-7', projectPanelOpen && 'bg-accent text-accent-foreground')}
+        >
+          <Info size={15} />
+        </IconButton>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
+          aria-description={`${branch} · ${presentation.label}`}
+          aria-pressed={projectPanelOpen}
+          title={`${branch} · ${presentation.label} · Thread info`}
+          data-thread-info-trigger
+          className={cn(
+            'h-7 min-w-0 shrink-0 gap-2 px-2 text-xs font-normal text-muted-foreground',
+            projectPanelOpen && 'bg-accent text-accent-foreground',
+          )}
+        >
+          <GitBranch size={13} className="shrink-0" aria-hidden="true" />
+          <span data-thread-info-branch className="max-w-36 truncate">
+            {branch}
+          </span>
+          <span className="text-border" aria-hidden="true">
+            ·
+          </span>
+          <span
+            data-thread-info-state
+            data-tone={presentation.tone}
+            className="studio-thread-status whitespace-nowrap text-xs"
+          >
+            {presentation.state}
+          </span>
+          <ChevronDown size={12} className="shrink-0" aria-hidden="true" />
+        </Button>
+      )}
     </Popover.Trigger>
   )
   return (
@@ -270,25 +300,7 @@ export function TaskHeader({
                 {titleMenu}
               </h1>
             </nav>
-            <div className="flex shrink-0 items-center gap-0.5 border-l pl-2">
-              {actions}
-              <IconButton
-                label={bottomTerminalOpen ? 'Hide bottom terminal' : 'Show bottom terminal'}
-                aria-pressed={bottomTerminalOpen}
-                className="size-7"
-                onClick={onBottomTerminal}
-              >
-                <PanelBottom size={15} />
-              </IconButton>
-              <IconButton
-                label={toolsExpanded ? 'Collapse tools pane' : 'Expand tools pane'}
-                aria-pressed={toolsExpanded}
-                className="size-7"
-                onClick={onTools}
-              >
-                <PanelRight size={15} />
-              </IconButton>
-            </div>
+            {actions}
           </header>
         </HeaderContent>
       )}
@@ -312,20 +324,7 @@ export function TaskHeader({
                 <span className="truncate">{projectName}</span>
               </span>
             )}
-            <span
-              className={cn(
-                'truncate',
-                presentation.state === 'Needs input'
-                  ? 'text-status-warning'
-                  : presentation.state === 'Failed'
-                    ? 'text-destructive'
-                    : ['Done', 'Finished', 'Settled'].includes(presentation.state)
-                      ? 'text-status-success'
-                      : presentation.state === 'Working'
-                        ? 'text-primary'
-                        : 'text-muted-foreground',
-              )}
-            >
+            <span className="studio-thread-status truncate" data-tone={presentation.tone}>
               {presentation.label}
             </span>
             {!projectPanelOpen && (
@@ -416,7 +415,7 @@ export function TaskHeader({
           {compact && !projectPanelOpen && (
             <div
               role="group"
-              aria-label="Task workspace"
+              aria-label="Thread workspace"
               className="flex min-w-0 items-center overflow-x-auto rounded-md border border-border/70 bg-muted/20 p-0.5"
             >
               {surfaces

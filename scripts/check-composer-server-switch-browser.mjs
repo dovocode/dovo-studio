@@ -173,12 +173,13 @@ try {
       ['failDestination', 'Destination refresh failed', '/api/tasks/draft-moved'],
       [
         'offline',
-        mobile ? 'This machine or project is unavailable.' : 'This machine is offline.',
+        mobile ? 'This machine or project is unavailable.' : 'This computer is offline.',
         null,
       ],
     ]) {
       await start({ [option]: true })
-      await page.waitForFunction((message) => window.failure === message, message)
+      await page.waitForFunction(() => !!window.failure)
+      assert.equal(await page.evaluate(() => window.failure), message, option)
       const calls = await page.evaluate(() => window.events)
       assert.equal(
         calls.some((event) => event[0] === 'navigate' || event[0] === 'switch'),

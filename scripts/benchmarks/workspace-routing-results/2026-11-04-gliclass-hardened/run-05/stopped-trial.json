@@ -1,0 +1,17 @@
+{
+  "status": "intentionally-stopped",
+  "reason": "Very low training loss with validation plateau around 95%; broadened intent contrasts for run-06 rather than continuing the same examples.",
+  "plannedEpochs": 6,
+  "completedEpochs": 3,
+  "selectedEpoch": 3,
+  "selectedValidation": {
+    "correct": 2482,
+    "total": 2604
+  },
+  "batchSize": 32,
+  "learningRate": 1e-5,
+  "seed": 20261106,
+  "retainBaseline": true,
+  "parentRun": "run-04",
+  "datasetSha256": "de12a66e9b63ef78255901f6e417440fe05821da86fcea56c5da2432128cedc2"
+}

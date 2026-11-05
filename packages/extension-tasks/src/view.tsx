@@ -24,7 +24,7 @@ import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { X, Maximize2, Minimize2, Bot, FolderSymlink, FolderOpen, FileDiff } from 'lucide-react'
+import { X, Maximize2, Minimize2, Bot, FolderSymlink, FileDiff } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
   createTask,
@@ -108,7 +108,8 @@ export default function TasksView({
   nativeAgentKey,
   navigationKey,
   pullTarget,
-}: StudioViewProps) {
+  embedded = false,
+}: StudioViewProps & { embedded?: boolean }) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -128,6 +129,9 @@ export default function TasksView({
   )
   const preferences = useAppPreferences()
   const host = useStudioHost()
+  // Unified can replace its host object when palette registration rerenders the shell.
+  // Subscriptions depend on the registry function, not unrelated navigation context.
+  const { registerCommand } = host
   const localTasks = useMemo(
     () => workspace.tasks.filter((task) => !task.example),
     [workspace.tasks],
@@ -236,10 +240,12 @@ export default function TasksView({
     setSplitId(next)
   }
   const [listOpen, setListOpen] = useApplicationState(false)
-  const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const [sidebarPreference, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const sidebar = !embedded && sidebarPreference
   const navigationSidebar = useNavigationSidebar()
   useEffect(() => {
-    if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
+    if (!embedded && compact && navigationSidebar?.setCollapsed)
+      setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
@@ -596,7 +602,7 @@ export default function TasksView({
         return
       }
       if (!target.source.online) {
-        setError('This device is offline. Reconnect it before starting a task.')
+        setError('This device is offline. Reconnect it before starting a thread.')
         return
       }
       const runtimeId = target.source.runtimeId
@@ -631,7 +637,7 @@ export default function TasksView({
     const repository = workspace.repositories.find((repo) => repo.id === pendingCreate.repositoryId)
     const template = repository?.templates?.find((item) => item.id === pendingCreate.templateId)
     const created = createTask({
-      title: template?.name ?? 'New task',
+      title: template?.name ?? 'New thread',
       objective: '',
       agentId: '',
       ...resolveTaskDefaults(store.snapshot?.defaults, repository),
@@ -720,23 +726,23 @@ export default function TasksView({
   })
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.new',
         title: 'New thread',
-        aliases: ['new task', 'new chat', 'start conversation'],
+        aliases: ['new thread', 'new chat', 'start conversation'],
         run: newThread,
       }),
-    [host, newThread],
+    [registerCommand, newThread],
   )
   useEffect(() => {
     const disposers = [
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.switch',
-        title: 'Go to task…',
-        aliases: ['go to thread', 'find thread', 'find task', 'switch thread', 'switch task'],
+        title: 'Go to thread…',
+        aliases: ['go to thread', 'find thread', 'find thread', 'switch thread', 'switch thread'],
         run: () => setSearching('tasks'),
       }),
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.search',
         title: 'Search conversations…',
         aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
@@ -746,16 +752,16 @@ export default function TasksView({
     return () => {
       for (const dispose of disposers) dispose()
     }
-  }, [host])
+  }, [registerCommand])
   useEffect(
     () =>
-      host.registerCommand({
+      registerCommand({
         id: 'tasks.terminal',
         title: 'Toggle terminal',
         aliases: ['shell', 'console', 'command line'],
         run: toggleTerminal,
       }),
-    [host, toggleTerminal],
+    [registerCommand, toggleTerminal],
   )
   // Sidebar order, reported by the visible task list, for switching tasks from the keyboard.
   const order = useRef<TaskEntry[]>([])
@@ -1054,7 +1060,7 @@ export default function TasksView({
               data-window-edge
               data-window-right-edge={!splitTask || undefined}
             >
-              New task
+              New thread
             </header>
           </HeaderContent>
         ) : (
@@ -1078,17 +1084,6 @@ export default function TasksView({
             compact={compact}
             sidebarVisible={sidebar}
             hasDiff={hasDiff}
-            toolsExpanded={toolsExpanded}
-            onTools={() => {
-              if (toolsExpanded) {
-                lastToolSurface.current = surface
-                selectSurface('chat', true)
-              } else {
-                selectSurface(lastToolSurface.current)
-              }
-            }}
-            bottomTerminalOpen={bottomTerminalOpen}
-            onBottomTerminal={toggleBottomTerminal}
           />
         )}
         <div
@@ -1096,6 +1091,7 @@ export default function TasksView({
         >
           <div
             data-project-panel-frame
+            data-info-open={projectPanelOpen || undefined}
             ref={(element) => {
               panes.current.chat = element
             }}
@@ -1107,7 +1103,7 @@ export default function TasksView({
                 'hidden',
             )}
           >
-            <TaskProjectPopover>
+            <TaskProjectPopover title={task.title}>
               {!temporary && projectPanelOpen && (
                 <TaskProjectPanel
                   active={
@@ -1192,7 +1188,7 @@ export default function TasksView({
                 defaultSize={bottomTerminalOpen ? '65%' : '100%'}
                 minSize="30%"
               >
-                <div className="relative h-full min-h-0">
+                <div className="relative h-full min-h-0" data-conversation-boundary>
                   <TaskConversation
                     historyLoaded={usingStartupDraft || historyLoaded}
                     historyError={historyError}
@@ -1235,9 +1231,9 @@ export default function TasksView({
                   />
                 </div>
               </ResizablePanel>
-              {bottomTerminalOpen && surface === 'chat' && (
+              {bottomTerminalOpen && surface !== 'terminal' && (
                 <>
-                  <ResizableHandle />
+                  <ResizableHandle className="bg-transparent hover:bg-border focus-visible:bg-border data-[separator=active]:bg-border" />
                   <ResizablePanel id="bottom-terminal" defaultSize="35%" minSize="15%">
                     <div
                       ref={(element) => {
@@ -1272,7 +1268,9 @@ export default function TasksView({
             }
             side="right"
             label="tools sidebar"
-            maxFraction={surface === 'artifacts' ? 0.6 : fileViewer ? 0.5 : 0.48}
+            maxFraction={
+              surface === 'artifacts' ? 0.6 : fileViewer ? (surface === 'files' ? 0.4 : 0.5) : 0.48
+            }
             maxWidth={960}
             resizable={
               !compact && !browserDetached && surface !== 'chat' && !(fileViewer && viewerExpanded)
@@ -1300,16 +1298,10 @@ export default function TasksView({
                   : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[inherit]'
               }
             >
-              {fileViewer && (
+              {surface === 'changes' && (
                 <header className="studio-thread-tools-header flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
-                  {surface === 'files' ? (
-                    <FolderOpen size={16} className="text-muted-foreground" aria-hidden="true" />
-                  ) : (
-                    <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />
-                  )}
-                  <h2 className="min-w-0 flex-1 truncate font-medium">
-                    {surface === 'files' ? 'Project files' : 'Changes'}
-                  </h2>
+                  <FileDiff size={16} className="text-muted-foreground" aria-hidden="true" />
+                  <h2 className="min-w-0 flex-1 truncate font-medium">Changes</h2>
                   <IconButton
                     label={viewerExpanded ? 'Restore side panel' : 'Expand viewer'}
                     aria-pressed={viewerExpanded}
@@ -1578,6 +1570,9 @@ export default function TasksView({
                 {surface === 'files' && (
                   <TaskFiles
                     key={task.id}
+                    onClose={() => selectSurface('chat', true)}
+                    onExpand={() => setViewerExpanded((value) => !value)}
+                    expanded={viewerExpanded}
                     task={task}
                     reveal={fileReveal?.threadKey === threadKey ? fileReveal : undefined}
                     onEditingChange={setFileEditing}
@@ -1615,7 +1610,17 @@ export default function TasksView({
               surface={surface}
               onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
               hasDiff={hasDiff}
-              hasLinkedPulls={taskPullLinks(task).length > 0}
+              toolsExpanded={toolsExpanded}
+              onTools={() => {
+                if (toolsExpanded) {
+                  lastToolSurface.current = surface
+                  selectSurface('chat', true)
+                } else {
+                  selectSurface(lastToolSurface.current)
+                }
+              }}
+              bottomTerminalOpen={bottomTerminalOpen}
+              onBottomTerminal={toggleBottomTerminal}
               artifactsEnabled={!!snapshot?.artifactsEnabled}
             />
           )}
@@ -1747,7 +1752,7 @@ export default function TasksView({
                       Swap
                     </Button>
                     <IconButton
-                      label="Close side-by-side task (⌘/Ctrl+\)"
+                      label="Close side-by-side thread (⌘/Ctrl+\)"
                       className="size-6"
                       onClick={() => closeSplit()}
                     >
@@ -1822,8 +1827,8 @@ export default function TasksView({
               event.preventDefault()
           }}
         >
-          <DialogTitle className="px-4 pt-4">Tasks</DialogTitle>
-          <DialogDescription className="sr-only">Select or create a task.</DialogDescription>
+          <DialogTitle className="px-4 pt-4">Threads</DialogTitle>
+          <DialogDescription className="sr-only">Select or create a thread.</DialogDescription>
           <TaskList
             projectId={projectId}
             onProjectChange={setProjectId}

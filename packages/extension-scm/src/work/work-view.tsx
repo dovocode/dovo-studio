@@ -8,14 +8,16 @@ import {
   type JiraIssueFilters,
 } from '@dovo/protocol'
 import { JiraToolbar } from './jira-toolbar'
-import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
+import { EmptyState, PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import {
   ArrowLeft,
   CircleDot,
+  CircleCheck,
   GitBranch,
   Monitor,
+  Plug,
   RefreshCw,
   SlidersHorizontal,
   Plus,
@@ -29,6 +31,7 @@ import {
   repositorySourceKey,
   issueLabel,
   forgeLabels,
+  formatDateTime,
   matchesWorkItem,
   type StudioViewProps,
 } from '@dovo/studio-core'
@@ -127,6 +130,7 @@ function WorkView({
     setPreferences((value) => ({ ...value, jiraLayout }))
   const setSort = (sort: string) => setPreferences((value) => ({ ...value, sort }))
   const setLinked = (linked: string) => setPreferences((value) => ({ ...value, linked }))
+  const [filtersOpen, setFiltersOpen] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
   useEffect(() => {
     const timer = setTimeout(() => setQuery(mode === 'issues' ? search.trim() : ''), 300)
@@ -312,13 +316,22 @@ function WorkView({
     matchingRows.flatMap(({ item }) => ('status' in item ? [item.status] : [])),
     state,
   )
-  const states = [
-    ...new Set(
-      visiblePages.flatMap((page) =>
+  const observedStates = [
+    ...new Set([
+      ...visiblePages.flatMap((page) =>
         page.items.map((item) => ('state' in item ? item.state : item.status)),
       ),
-    ),
+      ...(state !== 'all' ? [state] : []),
+    ]),
   ].sort()
+  const states =
+    mode === 'issues'
+      ? [
+          'open',
+          'closed',
+          ...observedStates.filter((value) => value !== 'open' && value !== 'closed'),
+        ]
+      : observedStates
   const canCreate = pages
     .filter(
       (page) =>
@@ -370,13 +383,30 @@ function WorkView({
     !!search ||
     state !== defaultState ||
     linked !== 'all' ||
-    (isJira && (!!project || hasJiraIssueFilters(jiraFilters)))
-  const closePreview = () =>
+    !!project ||
+    (isJira && hasJiraIssueFilters(jiraFilters))
+  const secondaryFilters = Number(!!project) + Number(linked !== 'all') + Number(sort !== 'updated')
+  const canCreateSelected = canCreate.some((source) => matchesWorkSource(source, projectRemote))
+  const pipelineRunNotice =
+    mode === 'pipelines' &&
+    !canCreateSelected &&
+    (!busy || visiblePages.some((page) => page.options))
+      ? !visibleSources.length
+        ? 'Connect a code project to run pipelines.'
+        : !visibleSources.some((source) => source.connected)
+          ? 'Reconnect a project’s computer to run pipelines.'
+          : visiblePages.some((page) => page.error || page.optionsError || page.stale)
+            ? 'Refresh the source connection to make pipeline actions available.'
+            : 'These sources support viewing pipeline runs only.'
+      : null
+  const closePreview = async () => {
+    if (entityId && (await host.goBack?.())) return
     transition(() => {
       if (selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
       setSelected(null)
-      if (entityId && !host.goBack?.()) host.navigate({ viewId: isJira ? 'jira' : mode })
+      if (entityId) host.navigate({ viewId: isJira ? 'jira' : mode })
     }, 'close')
+  }
   const detail = selected ? (
     selectedSource ? (
       <WorkspaceRuntimeScope runtimeId={selectedSource.runtimeId}>
@@ -418,7 +448,7 @@ function WorkView({
         )
           return
         event.preventDefault()
-        closePreview()
+        void closePreview()
       }}
     >
       <nav
@@ -426,42 +456,42 @@ function WorkView({
         className={`${selected && (compact || !sidebarVisible) ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col bg-background ${selected ? 'w-80 shrink-0' : 'flex-1'}`}
       >
         <SidebarHeader enabled={!!selected} />
-        <div className="studio-overview-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${selected ? 'studio-overview-pane bg-sidebar' : 'bg-background'}`}
+        >
           <div className="contents">
             <PageHeader
               embedded={!!selected}
               title={mode === 'issues' ? (sourceKind === 'jira' ? 'Jira' : 'Issues') : 'Pipelines'}
             >
               <Button
-                size="sm"
-                variant="outline"
+                size="icon"
+                variant="ghost"
                 aria-label="Refresh"
+                title="Refresh"
+                className="size-8"
                 disabled={busy || !visiblePages.some((page) => page.reader.connected)}
                 onClick={refresh}
               >
                 <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
-                <span className="sr-only sm:not-sr-only">Refresh</span>
               </Button>
               {mode === 'issues' && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  aria-label="Sources"
+                  aria-label="Connections"
                   disabled={opening}
                   onClick={() => void chooseSource('settings')}
                 >
-                  <SlidersHorizontal className="size-3.5" />
-                  <span className="sr-only sm:not-sr-only">Sources</span>
+                  <Plug className="size-3.5" />
+                  <span className="sr-only sm:not-sr-only">Connections</span>
                 </Button>
               )}
               <Button
                 size="sm"
-                disabled={
-                  opening ||
-                  !(project
-                    ? canCreate.some((source) => matchesWorkSource(source, projectRemote))
-                    : canCreate.length)
-                }
+                disabled={opening || !canCreateSelected}
+                title={pipelineRunNotice ?? undefined}
+                aria-describedby={pipelineRunNotice ? 'pipeline-run-notice' : undefined}
                 onClick={() => void chooseSource('create')}
               >
                 <Plus className="size-3.5" />
@@ -470,55 +500,28 @@ function WorkView({
                 </span>
               </Button>
             </PageHeader>
-            <div className="studio-page-toolbar shrink-0 space-y-3 border-b">
-              {mode === 'issues' && !!rows.length && (
-                <div
-                  className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
-                  aria-label="Visible issue summary"
-                >
-                  <span>
-                    <strong className="font-medium text-foreground">
-                      {
-                        rows.filter(({ item }) => 'assignees' in item && !item.assignees.length)
-                          .length
-                      }
-                    </strong>{' '}
-                    unassigned
-                  </span>
-                  <span>
-                    <strong className="font-medium text-foreground">
-                      {
-                        rows.filter(
-                          ({ source, item }) => source.jira && !source.projectLinks?.[item.id],
-                        ).length
-                      }
-                    </strong>{' '}
-                    without a linked project
-                  </span>
-                  <span>In loaded, filtered results</span>
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {rows.length === matchingRows.length
-                    ? `${rows.length} loaded`
-                    : `${rows.length} of ${matchingRows.length} loaded`}{' '}
-                  · {visibleSources.length} {visibleSources.length === 1 ? 'source' : 'sources'}
-                </span>
-                <SearchField
-                  containerClassName="ml-auto min-w-40 max-w-full flex-1 sm:max-w-72"
-                  aria-label={`Search ${mode}`}
-                  placeholder={
-                    mode === 'issues'
-                      ? 'Search issue titles, keys, text…'
-                      : 'Search runs, branches, projects…'
-                  }
-                  value={search}
-                  maxLength={300}
-                  onValueChange={setSearch}
-                />
-              </div>
+            <div className="shrink-0 border-b border-border/70 px-3 py-2">
+              <SearchField
+                containerClassName="w-full min-w-0"
+                aria-label={`Search ${mode}`}
+                placeholder={
+                  mode === 'issues'
+                    ? 'Search issue titles, keys, text…'
+                    : 'Search runs, branches, projects…'
+                }
+                value={search}
+                disabled={isJira && !sources.length}
+                maxLength={300}
+                onValueChange={setSearch}
+              />
+            </div>
+            <div className="shrink-0 border-b border-border/70 px-3 py-1">
+              <span className="sr-only">
+                {rows.length === matchingRows.length
+                  ? `${rows.length} loaded`
+                  : `${rows.length} of ${matchingRows.length} loaded`}{' '}
+                · {visibleSources.length} {visibleSources.length === 1 ? 'source' : 'sources'}
+              </span>
               {isJira ? (
                 <JiraToolbar
                   state={state}
@@ -558,153 +561,173 @@ function WorkView({
                     setJiraFilters({})
                     setProject('')
                     setLinked('all')
+                    setSort('updated')
                     setSelected(null)
                   }}
                 />
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  <ChoicePicker
-                    aria-label={mode === 'issues' ? 'Issue source' : 'Pipeline source'}
-                    className="h-8 w-auto max-w-72 text-xs"
-                    value={project}
-                    onValueChange={(value) => {
-                      void (chooseReader?.(value) ?? Promise.resolve())
-                        .then(() => setProject(value))
-                        .catch((cause: unknown) =>
-                          setError(cause instanceof Error ? cause.message : String(cause)),
-                        )
-                      if (isJira) setSelected(null)
-                      else setState('all')
-                    }}
-                  >
-                    <option value="">All sources</option>
-                    {sources.map((source) => (
-                      <option key={source.key} value={source.key}>
-                        {source.name} · {source.runtimeName}
-                      </option>
-                    ))}
-                  </ChoicePicker>
-                  {mode === 'issues' && (
-                    <ChoicePicker
-                      aria-label="Issue state"
-                      className="h-8 w-auto text-xs"
-                      value={state}
-                      onValueChange={(value) => {
-                        setState(value)
-                        if (isJira) setSelected(null)
-                      }}
-                    >
-                      {isJira ? (
-                        <>
-                          <option value="open">Open issues</option>
-                          <option value="all">All issues</option>
-                          <option value="closed">Done issues</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="all">All states</option>
-                          {states.map((state) => (
-                            <option key={state}>{state}</option>
-                          ))}
-                        </>
-                      )}
-                    </ChoicePicker>
-                  )}
-                  {mode === 'issues' && (
-                    <ChoicePicker
-                      aria-label="Project links"
-                      className="h-8 w-auto text-xs"
-                      value={linked}
-                      onValueChange={setLinked}
-                    >
-                      <option value="all">All project links</option>
-                      <option value="unlinked">Not linked to a project</option>
-                      <option value="linked">Linked to a project</option>
-                    </ChoicePicker>
-                  )}
-                  <ChoicePicker
-                    aria-label="Sort results"
-                    className="h-8 w-auto text-xs"
-                    value={sort}
-                    onValueChange={setSort}
-                  >
-                    <option value="updated">
-                      {isJira ? 'Jira order · per source' : 'Recently updated'}
-                    </option>
-                    <option value="project">Source</option>
-                    <option value="title">Title</option>
-                  </ChoicePicker>
-                  {mode === 'issues' && (
-                    <span className="self-center text-[0.6875rem] text-muted-foreground">
-                      {isJira
-                        ? 'Search and status query Jira · project links filter loaded results'
-                        : 'Search your issue trackers · states filter loaded results'}
-                    </span>
-                  )}
-                  {hasFilters && (
-                    <Button
-                      className="h-8 text-xs"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSearch('')
-                        setLinked('all')
-                        setState(defaultState)
-                        if (isJira) {
-                          setJiraFilters({})
-                          setProject('')
-                        }
-                        if (isJira) setSelected(null)
-                      }}
-                    >
-                      Clear filters
-                    </Button>
-                  )}
-                </div>
-              )}
-              {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
-                <div role="group" aria-label="Filter loaded runs by status" className="space-y-2">
-                  <p className="text-[0.6875rem] text-muted-foreground">
-                    In loaded, searched results
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant={state === 'all' ? 'secondary' : 'ghost'}
-                      aria-pressed={state === 'all'}
-                      aria-label={`All runs: ${matchingRows.length}`}
-                      onClick={() => setState('all')}
-                      className="h-9 gap-2 text-xs"
-                    >
-                      All runs <span className="tabular-nums">{matchingRows.length}</span>
-                    </Button>
-                    {pipelineStatuses.map(({ status, label, count }) => (
-                      <Button
-                        key={label}
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Filter ${label}: ${count} runs`}
-                        aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
-                        onClick={() =>
-                          setState(
-                            state !== 'all' && pipelineSignal(state).label === label
-                              ? 'all'
-                              : status,
-                          )
-                        }
-                        className="h-9 min-w-0 max-w-full gap-2 px-2 aria-pressed:bg-muted aria-pressed:ring-1 aria-pressed:ring-ring"
+                <div className="min-w-0">
+                  <div className="studio-list-toolbar">
+                    {mode === 'issues' ? (
+                      <div
+                        role="group"
+                        aria-label="Issue states"
+                        className="studio-list-quick-views"
                       >
-                        <PipelineState status={status} />
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {count}
-                        </span>
-                      </Button>
-                    ))}
+                        {['all', ...states.filter((value) => value !== 'all')].map((value) => (
+                          <Button
+                            key={value}
+                            size="sm"
+                            variant="ghost"
+                            className="studio-list-quick-filter"
+                            aria-pressed={state === value}
+                            onClick={() => setState(value)}
+                          >
+                            {value === 'all'
+                              ? 'All states'
+                              : value.charAt(0).toUpperCase() + value.slice(1)}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        role="group"
+                        aria-label="Filter loaded runs by status"
+                        className="studio-list-quick-views"
+                      >
+                        <p className="sr-only">Counts in loaded, searched results</p>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-pressed={state === 'all'}
+                          aria-label={`All runs: ${matchingRows.length}`}
+                          onClick={() => setState('all')}
+                          className="studio-list-quick-filter"
+                        >
+                          All runs{' '}
+                          <span className="studio-list-filter-count">{matchingRows.length}</span>
+                        </Button>
+                        {pipelineStatuses.map(({ status, label, count }) => (
+                          <Button
+                            key={label}
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Filter ${label}: ${count} runs`}
+                            aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
+                            onClick={() =>
+                              setState(
+                                state !== 'all' && pipelineSignal(state).label === label
+                                  ? 'all'
+                                  : status,
+                              )
+                            }
+                            className="studio-list-quick-filter"
+                          >
+                            <span className="truncate">{label}</span>
+                            <span className="studio-list-filter-count">{count}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="studio-list-filter-trigger"
+                      aria-label="Filters"
+                      aria-expanded={filtersOpen}
+                      aria-controls="work-list-filters"
+                      data-active={secondaryFilters > 0 || undefined}
+                      onClick={() => setFiltersOpen((value) => !value)}
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                      Filters
+                      {!!secondaryFilters && (
+                        <span className="studio-list-filter-count">{secondaryFilters}</span>
+                      )}
+                    </Button>
+                  </div>
+                  <div id="work-list-filters" hidden={!filtersOpen}>
+                    <div className="studio-list-filter-fields">
+                      <ChoicePicker
+                        aria-label={mode === 'issues' ? 'Issue source' : 'Pipeline source'}
+                        className="h-8 w-auto max-w-72 text-xs"
+                        value={project}
+                        onValueChange={(value) => {
+                          void (chooseReader?.(value) ?? Promise.resolve())
+                            .then(() => setProject(value))
+                            .catch((cause: unknown) =>
+                              setError(cause instanceof Error ? cause.message : String(cause)),
+                            )
+                          setState('all')
+                        }}
+                      >
+                        <option value="">All sources</option>
+                        {sources.map((source) => (
+                          <option key={source.key} value={source.key}>
+                            {source.name} · {source.runtimeName}
+                          </option>
+                        ))}
+                      </ChoicePicker>
+                      {mode === 'issues' && (
+                        <ChoicePicker
+                          aria-label="Project links"
+                          className="h-8 w-auto text-xs"
+                          value={linked}
+                          onValueChange={setLinked}
+                        >
+                          <option value="all">All project links</option>
+                          <option value="unlinked">Not linked to a project</option>
+                          <option value="linked">Linked to a project</option>
+                        </ChoicePicker>
+                      )}
+                      <ChoicePicker
+                        aria-label="Sort results"
+                        className="h-8 w-auto text-xs"
+                        value={sort}
+                        onValueChange={setSort}
+                      >
+                        <option value="updated">Recently updated</option>
+                        <option value="project">Source</option>
+                        <option value="title">Title</option>
+                      </ChoicePicker>
+                      {(hasFilters || sort !== 'updated') && (
+                        <Button
+                          className="h-8 text-xs"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSearch('')
+                            setLinked('all')
+                            setState(defaultState)
+                            setProject('')
+                            setSort('updated')
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
+          {pipelineRunNotice && (
+            <p
+              id="pipeline-run-notice"
+              className="flex flex-wrap items-center gap-x-2 border-b border-border/70 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span>{pipelineRunNotice}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => host.navigate({ viewId: 'source-control' })}
+              >
+                Sources
+              </Button>
+            </p>
+          )}
           {error && (
             <p role="alert" className="px-5 py-2 text-xs text-destructive">
               {error}
@@ -713,12 +736,12 @@ function WorkView({
           <div
             ref={list}
             tabIndex={-1}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-3"
+            className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3"
           >
             <p
               role="status"
               aria-live="polite"
-              className="mb-2 min-h-4 text-xs text-muted-foreground"
+              className="pointer-events-none absolute bottom-3 left-5 z-10 rounded-md border bg-popover px-2 py-1 text-xs text-muted-foreground empty:hidden"
             >
               {opening
                 ? 'Opening on its computer…'
@@ -730,20 +753,28 @@ function WorkView({
                       : `Connect to load ${mode}.`
                     : ''}
             </p>
-            {!sources.length && (
-              <div className="space-y-3 py-8 text-sm text-muted-foreground">
-                <p>
-                  {sourceKind === 'jira'
-                    ? 'Connect Jira from Sources to browse Jira issues.'
-                    : 'Connect a code project to browse its issues.'}
-                </p>
-                {isJira && (
-                  <Button size="sm" variant="outline" onClick={() => void chooseSource('settings')}>
-                    Connect Jira
-                  </Button>
-                )}
-              </div>
-            )}
+            {!sources.length &&
+              (isJira ? (
+                <EmptyState
+                  icon={<CircleDot />}
+                  title="Connect Jira"
+                  description="Browse Jira issues and link them to code projects when you’re ready to work on them."
+                  action={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={opening}
+                      onClick={() => void chooseSource('settings')}
+                    >
+                      Connect Jira
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-3 py-8 text-sm text-muted-foreground">
+                  <p>Connect a code project to browse its issues.</p>
+                </div>
+              ))}
             {!!sourceProblems.length && (
               <div
                 className="mb-4 space-y-2 rounded-xl border bg-muted/15 p-3"
@@ -834,10 +865,8 @@ function WorkView({
                       setSearch('')
                       setLinked('all')
                       setState(defaultState)
-                      if (isJira) {
-                        setJiraFilters({})
-                        setProject('')
-                      }
+                      setProject('')
+                      if (isJira) setJiraFilters({})
                       if (isJira) setSelected(null)
                     }}
                   >
@@ -857,98 +886,110 @@ function WorkView({
               </div>
             )}
             {isJira ? (
-              <JiraIssueList
-                layout={jiraLayout}
-                rows={rows.flatMap((row) =>
-                  'state' in row.item ? [{ ...row, item: row.item }] : [],
-                )}
-                selected={selected}
-                opening={opening}
-                onOpen={open}
-              />
+              !!sources.length && (
+                <JiraIssueList
+                  layout={jiraLayout}
+                  rows={rows.flatMap((row) =>
+                    'state' in row.item ? [{ ...row, item: row.item }] : [],
+                  )}
+                  selected={selected}
+                  opening={opening}
+                  onOpen={open}
+                />
+              )
             ) : (
-              <div className="divide-y">
+              <div className="studio-work-list">
                 {rows.map(({ source, item, stale, provider }) => (
                   <button
                     type="button"
                     key={JSON.stringify([source.key, item.id])}
                     disabled={opening}
-                    className="block w-full min-w-0 rounded-lg px-3 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
+                    className="studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
                     onClick={() => void open(source, item.id, item.url)}
                   >
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground">
-                      {'status' in item ? (
-                        <PipelineState status={item.status} />
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded bg-muted/40 px-1.5 py-0.5">
-                          <CircleDot className="size-3.5" />
-                          {item.state}
-                        </span>
-                      )}
-                      <span>
-                        {'status' in item ? `Run ${item.number || item.id}` : issueLabel(item.id)} ·{' '}
-                        {source.name}
-                        {source.jira
-                          ? ` · ${source.jira.project}`
-                          : provider && provider !== 'jira'
-                            ? ` · ${forgeLabels[provider]}`
-                            : ''}
-                      </span>
-                      {'state' in item && <span>{item.type}</span>}
-                      <time className="ml-auto" dateTime={item.updatedAt}>
-                        {item.updatedAt && !Number.isNaN(Date.parse(item.updatedAt))
-                          ? new Date(item.updatedAt).toLocaleDateString()
-                          : ''}
-                      </time>
-                    </div>
-                    <span className="my-1.5 block break-words text-sm font-medium leading-relaxed">
-                      {item.title}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span className="inline-flex min-w-0 items-center gap-1">
-                        <Monitor className="size-3 shrink-0" />
-                        <span className="truncate">
-                          {source.runtimeName}
-                          {!source.connected ? ' · Offline' : stale ? ' · Cached' : ''}
-                        </span>
-                      </span>
-                      {'status' in item ? (
-                        <>
-                          <span className="inline-flex min-w-0 items-center gap-1">
-                            <GitBranch className="size-3 shrink-0" />
-                            <span className="truncate">{item.ref}</span>
+                    <div className="studio-collection-body">
+                      <div className="studio-collection-meta">
+                        {'status' in item ? (
+                          <PipelineState status={item.status} plain />
+                        ) : (
+                          <span
+                            className={`studio-collection-status ${item.state === 'closed' ? 'text-status-done' : 'text-status-success'}`}
+                          >
+                            {item.state === 'closed' ? (
+                              <CircleCheck aria-hidden className="size-3.5" />
+                            ) : (
+                              <CircleDot aria-hidden className="size-3.5" />
+                            )}
+                            {item.state.charAt(0).toUpperCase() + item.state.slice(1)}
                           </span>
-                          <span>{item.actor}</span>
-                        </>
-                      ) : (
-                        <>
-                          {source.jira && (
-                            <span>{source.projectLinks?.[item.id] ?? 'No project linked'}</span>
-                          )}
-                          <span>{item.author}</span>
-                          {item.priority && (
-                            <span className="rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-foreground">
-                              Priority: {item.priority}
-                            </span>
-                          )}
-                          <span className="text-foreground/80">
-                            {(item.assigneeNames ?? item.assignees).length
-                              ? `Assigned to ${(item.assigneeNames ?? item.assignees).join(', ')}`
-                              : 'Unassigned'}
+                        )}
+                        <span className="min-w-0 truncate">
+                          {'status' in item ? `Run ${item.number || item.id}` : issueLabel(item.id)}{' '}
+                          · {source.name}
+                          {source.jira
+                            ? ` · ${source.jira.project}`
+                            : provider && provider !== 'jira'
+                              ? ` · ${forgeLabels[provider]}`
+                              : ''}
+                        </span>
+                        {'state' in item && <span>{item.type}</span>}
+                      </div>
+                      <span className="studio-collection-title">{item.title}</span>
+                      <div className="studio-collection-context">
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <Monitor className="size-3 shrink-0" />
+                          <span className="truncate">
+                            {source.runtimeName}
+                            {!source.connected ? ' · Offline' : stale ? ' · Cached' : ''}
                           </span>
-                          {item.labels.slice(0, 3).map((label) => (
-                            <span className="rounded bg-muted px-1.5 py-0.5" key={label}>
-                              {label}
+                        </span>
+                        {'status' in item ? (
+                          <>
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <GitBranch className="size-3 shrink-0" />
+                              <span className="truncate">{item.ref}</span>
                             </span>
-                          ))}
-                          {item.labels.length > 3 && (
-                            <span title={item.labels.slice(3).join(', ')}>
-                              +{item.labels.length - 3} labels
+                            <span>{item.actor}</span>
+                          </>
+                        ) : (
+                          <>
+                            {source.jira && (
+                              <span>{source.projectLinks?.[item.id] ?? 'No project linked'}</span>
+                            )}
+                            <span>{item.author}</span>
+                            {item.priority && (
+                              <span className="studio-collection-label">
+                                Priority: {item.priority}
+                              </span>
+                            )}
+                            <span className="text-foreground/80">
+                              {(item.assigneeNames ?? item.assignees).length
+                                ? `Assigned to ${(item.assigneeNames ?? item.assignees).join(', ')}`
+                                : 'Unassigned'}
                             </span>
-                          )}
-                        </>
-                      )}
+                            {item.labels.slice(0, 3).map((label) => (
+                              <span className="studio-collection-label" key={label} title={label}>
+                                {label}
+                              </span>
+                            ))}
+                            {item.labels.length > 3 && (
+                              <span title={item.labels.slice(3).join(', ')}>
+                                +{item.labels.length - 3} labels
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
+                    <time
+                      className="studio-collection-date"
+                      dateTime={item.updatedAt}
+                      title={item.updatedAt ? formatDateTime(item.updatedAt) : undefined}
+                    >
+                      {item.updatedAt && !Number.isNaN(Date.parse(item.updatedAt))
+                        ? formatDateTime(item.updatedAt, { dateStyle: 'medium' })
+                        : ''}
+                    </time>
                   </button>
                 ))}
               </div>

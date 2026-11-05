@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import Settings from '../studio-shell/src/app-settings/browser.tsx';import {ExternalBrowserLinkChooser} from '../studio-shell/src/external-browser-link-chooser.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<TooltipProvider><Settings/><ExternalBrowserLinkChooser subscribe={listener=>{window.sendExternal=listener;return()=>{window.sendExternal=undefined}}} onOpen={()=>window.openedBrowser=(window.openedBrowser??0)+1}/></TooltipProvider>);`,
+    contents: `import {StudioConfirmationProvider} from '${root}packages/studio-ui/src/confirmation-provider.tsx';import {createRoot} from 'react-dom/client';import Settings from '../studio-shell/src/app-settings/browser.tsx';import {ExternalBrowserLinkChooser} from '../studio-shell/src/external-browser-link-chooser.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><TooltipProvider><Settings/><ExternalBrowserLinkChooser subscribe={listener=>{window.sendExternal=listener;return()=>{window.sendExternal=undefined}}} onOpen={()=>window.openedBrowser=(window.openedBrowser??0)+1}/></TooltipProvider></StudioConfirmationProvider>);`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -47,6 +47,7 @@ export * from '${root}packages/studio-ui/src/choice-picker.tsx';
           resolveDir: root + 'packages/extension-tasks',
           contents: `
 import {useSyncExternalStore} from 'react';
+export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export * from '@dovo/protocol';export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
 export const providers=[];export const useResolvedTheme=()=> 'dark';
 let preferences={browserAutoSettleMinutes:0,browserCloseSettledMinutes:0,browserViewport:'fill',browserProfiles:[{id:'default',name:'Local Default'}]};const listeners=new Set();
@@ -74,8 +75,7 @@ try {
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  let cancelRemoval = false
-  page.on('dialog', (dialog) => (cancelRemoval ? dialog.dismiss() : dialog.accept()))
+
   await page.route('http://localhost/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -290,8 +290,8 @@ try {
     () => window.calls.filter((call) => call.path.endsWith('/save')).length,
   )
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).fill('Unsaved rename')
-  cancelRemoval = true
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.equal(
     await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).inputValue(),
     'Unsaved rename',
@@ -300,8 +300,11 @@ try {
     await page.evaluate(() => window.calls.filter((c) => c.path.endsWith('/save')).length),
     savesBeforeRemoval,
   )
-  cancelRemoval = false
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Remove profile', exact: true })
+    .click()
   await page.waitForFunction(
     (count) => window.calls.filter((c) => c.path.endsWith('/save')).length === count + 1,
     savesBeforeRemoval,

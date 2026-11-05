@@ -32,7 +32,9 @@ it('reconnects to the same running command after a terminal socket disconnects',
       },
       'Running server',
     )
-    const pid = s.terminals.get(terminal.id).process.pid
+    const shell = s.terminals.get(terminal.id).process
+    if (!shell) throw new Error('Expected a running terminal')
+    const pid = shell.pid
     let port = 0
     await waitForRuntime(() => {
       const match = s.terminals.get(terminal.id).buffer.match(/listener-port:(\d+)/)
@@ -66,7 +68,7 @@ it('reconnects to the same running command after a terminal socket disconnects',
     await waitForRuntime(() => expect(s.terminals.get(terminal.id).listeners.size).toBe(0))
     await connect()
     expect(s.terminals.list()).toEqual([terminal])
-    expect(s.terminals.get(terminal.id).process.pid).toBe(pid)
+    expect(s.terminals.get(terminal.id).process?.pid).toBe(pid)
     const response = await fetch(`http://127.0.0.1:${port}`)
     expect(await response.text()).toBe(String(pid))
   } finally {

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
+import { mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { WebContents } from 'electron'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -14,7 +14,10 @@ const commandSchema = mutableStruct({
   sessionId: Schema.optional(Schema.String),
 })
 type Target = {
+  /** Numeric transport identity, independent of the caller's window/tab lookup key. */
+  pageId: string
   taskId: string
+  tabId?: string
   profileId: string
   contents: Pick<WebContents, 'debugger' | 'getTitle' | 'getURL' | 'isDestroyed'>
   token: string
@@ -27,24 +30,21 @@ export async function createBrowserCdp(directory: string) {
   const path = join(directory, 'desktop-browser-host.json')
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 })
   let port = 0
-  const websocketUrl = (id: string, target: Target) =>
-    `ws://127.0.0.1:${port}/${target.token}/devtools/page/${id}`
-  const save = () => {
+  let nextPageId = 0
+  const websocketUrl = (target: Target) =>
+    `ws://127.0.0.1:${port}/${target.token}/devtools/page/${target.pageId}`
+  const save = (currentTargets = [...targets.values()]) => {
+    const host = decode(desktopBrowserHostSchema, {
+      pid: process.pid,
+      targets: currentTargets.map((target) => ({
+        taskId: target.taskId,
+        ...(target.tabId ? { tabId: target.tabId } : {}),
+        profileId: target.profileId,
+        endpoint: websocketUrl(target),
+      })),
+    })
     mkdirSync(directory, { recursive: true })
-    writeFileSync(
-      `${path}.tmp`,
-      JSON.stringify(
-        decode(desktopBrowserHostSchema, {
-          pid: process.pid,
-          targets: [...targets].map(([id, target]) => ({
-            taskId: target.taskId,
-            profileId: target.profileId,
-            endpoint: websocketUrl(id, target),
-          })),
-        }),
-      ),
-      { mode: 0o600 },
-    )
+    writeFileSync(`${path}.tmp`, JSON.stringify(host), { mode: 0o600 })
     renameSync(`${path}.tmp`, path)
   }
   const match = (raw = '') => {
@@ -64,16 +64,16 @@ export async function createBrowserCdp(directory: string) {
       response.writeHead(404).end()
       return
     }
-    const [id, target] = found
+    const [, target] = found
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     response.end(
       JSON.stringify([
         {
-          id,
+          id: target.pageId,
           type: 'page',
           title: target.contents.getTitle(),
           url: target.contents.getURL(),
-          webSocketDebuggerUrl: websocketUrl(id, target),
+          webSocketDebuggerUrl: websocketUrl(target),
         },
       ]),
     )
@@ -84,7 +84,7 @@ export async function createBrowserCdp(directory: string) {
     if (
       !found ||
       request.headers.origin ||
-      request.url !== `/${found[1].token}/devtools/page/${found[0]}`
+      request.url !== `/${found[1].token}/devtools/page/${found[1].pageId}`
     ) {
       socket.destroy()
       return
@@ -181,7 +181,8 @@ export async function createBrowserCdp(directory: string) {
   port = address.port
   const remove = (id: string) => {
     const target = targets.get(id)
-    for (const client of target?.clients ?? []) client.terminate()
+    if (!target) return
+    for (const client of target.clients) client.terminate()
     targets.delete(id)
     save()
   }
@@ -192,27 +193,34 @@ export async function createBrowserCdp(directory: string) {
       taskId: string,
       profileId: string,
       contents: Pick<WebContents, 'debugger' | 'getTitle' | 'getURL' | 'isDestroyed'>,
+      tabId?: string,
     ) {
-      if (!targets.has(id)) {
-        targets.set(id, {
+      let target = targets.get(id)
+      if (!target) {
+        target = {
+          pageId: String(++nextPageId),
           taskId,
+          tabId,
           profileId,
           contents,
           token: randomBytes(32).toString('hex'),
           clients: new Set(),
-        })
-        save()
+        }
+        // Validate and publish before making this capability available in memory.
+        save([...targets.values(), target])
+        targets.set(id, target)
+      } else if (target.tabId !== tabId) {
+        save([...targets.values()].map((item) => (item === target ? { ...item, tabId } : item)))
+        target.tabId = tabId
       }
-      const target = targets.get(id)
-      if (!target) throw new Error('CDP target missing')
-      return websocketUrl(id, target)
+      return websocketUrl(target)
     },
     remove,
     async close() {
       for (const id of [...targets.keys()]) remove(id)
       sockets.close()
       await new Promise<void>((resolve) => server.close(() => resolve()))
-      unlinkSync(path)
+      rmSync(path, { force: true })
     },
   }
 }

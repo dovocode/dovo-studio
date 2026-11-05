@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { decode, desktopBrowserHostSchema } from '@dovo/protocol'
 const visibilityDirectory = mkdtempSync(join(tmpdir(), 'dovo-browser-unit-'))
 afterAll(() => rmSync(visibilityDirectory, { recursive: true, force: true }))
 const registrations: Array<ReturnType<typeof registerBrowser>> = []
@@ -661,6 +662,48 @@ it('replaces the native view when its profile changes, keeping separate persiste
       },
     },
   ])
+})
+
+it('publishes schema-valid CDP endpoints for five window-scoped tabs through preview:browser', async () => {
+  vi.useFakeTimers()
+  const { createBrowserCdp } =
+    await vi.importActual<typeof import('./browser-cdp')>('./browser-cdp.js')
+  mocks.cdpCreate.mockImplementationOnce(createBrowserCdp)
+  registrations.push(registerBrowser('/app/index.html', visibilityDirectory))
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  for (let index = 0; index < 5; index++) {
+    await call(event, {
+      action: 'show',
+      key: `studio:browser:tab-${index}`,
+      taskId: 'studio:browser',
+      tabId: `tab-${index}`,
+      workspaceBrowser: true,
+      url: 'https://example.com',
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      agentAccess: true,
+    })
+  }
+  const host = decode(
+    desktopBrowserHostSchema,
+    JSON.parse(readFileSync(join(visibilityDirectory, 'desktop-browser-host.json'), 'utf8')),
+  )
+  expect(host.targets).toHaveLength(5)
+  expect(new Set(host.targets.map((target) => target.endpoint)).size).toBe(5)
+  expect(host.targets.map((target) => target.tabId)).toEqual([
+    'tab-0',
+    'tab-1',
+    'tab-2',
+    'tab-3',
+    'tab-4',
+  ])
+  // Exercise the real interval -> prune -> remove -> save path from the native crash.
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  const remaining = decode(
+    desktopBrowserHostSchema,
+    JSON.parse(readFileSync(join(visibilityDirectory, 'desktop-browser-host.json'), 'utf8')),
+  )
+  expect(mocks.contents.close).toHaveBeenCalledTimes(4)
+  expect(remaining.targets).toEqual([host.targets[4]])
 })
 
 it('does not re-enable agent access when a pending bridge startup finishes after disabling it', async () => {

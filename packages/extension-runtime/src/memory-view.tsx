@@ -1,3 +1,5 @@
+import { useConfirmation } from '@dovo/studio-core'
+import { SearchField } from '@dovo/studio-ui'
 import { useCallback, useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useSettingsDraft, useWorkspace } from '@dovo/studio-core'
@@ -60,7 +62,15 @@ function MemorySettings() {
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const dirty = editing ? content !== editing.content : !!key || !!content
   useSettingsDraft(dirty, busy)
-  const discardEditor = () => !dirty || window.confirm('Discard unsaved memory changes?')
+  const confirm = useConfirmation(JSON.stringify([selection, editing?.key, key, content, busy]))
+  const discardEditor = async () =>
+    !dirty ||
+    (await confirm({
+      title: 'Discard memory changes?',
+      description: 'Your unsaved note will be lost.',
+      confirmLabel: 'Discard changes',
+      destructive: true,
+    }))
   const targets: Array<MemoryScopeRequest & { value: string; label: string; registered: boolean }> =
     [
       { value: 'system', scope: 'system', label: 'System-wide', registered: true },
@@ -159,6 +169,11 @@ function MemorySettings() {
   }
   return (
     <div className="space-y-5">
+      {ready && !error && (
+        <p className="text-[0.8125rem] leading-normal text-foreground/80">
+          Enable switches save automatically on this computer. Use Save note to apply note edits.
+        </p>
+      )}
       <SettingsGroup
         title="Agent memory"
         description="Each scope is enabled independently. Notes stay on this computer and survive thread deletion."
@@ -171,8 +186,8 @@ function MemorySettings() {
             aria-label="Memory scope"
             value={target.value}
             disabled={disabled}
-            onValueChange={(value) => {
-              if (value === selection || !discardEditor()) return
+            onValueChange={async (value) => {
+              if (value === selection || !(await discardEditor())) return
               setResult(null)
               setSelection(value)
               setOffset(0)
@@ -242,13 +257,13 @@ function MemorySettings() {
             Refresh
           </Button>
         </div>
-        <Input
+        <SearchField
           aria-label="Search memory"
           placeholder="Search notes"
           value={query}
           disabled={disabled}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value)
+          onValueChange={(value) => {
+            setQuery(value)
             setOffset(0)
           }}
           maxLength={200}
@@ -278,8 +293,8 @@ function MemorySettings() {
                   variant="ghost"
                   aria-label={`Edit ${entry.key}`}
                   disabled={disabled}
-                  onClick={() => {
-                    if (!discardEditor()) return
+                  onClick={async () => {
+                    if (!(await discardEditor())) return
                     setEditing(entry)
                     setKey(entry.key)
                     setContent(entry.content)
@@ -429,8 +444,8 @@ function MemorySettings() {
               type="button"
               variant="ghost"
               disabled={disabled}
-              onClick={() => {
-                if (discardEditor()) clearEditor()
+              onClick={async () => {
+                if (await discardEditor()) clearEditor()
               }}
             >
               Cancel edit

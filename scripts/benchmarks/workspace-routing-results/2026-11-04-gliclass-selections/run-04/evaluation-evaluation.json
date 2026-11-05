@@ -1,0 +1,83 @@
+{
+  "machine": "macOS-27.3-arm64-arm-64bit",
+  "versions": {
+    "torch": "2.15.0",
+    "transformers": "5.22.1",
+    "gliclass": "0.1.22",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3"
+  },
+  "cpuThreads": 4,
+  "suites": {
+    "evaluation": {
+      "fp32": {
+        "correct": 90,
+        "total": 90,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 30,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 30
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 90,
+            "total": 90
+          }
+        },
+        "mistakes": [],
+        "medianMs": 20.147707999058184,
+        "p95Ms": 22.414541999751236
+      },
+      "q8": {
+        "correct": 90,
+        "total": 90,
+        "accuracy": 1.0,
+        "confusion": {
+          "browser": {
+            "browser": 30,
+            "terminal": 0,
+            "thread": 0
+          },
+          "terminal": {
+            "browser": 0,
+            "terminal": 30,
+            "thread": 0
+          },
+          "thread": {
+            "browser": 0,
+            "terminal": 0,
+            "thread": 30
+          }
+        },
+        "byTask": {
+          "destination": {
+            "correct": 90,
+            "total": 90
+          }
+        },
+        "mistakes": [],
+        "medianMs": 41.86756250055623,
+        "p95Ms": 42.49083299873746
+      },
+      "fp32NativeDisagreements": [],
+      "fp32MaxAbsoluteError": 5.8650970458984375e-5,
+      "quantizedChangedPredictions": []
+    }
+  },
+  "challengeSha256": "2114a7cf11eaf6ff2427ea4bc190bd7d0719a06a7a11b19a3c315539c1ed3682",
+  "fullObservationsOnMacStudio": "/Users/dominic/.dovo/model-training/workspace-router-2026-11-04/selections-20261104/run-04/"
+}

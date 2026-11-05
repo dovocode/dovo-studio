@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApplicationStateProvider } from '@dovo/studio-core/state'
 import { LauncherWorkspaceProvider } from '@dovo/studio-core'
-import { TooltipProvider, ErrorBoundary } from '@dovo/studio-ui'
+import { TooltipProvider, ErrorBoundary, StudioConfirmationProvider } from '@dovo/studio-ui'
 import {
   decode,
   runtimeRegistrySchema,
@@ -46,7 +46,9 @@ function Content({ bridge }: { bridge: TaskLauncherBridge }) {
       )}
       {registry ? (
         <LauncherWorkspaceProvider registry={registry}>
-          <TaskLauncherForm bridge={bridge} />
+          <StudioConfirmationProvider>
+            <TaskLauncherForm bridge={bridge} />
+          </StudioConfirmationProvider>
         </LauncherWorkspaceProvider>
       ) : (
         !error && <p className="p-6 text-sm text-muted-foreground">Loading computers…</p>

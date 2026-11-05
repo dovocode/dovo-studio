@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { SlidersHorizontal, WandSparkles } from 'lucide-react'
 import {
@@ -11,8 +11,9 @@ import {
   decode,
   DIAGNOSTIC_RETENTION_DAYS,
 } from '@dovo/protocol'
-import { clientTaskScope, useWorkspace, useSettingsDraft } from '@dovo/studio-core'
+import { clientTaskScope, useWorkspace, useSettingsDraft, useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { LifecycleLink } from './lifecycle-link'
 import {
   Input,
   Select,
@@ -23,6 +24,7 @@ import {
   SettingRow,
   SettingsGroup,
   Toggle,
+  Button,
 } from '@dovo/studio-ui'
 
 type Preferences = typeof runtimePreferencesSchema.Type
@@ -120,14 +122,29 @@ function useRuntimePreferences(onSaved?: () => void) {
   }
 }
 
-/** Settings → Computers → Running tasks: what this computer does with tasks on its own. Stored
+/** Settings → Computers → Running threads: what this computer does with tasks on its own. Stored
  * on the computer, so every device that manages it sees the same choices. */
-export function RunningTaskPreferences() {
+export function RunningTaskPreferences({
+  children,
+  showSaveInfo = true,
+}: {
+  children?: ReactNode
+  showSaveInfo?: boolean
+}) {
   const { snapshot } = useWorkspace()
   const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus
+        error={error}
+        loaded={value !== null}
+        busy={busy}
+        connected={connected}
+        textFields
+        showSaveInfo={showSaveInfo}
+      />
+      {children}
       <SettingsGroup advanced title="Model modes (experimental)">
         <SettingRow
           label="Tune & Maestro modes (experimental)"
@@ -156,7 +173,7 @@ export function RunningTaskPreferences() {
         {value?.enableAutoProjectSelection && (
           <SettingRow
             label="Scope model mode"
-            description="Independent of normal task defaults. Inherit uses the selected project's harness/model; Tune chooses a model within it; Maestro chooses both."
+            description="Independent of normal thread defaults. Inherit uses the selected project's harness/model; Tune chooses a model within it; Maestro chooses both."
           >
             <Select
               value={value.autoProjectModelSelection}
@@ -219,11 +236,11 @@ export function RunningTaskPreferences() {
       </SettingsGroup>
       <SettingsGroup title="After a restart">
         <SettingRow
-          label="Continue interrupted tasks"
-          description="Computer default for tasks set to Inherit. Resumes interrupted turns; queued messages stay paused. Stopped tasks and automations still need Retry."
+          label="Continue interrupted threads"
+          description="Computer default for threads set to Inherit. Resumes interrupted turns; queued messages stay paused. Stopped threads and automations still need Retry."
         >
           <Toggle
-            label="Continue interrupted tasks after a runtime restart"
+            label="Continue interrupted threads after a runtime restart"
             checked={value?.autoContinueAfterRestart ?? false}
             disabled={disabled}
             onChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}
@@ -237,13 +254,13 @@ export function RunningTaskPreferences() {
           onSave={(maxActiveChildAgents) => save({ maxActiveChildAgents })}
         />
       </SettingsGroup>
-      <SettingsGroup title="While tasks run">
+      <SettingsGroup title="While threads run">
         <SettingRow
           label="Keep this computer awake"
-          description="macOS only. Prevents idle sleep while a task is working. The display can still sleep."
+          description="macOS only. Prevents idle sleep while a thread is working. The display can still sleep."
         >
           <Toggle
-            label="Keep this computer awake while tasks run"
+            label="Keep this computer awake while threads run"
             checked={value?.preventSleepWhileRunning ?? false}
             disabled={disabled}
             onChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
@@ -252,8 +269,8 @@ export function RunningTaskPreferences() {
       </SettingsGroup>
       <SettingsGroup title="Archiving">
         <SettingRow
-          label="Auto-archive inactive tasks"
-          description="Computer fallback when no scoped archiving rule is set. A scoped On archives after time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned tasks and open terminals are protected."
+          label="Auto-archive inactive threads"
+          description="Computer fallback when no scoped archiving rule is set. A scoped On archives after time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned threads and open terminals are protected."
         >
           <Select
             disabled={disabled}
@@ -267,7 +284,7 @@ export function RunningTaskPreferences() {
               })
             }
           >
-            <SelectTrigger aria-label="Auto-archive inactive tasks" className="min-w-36">
+            <SelectTrigger aria-label="Auto-archive inactive threads" className="min-w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -279,13 +296,12 @@ export function RunningTaskPreferences() {
           </Select>
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
 
 /** PR lifecycle and explicit monitoring tools, saved per computer. */
-export function PullRequestPreferences() {
+export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?: boolean }) {
   const { runtimeRegistry } = useWorkspace()
   const retrievalHosts = runtimeRegistry.profiles.flatMap((profile) =>
     profile.connection.runtimeId ? [{ id: profile.connection.runtimeId, name: profile.name }] : [],
@@ -293,6 +309,13 @@ export function PullRequestPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus
+        error={error}
+        loaded={value !== null}
+        busy={busy}
+        connected={connected}
+        showSaveInfo={showSaveInfo}
+      />
       <SettingsGroup title="Code reviews (experimental)">
         <SettingRow
           label="Independent code reviews (experimental)"
@@ -321,11 +344,11 @@ export function PullRequestPreferences() {
       </SettingsGroup>
       <SettingsGroup
         title="When a pull request closes"
-        description="Applies when the main pull request is merged or closed. Pinned tasks and tasks with active work stay put."
+        description="Applies when the main pull request is merged or closed. Pinned threads and threads with active work stay put."
       >
         <SettingRow
           label="Settle when the PR closes"
-          description="Computer default for tasks set to Inherit. Moves the thread to Settled and keeps its history. Archiving below takes priority; queued work stays put."
+          description="Computer default for threads set to Inherit. Moves the thread to Settled and keeps its history. Archiving below takes priority; queued work stays put."
         >
           <Toggle
             label="Settle when the PR closes"
@@ -336,7 +359,7 @@ export function PullRequestPreferences() {
         </SettingRow>
         <SettingRow
           label="Archive when the PR closes"
-          description="Moves the task out of your list. Restore it later from Archived tasks."
+          description="Moves the thread out of your list. Restore it later from Archived threads."
         >
           <Toggle
             label="Archive when the PR closes"
@@ -345,10 +368,11 @@ export function PullRequestPreferences() {
             onChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
           />
         </SettingRow>
+        <LifecycleLink />
       </SettingsGroup>
       <SettingsGroup
         title="Shared GitHub and Jira retrieval"
-        description="Paired computers share provider traffic. PRs use this machine's configured accounts unless you choose a preferred retrieval computer. Provider credentials stay on their computer."
+        description="Paired computers share provider traffic. PRs use this computer's configured accounts unless you choose a preferred retrieval computer. Provider credentials stay on their computer."
       >
         <SettingRow label="Share retrieval with paired computers">
           <Toggle
@@ -360,7 +384,7 @@ export function PullRequestPreferences() {
         </SettingRow>
         <SettingRow
           label="Preferred retrieval computer"
-          description="Automatic keeps PRs on this machine. An explicitly selected computer must have the same account and repository access. If it is offline, saved PRs remain visible and actions wait for reconnection."
+          description="Automatic keeps PRs on this computer. An explicitly selected computer must have the same account and repository access. If it is offline, saved PRs remain visible and actions wait for reconnection."
         >
           <Select
             value={value?.preferredRetrievalHost || 'auto'}
@@ -413,7 +437,6 @@ export function PullRequestPreferences() {
           />
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -422,6 +445,7 @@ export function ArtifactPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup title="Artifacts">
         <SettingRow
           label="Enable artifacts"
@@ -479,7 +503,6 @@ export function ArtifactPreferences() {
           </SettingRow>
         ))}
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -489,10 +512,11 @@ export function ActivityRetention() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup title="Retention">
         <SettingRow
           label="Keep activity history"
-          description={`Older requests, tool details and message history are deleted from this computer in the background. Task conversations themselves are kept. CLI diagnostics and raw provider events expire after ${DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.`}
+          description={`Older requests, tool details and message history are deleted from this computer in the background. Thread conversations themselves are kept. CLI diagnostics and raw provider events expire after ${DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.`}
         >
           <Select
             disabled={disabled}
@@ -518,16 +542,26 @@ export function ActivityRetention() {
           </Select>
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
 
 /** Settings → Coding → Worktrees: how task branches are named and when checkouts are removed. */
-export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) {
+export function WorktreePreferences({
+  onSaved,
+  showSaveInfo = true,
+}: { onSaved?: () => void; showSaveInfo?: boolean } = {}) {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences(onSaved)
   return (
     <>
+      <PreferencesStatus
+        error={error}
+        loaded={value !== null}
+        busy={busy}
+        connected={connected}
+        textFields
+        showSaveInfo={showSaveInfo}
+      />
       <SettingsGroup title="New worktrees">
         <WorktreeRoot
           value={value?.worktreesRoot}
@@ -542,11 +576,11 @@ export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) 
       </SettingsGroup>
       <SettingsGroup title="Cleanup">
         <SettingRow
-          label="Remove worktrees of archived tasks"
-          description="Removes clean Dovo checkouts in the background, including ignored local files. Keeps branches and uncommitted changes. Restoring a task recreates its checkout."
+          label="Remove worktrees of archived threads"
+          description="Removes clean Dovo checkouts in the background, including ignored local files. Keeps branches and uncommitted changes. Restoring a thread recreates its checkout."
         >
           <Toggle
-            label="Remove worktrees of archived tasks"
+            label="Remove worktrees of archived threads"
             checked={value?.removeArchivedWorktrees ?? false}
             disabled={disabled}
             onChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
@@ -564,7 +598,6 @@ export function WorktreePreferences({ onSaved }: { onSaved?: () => void } = {}) 
           />
         </SettingRow>
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
@@ -612,27 +645,33 @@ function PreferencesStatus({
   loaded,
   busy,
   connected,
+  textFields = false,
+  showSaveInfo = true,
 }: {
   error: string
   loaded: boolean
   busy: boolean
   connected: boolean
+  textFields?: boolean
+  showSaveInfo?: boolean
 }) {
-  if (!error)
-    return !connected || !loaded || busy ? (
-      <p role="status" className="text-xs text-muted-foreground">
-        {!connected
-          ? 'Reconnect this computer to change settings.'
-          : !loaded
-            ? 'Loading settings…'
-            : 'Saving…'}
+  if (error)
+    return (
+      <p role="alert" className="text-xs text-destructive">
+        {error}
       </p>
-    ) : (
-      <p className="text-xs text-muted-foreground">Saved automatically on this computer.</p>
     )
+  const pending = !connected || !loaded || busy
+  if (!pending && !showSaveInfo) return null
   return (
-    <p role="alert" className="py-2 text-xs text-destructive">
-      {error}
+    <p role={pending ? 'status' : undefined} className="text-xs text-muted-foreground">
+      {!connected
+        ? 'Reconnect this computer to change settings.'
+        : !loaded
+          ? 'Loading settings…'
+          : busy
+            ? 'Saving…'
+            : `Changes save automatically on this computer.${textFields ? ' Text fields save on Enter or when you leave the field.' : ''}`}
     </p>
   )
 }
@@ -664,7 +703,7 @@ function BranchPrefix({
       label="Branch prefix"
       description={
         <>
-          New task branches start with this, e.g.{' '}
+          New thread branches start with this, e.g.{' '}
           <code className="font-mono">{normalized || ''}fix-login-1a2b3c4d</code>. Leave empty for
           none. Existing branches keep their names.
           {!valid && (
@@ -750,9 +789,10 @@ export function StudioToolsPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup
         title="Studio Tools (experimental)"
-        description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this machine only (localhost)."
+        description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this computer only (localhost)."
       >
         {studioToolSettings.map(({ key, label, description }) => (
           <SettingRow key={key} label={label} description={description}>
@@ -765,16 +805,33 @@ export function StudioToolsPreferences() {
           </SettingRow>
         ))}
       </SettingsGroup>
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }
 
 export function RemoteDesktopPreferences() {
   const { snapshot } = useWorkspace()
+  const host = useStudioHost()
+  if (snapshot?.remoteDesktopEnabled === undefined)
+    return (
+      <div
+        role="status"
+        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs text-muted-foreground"
+      >
+        <p>Remote desktop requires a newer runtime. Update this computer to use it.</p>
+        <Button variant="outline" size="sm" onClick={() => host.navigate({ viewId: 'runtime' })}>
+          Open Devices &amp; runtime
+        </Button>
+      </div>
+    )
+  return <SupportedRemoteDesktopPreferences />
+}
+
+function SupportedRemoteDesktopPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
       <SettingsGroup
         title="Remote desktop (experimental)"
         description="Allow paired devices to view this computer’s primary display. Control is enabled separately for each session. Turning this off ends sharing. Requires Cua Driver running in the host desktop session; agent computer use can remain disabled."
@@ -783,17 +840,11 @@ export function RemoteDesktopPreferences() {
           <Toggle
             label="Enable remote desktop"
             checked={value?.enableRemoteDesktop ?? false}
-            disabled={disabled || snapshot?.remoteDesktopEnabled === undefined}
+            disabled={disabled}
             onChange={(enableRemoteDesktop) => save({ enableRemoteDesktop })}
           />
         </SettingRow>
       </SettingsGroup>
-      {snapshot?.remoteDesktopEnabled === undefined && (
-        <p className="text-xs text-muted-foreground">
-          Update this computer’s runtime to use remote desktop.
-        </p>
-      )}
-      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
     </>
   )
 }

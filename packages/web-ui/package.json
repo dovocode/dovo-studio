@@ -9,6 +9,10 @@
   ],
   "type": "module",
   "exports": {
+    "./dialog": {
+      "types": "./src/dialog.tsx",
+      "import": "./dist/dialog.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./dist/index.js"

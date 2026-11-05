@@ -105,7 +105,14 @@ try {
   assert.equal(await owner.locator('header img').count(), 0)
   assert.equal(
     await owner.locator('.brand-product').evaluate((element) => getComputedStyle(element).color),
-    'rgb(161, 161, 161)',
+    await owner.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--dovo-muted-foreground)'
+      document.body.append(probe)
+      const color = getComputedStyle(probe).color
+      probe.remove()
+      return color
+    }),
   )
   assert.equal(await owner.getByRole('heading', { name: artifact.title, exact: true }).count(), 1)
   const cookies = await ownerContext.cookies(origin)

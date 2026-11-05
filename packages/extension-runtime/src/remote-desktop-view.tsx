@@ -18,6 +18,7 @@ export default function RemoteDesktopView({ entityId }: { entityId?: string }) {
 }
 export function RemoteDesktopViewer() {
   const { request, connected, snapshot, connection } = useWorkspace()
+  if (snapshot?.remoteDesktopEnabled === undefined) return null
   return (
     <DesktopViewer
       request={request}

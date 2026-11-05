@@ -45,6 +45,18 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
                     failed: 'Failed',
                     cancelled: 'Stopped',
                   }[task.status]
+  const tone: 'active' | 'attention' | 'success' | 'danger' | 'neutral' = [
+    'Working',
+    'Saving changes',
+  ].includes(state)
+    ? 'active'
+    : ['Review', 'Needs input'].includes(state)
+      ? 'attention'
+      : ['Done', 'Finished', 'Settled'].includes(state)
+        ? 'success'
+        : state === 'Failed'
+          ? 'danger'
+          : 'neutral'
   const compactLabel =
     state === 'Working'
       ? `Working ${time}`.trim()
@@ -53,6 +65,8 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
             'Failed',
             'Stopped',
             'Done',
+            'Review',
+            'Finished',
             'Archived',
             'Settled',
             'Waiting',
@@ -63,6 +77,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
         : time.replace(' ago', '') || state
   return {
     state,
+    tone,
     time,
     compactLabel,
     label: [state, time].filter(Boolean).join(' · '),

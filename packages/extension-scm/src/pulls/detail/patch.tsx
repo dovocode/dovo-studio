@@ -209,15 +209,15 @@ export function PullPatch({
   return (
     <div
       className="min-w-0 overflow-auto"
+      title={
+        onComment
+          ? 'Drag line numbers or Shift-click for a range. Click + for a single line.'
+          : undefined
+      }
       style={{
         fontSize: 12,
       }}
     >
-      {onComment && (
-        <p className="py-2 text-[0.625rem] text-muted-foreground">
-          Drag line numbers or Shift-click for a range. Click + for a single line.
-        </p>
-      )}
       {reviewContext && (
         <p className="py-2 text-[0.625rem] text-muted-foreground">
           Review excerpt · original line numbers; surrounding changes may be omitted.
@@ -258,7 +258,7 @@ export function PullPatch({
                 submitLabel={
                   destination === 'github'
                     ? `Post to ${forgeLabels[provider]}`
-                    : (agentAction?.submit ?? 'Start agent task')
+                    : (agentAction?.submit ?? 'Start agent thread')
                 }
                 onCancel={() => setSelection(null)}
                 onSubmit={async (body) => {
@@ -269,7 +269,7 @@ export function PullPatch({
                     selection.start !== selection.end
                   )
                     throw new Error(
-                      'This provider accepts one line per comment. Select a single line or send the range to an agent task.',
+                      'This provider accepts one line per comment. Select a single line or send the range to an agent thread.',
                     )
                   await onComment(
                     body,
@@ -298,7 +298,7 @@ export function PullPatch({
                   }
                 >
                   {allowAgent && (
-                    <option value="agent">{agentAction?.option ?? 'Agent task'}</option>
+                    <option value="agent">{agentAction?.option ?? 'Agent thread'}</option>
                   )}
                   {allowInlineComment && <option value="github">{forgeLabels[provider]} PR</option>}
                 </ChoicePicker>

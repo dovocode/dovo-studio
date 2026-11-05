@@ -1,4 +1,4 @@
-import { SettingsPage } from './settings-layout'
+import { SettingsPage, SettingsStorageInfo } from './settings-layout'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -19,12 +19,14 @@ export function HostSettingsPage({
   initialRuntimeId,
   children,
   localSettings,
+  saveInfo,
 }: {
   title: string
   description: string
   initialRuntimeId?: string
   children: ReactNode
   localSettings?: ReactNode
+  saveInfo?: string
 }) {
   const sources = useRuntimeSources()
   const confirmNavigation = useConfirmSettingsNavigation()
@@ -36,8 +38,19 @@ export function HostSettingsPage({
   const generation = useRef(0)
   const setSettingsTarget = settingsTarget?.setTarget
   useEffect(() => {
-    setChosen(initialRuntimeId ?? '')
-    if (initialRuntimeId) setSettingsTarget?.({ environmentId: initialRuntimeId, projectId: '' })
+    let active = true
+    void (async () => {
+      if (
+        initialRuntimeId &&
+        setSettingsTarget &&
+        !(await setSettingsTarget({ environmentId: initialRuntimeId, projectId: '' }))
+      )
+        return
+      if (active) setChosen(initialRuntimeId ?? '')
+    })()
+    return () => {
+      active = false
+    }
   }, [initialRuntimeId, setChosen, setSettingsTarget])
   const selectedId = initialRuntimeId ? chosen : settingsTarget?.target.environmentId || chosen
   const source =
@@ -70,56 +83,68 @@ export function HostSettingsPage({
     <SettingsPage
       title={title}
       description={description}
-      headerActions={
+      beforeToolbar={localSettings}
+      toolbar={
         source && (
-          <div className="flex w-80 min-w-0 max-w-full items-center gap-2">
-            <span
-              className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
-              title={`${localSettings ? 'Computer settings on' : 'Saved on'} ${source.name}`}
-            >
-              {localSettings ? 'Computer settings on' : 'Saved on'} {source.name}
-            </span>
-            {sources.length > 1 && (
-              <ChoicePicker
-                aria-label="Computer"
-                className="h-8 w-48 min-w-0 max-w-[65%] rounded-md px-2 text-xs"
-                value={source.profile.id}
-                disabled={refreshing}
-                onValueChange={(value) => {
-                  const accepted = settingsTarget
-                    ? settingsTarget.setTarget({
-                        environmentId: value,
-                        projectId:
-                          settingsTarget.target.environmentId === value
-                            ? settingsTarget.target.projectId
-                            : '',
-                      })
-                    : confirmNavigation()
-                  if (accepted) setChosen(value)
-                }}
-              >
-                {sources.map((entry) => (
-                  <option key={entry.profile.id} value={entry.profile.id}>
-                    {entry.name}
-                    {entry.connected ? '' : ' · Offline'}
-                  </option>
-                ))}
-              </ChoicePicker>
-            )}
+          <div className="studio-settings-target space-y-2">
+            <h2 className="text-sm font-semibold">Computer settings</h2>
+            <div className="studio-settings-target-inner flex max-w-3xl flex-wrap items-center gap-3">
+              <SettingsStorageInfo>
+                <span title={`Computer: ${source.name}`}>Computer: {source.name}</span>
+                {source.connected && saveInfo && (
+                  <>
+                    {' '}
+                    · <span>{saveInfo}</span>
+                  </>
+                )}
+              </SettingsStorageInfo>
+              {sources.length > 1 && (
+                <ChoicePicker
+                  aria-label="Computer"
+                  className="h-9 w-48 min-w-0 max-w-full rounded-md px-2 text-xs"
+                  value={source.profile.id}
+                  disabled={refreshing}
+                  onValueChange={async (value) => {
+                    const current = ++generation.current
+                    const accepted = settingsTarget
+                      ? await settingsTarget.setTarget({
+                          environmentId: value,
+                          projectId:
+                            settingsTarget.target.environmentId === value
+                              ? settingsTarget.target.projectId
+                              : '',
+                        })
+                      : await confirmNavigation()
+                    if (accepted && current === generation.current) setChosen(value)
+                  }}
+                >
+                  {sources.map((entry) => (
+                    <option key={entry.profile.id} value={entry.profile.id}>
+                      {entry.name}
+                      {entry.connected ? '' : ' · Offline'}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              )}
+              {!source.connected && (
+                <span role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
+                  Offline · edits kept here
+                </span>
+              )}
+            </div>
           </div>
         )
       }
     >
-      {localSettings}
       {!source ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[0.8125rem] leading-normal text-foreground/80">
           Connect a computer in Devices & runtime to change these settings.
         </p>
       ) : (
         <WorkspaceScope key={source.scope} profile={source.profile}>
           {!source.connected && (
             <div className="space-y-3">
-              <p role="status" className="text-xs text-muted-foreground">
+              <p role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
                 {source.name} is offline. Your unsaved edits are kept here. Reconnect to save
                 changes.
               </p>

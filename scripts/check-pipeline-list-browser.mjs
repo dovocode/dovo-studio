@@ -66,10 +66,10 @@ async function bundle(isMobile) {
       }
     : {
         '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-        '@dovo/studio-core': `export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:()=>{}});export const useWorkspace=()=>({activeRuntimeId:'mac',runtimes:[]});export const WorkspaceRuntimeScope=({children})=>children;export const repositorySourceKey=()=>'';`,
-        '@dovo/studio-ui': `export {PageHeader} from '${ui}page-header';export * from '${ui}sidebar-header';export {Button} from '${ui}components/ui/button';export {Input} from '${ui}components/ui/input';export {ChoicePicker} from '${ui}choice-picker';export const useCompactLayout=()=>innerWidth<1024;`,
+        '@dovo/studio-core': `export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:target=>window.navigation=target});export const useWorkspace=()=>({activeRuntimeId:'mac',runtimes:[]});export const WorkspaceRuntimeScope=({children})=>children;export const repositorySourceKey=()=>'';export const formatDateTime=value=>value;`,
+        '@dovo/studio-ui': `export {PageHeader} from '${ui}page-header';export * from '${ui}sidebar-header';export {Button} from '${ui}components/ui/button';export {Input} from '${ui}components/ui/input';export {ChoicePicker} from '${ui}choice-picker';export {EmptyState} from '${ui}components/empty-state';export const useCompactLayout=()=>innerWidth<1024;`,
         './work-sources': `export const useIssueSources=()=>window.sources;export const jiraSourceKey=()=>'';export const workRemoteKey=source=>source.key;export const matchesWorkSource=(source,key)=>!key||source.key===key;`,
-        './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:window.sources.map(source=>({source,reader:source,items:window.runs,stale:!source.connected,options:{provider:'github',pipelines:true,pipelineActions:[]},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}});`,
+        './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:window.sources.map(source=>({source,reader:source,items:window.runs,stale:!source.connected,options:{provider:'github',pipelines:true,pipelineActions:window.pipelineActions??[]},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}});`,
         './jira-toolbar': `export const JiraToolbar=()=>null;`,
         './jira-issue-list': `export const jiraIssueRowKey=()=>'';export const JiraIssueList=()=>null;`,
         './content': `export const WorkContent=({initialSelected})=><p>Opened run {initialSelected}</p>;`,
@@ -145,6 +145,43 @@ try {
         : page.locator('nav button').filter({ has: page.locator('time') })
       await page.getByRole('button', { name: `All runs: ${count}`, exact: true }).waitFor()
       assert.equal(await rows.count(), count)
+      if (!isMobile) {
+        const filters = page.getByRole('button', { name: 'Filters', exact: true })
+        assert.equal(await filters.getAttribute('aria-expanded'), 'false')
+        assert.equal(
+          await page.getByRole('button', { name: 'Pipeline source', exact: true }).isVisible(),
+          false,
+        )
+        await filters.click()
+        await page.getByRole('button', { name: 'Pipeline source', exact: true }).waitFor()
+        await filters.click()
+        const run = page.getByRole('button', { name: 'Run pipeline', exact: true })
+        assert.equal(await run.isDisabled(), true)
+        await page
+          .getByText('These sources support viewing pipeline runs only.', { exact: true })
+          .waitFor()
+        await page.getByRole('button', { name: 'Sources', exact: true }).click()
+        assert.deepEqual(await page.evaluate(() => window.navigation), { viewId: 'source-control' })
+        await page.evaluate(() => {
+          window.pipelineActions = ['run']
+          window.render()
+        })
+        await page.waitForFunction(
+          () => !document.querySelector('[aria-describedby="pipeline-run-notice"]'),
+        )
+        assert.equal(
+          await run.isDisabled(),
+          false,
+          'Providers that support running retain the action',
+        )
+        await page.evaluate(() => {
+          window.pipelineActions = []
+          window.render()
+        })
+        await page
+          .getByText('These sources support viewing pipeline runs only.', { exact: true })
+          .waitFor()
+      }
       const firstRowGeometry = () =>
         rows.first().evaluate((node) => {
           const box = node.getBoundingClientRect()
@@ -215,6 +252,10 @@ try {
       })
       await page.getByText('Offline · showing saved results.', { exact: true }).waitFor()
       assert.equal(await refresh.isDisabled(), true, 'Offline sources disable refresh')
+      if (!isMobile)
+        await page
+          .getByText('Reconnect a project’s computer to run pipelines.', { exact: true })
+          .waitFor()
       await page.getByRole('button', { name: 'Filter Passed: 3 runs', exact: true }).click()
       assert.equal(await rows.count(), 3, 'Saved runs remain filterable offline')
       if (isMobile) {

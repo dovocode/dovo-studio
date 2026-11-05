@@ -24,6 +24,7 @@ import {
   generateTitleSchema,
   generatedTitleSchema,
   cleanupDictationSchema,
+  workspaceRouteRequestSchema,
 } from '@dovo/protocol'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
@@ -33,7 +34,9 @@ import type { AgentRun } from '../execution/types.js'
 import { projectScopeContext } from './project-scope.js'
 import { parseProjectSelection, projectSelectionSchema } from './project-selection-output.js'
 import { cleanDictationOutput, dictationInstructions } from '../execution/dictation-cleanup.js'
+import { WorkspaceRouter } from './workspace-router.js'
 export class TitleGeneration {
+  private workspaceRouter = new WorkspaceRouter()
   private running = new Map<AbortController, Fiber.Fiber<unknown, unknown>>()
   private executor = ManagedRuntime.make(Layer.empty)
   private stopped = false
@@ -198,6 +201,12 @@ export class TitleGeneration {
     return this.trackEffect((controller) =>
       this.runEffect(text, controller, mode === 'auto' ? 'tune' : 'maestro'),
     )
+  }
+  routeWorkspaceEffect(value: unknown) {
+    return runtimeOperation(() => {
+      const { text, ...context } = decode(workspaceRouteRequestSchema, value)
+      return this.workspaceRouter.route(text, context)
+    })
   }
   selectProjectsEffect(value: unknown) {
     return runtimeProgram(
@@ -843,6 +852,7 @@ export class TitleGeneration {
   disposeEffect() {
     return Effect.gen({ self: this }, function* () {
       this.stopped = true
+      yield* runtimeOperation(() => this.workspaceRouter.dispose())
       for (const controller of this.running.keys())
         controller.abort(new Error('Runtime shutting down'))
       yield* Effect.forEach(this.running.values(), (fiber) => Fiber.await(fiber), { discard: true })

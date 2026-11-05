@@ -20,14 +20,12 @@ export function PullRow({
   selected,
   onSelect,
   compact = false,
-  statusColumn,
   onClick,
   onAddToThread,
   selectionCount = 1,
 }: {
   pull: PullSummary
   compact?: boolean
-  statusColumn: boolean
   repository: string
   selected: boolean
   onSelect: () => void
@@ -36,8 +34,10 @@ export function PullRow({
   selectionCount?: number
 }) {
   const [error, setError] = useApplicationState('')
+  const ci = pullChecks(pull)
   const hasStatus =
     pull.checksState !== undefined || pull.reviewDecision !== undefined || !!pull.statusError
+  const reviewRequested = pull.state === 'open' && !pull.draft && pull.viewerReviewRequested
   const copy = async (text: string) => {
     setError('')
     try {
@@ -95,9 +95,9 @@ export function PullRow({
           ? 'text-muted-foreground'
           : 'text-status-success'
   return (
-    <div className="relative">
+    <div className="@container/pr-row relative">
       <div
-        className={`group flex min-w-0 items-center rounded-xl border motion-safe:transition-colors ${selected ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
+        className={`group flex min-w-0 items-center rounded-xl border motion-safe:transition-colors ${selected ? 'studio-nav-selected forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
       >
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
@@ -118,165 +118,156 @@ export function PullRow({
               }}
               aria-current={selected ? 'true' : undefined}
               onClick={onClick ?? onSelect}
-              className="min-w-0 flex-1 rounded-xl px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-primary"
+              className="studio-collection-row min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <div className="flex gap-3">
-                <div
-                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : statusColumn ? '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_5.5rem]'}`}
-                >
-                  <div className="min-w-0">
-                    <div className="mb-1 flex min-w-0 items-center gap-2 text-[0.6875rem] text-muted-foreground">
+              <div className="studio-collection-body grid gap-x-6 gap-y-2 @[64rem]/pr-row:grid-cols-[minmax(0,1fr)_14rem]">
+                <div className="min-w-0" data-pull-context>
+                  <div className="studio-collection-meta">
+                    <span className={`studio-collection-status ${stateColor}`}>
+                      <Icon aria-hidden className="size-3.5" />
+                      {pullState(pull).label}
+                    </span>
+                    <span className="shrink-0 font-mono tabular-nums">#{pull.number}</span>
+                    <span className="min-w-0 flex-1 truncate" title={repository}>
+                      {repository}
+                    </span>
+                  </div>
+                  <p className="studio-collection-title line-clamp-2" title={pull.title}>
+                    {pull.title}
+                  </p>
+                  <div className="studio-collection-context">
+                    <span className="inline-flex min-w-0 max-w-full flex-[1_1_20rem] items-center gap-3">
                       <span
-                        className={`inline-flex shrink-0 items-center gap-1.5 font-medium ${stateColor}`}
-                      >
-                        <Icon aria-hidden className="size-3.5" />
-                        {pullState(pull).label}
-                      </span>
-                      <span className="shrink-0 font-mono tabular-nums">#{pull.number}</span>
-                      <span className="min-w-0 flex-1 truncate" title={repository}>
-                        {repository}
-                      </span>
-                    </div>
-                    <p
-                      className="line-clamp-2 break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]"
-                      title={pull.title}
-                    >
-                      {pull.title}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
-                      <span
-                        className="inline-flex min-w-0 items-center gap-1.5"
+                        className="inline-flex min-w-0 max-w-32 shrink-0 items-center gap-1.5"
                         title={pull.author}
                       >
                         <AuthorAvatar author={pull.author} url={pull.authorAvatarUrl} />
-                        <span className="max-w-32 truncate">{pull.author}</span>
+                        <span className="truncate">{pull.author}</span>
                       </span>
                       <span
-                        className="min-w-0 max-w-full truncate"
+                        className="inline-flex min-w-0 flex-1 items-center gap-1 font-mono"
                         title={`${pull.head} → ${pull.base}`}
                       >
-                        {pull.head} → {pull.base}
+                        <span data-pull-branch-head className="min-w-0 truncate">
+                          {pull.head}
+                        </span>
+                        <span className="shrink-0">→</span>
+                        <span data-pull-branch-base className="max-w-[35%] shrink-0 truncate">
+                          {pull.base}
+                        </span>
                       </span>
-                      <time
-                        className={compact ? '' : '@4xl/pr-list:hidden'}
-                        dateTime={pull.updatedAt}
-                        title={formatDateTime(pull.updatedAt)}
+                    </span>
+                    {pull.stack && (
+                      <span
+                        className="inline-flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border px-2 py-1 [overflow-wrap:anywhere]"
+                        title={
+                          pull.stack.nativeId
+                            ? 'Native GitHub stack'
+                            : pull.stack.complete
+                              ? 'Stack inferred from branch dependencies'
+                              : 'Partial stack inferred from this page; open details for the full stack'
+                        }
                       >
-                        {formatDateTime(pull.updatedAt, { dateStyle: 'medium' })}
-                      </time>
-                      {pull.stack && (
-                        <span
-                          className="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-status-done/20 bg-status-done/5 px-2 py-1 text-status-done"
-                          title={
-                            pull.stack.nativeId
-                              ? 'Native GitHub stack'
-                              : pull.stack.complete
-                                ? 'Stack inferred from branch dependencies'
-                                : 'Partial stack inferred from this page; open details for the full stack'
-                          }
-                        >
-                          <Layers className="size-3" aria-hidden />
-                          <span>
-                            {pullStackLabel(pull.stack)}
-                            {pull.stack.nativeNumber
-                              ? ` · Stack #${pull.stack.nativeNumber}`
-                              : pull.stack.rootNumber
-                                ? ` · #${pull.stack.rootNumber}`
+                        <Layers className="size-3" aria-hidden />
+                        <span>
+                          {pullStackLabel(pull.stack)}
+                          {pull.stack.nativeNumber
+                            ? ` · Stack #${pull.stack.nativeNumber}`
+                            : pull.stack.rootNumber
+                              ? ` · #${pull.stack.rootNumber}`
+                              : ''}
+                        </span>
+                        <span className="font-mono">
+                          {pull.stack.parentNumber
+                            ? `#${pull.stack.parentNumber} → #${pull.number}`
+                            : pull.stack.position === 1
+                              ? 'Base PR'
+                              : pull.stack.baseRef
+                                ? `onto ${pull.stack.baseRef}`
                                 : ''}
-                          </span>
-                          <span className="font-mono">
-                            {pull.stack.parentNumber
-                              ? `#${pull.stack.parentNumber} → #${pull.number}`
-                              : pull.stack.position === 1
-                                ? 'Base PR'
-                                : pull.stack.baseRef
-                                  ? `onto ${pull.stack.baseRef}`
-                                  : ''}
-                          </span>
+                        </span>
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-2 font-mono tabular-nums">
+                      {pull.additions != null && (
+                        <span aria-label={`${pull.additions} lines added`}>
+                          +{pull.additions.toLocaleString()}
                         </span>
                       )}
-                      {pull.state === 'open' && !pull.draft && pull.viewerReviewRequested && (
-                        <span className="text-status-done">Your review requested</span>
+                      {pull.deletions != null && (
+                        <span aria-label={`${pull.deletions} lines deleted`}>
+                          −{pull.deletions.toLocaleString()}
+                        </span>
                       )}
-                      <span className="inline-flex items-center gap-2 font-mono tabular-nums">
-                        {pull.additions != null && (
-                          <span
-                            className="text-status-success"
-                            aria-label={`${pull.additions} lines added`}
+                      {pull.commentCount != null && (
+                        <span
+                          className="inline-flex items-center gap-1 text-muted-foreground"
+                          title={`${pull.commentCount} comments`}
+                          aria-label={`${pull.commentCount} comments`}
+                        >
+                          <MessageSquare className="size-3" aria-hidden />
+                          {pull.commentCount.toLocaleString()}
+                        </span>
+                      )}
+                    </span>
+                    {!compact && !!pull.labels.length && (
+                      <span className="inline-flex min-w-0 items-center gap-1" aria-label="Labels">
+                        {pull.labels.slice(0, 2).map((label) => (
+                          <Badge
+                            key={label}
+                            variant="secondary"
+                            className="studio-collection-label max-w-28 truncate"
+                            title={label}
                           >
-                            +{pull.additions.toLocaleString()}
-                          </span>
-                        )}
-                        {pull.deletions != null && (
+                            {label}
+                          </Badge>
+                        ))}
+                        {pull.labels.length > 2 && (
                           <span
-                            className="text-status-error"
-                            aria-label={`${pull.deletions} lines deleted`}
+                            className="text-[0.625rem] text-muted-foreground"
+                            title={pull.labels.slice(2).join(', ')}
                           >
-                            −{pull.deletions.toLocaleString()}
-                          </span>
-                        )}
-                        {pull.commentCount != null && (
-                          <span
-                            className="inline-flex items-center gap-1 text-muted-foreground"
-                            title={`${pull.commentCount} comments`}
-                            aria-label={`${pull.commentCount} comments`}
-                          >
-                            <MessageSquare className="size-3" aria-hidden />
-                            {pull.commentCount.toLocaleString()}
+                            +{pull.labels.length - 2}
                           </span>
                         )}
                       </span>
-                      {!compact && !!pull.labels.length && (
-                        <span
-                          className="inline-flex min-w-0 items-center gap-1"
-                          aria-label="Labels"
-                        >
-                          {pull.labels.slice(0, 2).map((label) => (
-                            <Badge
-                              key={label}
-                              variant="secondary"
-                              className="max-w-28 truncate text-[0.625rem]"
-                              title={label}
-                            >
-                              {label}
-                            </Badge>
-                          ))}
-                          {pull.labels.length > 2 && (
-                            <span
-                              className="text-[0.625rem] text-muted-foreground"
-                              title={pull.labels.slice(2).join(', ')}
-                            >
-                              +{pull.labels.length - 2}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
+                </div>
+                {(hasStatus || reviewRequested) && (
                   <div
-                    className={`${hasStatus ? 'mt-2 flex' : 'hidden'} flex-wrap gap-x-3 gap-y-1 ${compact || !statusColumn ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
-                    title={hasStatus ? pullNextStep(pull).label : undefined}
+                    className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs @[64rem]/pr-row:flex-col @[64rem]/pr-row:items-start"
+                    role="group"
+                    aria-label="PR readiness"
+                    title={pullNextStep(pull).label}
                   >
                     {(pull.checksState !== undefined || pull.statusError) && (
-                      <Signal signal={pullChecks(pull)} />
+                      <Signal
+                        signal={{ ...ci, label: ci.label.replace(/^CI status:/, 'Repository CI:') }}
+                        subtle
+                      />
                     )}
                     {(pull.reviewDecision !== undefined || pull.statusError) && (
-                      <Signal signal={pullReview(pull)} />
+                      <Signal signal={pullReview(pull)} subtle />
+                    )}
+                    {reviewRequested && (
+                      <span className="font-medium text-status-done">Your review requested</span>
                     )}
                   </div>
-                  {!compact && (
-                    <time
-                      className="hidden self-center text-right text-xs text-muted-foreground @4xl/pr-list:block"
-                      dateTime={pull.updatedAt}
-                      title={formatDateTime(pull.updatedAt)}
-                    >
-                      {formatDateTime(pull.updatedAt, { dateStyle: 'medium' })}
-                    </time>
-                  )}
-                </div>
+                )}
               </div>
+              <time
+                className="studio-collection-date"
+                dateTime={pull.updatedAt}
+                title={formatDateTime(pull.updatedAt)}
+              >
+                {formatDateTime(pull.updatedAt, { dateStyle: 'medium' })}
+              </time>
               {!!pull.statusError && (
-                <p className="mt-2 text-[0.625rem] text-status-warning" title={pull.statusError}>
+                <p
+                  className="col-span-full mt-1 text-[0.625rem] text-status-warning"
+                  title={pull.statusError}
+                >
                   Status unavailable · refresh to retry
                 </p>
               )}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Maximize, ZoomIn, ZoomOut } from 'lucide-react'
+import { ZoomIn, ZoomOut } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { cn } from './lib/utils'
 
@@ -126,12 +126,22 @@ function ImageCanvas({ src, alt, className, onError }: Parameters<typeof ImageVi
           variant="ghost"
           size="sm"
           disabled={!ready}
+          className="aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:ring-1 aria-pressed:ring-inset aria-pressed:ring-border"
+          aria-pressed={view.scale === null}
+          onClick={reset}
+        >
+          Fit
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!ready}
+          className="aria-pressed:bg-accent aria-pressed:text-accent-foreground aria-pressed:ring-1 aria-pressed:ring-inset aria-pressed:ring-border"
+          aria-pressed={view.scale === 1}
           onClick={() => setView({ scale: 1, x: 0, y: 0 })}
         >
-          100%
-        </Button>
-        <Button type="button" variant="ghost" size="sm" disabled={!ready} onClick={reset}>
-          <Maximize className="size-4" /> Fit
+          Actual size
         </Button>
       </div>
       <div

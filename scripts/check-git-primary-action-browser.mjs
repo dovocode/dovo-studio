@@ -81,8 +81,9 @@ try {
   await page.addStyleTag({ content: 'svg{width:16px;height:16px}.hidden{display:none}' })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const action = page.getByRole('button', { name: 'Commit & push', exact: true })
-  await action.waitFor()
-  assert.equal(await action.isDisabled(), true)
+  await page.getByText('Checking Git status…', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
+  await page.getByRole('button', { name: 'Git actions', exact: true }).waitFor()
   const clean = {
     dirty: false,
     canPush: true,
@@ -102,11 +103,11 @@ try {
   await page.evaluate(() => window.rerender())
   await page.waitForFunction(() => window.reads.length === 2)
   assert.equal(await action.isDisabled(), false)
-  assert.equal(await page.getByRole('button', { name: 'Git actions', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Git actions', exact: true }).count(), 1)
   await finish(1, clean)
-  await page.waitForFunction(
-    () => document.querySelector('button[title="No changes to commit or push"]')?.disabled,
-  )
+  await page.getByText('Clean · Synced', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
+  await page.getByRole('button', { name: 'Git actions', exact: true }).waitFor()
   // Overlapping older reads must not overwrite a newer dirty status.
   await page.evaluate(() => window.rerender())
   await page.waitForFunction(() => window.reads.length === 3)
@@ -130,11 +131,13 @@ try {
   assert.equal(await push.isDisabled(), false)
   // A different thread cannot inherit the previous thread's action state.
   await page.evaluate(() => window.switchTask())
-  await action.waitFor()
-  assert.equal(await action.isDisabled(), true)
+  await page.getByText('Checking Git status…', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
+  assert.equal(await push.count(), 0)
   await page.waitForFunction(() => window.reads.length === 6)
   await finish(5, clean)
-  assert.equal(await action.isDisabled(), true)
+  await page.getByText('Clean · Synced', { exact: true }).waitFor()
+  assert.equal(await action.count(), 0)
   assert.deepEqual(await page.evaluate(() => window.writes), [
     '/api/tasks/commit-message',
     '/api/tasks/commit',

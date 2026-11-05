@@ -80,7 +80,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
           height = image.height * scale
         context.drawImage(image, (48 - width) / 2, (48 - height) / 2, width, height)
         const value = canvas.toDataURL('image/png')
-        if (value.length > 50000) throw new Error('This image is too detailed for a task icon.')
+        if (value.length > 50000) throw new Error('This image is too detailed for a thread icon.')
         await save(value)
       } finally {
         image.close()
@@ -131,7 +131,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium">Project icon</p>
           <p className="text-xs text-muted-foreground">
-            Used for every task in this project.{' '}
+            Used for every thread in this project.{' '}
             {sharedProjectKey(repository)
               ? 'Icons sync across paired computers with the same Git remote.'
               : 'This project’s icon stays on this computer.'}{' '}

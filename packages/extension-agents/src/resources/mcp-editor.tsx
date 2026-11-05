@@ -1,3 +1,4 @@
+import { Disclosure } from '@dovo/studio-ui'
 import { CredentialEditor } from './credential-editor'
 import {
   credentialFields,
@@ -270,10 +271,7 @@ export function McpEditor({
                 </FormField>
               </>
             )}
-            <details className="rounded-md border p-3">
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                Saved secret values (optional)
-              </summary>
+            <Disclosure title={<> Saved secret values (optional) </>}>
               <p className="mb-3 mt-2 text-xs leading-relaxed text-muted-foreground">
                 Store a value on the computer instead of reading it from an environment variable.
                 Saved values stay hidden.
@@ -289,7 +287,7 @@ export function McpEditor({
                   disabled={!!busy}
                 />
               </FormField>
-            </details>
+            </Disclosure>
             <p className="text-xs leading-relaxed text-muted-foreground">
               Test connection starts the server on the connected computer and lists its tools
               without calling any of them.

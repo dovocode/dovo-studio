@@ -283,7 +283,7 @@ function usePullSection(
     error:
       state.error ||
       (origin?.connected && !reader
-        ? 'The selected PR account is unavailable or changed. Choose its source explicitly; no other machine will take over.'
+        ? 'The selected PR account is unavailable or changed. Choose its source explicitly; no other computer will take over.'
         : ''),
     setError,
     busy: state.busy,
@@ -353,7 +353,9 @@ export function usePullDetail(
     number,
     connectionId,
     'checks',
-    available && tab === 'checks',
+    // The header and merge dialog use this same report set on every tab. Keep it
+    // current so opening Checks cannot change the meaning of the summary.
+    available,
     revision,
   )
   const stack = usePullSection(

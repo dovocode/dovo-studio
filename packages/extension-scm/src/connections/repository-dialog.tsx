@@ -19,6 +19,7 @@ import {
   Button,
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -180,8 +181,10 @@ function RepositoryDialogContent({
               <div className="flex flex-wrap gap-2" role="group" aria-label="Repository source">
                 <Button
                   type="button"
-                  variant={source === 'dovo' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'dovo' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'dovo'}
+                  autoFocus={source === 'dovo'}
                   onClick={() => {
                     setSource('dovo')
                     setError('')
@@ -191,8 +194,10 @@ function RepositoryDialogContent({
                 </Button>
                 <Button
                   type="button"
-                  variant={source === 'local' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'local' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'local'}
+                  autoFocus={source === 'local'}
                   onClick={() => {
                     setSource('local')
                     setError('')
@@ -202,8 +207,10 @@ function RepositoryDialogContent({
                 </Button>
                 <Button
                   type="button"
-                  variant={source === 'github' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'github' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'github'}
+                  autoFocus={source === 'github'}
                   onClick={() => {
                     setSource('github')
                     setError('')
@@ -213,8 +220,10 @@ function RepositoryDialogContent({
                 </Button>
                 <Button
                   type="button"
-                  variant={source === 'forge' ? 'default' : 'outline'}
+                  variant="outline"
+                  className={source === 'forge' ? 'studio-selected-surface' : undefined}
                   aria-pressed={source === 'forge'}
+                  autoFocus={source === 'forge'}
                   onClick={() => {
                     setSource('forge')
                     setError('')
@@ -329,26 +338,31 @@ function RepositoryDialogContent({
                   Connect to a runtime to create or clone a project.
                 </p>
               )}
-              <Button
-                type="submit"
-                disabled={
-                  busy ||
-                  ((source !== 'local' || !!connection) && !connected) ||
-                  (source === 'forge' && (!forge.connectionId || !forge.repository.trim()))
-                }
-              >
-                {busy
-                  ? 'Working…'
-                  : source === 'dovo'
-                    ? 'Create project'
-                    : source !== 'local'
-                      ? projectLabels
-                        ? 'Clone and add project'
-                        : 'Clone and add repository'
-                      : projectLabels
-                        ? 'Add project'
-                        : 'Add repository'}
-              </Button>
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    busy ||
+                    ((source !== 'local' || !!connection) && !connected) ||
+                    (source === 'forge' && (!forge.connectionId || !forge.repository.trim()))
+                  }
+                >
+                  {busy
+                    ? 'Working…'
+                    : source === 'dovo'
+                      ? 'Create project'
+                      : source !== 'local'
+                        ? projectLabels
+                          ? 'Clone and add project'
+                          : 'Clone and add repository'
+                        : projectLabels
+                          ? 'Add project'
+                          : 'Add repository'}
+                </Button>
+              </DialogFooter>
             </fieldset>
             {error && (
               <p role="alert" className="text-sm text-destructive break-words">

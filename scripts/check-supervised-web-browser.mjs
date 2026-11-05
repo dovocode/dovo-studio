@@ -133,7 +133,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        "export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>window.openedThread=target});export const useSettingsDraft=()=>{};",
+        "export const useConfirmation=()=>async()=>true;export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>window.openedThread=target});export const useSettingsDraft=()=>{};",
     },
     {
       path: '@dovo/studio-ui',
@@ -144,7 +144,7 @@ const built = await bundleBrowser(
     export const Dialog=Wrapper,DialogContent=Wrapper,DialogTitle=Wrapper,DialogDescription=Wrapper,Input=()=>null;
     export const SettingRow=({children,description})=><div><p>{description}</p>{children}</div>;export const SettingsGroup=Wrapper,Select=Wrapper,SelectContent=Wrapper,SelectItem=Wrapper,SelectTrigger=Wrapper,SelectValue=()=>null;
     export const Toggle=({label,checked,onChange,disabled})=><button role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={()=>onChange(!checked)}>{label}</button>;
-    export const DropdownMenu={Root:Wrapper,Trigger:Wrapper,Portal:Wrapper,Content:Wrapper,Separator:()=>null,Item:({children,onSelect})=><button onClick={onSelect}>{children}</button>};
+    export const DropdownMenu={Root:Wrapper,Group:Wrapper,Label:Wrapper,Trigger:Wrapper,Portal:Wrapper,Content:Wrapper,Separator:()=>null,Item:({children,onSelect})=><button onClick={onSelect}>{children}</button>};
   `,
     },
     {

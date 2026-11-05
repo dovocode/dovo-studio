@@ -214,7 +214,6 @@ function PullRowsExample() {
         </header>
         {rowPulls.map((pull) => (
           <PullRow
-            statusColumn
             key={pull.number}
             pull={pull}
             repository={repository}
