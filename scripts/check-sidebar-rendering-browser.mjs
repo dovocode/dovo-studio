@@ -631,7 +631,7 @@ try {
   await readTitle.waitFor()
   await unreadTitle.waitFor()
   await page.mouse.move(1100, 650)
-  assert.equal(await readTitle.evaluate((el) => Number(getComputedStyle(el).opacity)), 0.6)
+  assert.equal(await readTitle.evaluate((el) => Number(getComputedStyle(el).opacity)), 0.85)
   assert.equal(await unreadTitle.evaluate((el) => Number(getComputedStyle(el).opacity)), 1)
   assert.equal(
     await unreadTitle.locator('xpath=ancestor::button[1]').getAttribute('data-unread'),

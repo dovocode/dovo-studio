@@ -3698,13 +3698,11 @@ try {
     .getByLabel('This computer · Local Default')
     .boundingBox()
   assert.ok(
-    identityBounds.y > faviconBounds.y &&
-      identityBounds.y < faviconBounds.y + faviconBounds.height &&
-      identityBounds.y + identityBounds.height > faviconBounds.y + faviconBounds.height,
-    'Small device/profile badges overlap the bottom of the favicon',
+    identityBounds.y >= faviconBounds.y + faviconBounds.height,
+    'Device/profile badges sit below the favicon without overlapping it',
   )
   assert.equal(faviconBounds.width, 24, 'Pinned favicons keep the compact tab icon size')
-  assert.equal(identityBounds.height, 14, 'Identity badges remain small')
+  assert.equal(identityBounds.height, 10, 'Identity badges remain small')
   const selectedBeforeMute = await controlsPage.evaluate(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
   )

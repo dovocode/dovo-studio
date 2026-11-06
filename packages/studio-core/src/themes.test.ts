@@ -35,3 +35,8 @@ it('keeps Dovo light string tokens readable on highlighted deleted diff lines', 
     4.5,
   )
 })
+
+it('keeps Dovo dark string tokens readable on highlighted added diff lines', () => {
+  const addedLineBackground = '#455f57'
+  expect(contrast(studioThemes.dovo.dark.signal, addedLineBackground)).toBeGreaterThanOrEqual(4.5)
+})

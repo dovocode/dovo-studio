@@ -60,7 +60,7 @@
   outline: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.5;
+  line-height: 1.25rem;
 }
 .dovo-rich-composer[data-empty]::before {
   content: attr(data-placeholder);

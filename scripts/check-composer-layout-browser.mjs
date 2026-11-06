@@ -229,6 +229,28 @@ try {
     assert.ok(Math.abs(editor.y + editor.height / 2 - (actions.y + actions.height / 2)) < 2)
     const idleFont = await input.evaluate((element) => getComputedStyle(element).fontSize)
     assert.ok(parseFloat(idleFont) <= 14, 'The compact layout keeps the existing small text')
+    const checkTextAlignment = async () => {
+      const alignment = await input.evaluate((element) => {
+        const host = element.closest('[data-composer-input]') ?? element
+        const box = host.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return {
+          lineHeight: parseFloat(style.lineHeight),
+          textCenter:
+            element.getBoundingClientRect().y +
+            parseFloat(style.paddingTop) +
+            parseFloat(style.borderTopWidth) +
+            parseFloat(style.lineHeight) / 2,
+          hostCenter: box.y + box.height / 2,
+        }
+      })
+      assert.equal(alignment.lineHeight, 20, 'Plain and rich editors use the same text baseline')
+      assert.ok(
+        Math.abs(alignment.textCenter - alignment.hostCenter) < 1,
+        'The first line stays vertically centered: ' + JSON.stringify(alignment),
+      )
+    }
+    await checkTextAlignment()
     if (screenshots && screenshot) await page.screenshot({ path: screenshots + '/' + screenshot })
     const motion = await input.evaluate((element) => {
       element.focus()
@@ -277,6 +299,7 @@ try {
     assert.ok(motion.clipped, 'Moving controls stay clipped inside the resizing surface')
     await settleComposer()
     assert.equal(await input.evaluate((element) => getComputedStyle(element).fontSize), idleFont)
+    await checkTextAlignment()
     assert.ok((await page.locator('.studio-composer').boundingBox()).height > surface.height + 40)
     const reversal = await input.evaluate(async (element) => {
       const surface = element.closest('.studio-composer')
