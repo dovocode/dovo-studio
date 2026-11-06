@@ -277,7 +277,7 @@ try {
       )
       await page.evaluate(() => window.setHighContrast(false))
       await page.waitForFunction(
-        () => document.querySelector('#app>div').style.backgroundColor === 'rgb(12, 12, 12)',
+        () => document.querySelector('#app>div').style.backgroundColor === 'rgb(25, 28, 33)',
       )
       const argumentsField = page.getByLabel('Shell arguments (one per line)', { exact: true })
       assert.equal(
@@ -314,7 +314,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(243, 244, 246)'),
+            (mode === 'dark' ? 'rgb(25, 28, 33)' : 'rgb(237, 240, 244)'),
           mode,
         )
         for (const locator of [
@@ -452,7 +452,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(243, 244, 246)'),
+            (mode === 'dark' ? 'rgb(25, 28, 33)' : 'rgb(237, 240, 244)'),
           mode,
         )
         assert.equal(await storage.count(), 0)
@@ -502,7 +502,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(243, 244, 246)'),
+            (mode === 'dark' ? 'rgb(25, 28, 33)' : 'rgb(237, 240, 244)'),
           mode,
         )
         await page.screenshot({
