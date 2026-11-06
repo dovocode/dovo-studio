@@ -178,7 +178,7 @@ export function RunControls({ task }: { task: Task }) {
               >
                 {action.label}
                 {action.decision === 'approve' || action.decision === 'deny' ? (
-                  <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                  <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
                     {action.decision === 'approve' ? 'Y / Enter' : 'N'}
                   </kbd>
                 ) : null}
