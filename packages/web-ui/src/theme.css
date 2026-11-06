@@ -411,7 +411,7 @@
 }
 .dark,
 [data-theme='dark'] {
-  --control-edge: color-mix(in srgb, var(--foreground) 40%, var(--card));
+  --control-edge: color-mix(in srgb, var(--foreground) 42%, var(--card));
 }
 :is(
   [data-slot='input'],

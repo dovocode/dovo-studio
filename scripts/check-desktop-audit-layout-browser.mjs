@@ -378,7 +378,7 @@ try {
         (expected) =>
           Number(getComputedStyle(document.querySelector('[data-thread-title]')).opacity) ===
           expected,
-        unread ? 1 : 0.6,
+        unread ? 1 : 0.85,
       )
       const contrast = await page.locator('.group\\/task').evaluate((element) => {
         const button = element.querySelector('button')
@@ -432,7 +432,7 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
-      assert.equal(contrast.titleOpacity, unread ? 1 : 0.6)
+      assert.equal(contrast.titleOpacity, unread ? 1 : 0.85)
       assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
       assert.deepEqual(contrast.metadataOpacity, [1, 1])
       assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
