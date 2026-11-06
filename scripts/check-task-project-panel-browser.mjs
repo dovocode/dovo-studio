@@ -558,6 +558,11 @@ try {
     await page
       .getByRole('region', { name: 'Thread info', exact: true })
       .waitFor({ state: 'hidden' })
+    if (mobile) {
+      // Escape must reach the panel even immediately after its trigger's tooltip closes.
+      await page.getByRole('button', { name: 'Show thread info', exact: true }).hover()
+      await page.getByRole('tooltip', { name: 'Show thread info', exact: true }).waitFor()
+    }
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.keyboard.press('Escape')
     await page
