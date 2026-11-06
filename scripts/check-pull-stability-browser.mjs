@@ -611,7 +611,7 @@ try {
       tokens.some(
         (element) =>
           element.textContent.trim().split(/\s+/).includes(text) &&
-          getComputedStyle(element).color === 'rgb(124, 201, 255)',
+          getComputedStyle(element).color === 'rgb(137, 189, 227)',
       ),
     )
   })
@@ -638,7 +638,7 @@ try {
         (element) =>
           !element.children.length &&
           element.textContent.trim().split(/\s+/).includes('export') &&
-          getComputedStyle(element).color === 'rgb(124, 201, 255)',
+          getComputedStyle(element).color === 'rgb(137, 189, 227)',
       ).length === 2
     )
   })
