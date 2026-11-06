@@ -307,7 +307,21 @@ try {
     const top = root.scrollTop
     return new Promise((resolve) => requestAnimationFrame(() => resolve(root.scrollTop < top)))
   }, scroller)
-  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  const latest = page.getByRole('button', { name: 'Scroll to latest message' })
+  await latest.evaluate((button) => {
+    // Queue the old upward scroll's deferred handler immediately before React's click.
+    // The explicit follow action must survive that handler even before its first frame.
+    button.addEventListener(
+      'click',
+      () => {
+        const root = document.querySelector('[role=log] > div')
+        root.scrollTop -= 100
+        root.dispatchEvent(new Event('scroll'))
+      },
+      { capture: true, once: true },
+    )
+  })
+  await latest.click()
   await page.waitForFunction((selector) => {
     const root = document.querySelector(selector)
     return root.scrollHeight - root.clientHeight - root.scrollTop < 3

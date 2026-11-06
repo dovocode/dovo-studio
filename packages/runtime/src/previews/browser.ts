@@ -757,7 +757,15 @@ export class RemoteBrowsers {
       })
       page.once('close', () => faviconLoader.reset())
       await page.addInitScript(observeBrowserFavicons)
-      if (existingPage) await page.evaluate(observeBrowserFavicons)
+      if (existingPage) {
+        try {
+          await page.evaluate(observeBrowserFavicons)
+        } catch (error) {
+          // A popup can navigate while it is being adopted. The init script is
+          // already installed for the replacement document; its old context is gone.
+          if (!errorMessage(error).includes('Execution context was destroyed')) throw error
+        }
+      }
       await page.exposeBinding('__dovoBrowserInteraction', (_source, value: unknown) => {
         const result = decodeResult(remoteBrowserInteractionSchema, value)
         if (!result.success) return

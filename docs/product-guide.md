@@ -509,7 +509,7 @@ responsibility; domain transformations and graph validation stay outside renderi
 ## Verification
 
 ```sh
-pnpm verify # typecheck, build test prerequisites, tests, lint, and all builds
+pnpm verify # build prerequisites, lint, typecheck and tests
 pnpm check
 pnpm fallow
 # After pnpm build, verify pairing in an isolated desktop profile:

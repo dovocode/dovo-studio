@@ -804,7 +804,7 @@ try {
     })
     await search.fill('task behavior')
     await page.getByRole('button', { name: 'Running tasks', exact: true }).click()
-    await page.getByText('Running tasks', { exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Running tasks', exact: true }).waitFor()
     assert.equal(await page.getByText('Memory', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Pull requests & pipelines', { exact: true }).count(), 0)
     assert.equal(

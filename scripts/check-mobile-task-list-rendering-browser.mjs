@@ -381,8 +381,20 @@ try {
             )
             .boundingBox()
           if (id === 'task-2') {
-            assert.ok(sizes[4].height >= 44)
-            assert.ok(Math.abs(title.y + title.height / 2 - sizes[4].y - sizes[4].height / 2) < 1)
+            // Rows above can finish measuring between protocol calls. Compare both
+            // centres in one browser task instead of using the earlier row position.
+            const alignment = await row
+              .getByText('Settled ' + scale, { exact: true })
+              .evaluate((element) => {
+                const title = element.getBoundingClientRect()
+                const row = element.closest('[data-testid="Task task-2"]').getBoundingClientRect()
+                return {
+                  height: row.height,
+                  offset: title.y + title.height / 2 - row.y - row.height / 2,
+                }
+              })
+            assert.ok(alignment.height >= 44)
+            assert.ok(Math.abs(alignment.offset) < 1, JSON.stringify({ width, scale, alignment }))
             continue
           }
           if (id === 'task-3') {
