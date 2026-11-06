@@ -198,7 +198,10 @@ export class RemoteBrowsers {
   private closingBrowser?: Promise<void>
   private sessions = new Map<string, Promise<Session>>()
   private owners = new Map<string, string>()
-  private profiles = new Map<string, { context: Promise<BrowserContext>; users: number }>()
+  private profiles = new Map<
+    string,
+    { context: Promise<BrowserContext>; users: number; profileId: string }
+  >()
   private cookieDirectories = new WeakMap<BrowserContext, string>()
   private closingProfiles = new Map<string, Promise<void>>()
   private disposed = false
@@ -562,9 +565,12 @@ export class RemoteBrowsers {
     let entry = this.profiles.get(key)
     if (!entry) {
       const create = async () => {
+        const profile = this.browserProfiles().find((profile) => profile.id === profileId)
+        const extraHTTPHeaders: Record<string, string> =
+          profile?.doNotTrack === true ? { DNT: '1' } : {}
         const options = {
-          locale:
-            this.browserProfiles().find((profile) => profile.id === profileId)?.language ?? 'en-US',
+          locale: profile?.language ?? 'en-US',
+          extraHTTPHeaders,
           viewport: { width: 1280, height: 800 },
           deviceScaleFactor: 2,
           acceptDownloads: true,
@@ -614,7 +620,7 @@ export class RemoteBrowsers {
           throw error
         }
       }
-      entry = { context: create(), users: 0 }
+      entry = { context: create(), users: 0, profileId }
       this.profiles.set(key, entry)
     }
     const current = entry
@@ -1755,7 +1761,19 @@ export class RemoteBrowsers {
       }
     }
   }
-  async refreshSessionCookies() {
+  async refreshProfiles() {
+    const profiles = this.browserProfiles()
+    await Promise.all(
+      [...this.profiles.values()].map(async (entry) => {
+        const context = await entry.context
+        if (!context.isClosed())
+          await context.setExtraHTTPHeaders(
+            profiles.find((profile) => profile.id === entry.profileId)?.doNotTrack === true
+              ? { DNT: '1' }
+              : {},
+          )
+      }),
+    )
     if (!this.profileDirectory) return
     // Let an already-started save finish before removing a disabled profile's snapshot.
     await Promise.all([...this.closingProfiles.values()])

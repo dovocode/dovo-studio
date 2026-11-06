@@ -128,6 +128,7 @@ function ProfileName({
   const [name, setName] = useState(profile.name)
   const [emoji, setEmoji] = useState(profile.emoji ?? '')
   const [language, setLanguage] = useState(profile.language ?? 'en-US')
+  const [doNotTrack, setDoNotTrack] = useState(profile.doNotTrack === true)
   const [keepSessionCookies, setKeepSessionCookies] = useState(profile.keepSessionCookies === true)
   const [engine, setEngine] = useState<BrowserSearchEngine['engine']>(
     profile.search?.engine ?? 'google',
@@ -165,6 +166,7 @@ function ProfileName({
             emoji: emoji || undefined,
             search,
             keepSessionCookies,
+            doNotTrack,
           })
       }}
     >
@@ -265,6 +267,21 @@ function ProfileName({
       <label className="flex basis-full items-start gap-2 text-xs text-muted-foreground">
         <input
           type="checkbox"
+          aria-label={`Send Do Not Track for ${profile.name}`}
+          checked={doNotTrack}
+          disabled={disabled}
+          onChange={(event) => setDoNotTrack(event.target.checked)}
+        />
+        <span>
+          Send Do Not Track
+          <span className="block">
+            Ask websites not to track your browsing. Websites decide whether to honor this request.
+          </span>
+        </span>
+      </label>
+      <label className="flex basis-full items-start gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
           aria-label={`Keep signed in across restarts for ${profile.name}`}
           checked={keepSessionCookies}
           disabled={disabled}
@@ -290,6 +307,7 @@ function ProfileName({
           (name.trim() === profile.name &&
             emoji === (profile.emoji ?? '') &&
             language === (profile.language ?? 'en-US') &&
+            doNotTrack === (profile.doNotTrack === true) &&
             keepSessionCookies === (profile.keepSessionCookies === true) &&
             domains === (profile.linkDomains ?? []).join(', ') &&
             unchangedSearch)
@@ -354,7 +372,7 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.keepSessionCookies}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
+          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.keepSessionCookies}:${profile.doNotTrack}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
           profile={profile}
           routing={routing}
           disabled={disabled || busy}

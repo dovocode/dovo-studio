@@ -137,6 +137,12 @@ try {
     exact: true,
   })
   assert.equal(await localPersistence.isChecked(), false)
+  const localDnt = local.getByRole('checkbox', {
+    name: 'Send Do Not Track for Local Work',
+    exact: true,
+  })
+  assert.equal(await localDnt.isChecked(), false)
+  await localDnt.check()
   await localPersistence.check()
   await local
     .getByRole('form', { name: 'Browser profile Local Work' })
@@ -150,6 +156,13 @@ try {
     ),
     true,
   )
+  assert.equal(
+    await page.evaluate(
+      () => window.preferences.browserProfiles.find((p) => p.name === 'Local Work').doNotTrack,
+    ),
+    true,
+  )
+  await localDnt.uncheck()
   await localPersistence.uncheck()
   await local
     .getByRole('form', { name: 'Browser profile Local Work' })
@@ -160,6 +173,12 @@ try {
       () =>
         window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work')
           .keepSessionCookies,
+    ),
+    false,
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.preferences.browserProfiles.find((p) => p.name === 'Local Work').doNotTrack,
     ),
     false,
   )
@@ -285,11 +304,20 @@ try {
   await remote
     .getByRole('checkbox', { name: 'Keep signed in across restarts for Remote Work', exact: true })
     .check()
+  await remote
+    .getByRole('checkbox', { name: 'Send Do Not Track for Remote Work', exact: true })
+    .check()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).fill('Remote Personal')
   await remote.getByRole('button', { name: 'Emoji for Remote Work', exact: true }).click()
   await page.getByRole('option', { name: '🏠 Home', exact: true }).click()
   await remote.getByRole('button', { name: 'Save', exact: true }).last().click()
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).waitFor()
+  assert.equal(
+    await remote
+      .getByRole('checkbox', { name: 'Send Do Not Track for Remote Personal', exact: true })
+      .isChecked(),
+    true,
+  )
   assert.equal(
     await remote
       .getByRole('checkbox', {

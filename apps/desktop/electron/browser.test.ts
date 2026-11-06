@@ -1,3 +1,4 @@
+import { configureBrowserDoNotTrack } from './browser-user-agent'
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -7,6 +8,9 @@ const visibilityDirectory = mkdtempSync(join(tmpdir(), 'dovo-browser-unit-'))
 afterAll(() => rmSync(visibilityDirectory, { recursive: true, force: true }))
 const registrations: Array<ReturnType<typeof registerBrowser>> = []
 const mocks = vi.hoisted(() => {
+  const requests: {
+    headers?: Parameters<Electron.Session['webRequest']['onBeforeSendHeaders']>[0]
+  } = {}
   const contents = {
     id: 42,
     mainFrame: {
@@ -53,7 +57,12 @@ const mocks = vi.hoisted(() => {
       off: vi.fn<(...args: unknown[]) => void>(),
       registerPreloadScript: vi.fn<(...args: unknown[]) => string>(() => 'visibility'),
       unregisterPreloadScript: vi.fn<(...args: unknown[]) => void>(),
-      webRequest: { onBeforeRequest: vi.fn<(...args: unknown[]) => void>() },
+      webRequest: {
+        onBeforeRequest: vi.fn<(...args: unknown[]) => void>(),
+        onBeforeSendHeaders: vi.fn<(listener: typeof requests.headers) => void>((listener) => {
+          requests.headers = listener
+        }),
+      },
       fetch: vi.fn<(url: string, options?: unknown) => Promise<Response>>(),
       setUserAgent: vi.fn<(value: string) => void>(),
       setPermissionRequestHandler: vi.fn<(...args: unknown[]) => void>(),
@@ -129,6 +138,7 @@ const mocks = vi.hoisted(() => {
     },
   }
   return {
+    requests,
     searchUrl: vi.fn<(profileId: string, text: string) => string>(
       (_profileId, text) => `http://search.lan/?q=${encodeURIComponent(text)}`,
     ),
@@ -1537,11 +1547,16 @@ function popupWindow() {
     isDestroyed: () => false,
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
+      id: 100,
+      session: mocks.contents.session,
+      getUserAgent: mocks.contents.getUserAgent,
+      once: vi.fn<(...args: unknown[]) => void>(),
       mainFrame: {},
       isDestroyed: () => false,
       isCurrentlyAudible: () => false,
       isAudioMuted: () => false,
       setAudioMuted: vi.fn<(muted: boolean) => void>(),
+      setUserAgent: vi.fn<(value: string) => void>(),
       getTitle: () => 'Floating call',
       ipc: {
         handle: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
@@ -1667,8 +1682,8 @@ it('allows bounded sandboxed OAuth popups that keep the opener and close with th
   const created = listener('did-create-window')
   const first = popupWindow()
   const second = popupWindow()
-  created?.(first)
-  created?.(second)
+  created?.(first, { url: request.url })
+  created?.(second, { url: request.url })
   expect(open(request)).toEqual({ action: 'deny' })
   noOpener.createWindow?.({})
   const navigate = first.webContents.on.mock.calls.find(([name]) => name === 'will-navigate')?.[1]
@@ -1694,13 +1709,13 @@ it('closes popups and stops queueing when a view leaves the workspace browser', 
   const call = handler()
   await call(event, workspaceShow)
   const popup = popupWindow()
-  listener('did-create-window')?.(popup)
+  listener('did-create-window')?.(popup, { url: 'https://example.com/' })
   openHandler()({ url: 'https://example.com/a', disposition: 'foreground-tab', features: '' })
   await call(event, { ...workspaceShow, workspaceBrowser: false })
   expect(popup.close).toHaveBeenCalledOnce()
   expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty('openedLinks')
   const late = popupWindow()
-  listener('did-create-window')?.(late)
+  listener('did-create-window')?.(late, { url: 'https://example.com/' })
   expect(late.close).toHaveBeenCalledOnce()
 })
 
@@ -1824,7 +1839,7 @@ it('keeps app-menu accelerators away from workspace pages and popups, except edi
     expect(mocks.contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(ignored)
   }
   const popup = popupWindow()
-  listener('did-create-window')?.(popup)
+  listener('did-create-window')?.(popup, { url: 'https://example.com/' })
   expect(popup.webContents.setIgnoreMenuShortcuts).toHaveBeenCalledWith(true)
   const popupInput = popup.webContents.on.mock.calls.find(
     ([name]) => name === 'before-input-event',
@@ -1902,7 +1917,7 @@ it('loads validated form POST new-tab requests in the same tab and never replays
   }
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
   const popup = popupWindow()
-  listener('did-create-window')?.(popup)
+  listener('did-create-window')?.(popup, { url: 'https://example.com/' })
   popup.webContents.setWindowOpenHandler.mock.calls[0]?.[0](post)
   await expect(call(event, { action: 'status', key: 'shared' })).rejects.toThrow(
     'This form could not be opened',
@@ -2795,7 +2810,7 @@ it.each(['window', 'page'] as const)(
       bounds: { x: 0, y: 0, width: 800, height: 600 },
     })
     const popup = popupWindow()
-    listener('did-create-window')?.(popup)
+    listener('did-create-window')?.(popup, { url: 'https://example.com/' })
     const pip = popupWindow()
     const authorize = mocks.contents.ipc.handle.mock.calls.find(
       ([name]) => name === 'browser:document-pip-authorize',
@@ -3492,16 +3507,61 @@ it.each(['show', 'keep-awake'] as const)(
 )
 
 it.each(['dovo-studio', 'DovoStudio', 'Dovo-Studio'])(
-  'uses the actual Chromium identity for websites when the app name is %s',
+  'preserves native identity by default and scopes compatibility for %s',
   async (name) => {
     const chrome =
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36'
-    vi.spyOn(mocks.contents, 'getUserAgent').mockReturnValue(
-      chrome.replace('Chrome/', `${name}/0.0.9 Electron/45.2.1 Chrome/`),
-    )
-    await handler()(event, workspaceShow)
-    expect(mocks.contents.setUserAgent).toHaveBeenCalledWith(chrome)
-    expect(mocks.contents.session.setUserAgent).toHaveBeenCalledWith(chrome)
+    const native = chrome.replace('Chrome/', `${name}/0.0.9 Electron/45.2.1 Chrome/`)
+    vi.spyOn(mocks.contents, 'getUserAgent').mockReturnValue(native)
+    const call = handler()
+    await call(event, workspaceShow)
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(native)
+    expect(mocks.contents.session.setUserAgent).toHaveBeenLastCalledWith(native)
+    await call(event, { ...workspaceShow, url: 'https://web.whatsapp.com/' })
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(chrome)
+    const request = (url: string, webContentsId = mocks.contents.id) => {
+      const respond = vi.fn<(response: Electron.BeforeSendResponse) => void>()
+      mocks.requests.headers?.(
+        {
+          id: 1,
+          url,
+          method: 'GET',
+          webContentsId,
+          resourceType: 'mainFrame',
+          referrer: '',
+          timestamp: 0,
+          requestHeaders: { 'user-agent': 'previous-page', 'Accept-Language': 'en-US' },
+        },
+        respond,
+      )
+      return respond.mock.calls.at(-1)?.[0]
+    }
+    expect(request('https://web.whatsapp.com/')).toEqual({
+      requestHeaders: { 'user-agent': chrome, 'Accept-Language': 'en-US' },
+    })
+    expect(request('https://www.google.com/')).toEqual({
+      requestHeaders: { 'user-agent': native, 'Accept-Language': 'en-US' },
+    })
+    expect(request('https://example.com/', -1)).toEqual({})
+    configureBrowserDoNotTrack(mocks.contents.session as unknown as Electron.Session, true)
+    expect(request('http://lan.local/')).toMatchObject({ requestHeaders: { DNT: '1' } })
+    expect(request('http://lan.local/worker', -1)).toMatchObject({ requestHeaders: { DNT: '1' } })
+    configureBrowserDoNotTrack(mocks.contents.session as unknown as Electron.Session, false)
+    expect(request('http://lan.local/')?.requestHeaders).not.toHaveProperty('DNT')
+    // A tab override must not leak into the profile shared with challenge pages.
+    expect(mocks.contents.session.setUserAgent).toHaveBeenLastCalledWith(native)
+    for (const [name, callback] of mocks.contents.on.mock.calls)
+      if (name === 'will-frame-navigate' && typeof callback === 'function')
+        callback({ url: 'https://www.google.com/', isMainFrame: true })
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(native)
+    for (const [name, callback] of mocks.contents.on.mock.calls)
+      if (name === 'will-redirect' && typeof callback === 'function')
+        callback({}, 'https://teams.microsoft.com/', false, true)
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(chrome)
+    for (const [name, callback] of mocks.contents.on.mock.calls)
+      if (name === 'did-start-navigation' && typeof callback === 'function')
+        callback({}, 'https://solvegate.io/demo/managed', false, true)
+    expect(mocks.contents.setUserAgent).toHaveBeenLastCalledWith(native)
   },
 )
 

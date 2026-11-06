@@ -148,14 +148,14 @@ it('defaults to off and removes saved cookies when an unopened or active profile
   await second.release()
   await access(snapshot)
   enabled = false
-  await browsers.refreshSessionCookies()
+  await browsers.refreshProfiles()
   await expect(access(snapshot)).rejects.toMatchObject({ code: 'ENOENT' })
   enabled = true
   const third = await browsers['profile']('default')
   expect(await third.context.cookies()).toEqual([])
   await third.context.addCookies([{ name: 'login', value: 'active', url: 'http://lan.local/' }])
   enabled = false
-  await browsers.refreshSessionCookies()
+  await browsers.refreshProfiles()
   expect(await third.context.cookies()).toHaveLength(1)
   await third.release()
   await expect(access(snapshot)).rejects.toMatchObject({ code: 'ENOENT' })

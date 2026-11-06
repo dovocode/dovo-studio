@@ -925,7 +925,7 @@ export function route(
           yield* serviceResult(body(request)),
         )
         const saved = s.preferences.save({ browserProfiles: profiles }).browserProfiles
-        yield* serviceResult(s.browsers.refreshSessionCookies())
+        yield* serviceResult(s.browsers.refreshProfiles())
         return yield* serviceResult({ profiles: saved })
       }
       if (method === 'POST' && path === '/api/previews/browser/agent') {
@@ -1400,6 +1400,8 @@ export function route(
         if (input && typeof input === 'object' && 'memory' in input)
           throw new HttpError(400, 'Configure memory through its scope settings')
         const settings = s.preferences.save(input)
+        if (input && typeof input === 'object' && 'browserProfiles' in input)
+          yield* serviceResult(s.browsers.refreshProfiles())
         s.approvals.applyWebRules()
         s.artifacts.prune()
         if (!settings.enableRemoteDesktop) yield* serviceResult(s.remoteDesktop.stop())

@@ -1,3 +1,4 @@
+import { configureBrowserDoNotTrack } from './browser-user-agent.js'
 import { app, type Session } from 'electron'
 import {
   browserLanguages,
@@ -61,10 +62,11 @@ export function websiteCustomization(profileId: string, url: string) {
 }
 export function configureBrowserLanguage(session: Session, profileId: string, userAgent: string) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
-  const language = result.success
-    ? result.data.browserProfiles.find((profile) => profile.id === profileId)?.language
+  const profile = result.success
+    ? result.data.browserProfiles.find((profile) => profile.id === profileId)
     : undefined
-  const languages = browserLanguages(language)
+  configureBrowserDoNotTrack(session, profile?.doNotTrack === true)
+  const languages = browserLanguages(profile?.language)
   session.setUserAgent(userAgent, languages.join(','))
   const signature = JSON.stringify(languages)
   if (configured.get(session) === signature) return

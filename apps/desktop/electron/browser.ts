@@ -1,3 +1,4 @@
+import { configureBrowserIdentity } from './browser-user-agent.js'
 import {
   createBrowserSessionCookies,
   clearSavedBrowserSessionCookies,
@@ -90,6 +91,8 @@ type Entry = {
   view: WebContentsView
   contents: Electron.WebContents
   browserSession: Electron.Session
+  nativeUserAgent: string
+  prepareNavigation: (url: string) => void
   cookiesReady?: Promise<void>
   url: string
   /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
@@ -147,6 +150,7 @@ async function loadUntilReady(entry: Entry, url: string) {
     contents.on('destroyed', onDestroyed)
   })
   try {
+    entry.prepareNavigation(url)
     await Promise.race([
       ready,
       contents.loadURL(url).catch((error: unknown) => {
@@ -773,6 +777,9 @@ export function registerBrowser(
       },
     })
     view.setVisible(false)
+    const nativeUserAgent = view.webContents.getUserAgent()
+    const prepareNavigation = configureBrowserIdentity(view.webContents, nativeUserAgent)
+    prepareNavigation('about:blank')
     const created: Entry = {
       windowId: window.id,
       window,
@@ -786,6 +793,8 @@ export function registerBrowser(
       view,
       contents: view.webContents,
       browserSession: view.webContents.session,
+      nativeUserAgent,
+      prepareNavigation,
       cookiesReady: sessionCookies(view.webContents.session, () =>
         keepBrowserSessionCookies(profileId),
       ),
@@ -904,13 +913,8 @@ export function registerBrowser(
       )
         focusTab(created)
     })
-    // Websites such as Teams reject Electron-branded user agents despite a supported engine.
-    // Only website views use Chromium's UA; Studio and runtime request identities are unchanged.
-    const userAgent = view.webContents
-      .getUserAgent()
-      .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/gi, '')
-    view.webContents.setUserAgent(userAgent)
-    configureBrowserLanguage(view.webContents.session, profileId, userAgent)
+    // Profile language belongs to the session; site compatibility belongs to each view.
+    configureBrowserLanguage(view.webContents.session, profileId, nativeUserAgent)
     view.webContents.on('dom-ready', () => {
       // A new document's preload has no memory of its predecessor's selection state.
       reportVisibility(created)
@@ -1306,11 +1310,13 @@ export function registerBrowser(
         const url = openableUrl(details.url)
         const options = url && postNavigation(details)
         if (!url || !options) created.navigationError = POST_REFUSED
-        else
+        else {
+          created.prepareNavigation(url)
           created.view.webContents.loadURL(url, options).catch((error: unknown) => {
             // A newer navigation by the user aborts this one; that is not a failure.
             if (!isAborted(error)) created.navigationError = POST_FAILED
           })
+        }
         return { action: 'deny' }
       }
       // Explicit link-domain preferences also apply to window.open popup requests.
@@ -1357,6 +1363,7 @@ export function registerBrowser(
               true,
               options,
             )
+            child.prepareNavigation(details.url)
             child.pageCreated = true
             child.inactiveAt = Date.now()
             child.url = openableUrl(details.url) ?? 'about:blank'
@@ -1373,7 +1380,10 @@ export function registerBrowser(
       }
       return { action: 'deny' }
     })
-    view.webContents.on('did-create-window', (popup) => trackPopup(popup, popup.webContents))
+    view.webContents.on('did-create-window', (popup, details) => {
+      configureBrowserIdentity(popup.webContents, nativeUserAgent)(details.url)
+      trackPopup(popup, popup.webContents)
+    })
     view.webContents.on('before-mouse-event', (_event, input) => {
       // A site-isolated redirect or extension popup may leave keyboard focus in another
       // renderer. Give the page focus on deliberate clicks, never on polling or resizing.
@@ -1500,16 +1510,13 @@ export function registerBrowser(
    * Connection storage owns this channel's reply; this listener only re-reads the saved setting.
    */
   const syncExtensions = async () => {
-    if (await extensions.sync()) {
-      for (const entry of views.values())
-        if (entry.workspace && !entry.view.webContents.isDestroyed())
-          configureBrowserLanguage(
-            entry.view.webContents.session,
-            entry.profileId,
-            entry.view.webContents.getUserAgent(),
-          )
-      return
+    const configured = new Set<Electron.Session>()
+    for (const entry of views.values()) {
+      if (entry.view.webContents.isDestroyed() || configured.has(entry.browserSession)) continue
+      configured.add(entry.browserSession)
+      configureBrowserLanguage(entry.browserSession, entry.profileId, entry.nativeUserAgent)
     }
+    if (await extensions.sync()) return
     awakeRequests.clear()
     media.reset()
     // Content scripts outlive their extension in already-open pages, so close those pages too.
