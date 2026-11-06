@@ -18,8 +18,8 @@ it('accepts only six-digit hex colours and remembers the last reported palette',
   expect(parseWindowColors({ background: 'red', symbol: '#8b949e' })).toBeUndefined()
   expect(parseWindowColors({ background: '#0d1117' })).toBeUndefined()
   expect(parseWindowColors('#0d1117')).toBeUndefined()
-  expect(defaultWindowColors(true).background).toBe('#080808')
-  expect(defaultWindowColors(false).background).toBe('#ffffff')
+  expect(defaultWindowColors(true).background).toBe('#16181c')
+  expect(defaultWindowColors(false).background).toBe('#f5f6f8')
   expect(titleBarOverlay({ background: '#ffffff', symbol: '#525252' })).toEqual({
     color: '#ffffff',
     symbolColor: '#525252',
