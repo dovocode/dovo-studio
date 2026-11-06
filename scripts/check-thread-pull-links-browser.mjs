@@ -342,10 +342,26 @@ try {
         navigator.clipboard.writeText = async () => {
           throw new Error('Clipboard denied')
         }
+        document.execCommand = (command) => {
+          if (command !== 'copy') throw new Error('Unexpected editing command')
+          window.copied.push(document.activeElement.value)
+          return true
+        }
       })
       await ordinary.click({ button: 'right' })
       await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
-      await page.getByRole('alert').filter({ hasText: 'Clipboard denied' }).waitFor()
+      await page.waitForFunction(() => window.copied.length === 2)
+      assert.deepEqual(await page.evaluate(() => window.copied), [
+        'http://runtime.local/docs?tab=one#section',
+        'http://runtime.local/docs?tab=one#section',
+      ])
+      assert.equal(await page.getByRole('alert').count(), 0)
+      await page.evaluate(() => {
+        document.execCommand = () => false
+      })
+      await ordinary.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Could not copy.' }).waitFor()
     }
     if (!mobile) {
       await page.evaluate(() => {
