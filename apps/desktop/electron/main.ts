@@ -62,7 +62,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme } from 'electron'
 import { Effect } from 'effect'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 
@@ -242,6 +242,12 @@ app.on('open-url', (event, url) => {
   if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow()
   deliverExternalLinks()
 })
+ipcMain.handle('clipboard:write-text', async (event, text: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof text !== 'string') throw new Error('Expected clipboard text')
+  await clipboard.writeText(text)
+})
+
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
  * the next launch, before any renderer has painted. */

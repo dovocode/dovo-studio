@@ -655,10 +655,10 @@ function WorkbenchContent({
         // The native browser is shared by Browser and Unified. Redirects, popups and
         // page focus must stay with the workspace currently hosting that surface.
         if (settingsNavigation.current.target.viewId === 'workspace') return
-        updateAppPreferences({ browserWorkspaceEnabled: true })
+        if (!browserWorkspaceEnabled) updateAppPreferences({ browserWorkspaceEnabled: true })
         void navigate({ viewId: 'browser' })
       }),
-    [onBrowserWorkspaceFocus, navigate],
+    [onBrowserWorkspaceFocus, navigate, browserWorkspaceEnabled],
   )
   const linkContext = useRef({ origin: linkOrigin, targets: linkTargets, details: openLinkTarget })
   linkContext.current = { origin: linkOrigin, targets: linkTargets, details: openLinkTarget }

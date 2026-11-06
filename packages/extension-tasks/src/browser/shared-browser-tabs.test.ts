@@ -5,6 +5,7 @@ import {
   SHARED_BROWSER_LIBRARY_KEY,
   browserQuote,
   browserAddress,
+  browserAddressIntent,
   browserPageKey,
   rememberBrowserVisit,
   readSharedBrowserTabs,
@@ -352,4 +353,39 @@ it('uses the selected search engine while preserving explicit web and LAN addres
     'http://dev.netbird.local:3000/path',
   )
   expect(browserAddress('example.com/docs', search)).toBe('https://example.com/docs')
+})
+
+it.each([
+  ['example.com/my notes?q=hello world', 'https://example.com/my%20notes?q=hello%20world'],
+  ['//example.com/docs', 'https://example.com/docs'],
+  ['LOCALHOST:3000/path', 'http://localhost:3000/path'],
+  ['localhost:443/path', 'http://localhost:443/path'],
+  ['api.dev.local:8080/test', 'http://api.dev.local:8080/test'],
+  ['api.dev.lan/path', 'http://api.dev.lan/path'],
+  ['service.internal', 'http://service.internal/'],
+  ['app.localhost', 'http://app.localhost/'],
+  ['[2001:db8::1]:8080/docs', 'http://[2001:db8::1]:8080/docs'],
+  ['https://example.com/a b', 'https://example.com/a%20b'],
+  ['http://vpn-host/path', 'http://vpn-host/path'],
+  ['例え.jp', 'https://xn--r8jz45g.jp/'],
+])('recognizes the website intent for %s', (input, url) => {
+  expect(browserAddressIntent(input)).toEqual({ kind: 'navigate', url })
+})
+
+it.each([
+  'what is node.js',
+  'example.com vs example.org',
+  'site:example.com hooks',
+  'filetype:pdf',
+  'error: connection refused',
+  'node:fs',
+  'react hooks',
+  'my local server',
+  '3.14',
+  'v1.2.3',
+])('keeps %s as a search', (input) => {
+  expect(browserAddressIntent(input, { engine: 'duckduckgo' })).toEqual({
+    kind: 'search',
+    url: `https://duckduckgo.com/?q=${encodeURIComponent(input)}`,
+  })
 })

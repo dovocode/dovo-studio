@@ -13,7 +13,8 @@ import {
 import type { Task } from '@dovo/studio-core'
 import { cn } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import type { RuntimeSnapshot } from '@dovo/protocol'
+import type { BrowserTabState, RuntimeSnapshot } from '@dovo/protocol'
+import { BrowserTabActivity } from '../browser/browser-tab-activity'
 import { TaskRow } from '../list/task-row'
 import type { TaskOwner } from '../list/task-collection'
 import type { NestedThread } from '../list/thread-tree'
@@ -165,12 +166,16 @@ export function WorkspacePageRow({
   onSelect,
   actions,
   pinnedPage = false,
+  activity,
+  onMute,
 }: RowShell & {
   page: BrowserTab
   computer: string
   runtimeIcon?: RuntimeSnapshot['runtimeIcon']
   /** Only the sidebar's pinned browser grid uses the Browser workspace's compact tile. */
   pinnedPage?: boolean
+  activity?: BrowserTabState
+  onMute?: () => void
 }) {
   const { name: profile, emoji } = useBrowserProfileDetails(page)
   const words = profile.trim().split(/\s+/)
@@ -196,7 +201,7 @@ export function WorkspacePageRow({
           data-pinned
           data-active={selected || undefined}
           className={cn(
-            'studio-browser-tab relative flex min-w-0 flex-col overflow-hidden rounded-xl border transition-colors',
+            'studio-browser-tab relative flex min-w-0 flex-col overflow-hidden rounded-xl border pb-6 transition-colors',
             selected
               ? 'border-primary/30 bg-accent text-foreground shadow-sm'
               : 'border-border/50 bg-background/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground',
@@ -239,47 +244,56 @@ export function WorkspacePageRow({
               </span>
             </span>
           </button>
+          <BrowserTabActivity state={activity} title={title} pinned onMute={onMute} />
         </div>
       ) : (
-        <button
-          type="button"
-          disabled={disabled}
-          aria-current={selected ? 'page' : undefined}
-          aria-label={`${title} · ${computer} · ${profile}`}
-          title={`${title}\n${page.url}\n${computer} · ${profile}`}
-          onClick={onSelect}
+        <div
+          data-active={selected || undefined}
           className={cn(
-            'studio-browser-tab flex w-full min-w-0 items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-xs transition-colors',
+            'studio-browser-tab relative min-w-0 rounded-xl',
             selected
               ? 'bg-accent/70 text-foreground'
               : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
           )}
         >
-          <span className="studio-browser-tab-source flex w-7 shrink-0 flex-col items-center gap-0.5">
-            <span className="studio-browser-tab-favicon inline-flex size-6 items-center justify-center">
-              <BrowserFavicon tab={page} />
-            </span>
-            <KindMark icon={Globe2} />
-          </span>
-          <span className="studio-browser-tab-title min-w-0 flex-1 truncate text-sm">{title}</span>
-          <span className="col-start-4 row-span-2 flex items-center gap-1">
-            {page.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-            <LifecycleMark status={status} />
-          </span>
-          <span
-            className="studio-browser-tab-profile flex shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground"
-            aria-hidden="true"
+          <button
+            type="button"
+            disabled={disabled}
+            aria-current={selected ? 'page' : undefined}
+            aria-label={`${title} · ${computer} · ${profile}`}
+            title={`${title}\n${page.url}\n${computer} · ${profile}`}
+            onClick={onSelect}
+            className="studio-browser-tab-select min-w-0 text-left text-xs"
           >
-            <span className="studio-browser-tab-identity">
-              <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
+            <span className="studio-browser-tab-source flex w-7 shrink-0 flex-col items-center gap-0.5">
+              <span className="studio-browser-tab-favicon inline-flex size-6 items-center justify-center">
+                <BrowserFavicon tab={page} />
+              </span>
+              <KindMark icon={Globe2} />
+            </span>
+            <span className="studio-browser-tab-title min-w-0 flex-1 truncate text-sm">
+              {title}
+            </span>
+            <span className="col-start-4 row-span-2 flex items-center gap-1">
+              {page.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+              <LifecycleMark status={status} />
             </span>
             <span
-              className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+              className="studio-browser-tab-profile flex shrink-0 items-center gap-0.5 text-[8px] leading-none text-muted-foreground"
+              aria-hidden="true"
             >
-              {emoji ?? initials}
+              <span className="studio-browser-tab-identity">
+                <RuntimeIcon icon={runtimeIcon} className="size-2 shrink-0" aria-hidden="true" />
+              </span>
+              <span
+                className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
+              >
+                {emoji ?? initials}
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+          <BrowserTabActivity state={activity} title={title} onMute={onMute} />
+        </div>
       )}
     </RowFrame>
   )

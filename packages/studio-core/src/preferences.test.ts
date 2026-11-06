@@ -1,6 +1,19 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 
+const subscriptions = vi.hoisted(() => ({ cleanups: [] as (() => void)[] }))
+vi.mock('react', async (original) => ({
+  ...(await original<typeof import('react')>()),
+  useSyncExternalStore: (
+    subscribe: (notify: () => void) => () => void,
+    snapshot: () => unknown,
+  ) => {
+    subscriptions.cleanups.push(subscribe(() => snapshot()))
+    return snapshot()
+  },
+}))
+
 afterEach(() => {
+  for (const cleanup of subscriptions.cleanups.splice(0)) cleanup()
   vi.unstubAllGlobals()
   vi.resetModules()
 })
@@ -511,4 +524,46 @@ it('keeps hiding normal modes opt-in and persisted separately from unified', asy
   expect(
     JSON.parse(saved.getItem('dovo.app-preferences.v1')!).unifiedWorkspaceHideNormalModes,
   ).toBe(true)
+})
+
+it('shares one native settings read across all consumers after another window changes settings', async () => {
+  let saved = { theme: 'dark' }
+  const read = vi.fn<() => { theme: string }>(() => saved)
+  const callbacks = new Set<() => void>()
+  const stop = vi.fn<() => void>()
+  const subscribe = vi.fn<(callback: () => void) => () => void>((callback) => {
+    callbacks.add(callback)
+    return () => {
+      callbacks.delete(callback)
+      stop()
+    }
+  })
+  vi.stubGlobal('dovo', {
+    readAppSettings: read,
+    writeAppSettings: vi.fn<(value: string) => void>(),
+    subscribeAppSettings: subscribe,
+  })
+  const preferences = await import('./preferences')
+  for (let i = 0; i < 100; i++) preferences.useAppPreferences()
+  expect(subscribe).toHaveBeenCalledTimes(1)
+  expect(read).toHaveBeenCalledTimes(1)
+  saved = { theme: 'light' }
+  for (const callback of callbacks) callback()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(preferences.readAppPreferences().theme).toBe('light')
+  for (const cleanup of subscriptions.cleanups.splice(0)) cleanup()
+  expect(stop).toHaveBeenCalledTimes(1)
+})
+
+it('does not broadcast unchanged desktop settings when browser windows receive focus', async () => {
+  const write = vi.fn<(value: string) => void>()
+  vi.stubGlobal('dovo', {
+    readAppSettings: () => ({ browserWorkspaceEnabled: true }),
+    writeAppSettings: write,
+  })
+  const preferences = await import('./preferences')
+  preferences.updateAppPreferences({ browserWorkspaceEnabled: true })
+  expect(write).not.toHaveBeenCalled()
+  preferences.updateAppPreferences({ browserWorkspaceEnabled: false })
+  expect(write).toHaveBeenCalledTimes(1)
 })

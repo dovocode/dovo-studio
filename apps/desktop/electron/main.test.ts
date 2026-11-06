@@ -11,6 +11,7 @@ const fixture = vi.hoisted(() => {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   return {
     resourcesDescriptor,
+    copy: vi.fn<(text: string) => Promise<void>>(async () => {}),
     handlers,
     appHandlers: new Map<string, (...args: unknown[]) => void>(),
     windows: 0,
@@ -72,6 +73,7 @@ vi.mock('electron', () => ({
     requestSingleInstanceLock: () => true,
     quit: fixture.quit,
   },
+  clipboard: { writeText: fixture.copy },
   nativeTheme: { shouldUseDarkColors: true },
   BrowserWindow: class {
     webContents = {
@@ -447,4 +449,20 @@ it('keeps repeated quit requests blocked until detached tabs are saved, and perm
   expect(fixture.browserQuitting).toHaveBeenLastCalledWith(true)
   beforeQuit(event)
   expect(event.preventDefault).toHaveBeenCalledTimes(3)
+})
+
+it('copies through the trusted Studio bridge without requiring renderer focus', async () => {
+  const copy = fixture.handlers.get('clipboard:write-text')
+  if (!copy) throw new Error('Missing clipboard handler')
+  const url = pathToFileURL(
+    join(dirname(fileURLToPath(import.meta.url)), '../dist/index.html'),
+  ).href
+  const mainFrame = { url }
+  const event = { senderFrame: mainFrame, sender: { mainFrame } }
+  await copy(event, 'Full thread selection ✓')
+  expect(fixture.copy).toHaveBeenLastCalledWith('Full thread selection ✓')
+  await expect(
+    copy({ ...event, senderFrame: { url: 'https://example.com/' } }, 'website'),
+  ).rejects.toThrow('Untrusted')
+  await expect(copy(event, {})).rejects.toThrow('Expected clipboard text')
 })

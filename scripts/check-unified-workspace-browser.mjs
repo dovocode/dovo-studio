@@ -126,6 +126,7 @@ export const sharedBrowserWindowId=host=>host.browserWindowId;
 export const restoredSharedBrowserTabs=windowId=>readSharedBrowserTabs(windowId).state?.tabs;
 export function saveSharedBrowserWorkspaceTabs(tabs,windowId){const saved=readSharedBrowserTabs(windowId).state;const restorable=tabs.filter(tab=>!tab.previewOf&&!isPrivateBrowserProfile(tab.profileId));if(restorable.length)saveSharedBrowserTabs({tabs:restorable,active:restorable.some(tab=>tab.id===saved?.active)?saved.active:restorable[0].id,closed:saved?.closed??[]},windowId)}
 export function BrowserPane({workspaceControl:control,openLink,onLinkOpened}){
+useEffect(()=>{window.setBrowserActivity=states=>control.onActivityChange?.(states)},[control.onActivityChange]);
 const [ownTabs,setOwnTabs]=useState(()=>restoredSharedBrowserTabs()??[]);const tabs=control.tabs??ownTabs;const setTabs=control.onSetTabs??setOwnTabs;const opened=useRef('');
 useEffect(()=>{if(!control.tabs)control.onSetTabs?.(ownTabs)},[control.tabs,ownTabs]);
 useEffect(()=>{control.onTabsChange(tabs,tabs.at(-1)?.id);saveSharedBrowserWorkspaceTabs(tabs)},[tabs]);
@@ -461,6 +462,7 @@ try {
   const pinnedGrid = pinnedSection.getByRole('group', { name: 'Pinned browser tabs', exact: true })
   const pinnedPages = pinnedGrid.locator('[data-pinned-page]')
   await pinnedPages.first().waitFor()
+
   assert.deepEqual(
     await pinnedPages.evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
     ['Page: Docs', 'Page: Issues', 'Page: Metrics', 'Page: Notes', 'Page: Preview'],
@@ -512,6 +514,73 @@ try {
     const css = await vite.transformRequest('/packages/studio-ui/src/styles.css?direct')
     assert.ok(css, 'Compile the current shared stylesheet for visual checks')
     await page.addStyleTag({ content: css.code })
+    const unifiedPinGeometry = () =>
+      pinnedPages.evaluateAll((rows) =>
+        rows.map((row) => {
+          const { x, y, width, height } = row.getBoundingClientRect()
+          return { x, y, width, height }
+        }),
+      )
+    const idleUnifiedPins = await unifiedPinGeometry()
+    await page.evaluate(() =>
+      window.setBrowserActivity({
+        'pinned-0': {
+          key: 'pinned-0',
+          url: 'http://lan.local:3000/docs',
+          title: 'Docs',
+          audible: true,
+          microphone: true,
+          camera: true,
+          screenSharing: true,
+          agent: true,
+        },
+      }),
+    )
+    await pinnedPages
+      .first()
+      .getByRole('img', { name: 'Audio playing in Docs', exact: true })
+      .waitFor()
+    assert.deepEqual(
+      await unifiedPinGeometry(),
+      idleUnifiedPins,
+      'Unified pins keep their geometry when all media indicators appear',
+    )
+    const microphonePosition = await pinnedPages
+      .first()
+      .getByRole('img', { name: 'Microphone on in Docs', exact: true })
+      .boundingBox()
+    await page.evaluate(() =>
+      window.setBrowserActivity({
+        'pinned-0': {
+          key: 'pinned-0',
+          url: 'http://lan.local:3000/docs',
+          title: 'Docs',
+          microphone: true,
+        },
+      }),
+    )
+    await pinnedPages
+      .first()
+      .getByRole('img', { name: 'Audio playing in Docs', exact: true })
+      .waitFor({ state: 'hidden' })
+    assert.deepEqual(
+      await pinnedPages
+        .first()
+        .getByRole('img', { name: 'Microphone on in Docs', exact: true })
+        .boundingBox(),
+      microphonePosition,
+      'Unified media indicators own stable positions',
+    )
+    await page.evaluate(() => window.setBrowserActivity({}))
+    await pinnedPages
+      .first()
+      .getByLabel('Tab activity', { exact: true })
+      .waitFor({ state: 'hidden' })
+    assert.deepEqual(
+      await unifiedPinGeometry(),
+      idleUnifiedPins,
+      'Unified idle pins retain their reserved space',
+    )
     await page.evaluate(() => {
       document.documentElement.classList.add('dark')
       document.documentElement.dataset.theme = 'dark'

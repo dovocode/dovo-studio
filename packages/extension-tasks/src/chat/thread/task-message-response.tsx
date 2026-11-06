@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { selectConversationConnection } from './workspace-selection'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
@@ -242,9 +243,9 @@ export function TaskMessageResponse({
                   const prompt = artifactTemplatePrompt(part.template)
                   if (onUseTemplate) onUseTemplate(prompt)
                   else
-                    void navigator.clipboard
-                      .writeText(prompt)
-                      .catch((cause: unknown) => setError(String(cause)))
+                    void copyTextToClipboard(prompt).catch((cause: unknown) =>
+                      setError(String(cause)),
+                    )
                 }}
               >
                 {onUseTemplate ? 'Use template' : 'Copy template prompt'}

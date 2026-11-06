@@ -21,6 +21,11 @@
     inset 0 1px 0 #ffffff20,
     0 0 0 2px color-mix(in srgb, var(--ring) 16%, transparent);
 }
+/* The whole address field carries keyboard focus, including its profile switcher. */
+.studio-browser-address input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 [data-high-contrast='true'] .studio-browser-address {
   background: var(--card);
   -webkit-backdrop-filter: none;

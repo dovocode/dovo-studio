@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { useCallback, useEffect, useRef } from 'react'
 import {
   linkActions,
@@ -31,7 +32,7 @@ export function useLinkChooser(adapters: Adapters) {
         details: (target) => options?.details?.(target) || host.details(target),
         browser: options?.browser ?? host.browser,
         external: host.external,
-        copy: (url) => navigator.clipboard.writeText(url),
+        copy: copyTextToClipboard,
       },
       options?.actions,
     )

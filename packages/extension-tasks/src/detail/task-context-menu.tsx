@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { studioReference, taskSnoozeMenuChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
@@ -183,7 +184,7 @@ export function TaskContextMenu({
   }
   const copyConversation = async () => {
     if (!source.online || (!task.historyBefore && task.messages.length)) {
-      await navigator.clipboard.writeText(taskTranscript(task))
+      await copyTextToClipboard(taskTranscript(task))
       return
     }
     const pages: ConversationPage[] = []
@@ -197,7 +198,7 @@ export function TaskContextMenu({
       pages.unshift(page)
       before = page.before
     } while (before)
-    await navigator.clipboard.writeText(
+    await copyTextToClipboard(
       taskTranscript({ title: task.title, messages: pages.flatMap((page) => page.messages) }),
     )
   }
@@ -572,7 +573,7 @@ export function TaskContextMenu({
                       key={label}
                       className={itemClass}
                       disabled={!text}
-                      onSelect={() => void run(() => navigator.clipboard.writeText(text))}
+                      onSelect={() => void run(() => copyTextToClipboard(text))}
                     >
                       {label}
                     </Menu.Item>

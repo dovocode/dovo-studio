@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import {
   browserTabCategory,
+  type BrowserTabState,
   isPrivateBrowserProfile,
   isSnoozed,
   randomUUID,
@@ -174,6 +175,7 @@ function WorkspaceContent() {
     restoredSharedBrowserTabs(browserWindowId),
   )
   const [browserLifecycleRequest, setBrowserLifecycleRequest] = useState<BrowserLifecycleRequest>()
+  const [browserActivity, setBrowserActivity] = useState<Record<string, BrowserTabState>>({})
   const setControlledBrowserTabs = useCallback<Dispatch<SetStateAction<BrowserTab[]>>>(
     (action) =>
       setBrowserTabs((previous) =>
@@ -723,7 +725,23 @@ function WorkspaceContent() {
         searching={searching}
       />
     ) : row.kind === 'browser' ? (
-      <WorkspacePageRow key={key} {...shell} {...row} pinnedPage={pinnedPage} />
+      <WorkspacePageRow
+        key={key}
+        {...shell}
+        {...row}
+        pinnedPage={pinnedPage}
+        activity={browserActivity[row.page.id]}
+        onMute={
+          row.page.kind === 'web'
+            ? () =>
+                setBrowserLifecycleRequest({
+                  requestId: randomUUID(),
+                  tabId: row.page.id,
+                  action: 'toggle-mute',
+                })
+            : undefined
+        }
+      />
     ) : (
       <WorkspaceTerminalRow
         key={key}
@@ -1195,6 +1213,7 @@ function WorkspaceContent() {
                 openLink={browserLink}
                 onLinkOpened={() => setBrowserLink(null)}
                 workspaceControl={{
+                  onActivityChange: setBrowserActivity,
                   visible: active?.kind === 'browser',
                   lifecycleRequest: browserLifecycleRequest,
                   onLifecycleHandled: (requestId) =>

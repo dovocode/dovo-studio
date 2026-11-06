@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import type { LinkOptions } from '@dovo/studio-core/links'
@@ -115,7 +116,7 @@ export function ThreadLinkMenu({
           {selection && (
             <ContextMenu.Item
               className={itemClass}
-              onSelect={() => perform(() => navigator.clipboard.writeText(selection))}
+              onSelect={() => perform(() => copyTextToClipboard(selection))}
             >
               Copy selected text
             </ContextMenu.Item>
@@ -125,7 +126,7 @@ export function ThreadLinkMenu({
               <ContextMenu.Item
                 className={itemClass}
                 disabled={!message.text}
-                onSelect={() => perform(() => navigator.clipboard.writeText(message.text))}
+                onSelect={() => perform(() => copyTextToClipboard(message.text))}
               >
                 Copy message
               </ContextMenu.Item>

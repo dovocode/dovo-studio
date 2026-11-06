@@ -273,6 +273,7 @@ const desktopSettingsBridge = mutableStruct({
 })
 const listeners = new Set<() => void>()
 let cached: AppPreferences | undefined
+let stopExternalSubscription: (() => void) | undefined
 
 export function readAppPreferences(): AppPreferences {
   if (cached) return cached
@@ -326,7 +327,14 @@ export function updateAppPreferences(changes: Partial<AppPreferences>) {
   const bridge = decodeResult(desktopSettingsBridge, globalThis)
   // Desktop settings are shared across windows; merge against the latest stored value.
   if (bridge.success) cached = undefined
-  cached = { ...readAppPreferences(), ...changes }
+  const current = readAppPreferences()
+  if (
+    Object.entries(changes).every(([field, value]) =>
+      Object.is(current[field as keyof AppPreferences], value),
+    )
+  )
+    return
+  cached = { ...current, ...changes }
   try {
     if (bridge.success) bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
     else globalThis.localStorage?.setItem(key, JSON.stringify(cached))
@@ -337,24 +345,30 @@ export function updateAppPreferences(changes: Partial<AppPreferences>) {
 }
 function subscribe(listener: () => void) {
   listeners.add(listener)
-  // Another window of the app changed a preference.
-  const storage = (event: StorageEvent) => {
-    if (event.key !== key) return
-    cached = undefined
-    listener()
+  // One external subscription per renderer: invalidating once lets every consumer share
+  // the same snapshot instead of repeating synchronous IPC and decoding for each hook.
+  if (listeners.size === 1) {
+    const changed = () => {
+      cached = undefined
+      for (const notify of listeners) notify()
+    }
+    const storage = (event: StorageEvent) => {
+      if (event.key === key || event.key === null) changed()
+    }
+    globalThis.addEventListener?.('storage', storage)
+    const bridge = decodeResult(desktopSettingsBridge, globalThis)
+    const stopNative = bridge.success ? bridge.data.dovo.subscribeAppSettings?.(changed) : undefined
+    stopExternalSubscription = () => {
+      stopNative?.()
+      globalThis.removeEventListener?.('storage', storage)
+    }
   }
-  globalThis.addEventListener?.('storage', storage)
-  const bridge = decodeResult(desktopSettingsBridge, globalThis)
-  const stopNative = bridge.success
-    ? bridge.data.dovo.subscribeAppSettings?.(() => {
-        cached = undefined
-        listener()
-      })
-    : undefined
   return () => {
-    stopNative?.()
     listeners.delete(listener)
-    globalThis.removeEventListener?.('storage', storage)
+    if (listeners.size === 0) {
+      stopExternalSubscription?.()
+      stopExternalSubscription = undefined
+    }
   }
 }
 export function useAppPreferences() {

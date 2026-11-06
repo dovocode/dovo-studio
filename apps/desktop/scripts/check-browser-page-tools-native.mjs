@@ -23,7 +23,7 @@ writeFileSync(
   join(work, 'main.ts'),
   String.raw`
 import assert from 'node:assert/strict'
-import { app, BrowserWindow, WebContentsView, clipboard, dialog } from 'electron'
+import { app, BrowserWindow, WebContentsView, clipboard, dialog, Menu } from 'electron'
 import { createServer } from 'node:http'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -85,6 +85,25 @@ try {
   const view = studio.contentView.children.find(child => child instanceof WebContentsView) as WebContentsView
   const page = view.webContents
   for(let i=0;i<100 && (page.isLoading() || page.mainFrame.framesInSubtree.length < 2);i++) await wait(20)
+  // Editing accelerators must follow the focused native page, then return to Studio's thread.
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{role:'editMenu'}]))
+  const copyModifiers = [process.platform === 'darwin' ? 'meta' : 'control']
+  await page.executeJavaScript("const draft=document.createElement('textarea');draft.id='copy-draft';draft.value='Browser selection ✓ '+ 'long text '.repeat(4000);document.body.append(draft);draft.focus();draft.select()")
+  page.focus()
+  page.sendInputEvent({type:'keyDown',keyCode:'c',modifiers:copyModifiers})
+  page.sendInputEvent({type:'keyUp',keyCode:'c',modifiers:copyModifiers})
+  const browserCopy = 'Browser selection ✓ '+ 'long text '.repeat(4000)
+  for(let i=0;i<50 && (await clipboard.readText())!==browserCopy;i++) await wait(20)
+  assert.equal(await clipboard.readText(),browserCopy,'Copy shortcut uses the full focused browser selection')
+  await call({action:'hide',key:'page'})
+  await studio.webContents.executeJavaScript("const text=document.createElement('p');text.textContent='Thread selection ✓';document.body.append(text);const range=document.createRange();range.selectNodeContents(text);getSelection().removeAllRanges();getSelection().addRange(range)")
+  studio.webContents.focus()
+  studio.webContents.sendInputEvent({type:'keyDown',keyCode:'c',modifiers:copyModifiers})
+  studio.webContents.sendInputEvent({type:'keyUp',keyCode:'c',modifiers:copyModifiers})
+  for(let i=0;i<50 && (await clipboard.readText())!=='Thread selection ✓';i++) await wait(20)
+  assert.equal(await clipboard.readText(),'Thread selection ✓','Copy follows focus back from browser to thread')
+  await call({action:'show',key:'page',url:origin+'/page',workspaceBrowser:true,bounds:{x:0,y:40,width:1000,height:760}})
+  await page.executeJavaScript("document.getElementById('copy-draft').remove()")
   // Zoom applies from native focus, follows same-site navigation, and persists per profile.
   assert.equal((await call({action:'zoom',key:'page',direction:'in'})).zoomFactor,1.1)
   page.focus()

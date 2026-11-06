@@ -4,6 +4,7 @@ import {
   BROWSER_PERMISSION_PRELOAD,
   BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
 } from './browser-permission-preload.js'
+import { installVideoPipTracking } from './browser-video-pip.js'
 import { DOCUMENT_PIP_PRELOAD } from './browser-document-pip.js'
 import { BROWSER_TAB_ACTIVITY_PRELOAD } from './browser-tab-activity.js'
 import {
@@ -77,13 +78,11 @@ const MAX_PENDING_PER_WINDOW = 6
  */
 const PRELOAD = `const { contextBridge, ipcRenderer } = require('electron')
   contextBridge.executeInMainWorld({
-    func: (report) => {
-      const add = EventTarget.prototype.addEventListener
-      const apply = Reflect.apply
-      for (const [name, active] of [['enterpictureinpicture', true], ['leavepictureinpicture', false]])
-        apply(add, document, [name, (event) => { if (event.isTrusted) report(active) }, true])
-    },
-    args: [(active) => ipcRenderer.send('browser:video-pip', active)],
+    func: ${installVideoPipTracking.toString()},
+    args: [
+      (active) => ipcRenderer.send('browser:video-pip', active),
+      () => ipcRenderer.send('browser:video-pip-return'),
+    ],
   })
 if (process.isMainFrame) {
   // Keep the native Notification API and the website's own click handlers intact.

@@ -348,7 +348,7 @@ export function registerBrowser(
     const visible: unknown = await entry.contents.executeJavaScript(
       'document.visibilityState === "visible"',
     )
-    if (visible !== true) throw new Error('The call tab could not be restored.')
+    if (visible !== true) throw new Error('The picture-in-picture tab could not be restored.')
     if (!entry.contents.isDestroyed() && entry.foreground && entry.view.getVisible())
       entry.contents.focus()
   }
@@ -849,6 +849,18 @@ export function registerBrowser(
       created.videoPictureInPicture = active
       syncBackgroundThrottling(created)
     })
+    view.webContents.ipc.on('browser:video-pip-return', (event) => {
+      if (
+        !created.workspace ||
+        !event.senderFrame ||
+        (event.senderFrame !== view.webContents.mainFrame &&
+          !view.webContents.mainFrame.framesInSubtree.includes(event.senderFrame))
+      )
+        return
+      void returnFromPip(created).catch((error: unknown) =>
+        console.error('Could not return the video to its tab.', error),
+      )
+    })
     view.webContents.on('enter-html-full-screen', () => {
       if (
         !created.workspace ||
@@ -896,7 +908,7 @@ export function registerBrowser(
     // Only website views use Chromium's UA; Studio and runtime request identities are unchanged.
     const userAgent = view.webContents
       .getUserAgent()
-      .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/g, '')
+      .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/gi, '')
     view.webContents.setUserAgent(userAgent)
     configureBrowserLanguage(view.webContents.session, profileId, userAgent)
     view.webContents.on('dom-ready', () => {
@@ -1101,7 +1113,7 @@ export function registerBrowser(
         params.formControlType === 'input-password' ? '' : params.selectionText.slice(0, 32000)
       if (text)
         items.push(
-          { label: 'Copy', click: () => clipboard.writeText(text) },
+          { label: 'Copy', click: () => clipboard.writeText(params.selectionText) },
           {
             label: 'Search selection in new tab',
             click: () => {

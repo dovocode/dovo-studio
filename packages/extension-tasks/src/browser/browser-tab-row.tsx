@@ -1,3 +1,5 @@
+import { BrowserTabActivity } from './browser-tab-activity'
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import {
   Home,
   Pencil,
@@ -8,12 +10,6 @@ import {
   AlarmClock,
   ExternalLink,
   ArrowUpRight,
-  Volume2,
-  VolumeX,
-  Camera,
-  Mic,
-  ScreenShare,
-  Bot,
   Copy,
 } from 'lucide-react'
 import { cn, ContextMenu, IconButton } from '@dovo/studio-ui'
@@ -50,7 +46,7 @@ export function BrowserTabRow({
   onMute,
   reorder,
   studioId,
-  agentAccessible,
+  onError,
 }: {
   tab: BrowserTab
   active: boolean
@@ -70,8 +66,7 @@ export function BrowserTabRow({
   onMute?: () => void
   /** Unified Studio reference an agent can be handed for this exact tab. */
   studioId?: string
-  /** Studio Browsers is enabled on the owning computer, so agents can reach this tab. */
-  agentAccessible?: boolean
+  onError: (message: string) => void
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -107,31 +102,6 @@ export function BrowserTabRow({
   const keepsAwake = category === 'active' && tab.kind === 'web' && browserTabKeepsAwake(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
-  const agentBadge =
-    state?.agent || agentAccessible ? (
-      <span
-        role="img"
-        aria-label={
-          state?.agent ? `An agent is connected to ${title}` : `${title} is available to agents`
-        }
-        title={
-          state?.agent
-            ? 'An agent is connected to this tab'
-            : 'Available to agents via Studio Browsers'
-        }
-        className={cn('shrink-0', !state?.agent && 'text-muted-foreground')}
-      >
-        <Bot className={tab.pinned ? 'size-2.5' : 'size-3'} />
-      </span>
-    ) : null
-  const activityShown = !!(
-    state?.camera ||
-    state?.microphone ||
-    state?.screenSharing ||
-    state?.audible ||
-    state?.muted ||
-    state?.agent
-  )
   const identity = (
     <span
       className={cn(
@@ -280,56 +250,7 @@ export function BrowserTabRow({
               </>
             )}
           </button>
-          {activityShown && state && (
-            <div
-              aria-label="Tab activity"
-              className={cn(
-                'studio-browser-tab-activity relative flex min-w-0 shrink-0 flex-wrap items-center text-status-success',
-                tab.pinned ? 'max-w-full justify-center gap-0.5 px-0.5 pb-1.5' : 'gap-1',
-              )}
-            >
-              {(state.audible || state.muted) &&
-                (onMute ? (
-                  <IconButton
-                    type="button"
-                    label={`${state.muted ? 'Unmute' : 'Mute'} tab ${title}`}
-                    aria-pressed={state.muted}
-                    className={cn('shrink-0', tab.pinned ? 'size-4' : 'size-5')}
-                    onClick={onMute}
-                  >
-                    {state.muted ? (
-                      <VolumeX className={tab.pinned ? 'size-2.5' : 'size-3'} />
-                    ) : (
-                      <Volume2 className={tab.pinned ? 'size-2.5' : 'size-3'} />
-                    )}
-                  </IconButton>
-                ) : (
-                  <span
-                    role="img"
-                    aria-label={`${state.muted ? 'Audio muted' : 'Audio playing'} in ${title}`}
-                  >
-                    {state.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-                  </span>
-                ))}
-              {state.microphone && (
-                <span role="img" aria-label={`Microphone on in ${title}`} title="Microphone on">
-                  <Mic className={tab.pinned ? 'size-2.5' : 'size-3'} />
-                </span>
-              )}
-              {state.screenSharing && (
-                <span role="img" aria-label={`Screen sharing in ${title}`} title="Screen sharing">
-                  <ScreenShare className={tab.pinned ? 'size-2.5' : 'size-3'} />
-                </span>
-              )}
-              {state.camera && (
-                <span role="img" aria-label={`Camera on in ${title}`} title="Camera on">
-                  <Camera className={tab.pinned ? 'size-2.5' : 'size-3'} />
-                </span>
-              )}
-              {agentBadge}
-            </div>
-          )}
-          {!activityShown && agentBadge}
+          <BrowserTabActivity state={state} title={title} pinned={tab.pinned} onMute={onMute} />
           {!tab.pinned && (
             <div className="studio-browser-tab-actions flex shrink-0 items-center gap-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
               {category === 'active' && (
@@ -368,7 +289,11 @@ export function BrowserTabRow({
               </ContextMenu.Label>
               <ContextMenu.Item
                 className={menuItem}
-                onSelect={() => void navigator.clipboard.writeText(studioId).catch(() => {})}
+                onSelect={() =>
+                  void copyTextToClipboard(studioId).catch((cause: unknown) =>
+                    onError(String(cause)),
+                  )
+                }
               >
                 <Copy size={13} />
                 Copy Studio ID (for agents)

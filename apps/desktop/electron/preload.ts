@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('dovoTerminalFilePath', (file: File) =>
   webUtils.getPathForFile(file),
 )
 
+contextBridge.exposeInMainWorld('dovoCopyText', (text: string): Promise<void> =>
+  ipcRenderer.invoke('clipboard:write-text', text),
+)
+
 const browserFrameListeners = new Map<string, number>()
 
 const runtimeSyncListeners = new Map<

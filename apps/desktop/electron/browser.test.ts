@@ -3490,3 +3490,56 @@ it.each(['show', 'keep-awake'] as const)(
     })
   },
 )
+
+it.each(['dovo-studio', 'DovoStudio', 'Dovo-Studio'])(
+  'uses the actual Chromium identity for websites when the app name is %s',
+  async (name) => {
+    const chrome =
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36'
+    vi.spyOn(mocks.contents, 'getUserAgent').mockReturnValue(
+      chrome.replace('Chrome/', `${name}/0.0.9 Electron/45.2.1 Chrome/`),
+    )
+    await handler()(event, workspaceShow)
+    expect(mocks.contents.setUserAgent).toHaveBeenCalledWith(chrome)
+    expect(mocks.contents.session.setUserAgent).toHaveBeenCalledWith(chrome)
+  },
+)
+
+it('copies full browser selections while keeping thread quotes bounded', async () => {
+  await handler()(event, workspaceShow)
+  const text = 'Selected text '.repeat(4000)
+  listener('context-menu')?.(
+    {},
+    { selectionText: text, isEditable: false, formControlType: '', linkURL: '' },
+  )
+  const items = mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  const copy = items.find((item) => item.label === 'Copy')
+  if (!copy?.click) throw new Error('Missing Copy action')
+  copy.click(
+    {} as Electron.MenuItem,
+    mocks.window as unknown as Electron.BrowserWindow,
+    {} as Electron.KeyboardEvent,
+  )
+  expect(mocks.clipboard).toHaveBeenLastCalledWith(text)
+})
+
+it('returns a native video PiP to its source tab and restores its minimized owning window', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  await call(event, { action: 'hide', key: 'shared' })
+  vi.spyOn(mocks.window, 'isMinimized').mockReturnValue(true)
+  mocks.contents.executeJavaScript.mockResolvedValue(true)
+  const returned = mocks.contents.ipc.on.mock.calls.find(
+    ([name]) => name === 'browser:video-pip-return',
+  )?.[1]
+  if (typeof returned !== 'function') throw new Error('Missing native video PiP return')
+  returned({ senderFrame: mocks.contents.mainFrame })
+  await vi.waitFor(() => expect(mocks.contents.focus).toHaveBeenCalled())
+  expect(mocks.window.restore).toHaveBeenCalled()
+  expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+  expect(await call(event, { action: 'status', key: 'shared', tabCount: 1 })).toHaveProperty(
+    'focusedTabKey',
+    'shared',
+  )
+  expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+})

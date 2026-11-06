@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
@@ -164,7 +165,7 @@ export function TaskBranchMenu({
             title={!branch ? branchUnavailable : `Copy ${branch}`}
             onSelect={() => {
               if (!branch) return
-              void navigator.clipboard.writeText(branch).then(
+              void copyTextToClipboard(branch).then(
                 () => setNotice('Copied'),
                 () => setNotice('Could not copy the branch name'),
               )

@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { BrowserAddressInput } from './browser-address-input'
 import { BrowserElementFeedback } from './browser-element-feedback'
 import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/protocol'
@@ -98,7 +99,6 @@ import {
   FileDown,
   Archive,
   Clock,
-  LockKeyhole,
   BookOpen,
   History,
 } from 'lucide-react'
@@ -151,6 +151,8 @@ export type BrowserWorkspaceControl = {
   focusTabId?: string
   onSelect: (id: string) => void
   onTabsChange: (tabs: BrowserTab[], activeId: string) => void
+  /** Live native activity indexed by Studio tab ID, shared with the unified sidebar. */
+  onActivityChange?: (states: Record<string, BrowserTabState>) => void
   newTabRequest?: string
   /**
    * Optional owner of the authoritative tab list (including previews). Until `tabs` is set,
@@ -171,7 +173,7 @@ export type BrowserWorkspaceControl = {
   onError?: (message: string) => void
 }
 export type BrowserLifecycleRequest = { requestId: string; tabId: string } & (
-  | { action: 'pin' | 'unpin' | 'settle' | 'wake' }
+  | { action: 'pin' | 'unpin' | 'settle' | 'wake' | 'toggle-mute' }
   | { action: 'snooze'; until: number }
 )
 type OpenLink = {
@@ -342,18 +344,16 @@ function BrowserContent({
   const studioBrowsersLocal =
     (localOverview?.snapshot ?? (store.localRuntimeId === activeRuntimeId ? snapshot : null))
       ?.studioTools?.browsers ?? false
-  /** Unified Studio reference + agent reachability for one sidebar tab. */
+  /** Unified Studio reference for one sidebar tab. */
   const tabStudio = (tab: BrowserTab) => {
     if (isPrivateBrowserProfile(tab.profileId)) return {}
     const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
     const reachable = tab.kind === 'remote' || !!browser
-    const agentAccessible = reachable && (owner?.snapshot?.studioTools?.browsers ?? false)
-    if (!reachable) return { agentAccessible }
+    if (!reachable) return {}
     const runtime =
       owner?.snapshot?.runtimeId ?? owner?.profile.connection.runtimeId ?? tab.runtimeId ?? 'local'
     try {
       return {
-        agentAccessible,
         studioId: studioReference(
           runtime,
           'browser',
@@ -361,7 +361,7 @@ function BrowserContent({
         ),
       }
     } catch {
-      return { agentAccessible }
+      return {}
     }
   }
   const previewLinks = useRef(true)
@@ -599,6 +599,19 @@ function BrowserContent({
   }, [scope, tabs, activeTab, closed])
   const workspaceControlRef = useRef(workspaceControl)
   workspaceControlRef.current = workspaceControl
+  useEffect(() => {
+    workspaceControlRef.current?.onActivityChange?.(
+      Object.fromEntries(
+        tabs.flatMap((tab) => {
+          const state =
+            tab.kind === 'web'
+              ? tabStates.find((state) => state.key === nativeKey(tab.id))
+              : undefined
+          return state ? [[tab.id, state]] : []
+        }),
+      ),
+    )
+  }, [tabs, tabStates])
   useEffect(() => {
     workspaceControlRef.current?.onTabsChange(
       tabs.filter((tab) => !tab.previewOf),
@@ -1036,6 +1049,32 @@ function BrowserContent({
   useEffect(() => {
     if (initialMode === 'devices' && connected) void act(loadDevices)
   }, [initialMode, connected])
+  const changeProfile = (next: string) => {
+    const target = history.url || selectedTab.url || url
+    setUrl(target)
+    setInput(target)
+    addresses.set(scope, target)
+    setHistory({
+      url: '',
+      title: '',
+      cdp: undefined,
+      back: false,
+      forward: false,
+    })
+    setTabs((previous) =>
+      previous.map((tab) =>
+        tab.id === activeTab ? { ...tab, url: target, profileId: next } : tab,
+      ),
+    )
+    if (mode === 'remote')
+      void act(() =>
+        tabRequest(
+          '/api/previews/browser/close',
+          { taskId, tabId: activeTab, profileId },
+          responses.ok,
+        ),
+      )
+  }
   const navigate = (address = input) => {
     try {
       if (shared && mode === 'remote' && !remoteProfiles.profiles)
@@ -1833,7 +1872,18 @@ function BrowserContent({
     const tab = currentTabs.current.find((item) => item.id === lifecycleRequest.tabId)
     try {
       if (!tab) return
-      if (lifecycleRequest.action === 'pin' || lifecycleRequest.action === 'unpin') {
+      if (lifecycleRequest.action === 'toggle-mute') {
+        if (browser && tab.kind === 'web')
+          void act(async () => {
+            const state = tabStates.find((state) => state.key === nativeKey(tab.id))
+            const result = await browser({
+              action: 'set-audio-muted',
+              key: nativeKey(tab.id),
+              muted: !state?.muted,
+            })
+            if (result?.tabStates) setTabStates(result.tabStates)
+          })
+      } else if (lifecycleRequest.action === 'pin' || lifecycleRequest.action === 'unpin') {
         if (!!tab.pinned !== (lifecycleRequest.action === 'pin')) togglePin(tab)
       } else if (lifecycleRequest.action === 'wake')
         setTabs((previous) =>
@@ -1900,6 +1950,7 @@ function BrowserContent({
   const renderTab = (tab: BrowserTab) => (
     <BrowserTabRow
       key={tab.id}
+      onError={setError}
       tab={tab}
       state={
         tab.kind === 'web' ? tabStates.find((state) => state.key === nativeKey(tab.id)) : undefined
@@ -2283,33 +2334,7 @@ function BrowserContent({
                       isPrivateBrowserProfile(profileId) ||
                       (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
                     }
-                    onChange={(event) => {
-                      const next = event.target.value
-                      const target = history.url || selectedTab.url || url
-                      setUrl(target)
-                      setInput(target)
-                      addresses.set(scope, target)
-                      setHistory({
-                        url: '',
-                        title: '',
-                        cdp: undefined,
-                        back: false,
-                        forward: false,
-                      })
-                      setTabs((previous) =>
-                        previous.map((tab) =>
-                          tab.id === activeTab ? { ...tab, url: target, profileId: next } : tab,
-                        ),
-                      )
-                      if (mode === 'remote')
-                        void act(() =>
-                          tabRequest(
-                            '/api/previews/browser/close',
-                            { taskId, tabId: activeTab, profileId },
-                            responses.ok,
-                          ),
-                        )
-                    }}
+                    onChange={(event) => changeProfile(event.target.value)}
                   >
                     {!tabProfiles.some((profile) => profile.id === profileId) && (
                       <option value={profileId} disabled>
@@ -2355,9 +2380,9 @@ function BrowserContent({
                   size="sm"
                   className="h-7 px-2 text-xs"
                   onClick={() =>
-                    void navigator.clipboard
-                      .writeText(history.cdp ?? '')
-                      .catch((cause) => setError(String(cause)))
+                    void copyTextToClipboard(history.cdp ?? '').catch((cause) =>
+                      setError(String(cause)),
+                    )
                   }
                 >
                   Copy CDP
@@ -2718,15 +2743,16 @@ function BrowserContent({
         />
       )}
       <div className="studio-browser-address relative z-20 flex min-w-0 flex-1 items-center @max-[620px]/browser:order-first @max-[620px]/browser:basis-full">
-        <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
-          {/^https:\/\//i.test(history.url || url) ? (
-            <LockKeyhole size={15} className="text-muted-foreground" aria-hidden="true" />
-          ) : (
-            <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
-          )}
-        </span>
         <BrowserAddressInput
           value={input}
+          search={
+            (websiteProfile ?? tabProfiles.find((profile) => profile.id === 'default'))?.search
+          }
+          onNavigate={(target, openInNewTab) => {
+            if (openInNewTab)
+              newTab(target, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+            else navigate(target)
+          }}
           onChange={setInput}
           inputRef={addressField}
           disabled={mode === 'remote' && !remoteOnline}
@@ -2752,6 +2778,43 @@ function BrowserContent({
         >
           <ArrowUpRight size={14} />
         </IconButton>
+        {(mode === 'remote' || browser) && (
+          <div
+            className="relative mr-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-xs text-foreground focus-within:ring-2 focus-within:ring-ring has-[:disabled]:opacity-60 [@media(pointer:coarse)]:size-9"
+            title={`Browser profile: ${isPrivateBrowserProfile(profileId) ? 'Private · temporary' : (websiteProfile?.name ?? 'Unavailable profile')}`}
+          >
+            <span aria-hidden="true">
+              {isPrivateBrowserProfile(profileId)
+                ? '🔒'
+                : websiteProfile?.emoji || <UserRound size={13} />}
+            </span>
+            <select
+              aria-label="Switch browser profile"
+              value={profileId}
+              disabled={
+                busy ||
+                isPrivateBrowserProfile(profileId) ||
+                (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
+              }
+              onChange={(event) => changeProfile(event.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer rounded-full opacity-0 disabled:cursor-default"
+            >
+              {!tabProfiles.some((profile) => profile.id === profileId) && (
+                <option value={profileId} disabled>
+                  {isPrivateBrowserProfile(profileId)
+                    ? 'Private · temporary'
+                    : 'Unavailable profile'}
+                </option>
+              )}
+              {tabProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.emoji ? `${profile.emoji} ` : ''}
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
       {mode === 'remote' && (
         <IconButton

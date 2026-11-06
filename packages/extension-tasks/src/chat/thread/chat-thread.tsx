@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { selectConversationConnection } from './workspace-selection'
 import {
   providerRetryLabel,
@@ -147,7 +148,7 @@ export function ChatThread({
         operation.signal,
       )
       if (!operation.signal.aborted)
-        await navigator.clipboard.writeText(
+        await copyTextToClipboard(
           taskTranscript({ ...transcript, title: fullTask?.title ?? 'Thread' }),
         )
     } catch (cause) {

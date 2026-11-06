@@ -286,6 +286,11 @@ async function checkAddressSelection() {
     ['History', 'click', 'Meta'],
     ['Bookmark', 'keyboard', 'Control'],
     ['History', 'keyboard', 'Meta'],
+    ['Address', 'click', undefined],
+    ['Address', 'keyboard', 'Control'],
+    ['Search', 'keyboard', undefined],
+    ['Search', 'keyboard', 'Meta'],
+    ['AddressSearch', 'click', undefined],
   ]
   for (const [source, method, modifier] of cases) {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
@@ -332,28 +337,35 @@ async function checkAddressSelection() {
       await page.addScriptTag({ content: built.outputFiles[0].text })
       const input = page.getByLabel('Preview URL', { exact: true })
       await input.focus()
-      await input.fill('destination.test')
-      const option = page.getByRole('option').filter({ hasText: 'Destination' })
+      const query = source === 'Search' ? 'what is node.js' : 'destination.test'
+      const targetURL =
+        source === 'Search' || source === 'AddressSearch'
+          ? 'https://www.google.com/search?q=' + encodeURIComponent(query)
+          : 'http://destination.test/'
+      await input.fill(query)
+      const option =
+        source === 'Address' || source === 'Search'
+          ? page.getByRole('listbox').getByRole('option', { selected: true })
+          : source === 'AddressSearch'
+            ? page.getByRole('option').filter({ hasText: 'Search Google for' })
+            : page.getByRole('option', { name: /^Destination http/ })
       await option.waitFor()
       const before = await page.evaluate(() =>
         JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
       )
       if (method === 'click') await option.click({ modifiers: modifier ? [modifier] : [] })
       else {
-        await input.press('ArrowDown')
+        if (source !== 'Address' && source !== 'Search') await input.press('ArrowDown')
         await input.press(modifier ? modifier + '+Enter' : 'Enter')
       }
       await page
         .waitForFunction(
-          ({ count, modifier }) => {
+          ({ count, modifier, targetURL }) => {
             const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
             const tab = state.tabs.find((tab) => tab.id === state.active)
-            return (
-              state.tabs.length === count + (modifier ? 1 : 0) &&
-              tab.url === 'http://destination.test/'
-            )
+            return state.tabs.length === count + (modifier ? 1 : 0) && tab.url === targetURL
           },
-          { count: before.tabs.length, modifier },
+          { count: before.tabs.length, modifier, targetURL },
           { timeout: 5000 },
         )
         .catch(async (error) => {
@@ -415,6 +427,9 @@ async function checkUnifiedBrowserControl() {
       window.controlSelections = []
       window.fixtureWorkspaceControl = {
         newTabRequest: 'first',
+        onActivityChange: (states) => {
+          window.controlActivity = states
+        },
         onSelect: (id) => window.controlSelections.push(id),
         onTabsChange: (tabs, active) => {
           window.controlTabs = tabs
@@ -458,6 +473,37 @@ async function checkUnifiedBrowserControl() {
       await page.evaluate(() => window.controlSelections.length),
       2,
       'External page focus does not echo a selection back to the parent',
+    )
+    await page.evaluate(async () => {
+      window.tabActivityStates = [
+        {
+          key: 'studio:browser:main:existing',
+          url: 'http://lan.local:3000/',
+          title: 'Existing page',
+          audible: true,
+        },
+      ]
+      await window.pollBrowser()
+    })
+    await page.waitForFunction(() => window.controlActivity?.existing?.audible === true)
+    await page.evaluate(() => {
+      window.fixtureWorkspaceControl.lifecycleRequest = {
+        requestId: 'unified-mute',
+        tabId: 'existing',
+        action: 'toggle-mute',
+      }
+      window.renderBrowser()
+    })
+    await page.waitForFunction(() => window.controlActivity?.existing?.muted === true)
+    assert.equal(
+      await page.evaluate(() => window.controlActive),
+      'existing',
+      'Unified mute preserves the active tab',
+    )
+    assert.equal(
+      await page.evaluate(() => window.controlSelections.length),
+      2,
+      'Unified mute does not select a tab',
     )
   } finally {
     await page.close()
@@ -1438,7 +1484,29 @@ try {
   )
   await url.focus()
   await url.fill('no-such-suggestion-xyz')
-  assert.equal(await page.getByRole('listbox', { name: 'Address suggestions' }).count(), 0)
+  await suggestions
+    .getByRole('option', { selected: true })
+    .filter({ hasText: 'Search with Google' })
+    .waitFor()
+  await url.fill('example.com/my notes')
+  await suggestions
+    .getByRole('option', { selected: true })
+    .filter({ hasText: 'Go to website' })
+    .waitFor()
+  await suggestions
+    .getByRole('option')
+    .filter({ hasText: 'https://example.com/my%20notes' })
+    .waitFor()
+  await suggestions.getByRole('option').filter({ hasText: 'Search Google for' }).click()
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) =>
+        call.action === 'show' &&
+        call.url === 'https://www.google.com/search?q=example.com%2Fmy%20notes',
+    ),
+  )
+  await url.fill('http://localhost:3000/')
+  await url.press('Enter')
   await page.keyboard.press('Escape')
   await url.blur()
   // The find bar owns keyboard focus without hiding/replacing the native page.
@@ -1818,9 +1886,7 @@ try {
     opensBeforeReselect,
     'Reselecting the current tab does not reopen its session',
   )
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('remote-work')
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Switch browser profile' }).selectOption('remote-work')
   await page.waitForFunction(() =>
     window.calls.some(
       (call) =>
@@ -2192,9 +2258,7 @@ try {
     await window.pollBrowser()
   })
   // Simulate the native status queue consumed by production BrowserPane.
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('local-work')
-  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Switch browser profile' }).selectOption('local-work')
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.profileId === 'local-work'),
   )
@@ -2632,6 +2696,10 @@ try {
     window.calls.some(
       (call) => call.action === 'show' && call.url === 'http://localhost:3000/private-secret',
     ),
+  )
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Switch browser profile' }).isDisabled(),
+    true,
   )
   const privateShow = await page.evaluate(() =>
     window.calls.findLast(
@@ -3558,6 +3626,15 @@ try {
     '🏠',
     'Each pin uses its own profile emoji',
   )
+  const pinnedGeometry = () =>
+    compactSidebar.locator('[data-browser-tab-id][data-pinned]').evaluateAll((tiles) =>
+      tiles.map((tile) => {
+        const { x, y, width, height } = tile.getBoundingClientRect()
+        const favicon = tile.querySelector('.studio-browser-tab-favicon').getBoundingClientRect()
+        return { x, y, width, height, faviconX: favicon.x, faviconY: favicon.y }
+      }),
+    )
+  const idlePinGeometry = await pinnedGeometry()
   await controlsPage.evaluate(async () => {
     window.tabActivityStates = [
       {
@@ -3575,6 +3652,7 @@ try {
         key: 'studio:browser:main:compact-4',
         url: 'https://example.test/4',
         title: 'Website 4',
+        agent: true,
         audible: true,
         muted: false,
         camera: true,
@@ -3589,6 +3667,16 @@ try {
   await firstTile.getByRole('img', { name: 'Camera on in Website 0', exact: true }).waitFor()
   await firstTile.getByRole('img', { name: 'Microphone on in Website 0', exact: true }).waitFor()
   await firstTile.getByRole('img', { name: 'Screen sharing in Website 0', exact: true }).waitFor()
+  await compactSidebar
+    .locator('[data-browser-tab-id="compact-4"]')
+    .getByRole('img', { name: 'An agent is connected to Website 4', exact: true })
+    .waitFor()
+  assert.deepEqual(
+    await pinnedGeometry(),
+    idlePinGeometry,
+    'Media activity does not resize pins, move favicons, or shift adjacent rows',
+  )
+  assert.equal(await compactSidebar.locator('[aria-label*="available to agents"]').count(), 0)
   const faviconBounds = await pins.first().locator('img').boundingBox()
   const identityBounds = await pins
     .first()
@@ -3618,10 +3706,7 @@ try {
   await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
   const tileBounds = await firstTile.boundingBox()
   const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
-  assert.ok(
-    activityBounds.height <= 24,
-    'All four pinned activity icons share a row at the default width',
-  )
+  assert.ok(activityBounds.height === 36, 'Pinned activity uses a fixed two-row strip')
   assert.ok(
     activityBounds.y >= identityBounds.y + identityBounds.height,
     'Pinned activity sits below the icon and its identity badges',
@@ -3706,6 +3791,48 @@ try {
     narrowPins[2].y > narrowPins[0].y,
     'Narrow sidebars wrap pins before their contents are squeezed',
   )
+  const narrowActiveGeometry = await pinnedGeometry()
+  const narrowMic = await firstTile.locator('[data-browser-activity="microphone"]').boundingBox()
+  await controlsPage.evaluate(async () => {
+    window.savedActivityStates = window.tabActivityStates
+    window.tabActivityStates = window.tabActivityStates.map((state) => ({
+      ...state,
+      audible: false,
+      muted: false,
+      camera: false,
+      screenSharing: false,
+      agent: false,
+    }))
+    await window.pollBrowser()
+  })
+  await firstTile
+    .getByRole('button', { name: 'Mute tab Website 0', exact: true })
+    .waitFor({ state: 'hidden' })
+  assert.deepEqual(
+    await pinnedGeometry(),
+    narrowActiveGeometry,
+    'Partial activity keeps narrow pins stable',
+  )
+  assert.deepEqual(
+    await firstTile.locator('[data-browser-activity="microphone"]').boundingBox(),
+    narrowMic,
+    'Microphone stays in its own slot when other signals stop',
+  )
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = []
+    await window.pollBrowser()
+  })
+  await firstTile.getByLabel('Tab activity', { exact: true }).waitFor({ state: 'hidden' })
+  assert.deepEqual(
+    await pinnedGeometry(),
+    narrowActiveGeometry,
+    'Idle narrow pins retain their space',
+  )
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = window.savedActivityStates
+    await window.pollBrowser()
+  })
+  await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-narrow.png' })
   await controlsPage.evaluate(async () => {
     window.tabActivityStates = []
@@ -3719,6 +3846,9 @@ try {
     await window.pollBrowser()
   })
   await firstTile.getByLabel('Tab activity', { exact: true }).waitFor({ state: 'detached' })
+  await compactSidebar
+    .getByRole('img', { name: /An agent is connected/ })
+    .waitFor({ state: 'detached' })
   assert.equal(
     await pins.first().getByLabel('7 unread', { exact: true }).count(),
     0,

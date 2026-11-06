@@ -1256,9 +1256,10 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 .studio-browser-sidebar .studio-browser-tab {
-  margin-bottom: 3px;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  margin-bottom: 5px;
+  border: 1px solid var(--browser-edge);
+  border-radius: 12px;
+  background-color: color-mix(in srgb, var(--foreground) 3%, var(--sidebar));
 }
 .studio-browser-sidebar .studio-browser-tab[data-pinned] {
   margin-bottom: 0;
@@ -1320,6 +1321,46 @@ textarea {
   grid-column: 3 / span 2;
   grid-row: 2;
   align-self: center;
+  justify-self: end;
+  padding: 2px 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 5%, var(--sidebar));
+}
+/* Reserve the same media strip on every pin, including idle pins. Each signal
+   owns a slot so starting or stopping another activity never moves it. */
+.studio-browser-tab[data-pinned] .studio-browser-tab-activity {
+  display: grid;
+  grid-template-columns: repeat(3, 14px);
+  grid-template-rows: repeat(2, 16px);
+  gap: 0 1px;
+  width: 44px;
+  height: 36px;
+  padding: 0 0 4px;
+  justify-items: center;
+  align-items: center;
+}
+.studio-browser-tab[data-pinned] [data-browser-activity='audio'] {
+  grid-area: 1 / 1;
+  width: 14px;
+  height: 16px;
+}
+.studio-browser-tab[data-pinned] [data-browser-activity='microphone'] {
+  grid-area: 1 / 2;
+}
+.studio-browser-tab[data-pinned] [data-browser-activity='screen'] {
+  grid-area: 1 / 3;
+}
+.studio-browser-tab[data-pinned] [data-browser-activity='camera'] {
+  grid-area: 2 / 1;
+}
+.studio-browser-tab[data-pinned] [data-browser-activity='agent'] {
+  grid-area: 2 / 2;
+}
+.studio-browser-tab-activity > button[aria-pressed='true'] {
+  color: var(--muted-foreground);
+}
+.studio-browser-tab-activity > button:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-actions {
   grid-column: 4;
@@ -2289,6 +2330,10 @@ select:focus-visible,
 }
 .studio-browser-tab-select {
   position: relative;
+}
+.studio-browser-sidebar .studio-browser-tab[data-active] {
+  border-radius: 12px;
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
 }
 .studio-task-sidebar .studio-list-section-header,
 .studio-browser-sidebar .studio-list-section-header {
