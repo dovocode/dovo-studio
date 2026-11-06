@@ -144,6 +144,17 @@
       color-mix(in srgb, var(--primary) calc(20% * var(--studio-glow-strength)), transparent)
   );
 }
+/* Light selections leave room for both accent text and secondary labels to stay readable. */
+:root[data-theme='light'],
+:root[data-theme='light'] .studio-destructive-accent {
+  --studio-selected-fill: color-mix(in srgb, var(--primary) 8%, var(--sidebar));
+  --studio-selected-gradient: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--primary) 8%, var(--sidebar)),
+    color-mix(in srgb, var(--primary) 4%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--primary) 6%, var(--sidebar))
+  );
+}
 :root[data-theme-gradients='false'],
 :root[data-theme-gradients='false'] .studio-destructive-accent {
   --studio-selected-gradient: none;
