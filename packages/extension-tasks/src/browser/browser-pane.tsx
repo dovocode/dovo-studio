@@ -599,18 +599,25 @@ function BrowserContent({
   }, [scope, tabs, activeTab, closed])
   const workspaceControlRef = useRef(workspaceControl)
   workspaceControlRef.current = workspaceControl
+  const reportedActivity = useRef('')
   useEffect(() => {
-    workspaceControlRef.current?.onActivityChange?.(
-      Object.fromEntries(
-        tabs.flatMap((tab) => {
-          const state =
-            tab.kind === 'web'
-              ? tabStates.find((state) => state.key === nativeKey(tab.id))
-              : undefined
-          return state ? [[tab.id, state]] : []
-        }),
-      ),
+    const report = workspaceControlRef.current?.onActivityChange
+    if (!report) return
+    const activity = Object.fromEntries(
+      tabs.flatMap((tab) => {
+        const state =
+          tab.kind === 'web'
+            ? tabStates.find((state) => state.key === nativeKey(tab.id))
+            : undefined
+        return state ? [[tab.id, state]] : []
+      }),
     )
+    // Native status polls return fresh objects even when nothing changed. Do not
+    // rerender the entire unified workspace for an unchanged activity snapshot.
+    const encoded = JSON.stringify(activity)
+    if (encoded === reportedActivity.current) return
+    reportedActivity.current = encoded
+    report(activity)
   }, [tabs, tabStates])
   useEffect(() => {
     workspaceControlRef.current?.onTabsChange(

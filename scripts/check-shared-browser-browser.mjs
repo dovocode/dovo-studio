@@ -429,6 +429,7 @@ async function checkUnifiedBrowserControl() {
         newTabRequest: 'first',
         onActivityChange: (states) => {
           window.controlActivity = states
+          window.activityReports = (window.activityReports ?? 0) + 1
         },
         onSelect: (id) => window.controlSelections.push(id),
         onTabsChange: (tabs, active) => {
@@ -486,6 +487,16 @@ async function checkUnifiedBrowserControl() {
       await window.pollBrowser()
     })
     await page.waitForFunction(() => window.controlActivity?.existing?.audible === true)
+    const activityReports = await page.evaluate(() => window.activityReports)
+    await page.evaluate(async () => {
+      window.tabActivityStates = window.tabActivityStates.map((state) => ({ ...state }))
+      await window.pollBrowser()
+    })
+    assert.equal(
+      await page.evaluate(() => window.activityReports),
+      activityReports,
+      'Unchanged native polls do not rerender the unified workspace',
+    )
     await page.evaluate(() => {
       window.fixtureWorkspaceControl.lifecycleRequest = {
         requestId: 'unified-mute',
