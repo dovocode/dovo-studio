@@ -176,6 +176,9 @@
   max-width: calc(var(--chat-max) + 2 * var(--studio-chat-gutter));
   padding-inline: calc(var(--studio-chat-gutter) + 12px);
 }
+.studio-composer {
+  border-radius: 1.75rem;
+}
 .task-composer .studio-composer {
   border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
   background: var(--card);
@@ -185,8 +188,8 @@
   overflow: clip;
 }
 .task-composer .studio-composer:focus-within {
-  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  box-shadow: var(--studio-glow);
 }
 .task-composer .studio-composer textarea,
 .task-composer .studio-composer > [data-composer-input] {
@@ -320,9 +323,61 @@
   color: var(--foreground);
 }
 .task-composer [data-composer-stop] {
+  overflow: visible;
   box-shadow: none;
   --composer-accent: var(--destructive);
   position: relative;
+}
+.task-composer [data-composer-stop]:not(:disabled)::before,
+.task-composer [data-composer-stop]:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--studio-glow-strength);
+  background: conic-gradient(
+    transparent 0deg 200deg,
+    color-mix(in srgb, var(--destructive) 75%, transparent) 285deg,
+    transparent 360deg
+  );
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 3px));
+  filter: blur(2px);
+  animation: studio-stop-glow 2.4s linear infinite;
+}
+.task-composer [data-composer-stop]:not(:disabled)::after {
+  inset: -1px;
+  opacity: 1;
+  background: conic-gradient(
+    color-mix(in srgb, var(--destructive) 40%, var(--background)) 0deg,
+    color-mix(in srgb, var(--destructive) 75%, var(--background)) 200deg,
+    var(--destructive) 285deg,
+    color-mix(in srgb, var(--destructive) 40%, var(--background)) 360deg
+  );
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+  filter: none;
+}
+@keyframes studio-stop-glow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+:root[data-theme-glow='0'] .task-composer [data-composer-stop]:not(:disabled)::before,
+:root[data-motion='reduce'] .task-composer [data-composer-stop]:not(:disabled)::before,
+:root[data-motion='reduce'] .task-composer [data-composer-stop]:not(:disabled)::after {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-composer [data-composer-stop]:not(:disabled)::before,
+  .task-composer [data-composer-stop]:not(:disabled)::after {
+    display: none;
+  }
+}
+@media (forced-colors: active) {
+  .task-composer [data-composer-stop]:not(:disabled)::before,
+  .task-composer [data-composer-stop]:not(:disabled)::after {
+    display: none;
+  }
 }
 .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) {
   width: 2rem;
@@ -354,8 +409,8 @@
     0 8px 28px #00000020;
 }
 .dark .task-composer .studio-composer:focus-within {
-  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  box-shadow: var(--studio-glow);
 }
 .dark .task-composer :is(button[type='submit'], [data-composer-stop]):not([data-labeled]) {
   border: 1px solid transparent;
@@ -439,6 +494,9 @@
   margin-left: auto;
 }
 @media (max-width: 640px) {
+  .studio-composer {
+    border-radius: 1.375rem;
+  }
   .task-composer .studio-composer[data-idle] [data-composer-controls] {
     display: none;
   }
@@ -991,7 +1049,7 @@ textarea {
     inset 0 1px 0 color-mix(in srgb, var(--primary) 18%, transparent),
     var(--studio-glow);
 }
-/* Stop remains identifiable without an animated halo or an alarm-like fill. */
+/* The rotating ring carries activity while the stop icon stays still. */
 .task-composer button[data-composer-stop]:not([data-labeled]):not(:disabled),
 .dark .task-composer button[data-composer-stop]:not([data-labeled]):not(:disabled) {
   color: var(--foreground);
@@ -2862,7 +2920,7 @@ a.studio-project-row:hover {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
-  color: var(--foreground);
+  color: var(--primary);
 }
 .studio
   .studio-navigation[aria-label='Main navigation']

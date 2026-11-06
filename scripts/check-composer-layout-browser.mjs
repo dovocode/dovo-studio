@@ -571,7 +571,7 @@ try {
       assert.equal(stopStyle.height, '32px')
       assert.ok(parseFloat(stopStyle.radius) >= 16, 'Stop shares Send circular shape')
       assert.equal(stopStyle.accent, stopStyle.error, 'Stop uses the destructive accent')
-      assert.equal(stopStyle.shadow, 'none', 'Stop does not demand attention with a glow')
+      assert.equal(stopStyle.shadow, 'none', 'Activity glow lives on the ring')
       assert.equal(stopStyle.gradient, 'none', 'Stop uses a quiet, solid surface')
       assert.equal(stopStyle.icon, true)
       if (device.name === 'desktop' && project === 'dovo-studio') {
@@ -589,7 +589,33 @@ try {
             }
           }, pseudo)
         for (const pseudo of ['::before', '::after'])
-          assert.equal((await glow(pseudo)).animation, 'none', 'Stop stays calm while work runs')
+          assert.equal(
+            (await glow(pseudo)).animation,
+            'studio-stop-glow',
+            'Stop ring rotates while work runs',
+          )
+        const initialRing = (await glow('::after')).transform
+        await page.waitForFunction(
+          (initial) =>
+            getComputedStyle(document.querySelector('[data-composer-stop]'), '::after')
+              .transform !== initial,
+          initialRing,
+        )
+        await page.evaluate(() => {
+          document.documentElement.dataset.motion = 'reduce'
+        })
+        for (const pseudo of ['::before', '::after'])
+          assert.equal((await glow(pseudo)).display, 'none', 'Reduced motion hides rotating layers')
+        await page.evaluate(() => {
+          delete document.documentElement.dataset.motion
+        })
+        assert.equal(
+          await page
+            .locator('.studio-composer')
+            .evaluate((element) => getComputedStyle(element).borderBottomLeftRadius),
+          '28px',
+          'Composer retains its rounded frame',
+        )
         for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
           assert.equal(
             await page.locator(selector).evaluate((node) => getComputedStyle(node).transform),
@@ -609,7 +635,7 @@ try {
           () =>
             getComputedStyle(document.querySelector('[data-composer-stop]')).boxShadow === 'none',
         )
-        assert.equal((await glow()).animation, 'none', 'Disabled glow has no animated layer')
+        assert.equal((await glow()).display, 'none', 'Disabled glow hides the halo')
         assert.equal(
           await stop.evaluate((button) => getComputedStyle(button).backgroundImage),
           'none',
@@ -621,7 +647,7 @@ try {
           document.documentElement.classList.remove('dark')
         })
         await settleComposer()
-        assert.equal((await glow()).animation, 'none', 'Light Stop also stays still')
+        assert.equal((await glow()).animation, 'studio-stop-glow', 'Light Stop ring also rotates')
         if (screenshots)
           await page.screenshot({
             path: screenshots + '/desktop-stop-light.png',

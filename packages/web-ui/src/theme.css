@@ -126,12 +126,12 @@
 /* Resolve effects locally when an action overrides the inherited palette accent. */
 :root,
 .studio-destructive-accent {
-  --studio-selected-fill: color-mix(in srgb, var(--foreground) 6%, var(--sidebar));
+  --studio-selected-fill: color-mix(in srgb, var(--primary) 14%, var(--sidebar));
   --studio-selected-gradient: linear-gradient(
     140deg,
-    color-mix(in srgb, var(--foreground) 6%, var(--sidebar)),
-    color-mix(in srgb, var(--foreground) 4%, var(--sidebar)) 68%,
-    color-mix(in srgb, var(--foreground) 5%, var(--sidebar))
+    color-mix(in srgb, var(--primary) 14%, var(--sidebar)),
+    color-mix(in srgb, var(--primary) 8%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--primary) 11%, var(--sidebar))
   );
   --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
     color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
