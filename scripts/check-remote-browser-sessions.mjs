@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { STUDIO_BROWSER_SCOPE } from '../packages/protocol/dist/index.js'
 import { RemoteBrowsers } from '../packages/runtime/dist/previews/browser.js'
+import { terminateBrowserRenderers } from './ci/browser-crash.mjs'
 const server = createServer((request, response) => {
   response.setHeader('Content-Type', 'text/html')
   if (request.url === '/login') {
@@ -266,15 +267,23 @@ try {
     const session = await browsers.sessions.get('unavailable')
     console.log('Remote browsers: checking crash cleanup')
     const context = session.page.context()
-    assert.deepEqual(context.pages(), [session.page], 'Crash injection owns the only profile tab')
+    // Persistent profiles retain an internal blank tab for session-cookie snapshots.
+    // Compare URLs instead of Page objects: a failed deep equality assertion would
+    // format Playwright's enormous cyclic object graph and exhaust the CI runner.
+    assert.deepEqual(
+      context
+        .pages()
+        .filter((page) => page !== session.page)
+        .map((page) => page.url()),
+      ['about:blank'],
+      'Crash injection owns the profile tab and its internal keeper',
+    )
     const browser = context.browser()
     assert.ok(browser, 'The persistent profile must expose its Chromium instance')
     const browserCdp = await browser.newBrowserCDPSession()
     const { processInfo } = await browserCdp
       .send('SystemInfo.getProcessInfo')
       .finally(() => browserCdp.detach())
-    const renderers = processInfo.filter((info) => info.type === 'renderer')
-    assert.ok(renderers.length, 'Chromium must have a renderer to terminate')
     const signal = AbortSignal.timeout(10000)
     // Observe both events before injection: production closes the page on a real crash.
     const crashedAndClosed = Promise.all([
@@ -284,14 +293,8 @@ try {
     // Page.crash can stall inside Chromium's deliberate-crash/reporting path on CI.
     // SIGKILL exercises actual renderer loss without waiting for a crash report.
     // This browser belongs to this profile; include spare renderers, never other browsers.
-    for (const renderer of renderers) {
-      try {
-        process.kill(renderer.id, 'SIGKILL')
-      } catch (error) {
-        // Spare renderers can exit between the process snapshot and fault injection.
-        if (error.code !== 'ESRCH') throw error
-      }
-    }
+    console.log('Remote browsers: crash injection process snapshot', processInfo)
+    terminateBrowserRenderers(processInfo)
     await crashedAndClosed
     assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
     console.log('Remote browsers: crashed page closed; reopening its profile')

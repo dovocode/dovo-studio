@@ -96,8 +96,10 @@ conventions. The [architecture guide](docs/architecture.md) explains package own
 ## Verify changes
 
 ```sh
-pnpm verify
+pnpm verify:ci
 ```
 
-This runs typechecking, tests, lint, and builds. See [the full product guide](docs/product-guide.md)
-for focused checks and platform smoke-test commands.
+This runs builds, lint, typechecking, tests, CI script regressions, runtime/mobile validation and
+all browser suites. `pnpm verify` runs the core build/lint/typecheck/test checks. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for system dependencies and the additional platform-specific CI
+checks, and [the full product guide](docs/product-guide.md) for focused checks.
