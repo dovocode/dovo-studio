@@ -3646,6 +3646,10 @@ try {
       }),
     )
   const idlePinGeometry = await pinnedGeometry()
+  assert.ok(
+    idlePinGeometry.every((tile) => tile.height === 64),
+    'Pins keep a compact fixed height',
+  )
   await controlsPage.evaluate(async () => {
     window.tabActivityStates = [
       {
@@ -3699,7 +3703,7 @@ try {
       identityBounds.y + identityBounds.height > faviconBounds.y + faviconBounds.height,
     'Small device/profile badges overlap the bottom of the favicon',
   )
-  assert.equal(faviconBounds.width, 32, 'Tab favicons are larger')
+  assert.equal(faviconBounds.width, 24, 'Pinned favicons keep the compact tab icon size')
   assert.equal(identityBounds.height, 14, 'Identity badges remain small')
   const selectedBeforeMute = await controlsPage.evaluate(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
@@ -3717,7 +3721,7 @@ try {
   await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
   const tileBounds = await firstTile.boundingBox()
   const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
-  assert.ok(activityBounds.height === 36, 'Pinned activity uses a fixed two-row strip')
+  assert.ok(activityBounds.height === 28, 'Pinned activity uses a compact fixed two-row strip')
   assert.ok(
     activityBounds.y >= identityBounds.y + identityBounds.height,
     'Pinned activity sits below the icon and its identity badges',
@@ -3736,7 +3740,7 @@ try {
       Math.abs(regularIdentity.x - regularTitle.x) < 1,
     'Regular tab identity badges sit below and align with the title',
   )
-  assert.equal(regularFavicon.width, 24, 'Regular tabs use a smaller favicon than pinned tabs')
+  assert.equal(regularFavicon.width, 24, 'Regular and pinned tabs use consistent favicon sizes')
   assert.equal(
     await regularTab.locator('.studio-browser-tab-source .studio-browser-tab-profile').count(),
     0,

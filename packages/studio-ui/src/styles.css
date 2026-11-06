@@ -194,7 +194,7 @@
 .task-composer .studio-composer textarea,
 .task-composer .studio-composer > [data-composer-input] {
   min-height: 3rem;
-  padding: 0.625rem 1.25rem 0.375rem;
+  padding: 0.75rem 1.25rem 0.25rem;
   background: transparent;
   box-shadow: none;
 }
@@ -1326,16 +1326,33 @@ textarea {
   border-radius: 8px;
   background: color-mix(in srgb, var(--foreground) 5%, var(--sidebar));
 }
+/* Keep browser and unified pins compact, including the latter's row padding. */
+.studio-browser-tab[data-pinned] {
+  height: 64px;
+  padding: 0;
+}
+.studio-browser-tab[data-pinned] .studio-browser-tab-select {
+  height: 34px;
+  padding: 2px 4px;
+}
+.studio-browser-tab[data-pinned] .studio-browser-tab-source {
+  width: 24px;
+  height: 30px;
+}
+.studio-browser-tab[data-pinned] .studio-browser-tab-favicon {
+  width: 24px;
+  height: 24px;
+}
 /* Reserve the same media strip on every pin, including idle pins. Each signal
    owns a slot so starting or stopping another activity never moves it. */
 .studio-browser-tab[data-pinned] .studio-browser-tab-activity {
   display: grid;
   grid-template-columns: repeat(3, 14px);
-  grid-template-rows: repeat(2, 16px);
+  grid-template-rows: 16px 10px;
   gap: 0 1px;
   width: 44px;
-  height: 36px;
-  padding: 0 0 4px;
+  height: 28px;
+  padding: 0 0 2px;
   justify-items: center;
   align-items: center;
 }
@@ -1369,10 +1386,6 @@ textarea {
 .studio-browser-tab-favicon > :is(img, svg) {
   width: 24px;
   height: 24px;
-}
-.studio-browser-tab[data-pinned] .studio-browser-tab-favicon > :is(img, svg) {
-  width: 32px;
-  height: 32px;
 }
 .studio-browser-tab-identity {
   display: inline-flex;
@@ -1788,6 +1801,12 @@ textarea {
   box-shadow: var(--studio-glow);
 }
 @media (pointer: coarse) {
+  .studio-browser-tab[data-pinned] {
+    height: 74px;
+  }
+  .studio-browser-tab[data-pinned] .studio-browser-tab-select {
+    min-height: 44px;
+  }
   .studio-browser-sidebar .studio-browser-library > button,
   .studio-browser-sidebar .studio-browser-tab-select,
   .studio-browser-tab-group > .studio-list-section-header,
@@ -2298,6 +2317,21 @@ select:focus-visible,
   background: transparent;
   box-shadow: none;
 }
+.studio-thread-card[data-read] {
+  --thread-icon-grayscale: 0.5;
+}
+.studio-thread-card[data-compact] {
+  --thread-icon-grayscale: 1;
+}
+.studio-thread-row:is(:hover, :focus-within) .studio-thread-card {
+  --thread-icon-grayscale: 0;
+}
+.studio-thread-card:is([data-read], [data-compact])
+  :is(svg, img):not(.studio-thread-project-icon *, .studio-thread-status *),
+.studio-thread-card:is([data-read], [data-compact])
+  :is(.studio-thread-project-icon, .studio-thread-status) {
+  filter: grayscale(var(--thread-icon-grayscale));
+}
 /* Navigation has one selected surface and one small location marker. Filters keep a neutral fill. */
 .studio-nav-selected,
 .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
@@ -2673,9 +2707,6 @@ a.studio-project-row:hover {
   border-left-width: 2px;
 }
 .studio-thread-status[data-tone='active'] {
-  color: var(--muted-foreground);
-}
-.studio-thread-status[data-tone='active'] .studio-thread-status-icon {
   color: var(--primary);
 }
 .studio-thread-status[data-tone='attention'] {
@@ -2684,10 +2715,10 @@ a.studio-project-row:hover {
 .studio-thread-status[data-tone='danger'] {
   color: var(--destructive);
 }
-.studio-thread-status:is([data-tone='success'], [data-tone='neutral']) {
+.studio-thread-status[data-tone='neutral'] {
   color: var(--muted-foreground);
 }
-.studio-thread-status[data-tone='success'] .studio-thread-status-icon {
+.studio-thread-status[data-tone='success'] {
   color: var(--status-success);
 }
 
@@ -3567,14 +3598,18 @@ a.studio-project-row:hover {
 }
 
 /* Read text dims independently so badges retain their own foreground/background contrast. */
-.studio-thread-card[data-read] [data-thread-copy] {
+.studio-thread-card[data-read] [data-thread-copy]:not(.studio-thread-status) {
   color: #000;
   opacity: 0.6;
 }
-.dark .studio-thread-card[data-read] [data-thread-copy] {
+.dark .studio-thread-card[data-read] [data-thread-copy]:not(.studio-thread-status) {
   color: #fff;
 }
 .studio-thread-row:hover .studio-thread-card[data-read] [data-thread-copy],
 .studio-thread-row:focus-within .studio-thread-card[data-read] [data-thread-copy] {
+  opacity: 1;
+}
+.studio-thread-card[data-read] .studio-thread-card-context [data-thread-copy]:not([data-tone]) {
+  color: var(--muted-foreground);
   opacity: 1;
 }

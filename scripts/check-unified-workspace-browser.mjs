@@ -522,6 +522,10 @@ try {
         }),
       )
     const idleUnifiedPins = await unifiedPinGeometry()
+    assert.ok(
+      idleUnifiedPins.every((tile) => tile.height === 64),
+      'Unified pins match browser density',
+    )
     await page.evaluate(() =>
       window.setBrowserActivity({
         'pinned-0': {
@@ -732,7 +736,7 @@ try {
       await tile
         .locator('[data-browser-tab-select]')
         .evaluate((button) => button.getBoundingClientRect().height),
-      56,
+      34,
     )
     assert.ok(nextGridRow.y > tileBounds.y, 'Five fixture pages wrap in the compact grid')
     assert.ok(

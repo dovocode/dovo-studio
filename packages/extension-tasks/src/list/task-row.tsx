@@ -296,7 +296,6 @@ function TaskRowView({
               data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
-                !highlighted && !unread && '[&_svg]:grayscale [&_img]:grayscale',
                 compact
                   ? 'min-h-9 items-center py-1.5'
                   : cn('items-start py-2', general ? 'min-h-[48px]' : 'min-h-[68px]'),
@@ -309,13 +308,7 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              <span
-                className={cn(
-                  'studio-thread-project-icon shrink-0',
-                  !compact && 'pt-0.5',
-                  !highlighted && !unread && 'grayscale',
-                )}
-              >
+              <span className={cn('studio-thread-project-icon shrink-0', !compact && 'pt-0.5')}>
                 {projectIcon}
               </span>
               <span

@@ -587,24 +587,13 @@ try {
       const iconToken =
         tone === 'active' ? 'primary' : tone === 'success' ? 'status-success' : textToken
       element.append(probe)
-      probe.style.color = `var(--${textToken})`
-      if (element.matches('[data-thread-copy]') && element.closest('[data-read]'))
-        probe.style.color = document.documentElement.classList.contains('dark') ? '#fff' : '#000'
-      const expectedText = getComputedStyle(probe).color
       probe.style.color = `var(--${iconToken})`
-      if (
-        element.matches('[data-thread-copy]') &&
-        element.closest('[data-read]') &&
-        tone !== 'success' &&
-        tone !== 'active'
-      )
-        probe.style.color = expectedText
       const expectedIcon = getComputedStyle(probe).color
       probe.remove()
       return {
         text: getComputedStyle(element).color,
         icon: getComputedStyle(element.querySelector('.studio-thread-status-icon')).color,
-        expectedText,
+        expectedText: expectedIcon,
         expectedIcon,
       }
     }, tone)
@@ -666,6 +655,31 @@ try {
     metadataColor,
     'Unread metadata stays secondary',
   )
+  const readCard = readTitle.locator('xpath=ancestor::button[1]')
+  const readMetadata = readCard.locator('.studio-thread-card-context [data-thread-copy]').first()
+  const readStatus = readCard.locator('.studio-thread-status')
+  const readIcon = readStatus.locator('svg')
+  for (const card of [readCard, unreadTitle.locator('xpath=ancestor::button[1]')]) {
+    const status = card.locator('.studio-thread-status')
+    assert.equal(
+      await status.evaluate((el) => getComputedStyle(el).color),
+      await status.locator('svg').evaluate((el) => getComputedStyle(el).color),
+      'Status label inherits the same semantic color as its icon',
+    )
+    assert.equal(await status.evaluate((el) => getComputedStyle(el).opacity), '1')
+  }
+  assert.equal(await readMetadata.evaluate((el) => getComputedStyle(el).color), metadataColor)
+  assert.equal(await readStatus.evaluate((el) => getComputedStyle(el).filter), 'grayscale(0.5)')
+  assert.equal(await readIcon.evaluate((el) => getComputedStyle(el).filter), 'none')
+  assert.equal(
+    await readCard
+      .locator('.studio-thread-project-icon')
+      .evaluate((el) => getComputedStyle(el).filter),
+    'grayscale(0.5)',
+  )
+  await readCard.hover()
+  assert.equal(await readStatus.evaluate((el) => getComputedStyle(el).filter), 'grayscale(0)')
+  assert.equal(await readMetadata.evaluate((el) => getComputedStyle(el).color), metadataColor)
   await readTitle.click()
   await page.mouse.move(800, 600)
   assert.equal(
@@ -703,6 +717,12 @@ try {
     'success',
   )
   const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
+  const settledCard = compactTitle.locator('xpath=ancestor::button[1]')
+  const settledIcon = settledCard.locator('.studio-thread-project-icon')
+  await page.mouse.move(1100, 650)
+  assert.equal(await settledIcon.evaluate((el) => getComputedStyle(el).filter), 'grayscale(1)')
+  await settledCard.hover()
+  assert.equal(await settledIcon.evaluate((el) => getComputedStyle(el).filter), 'grayscale(0)')
   assert.ok(
     compactBox && compactBox.height <= 38,
     'Settled rows retain the original compact height',
