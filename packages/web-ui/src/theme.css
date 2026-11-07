@@ -405,12 +405,18 @@
   }
 }
 
-/* Control edges carry interaction; pane separators keep the softer border token. */
+/* Quiet field edges by default; high-contrast mode keeps stronger boundaries. */
 :root {
-  --control-edge: color-mix(in srgb, var(--foreground) 56%, var(--card));
+  --control-edge: color-mix(in srgb, var(--foreground) 32%, var(--card));
 }
 .dark,
 [data-theme='dark'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 24%, var(--card));
+}
+[data-high-contrast='true'] {
+  --control-edge: color-mix(in srgb, var(--foreground) 56%, var(--card));
+}
+:is(.dark, [data-theme='dark'])[data-high-contrast='true'] {
   --control-edge: color-mix(in srgb, var(--foreground) 42%, var(--card));
 }
 :is(

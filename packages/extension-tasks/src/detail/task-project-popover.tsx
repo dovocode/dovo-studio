@@ -46,7 +46,7 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
         frame.getBoundingClientRect().bottom - 32,
         composer ? composer.getBoundingClientRect().top - 12 : Infinity,
       )
-      setMaxHeight(Math.max(0, bottom - top))
+      setMaxHeight(Math.max(0, Math.min(480, bottom - top)))
       setMaxWidth(Math.max(0, frame.getBoundingClientRect().width - 64))
     }
     const observer = new ResizeObserver(measure)
@@ -80,9 +80,9 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
           collisionBoundary={anchor?.parentElement ?? undefined}
           collisionPadding={32}
           style={{ maxHeight, maxWidth }}
-          className="studio-project-popover studio-menu-surface z-40 overflow-y-auto rounded-2xl border bg-popover text-popover-foreground outline-none"
+          className="studio-project-popover studio-menu-surface z-40 flex flex-col overflow-hidden rounded-2xl border bg-popover text-popover-foreground outline-none"
         >
-          <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-popover px-5">
+          <header className="z-10 flex h-10 shrink-0 items-center justify-between gap-2 border-b bg-popover px-3">
             <div className="min-w-0 space-y-1">
               <h2 className="text-sm font-semibold">Thread info</h2>
             </div>
@@ -95,7 +95,9 @@ export function TaskProjectPopover({ children, title }: { children: ReactNode; t
               </Popover.Close>
             </div>
           </header>
-          {children}
+          <div className="studio-thread-info-scroll min-h-0 overflow-y-auto overscroll-contain">
+            {children}
+          </div>
         </Popover.Content>
       </Popover.Portal>
     </>

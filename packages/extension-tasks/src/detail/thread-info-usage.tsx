@@ -2,14 +2,13 @@ import { contextMeter, type Task } from '@dovo/protocol'
 
 export function ThreadInfoUsage({ task }: { task: Task }) {
   const meter = contextMeter(task)
-  const usage = task.contextUsage
   if (!meter) return null
   return (
     <section
       aria-label="Context usage"
       className="studio-project-section border-t border-border/60"
     >
-      <div className="flex items-center justify-between gap-3 text-xs">
+      <div className="flex items-center justify-between gap-3 text-xs" title={meter.label}>
         <h3 className="font-medium text-muted-foreground">Context</h3>
         <span className="tabular-nums">
           {meter
@@ -40,11 +39,6 @@ export function ThreadInfoUsage({ task }: { task: Task }) {
           />
         </div>
       )}
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        {usage?.used !== undefined
-          ? `${usage.used.toLocaleString()}${usage.limit ? ` of ${usage.limit.toLocaleString()}` : ''} tokens in this session${usage.limit ? '.' : ' · Window size not reported.'}`
-          : 'Available after the provider reports context usage.'}
-      </p>
     </section>
   )
 }

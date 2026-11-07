@@ -2454,8 +2454,10 @@ select:focus-visible,
 
 /* Project controls follow the flat, grouped card used in the thread design. */
 .studio-project-popover {
-  width: min(376px, var(--radix-popover-content-available-width), calc(100vw - 64px));
-  max-height: min(800px, var(--radix-popover-content-available-height));
+  width: min(320px, var(--radix-popover-content-available-width), calc(100vw - 64px));
+  max-height: min(480px, var(--radix-popover-content-available-height));
+}
+.studio-thread-info-scroll {
   scrollbar-width: thin;
   scrollbar-gutter: auto;
 }
@@ -2463,7 +2465,7 @@ select:focus-visible,
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
-  padding: 8px 20px;
+  padding: 2px 12px;
 }
 .studio-thread-info-content > [data-thread-info-section] {
   grid-column: 1 / -1;
@@ -2484,7 +2486,7 @@ select:focus-visible,
 }
 .studio-thread-info-content .studio-project-section,
 .studio-thread-info-content .task-info-settings {
-  padding: 14px 0;
+  padding: 6px 0;
   border: 0;
 }
 .studio-thread-info-content .studio-project-checkout {
@@ -2493,15 +2495,17 @@ select:focus-visible,
   border-top: 1px solid var(--border);
 }
 .studio-thread-info-content .studio-project-row {
-  padding-inline: 8px;
+  min-height: 28px;
+  padding: 3px 6px;
   gap: 8px;
   min-width: 0;
   width: 100%;
   font-size: 12px;
+  line-height: 18px;
   white-space: normal;
 }
 .studio-thread-info-content .studio-project-checkout > .studio-project-row {
-  min-height: 34px;
+  min-height: 28px;
   padding-inline: 10px;
 }
 .studio-thread-info-content [data-thread-info-section='git'] .studio-project-split-row {
@@ -2515,7 +2519,7 @@ select:focus-visible,
 }
 .studio-thread-info-content .studio-project-chevron {
   width: 28px;
-  height: 32px;
+  height: 30px;
   border-left: 1px solid var(--border);
   background: var(--card);
   color: var(--foreground);
@@ -2524,7 +2528,7 @@ select:focus-visible,
 .studio-thread-info-content [data-thread-info-section='openIn'] .studio-project-section {
   padding: 4px 0;
 }
-.studio-project-popover::-webkit-scrollbar {
+.studio-thread-info-scroll::-webkit-scrollbar {
   width: 4px;
 }
 .studio-project-panel {
@@ -2946,13 +2950,13 @@ a.studio-project-row:hover {
   border-top: 1px solid var(--border);
 }
 .studio-thread-info-links .studio-project-section {
-  padding: 8px 0;
+  padding: 6px 0;
 }
 .studio-thread-info-actions {
-  padding-block: 6px;
+  padding-block: 4px;
 }
 .studio-thread-info-actions .studio-project-section {
-  padding: 4px 0;
+  padding: 2px 0;
 }
 [data-thread-info-branch] {
   font-family: var(--font-mono);

@@ -12,7 +12,7 @@ export function ThreadInfoCustomization() {
   const [bounds, setBounds] = useState({
     sideOffset: 8,
     alignOffset: 0,
-    width: 376,
+    width: 320,
     minHeight: 0,
     maxHeight: '80dvh',
   })
@@ -55,7 +55,7 @@ export function ThreadInfoCustomization() {
           }}
           className="studio-menu-surface z-50 overflow-y-auto rounded-2xl border bg-popover text-xs text-popover-foreground"
         >
-          <div className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b bg-popover px-5">
+          <div className="sticky top-0 z-10 flex h-10 items-center justify-between gap-2 border-b bg-popover px-4">
             <DropdownMenu.Label className="text-sm font-semibold">
               Customize thread info
             </DropdownMenu.Label>

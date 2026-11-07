@@ -69,6 +69,7 @@ try {
       ({ palette, mode, effects, highContrast }) => {
         const root = document.documentElement
         root.dataset.theme = mode
+        root.dataset.highContrast = String(highContrast)
         root.dataset.motion = 'system'
         root.dataset.themeGradients = String(effects)
         root.dataset.themeGlow = effects ? '1' : '0'
@@ -159,7 +160,10 @@ try {
       const fill = luminance(css.backgroundColor)
       return (Math.max(border, fill) + 0.05) / (Math.min(border, fill) + 0.05)
     })
-    assert.ok(fieldContrast >= 3, `${palette} ${mode}: field boundary contrast ${fieldContrast}`)
+    assert.ok(
+      highContrast ? fieldContrast >= 3 : fieldContrast >= 1.5 && fieldContrast < 3,
+      `${palette} ${mode} highContrast=${highContrast}: field boundary contrast ${fieldContrast}`,
+    )
     assert.equal(await style('[data-variant="ghost"]', 'backgroundImage'), 'none')
     assert.equal(await style('[data-size="icon"]', 'backgroundImage'), 'none')
     assert.equal((await style('[data-variant="default"]', 'backgroundImage')) === 'none', !effects)

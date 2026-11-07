@@ -460,9 +460,9 @@ export function TaskProjectPanel({
                 .join(' · ')}
             >
               {repo?.kind === 'scratch' ? (
-                <MessageCircleDashed className="size-8 shrink-0 text-muted-foreground" />
+                <MessageCircleDashed className="size-7 shrink-0 text-muted-foreground" />
               ) : (
-                <ProjectIcon repository={repo} className="size-8 shrink-0 rounded-lg" />
+                <ProjectIcon repository={repo} className="size-7 shrink-0 rounded-lg" />
               )}
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-sm font-semibold text-foreground">
@@ -480,8 +480,8 @@ export function TaskProjectPanel({
             </div>
           )}
           {show('project') && repo && !repo.kind && (
-            <div className="studio-thread-checkout-summary mt-3 min-w-0">
-              <h3 className="mb-1 text-[11px] font-medium text-muted-foreground">
+            <div className="studio-thread-checkout-summary mt-2 min-w-0">
+              <h3 className="sr-only">
                 {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
               </h3>
               <TaskBranchMenu
@@ -505,7 +505,7 @@ export function TaskProjectPanel({
                 {gitSummary}
               </p>
               <p
-                className="studio-project-path mt-1.5 truncate text-[11px] text-muted-foreground"
+                className="studio-project-path mt-1 truncate text-[11px] text-muted-foreground"
                 title={task.existingWorktreePath || repo.path}
               >
                 {task.existingWorktreePath || repo.path}
@@ -753,7 +753,7 @@ export function TaskProjectPanel({
       <>
         {repo && !repo.kind && (
           <div className="studio-project-section border-t border-border/60">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Version control</h3>
+            <h3 className="sr-only">Version control</h3>
             {gitActions}
           </div>
         )}

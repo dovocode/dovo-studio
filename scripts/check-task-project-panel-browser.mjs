@@ -500,7 +500,29 @@ try {
     const popover = await page
       .getByRole('dialog', { name: 'Thread info', exact: true })
       .boundingBox()
-    assert.ok(popover && popover.width <= 376 && popover.width > 0)
+    assert.ok(popover && popover.width <= 320 && popover.width > 0)
+    assert.ok(popover.height <= 480)
+    const infoScroll = info.locator('.studio-thread-info-scroll')
+    const headerBeforeScroll = await info.locator('header').boundingBox()
+    await infoScroll.hover()
+    await page.mouse.wheel(0, 1000)
+    await page.waitForFunction(() => {
+      const viewport = document.querySelector('.studio-thread-info-scroll')
+      return viewport.scrollTop > 0
+    })
+    assert.deepEqual(await info.locator('header').boundingBox(), headerBeforeScroll)
+    await infoScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    assert.ok(
+      await infoScroll.evaluate(
+        (element) => element.scrollHeight - element.clientHeight - element.scrollTop <= 1,
+      ),
+      'All Thread Info content remains reachable within its own scroll area',
+    )
+    await infoScroll.evaluate((element) => {
+      element.scrollTop = 0
+    })
     const frame = await page.locator('[data-project-panel-frame]').boundingBox()
     const inset = 32
     assert.ok(
