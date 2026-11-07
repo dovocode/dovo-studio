@@ -1078,6 +1078,31 @@ it('detects native window visibility changes even when the platform emits no win
   }
 })
 
+it.each(['watchdog', 'close'] as const)(
+  'stops visibility tracking after the owner is destroyed during update shutdown (%s)',
+  async (path) => {
+    vi.useFakeTimers()
+    const call = handler()
+    await call(event, workspaceShow)
+    await call(event, { action: 'watch-frames', key: 'shared', enabled: true })
+    vi.spyOn(mocks.window, 'isDestroyed').mockReturnValue(true)
+    const minimized = vi.spyOn(mocks.window, 'isMinimized').mockImplementation(() => {
+      throw new TypeError('Object has been destroyed')
+    })
+    const visible = vi.spyOn(mocks.window, 'isVisible').mockImplementation(() => {
+      throw new TypeError('Object has been destroyed')
+    })
+    mocks.contents.send.mockClear()
+    const closed = mocks.window.once.mock.calls.find(([name]) => name === 'closed')![1]
+    const finish = path === 'watchdog' ? () => vi.advanceTimersByTime(250) : closed
+    expect(() => finish()).not.toThrow()
+    expect(minimized).not.toHaveBeenCalled()
+    expect(visible).not.toHaveBeenCalled()
+    expect(mocks.contents.send).not.toHaveBeenCalled()
+    expect(mocks.contents.endFrameSubscription).toHaveBeenCalledTimes(path === 'close' ? 1 : 0)
+  },
+)
+
 it('cleans up a failed frame subscription', async () => {
   const call = handler()
   await call(event, {

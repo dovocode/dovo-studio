@@ -295,7 +295,11 @@ export function registerBrowser(
   const awakeRequests = new Map<string, object>()
   let disposed = false
   const pageVisible = (entry: Entry) =>
-    entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
+    // Child WebContents can outlive their native window during update shutdown.
+    // Undefined also retires the visibility watchdog for this page.
+    entry.window.isDestroyed()
+      ? undefined
+      : entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
   const visibility = createBrowserVisibility((contents) => {
     const entry = entriesByContents.get(contents)
     return entry ? pageVisible(entry) : undefined
