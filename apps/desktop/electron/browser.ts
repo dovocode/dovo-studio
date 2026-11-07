@@ -247,6 +247,9 @@ export function registerBrowser(
   // Renderer-owned metadata also covers unloaded and remote tabs during a window handoff.
   const workspaceStates = new Map<number, BrowserWorkspaceState>()
   const detachedWindows = new Map<number, BrowserWindow>()
+  // A detached workspace returns even if its source window was closed or reloaded.
+  const detachedWorkspaces = new WeakSet<BrowserWindow>()
+  const detachedPinnedTabs = new WeakMap<BrowserWindow, { key: string; source: BrowserWindow }>()
   const workspaceWaiters = new Map<number, Set<() => void>>()
   const adoptionWaiters = new Map<number, Set<{ keys: Set<string>; done: () => void }>>()
   const persistedKeys = new Map<number, Set<string>>()
@@ -1794,6 +1797,7 @@ export function registerBrowser(
         if (window.isDestroyed()) return
         moveWorkspace(window, target, command)
         detachedWindows.set(window.id, target)
+        detachedWorkspaces.add(target)
       }
       return
     }
@@ -1926,6 +1930,8 @@ export function registerBrowser(
         tabs: destination.tabs.filter(({ tab }) => !emptyPlaceholder(tab)),
         activeId: command.tab.id,
       })
+      if (command.targetWindowId === undefined && command.tab.pinned)
+        detachedPinnedTabs.set(target, { key: command.key, source: window })
       const sourceState = workspaceStates.get(window.id)
       if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => key !== command.key)
       if (target.isMinimized()) target.restore()
@@ -2424,8 +2430,10 @@ export function registerBrowser(
     if (command.action === 'devtools') entry.view.webContents.openDevTools({ mode: 'detach' })
   })
   return {
-    /** Called before an extra window closes, while its native views are still alive. */
+    /** Detached workspaces return all tabs; pinned-tab windows return only their original tab. */
     returnWindowTabs: (window: BrowserWindow) => {
+      const pinned = detachedPinnedTabs.get(window)
+      if (!detachedWorkspaces.has(window) && !pinned) return Promise.resolve()
       const existing = returnOperations.get(window.id)
       if (existing) return existing
       const operation = (async () => {
@@ -2435,11 +2443,22 @@ export function registerBrowser(
           pendingReturns.delete(window.id)
           return
         }
-        if (!workspaceState(window).tabs.some(({ tab }) => !emptyPlaceholder(tab))) return
-        const target = await browserWindows?.main?.()
+        const returningState = () => {
+          const state = workspaceState(window)
+          return pinned
+            ? {
+                tabs: state.tabs.filter(({ key }) => key === pinned.key),
+                activeId: state.tabs.find(({ key }) => key === pinned.key)?.tab.id ?? '',
+              }
+            : state
+        }
+        if (!returningState().tabs.some(({ tab }) => !emptyPlaceholder(tab))) return
+        const target =
+          pinned && !pinned.source.isDestroyed() ? pinned.source : await browserWindows?.main?.()
         if (!target) throw new Error('The main window is unavailable. Browser tabs were kept here.')
         await waitForWorkspace(target)
-        const state = workspaceState(window)
+        const state = returningState()
+        if (!state.tabs.length) return
         moveWorkspace(window, target, state)
         if (detachedWindows.get(target.id) === window) detachedWindows.delete(target.id)
         const keys = new Set(state.tabs.map(({ key }) => key))

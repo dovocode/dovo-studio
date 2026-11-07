@@ -103,7 +103,7 @@ try {
       }
       assert.equal(
         await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
-        'rgb(22, 24, 28)',
+        'rgb(12, 12, 14)',
       )
       if (route !== '/docs/') {
         const mobile = page.getByRole('region', { name: 'Mobile availability' })

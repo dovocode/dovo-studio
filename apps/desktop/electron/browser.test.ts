@@ -3356,16 +3356,164 @@ it('detaches and returns pinned, sleeping and remote tabs without replacing the 
   expect(mocks.contents.loadURL).toHaveBeenCalledTimes(loads)
 })
 
-it('waits for the main workspace to restore before returning an extra window', async () => {
+it.each(['web', 'remote'] as const)(
+  'closes independent %s browser tabs without returning them',
+  async (kind) => {
+    const target = workspaceTarget(2)
+    const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(
+      async () => mocks.window as never,
+    )
+    const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => target as never,
+      list: () => [target as never],
+      main,
+    })
+    registrations.push(bridge)
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    mocks.windowFor = target
+    if (kind === 'web') await call(event, workspaceShow)
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      activeId: 'independent',
+      tabs: [
+        {
+          key: 'shared',
+          tab: {
+            id: 'independent',
+            url: 'http://lan.local/',
+            title: 'Independent',
+            kind,
+            profileId: 'default',
+            ...(kind === 'remote' ? { runtimeId: 'server' } : {}),
+          },
+        },
+      ],
+    })
+    await bridge.returnWindowTabs(target as never)
+    expect(main).not.toHaveBeenCalled()
+    expect(mocks.media.moveTab).not.toHaveBeenCalled()
+    expect(mocks.window.webContents.send).not.toHaveBeenCalled()
+    if (kind === 'web') {
+      target.once.mock.calls.find(([name]) => name === 'closed')![1]()
+    }
+    expect(mocks.contents.close).toHaveBeenCalledTimes(kind === 'web' ? 1 : 0)
+  },
+)
+
+it.each([
+  ['web', false],
+  ['remote', false],
+  ['web', true],
+] as const)(
+  'returns only the detached pinned %s tab (source closed: %s)',
+  async (kind, sourceClosed) => {
+    const source = workspaceTarget(3)
+    const target = workspaceTarget(2)
+    const main = vi.fn<() => Promise<import('electron').BrowserWindow>>(
+      async () => mocks.window as never,
+    )
+    const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => {
+        mocks.windowFor = target
+        await call(event, placeholderState)
+        mocks.windowFor = source
+        return target as never
+      },
+      list: () => [target as never],
+      main,
+    })
+    registrations.push(bridge)
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    await call(event, placeholderState)
+    mocks.windowFor = source
+    const pinned = {
+      key: 'shared',
+      tab: {
+        id: 'pinned',
+        url: 'http://lan.local/',
+        title: 'Pinned',
+        kind,
+        profileId: 'default',
+        pinned: true,
+        homeUrl: 'http://lan.local/',
+        ...(kind === 'remote' ? { runtimeId: 'server' } : {}),
+      },
+    }
+    const other = {
+      key: 'other',
+      tab: {
+        id: 'other',
+        url: 'http://vpn.local/',
+        title: 'Other',
+        kind: 'remote',
+        profileId: 'work',
+        runtimeId: 'server',
+      },
+    }
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [pinned, other],
+      activeId: 'pinned',
+    })
+    if (kind === 'web') await call(event, { ...workspaceShow, url: pinned.tab.url })
+    await call(event, { action: 'move-tab', key: pinned.key, tab: pinned.tab })
+    mocks.windowFor = target
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: [pinned, { ...other, key: 'extra', tab: { ...other.tab, id: 'extra' } }],
+      activeId: 'extra',
+    })
+    vi.spyOn(source, 'isDestroyed').mockReturnValue(sourceClosed)
+    const destination = sourceClosed ? mocks.window : source
+    const returning = bridge.returnWindowTabs(target as never)
+    await vi.waitFor(() =>
+      expect(destination.webContents.send).toHaveBeenCalledWith('browser:focus-workspace'),
+    )
+    mocks.windowFor = sourceClosed ? undefined : source
+    await call(event, {
+      action: 'sync-tabs',
+      key: 'workspace',
+      tabs: sourceClosed ? [pinned] : [other, pinned],
+      activeId: 'pinned',
+      persisted: true,
+    })
+    await returning
+    const status = await call(event, {
+      action: 'status',
+      key: 'other',
+      tabCount: sourceClosed ? 1 : 2,
+    })
+    expect(status).toHaveProperty('movedTabs', [
+      expect.objectContaining({
+        key: pinned.key,
+        tab: expect.objectContaining({ id: 'pinned', pinned: true, homeUrl: pinned.tab.homeUrl }),
+      }),
+    ])
+    expect(main).toHaveBeenCalledTimes(sourceClosed ? 1 : 0)
+    expect(mocks.contents.close).not.toHaveBeenCalled()
+  },
+)
+
+it('returns a detached workspace after its source closed and the main workspace must restore', async () => {
   const target = workspaceTarget(2)
+  const source = workspaceTarget(3)
   const bridge = registerBrowser('/app/index.html', undefined, undefined, {
-    create: async () => target as never,
+    create: async () => {
+      mocks.windowFor = target
+      await call(event, placeholderState)
+      mocks.windowFor = source
+      return target as never
+    },
     list: () => [target as never],
     main: async () => mocks.window as never,
   })
   registrations.push(bridge)
   const call = mocks.handle.mock.calls.at(-1)![1]
-  mocks.windowFor = target
+  mocks.windowFor = source
+  await call(event, workspaceShow)
   const tab = {
     id: 'remote',
     url: 'http://lan.local/',
@@ -3376,11 +3524,13 @@ it('waits for the main workspace to restore before returning an extra window', a
     pinned: true,
   }
   await call(event, {
-    action: 'sync-tabs',
+    action: 'detach-tabs',
     key: 'workspace',
     activeId: 'remote',
     tabs: [{ key: 'remote-key', tab }],
   })
+  source.once.mock.calls.find(([name]) => name === 'closed')![1]()
+  mocks.windowFor = target
   const returning = bridge.returnWindowTabs(target as never)
   await vi.waitFor(() =>
     expect(mocks.window.webContents.send).toHaveBeenCalledWith('browser:focus-workspace'),
@@ -3416,6 +3566,10 @@ it('preserves the detached workspace if returning would exceed the main tab limi
   })
   registrations.push(bridge)
   const call = mocks.handle.mock.calls.at(-1)![1]
+  mocks.windowFor = target
+  await call(event, placeholderState)
+  mocks.windowFor = undefined
+  await call(event, { ...placeholderState, action: 'detach-tabs' })
   const tabs = Array.from({ length: 100 }, (_, i) => ({
     key: `main-${i}`,
     tab: {

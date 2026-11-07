@@ -4012,6 +4012,17 @@ try {
     false,
     'Moving retains the native page',
   )
+  await compactSidebar.getByRole('button', { name: /^Website 2 Local/ }).click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Detach to new window', exact: true }).click()
+  await controlsPage.waitForFunction(() => window.transferredTab?.tab.id === 'compact-2')
+  assert.equal(await controlsPage.evaluate(() => window.transferredTab.tab.pinned), true)
+  assert.equal(await controlsPage.evaluate(() => window.transferredTab.targetWindowId), undefined)
+  await controlsPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
+        (tab) => tab.id === 'compact-2',
+      ),
+  )
   await compactSidebar.getByRole('button', { name: /^Website 1 Local/ }).click({ button: 'right' })
   await controlsPage.getByRole('menuitem', { name: 'Move to another window', exact: false }).hover()
   await controlsPage.getByRole('menuitem', { name: 'Other browser window', exact: true }).click()

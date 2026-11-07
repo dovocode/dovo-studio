@@ -351,7 +351,7 @@ export function BrowserTabRow({
               <ContextMenu.Separator className="my-1 h-px bg-border" />
               <ContextMenu.Item className={menuItem} disabled={busy} onSelect={() => onMove()}>
                 <ExternalLink size={13} />
-                Move to new window
+                {tab.pinned ? 'Detach to new window' : 'Move to new window'}
               </ContextMenu.Item>
               {windows.length > 0 && (
                 <ContextMenu.Sub>
