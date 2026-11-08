@@ -190,15 +190,18 @@ try {
   )
   await page.evaluate(() => window.changeSettings())
   await page.waitForFunction(() =>
-    window.workspaceContext.syncError?.includes('Changes are waiting to sync'),
+    window.calls.some((call) => call.path === '/api/agents/settings/sync'),
+  )
+  assert.match(
+    await page.evaluate(() => window.workspaceContext.syncError),
+    /Workspace conflict/,
+    'Shared settings must sync while unrelated workspace edits await recovery',
   )
   await page.evaluate(() => {
     window.failWorkspace = false
   })
   await page.evaluate(() => window.workspaceContext.retrySync())
-  await page.waitForFunction(() =>
-    window.calls.some((call) => call.path === '/api/agents/settings/sync'),
-  )
+  await page.waitForFunction(() => !window.workspaceContext.syncError)
 
   // A legacy receipt runtime automatically keeps competing host values while
   // applying independent fields and durably retaining the superseded intent.

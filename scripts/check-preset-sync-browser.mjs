@@ -84,6 +84,15 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Pro
       ...(mobile
         ? [
             {
+              path: 'expo-crypto',
+              contents: `let id=0;export const randomUUID=()=>'00000000-0000-4000-8000-'+String(++id).padStart(12,'0');`,
+            },
+            {
+              path: './shared-state-storage',
+              importer: mobileImporter,
+              contents: `export {mobileSharedStateStorage,mobileThreadStateStorage} from '${root}scripts/browser/mobile-state-storage.mjs';`,
+            },
+            {
               path: './peer-native',
               importer: root + 'apps/mobile/src/runtime/connection/peer-transport.ts',
               contents:
@@ -146,7 +155,18 @@ try {
         kind === 'presets' ? 'presets/apply' : 'settings/sync',
       )
     const waitError = (message) =>
-      page.waitForFunction((message) => window.syncError?.includes(message), message)
+      page
+        .waitForFunction((message) => window.syncError?.includes(message), message)
+        .catch(async (error) => {
+          console.error(
+            await page.evaluate(() => ({
+              error: window.syncError,
+              calls: window.calls.slice(-12),
+              entries: window.entries.map((e) => ({ id: e.profile.id, connected: e.connected })),
+            })),
+          )
+          throw error
+        })
     const waitSynced = () => page.waitForFunction(() => !window.syncError)
 
     for (const kind of ['presets', 'settings']) {

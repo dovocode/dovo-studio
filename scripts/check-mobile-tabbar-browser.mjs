@@ -30,6 +30,11 @@ for (const name of ['settings', 'issues', 'artifacts'])
 
 const stubs = [
   {
+    path: '../runtime/preferences/storage-notice',
+    importer: workbench,
+    contents: 'export const PreferenceStorageNotice=()=>null;',
+  },
+  {
     path: 'react-native',
     contents: `
 export const Platform={get OS(){return window.fixture?.platform??'ios'}};

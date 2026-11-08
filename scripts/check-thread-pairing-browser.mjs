@@ -5,6 +5,9 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const controls = `
+export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{ListFooterComponent}</div>;
+export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
+
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';
 export const Button=({children,onClick})=><button onClick={onClick}>{children}</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;

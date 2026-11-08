@@ -40,7 +40,10 @@ export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `export * from '${mobile}runtime/preferences/app-preferences.ts';`
 const stubs = [
-  { path: 'expo-crypto', contents: 'export const randomUUID=()=>crypto.randomUUID();' },
+  {
+    path: 'expo-crypto',
+    contents: `let id=0;export const randomUUID=()=>'00000000-0000-4000-8000-'+String(++id).padStart(12,'0');`,
+  },
   {
     path: './shared-state-storage',
     importer: mobile + 'runtime/connection/provider.tsx',

@@ -1435,7 +1435,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [registryLoaded, storageLock, persistRegistryEffect, beforeReplace])
   useEffect(() => {
-    if (!registryLoaded || recovering || !profile || !appActive) return
+    // Restore the selected computer's cache before deciding whether HTTP fallback is needed.
+    if (!ready || recovering || !profile || !appActive) return
     let stopped = false
     let wakeFallback = () => {}
     let connecting = true
@@ -1514,7 +1515,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       live.stop()
       void polling.stop()
     }
-  }, [registryLoaded, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
+  }, [ready, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
   useEffect(() => {
     if (!ready || !appActive || computerRefresh === 'manual') return
     const polling = startPolling(

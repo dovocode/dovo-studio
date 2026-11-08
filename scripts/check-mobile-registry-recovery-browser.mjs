@@ -90,6 +90,15 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
   },
   [
     {
+      path: 'expo-crypto',
+      contents: `let id=0;export const randomUUID=()=>'00000000-0000-4000-8000-'+String(++id).padStart(12,'0');`,
+    },
+    {
+      path: './shared-state-storage',
+      importer,
+      contents: `export {mobileSharedStateStorage,mobileThreadStateStorage} from '${root}scripts/browser/mobile-state-storage.mjs';`,
+    },
+    {
       path: './peer-native',
       importer: root + 'apps/mobile/src/runtime/connection/peer-transport.ts',
       contents: `export const openPeerTunnel=async(config,onClosed,abort)=>{window.peerOpens.push(config);let live=true;const close=()=>{if(!live)return;live=false;window.peerCloses++;onClosed()};abort.addEventListener('abort',close,{once:true});return {address:'http://127.0.0.1:44555',alive:()=>live,route:()=>live?'direct':undefined,close}};`,

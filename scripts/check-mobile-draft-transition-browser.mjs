@@ -40,6 +40,7 @@ const mocks = {
     'export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;',
   '../../ui/controls/icon': 'export const Icon=()=>null;',
   'react-native': `
+    export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{ListFooterComponent}</div>;
     export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
     export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</div>;
     export const ScrollView=({children})=><div>{children}</div>;

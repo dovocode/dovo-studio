@@ -172,7 +172,6 @@ it('uses the legacy endpoint for older runtimes and recovers lost-response error
   expect(request).toHaveBeenCalledTimes(1)
   expect(h.error).toHaveBeenLastCalledWith(expect.stringContaining('Response lost'))
   h.synchronization.update([target('legacy', [edit], false)], true)
-  h.synchronization.retry()
   await flush()
   expect(h.error).toHaveBeenLastCalledWith('')
   expect(request).toHaveBeenCalledTimes(1)
@@ -187,6 +186,18 @@ it('uses the legacy endpoint for older runtimes and recovers lost-response error
     { shared: [next] },
     expect.any(AbortSignal),
   )
+})
+
+it('reports failures from every connected computer', async () => {
+  vi.useFakeTimers()
+  const h = harness([entry('global', 1, 'share')], async (profile) => {
+    throw new Error(`Failed ${profile.id}`)
+  })
+  h.synchronization.update([target('one', [], false), target('two', [], false)], true)
+  await flush()
+  const message = h.error.mock.lastCall?.[0]
+  expect(message).toContain('Failed http://one.local:51464')
+  expect(message).toContain('Failed http://two.local:51464')
 })
 
 it('never sends unpersisted state and recovers a storage initialization failure on refresh', async () => {

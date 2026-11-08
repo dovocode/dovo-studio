@@ -188,10 +188,14 @@ export class SharedStateSynchronization {
       if (!target.connected || !target.snapshot?.settingsScopesSupported) continue
       const previous = this.sessions.get(id)
       if (previous) {
-        previous.known = mergeSharedSettings(
+        const known = mergeSharedSettings(
           previous.known,
           target.snapshot.defaults?.scopedSettings?.shared ?? [],
         )
+        if (JSON.stringify(known) !== JSON.stringify(previous.known)) {
+          previous.known = known
+          previous.worker?.retry()
+        }
         continue
       }
       const session: Session = {
@@ -316,7 +320,11 @@ export class SharedStateSynchronization {
   private report() {
     if (!this.disposed)
       this.options.error(
-        this.fatal || [...this.sessions.values()].find((session) => session.error)?.error || '',
+        this.fatal ||
+          [...this.sessions.values()]
+            .map((session) => session.error)
+            .filter(Boolean)
+            .join('\n'),
       )
   }
   retry() {
