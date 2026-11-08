@@ -878,3 +878,64 @@ it('negotiates settled list limits and keeps a simultaneous complete-list consum
   first()
   expect(runtimeSnapshotPath(connection)).not.toContain('settled=')
 })
+
+it('replaces a healthy stream for a new list limit without waking HTTP fallback, and still falls back on outage', async () => {
+  const address = 'http://settled-replacement.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const stopLimited = watchRuntimeSettled(connection, 40)
+  stopped.push(stopLimited)
+  const { Socket, frame, receive, wake, live, clock } = await stalledSocketFixture(address, 5)
+  const tickets = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.map(([url]) => requestUrl(url))
+      .filter((url) => url.pathname === '/api/sync/ticket')
+  expect(tickets().map((url) => url.searchParams.get('settled'))).toEqual(['40'])
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  expect(receive).toHaveBeenCalledTimes(1)
+  wake.mockClear()
+
+  const stopAll = watchRuntimeSettled(connection)
+  stopped.push(stopAll)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(2))
+  // One new ticket for the complete list; no fallback wake while it downloads.
+  expect(tickets().map((url) => url.searchParams.get('settled'))).toEqual(['40', null])
+  expect(wake).not.toHaveBeenCalled()
+  expect(live.online()).toBe(true)
+  expect(runtimeSyncOnline(connection)).toBe(true)
+  expect(first.readyState).toBe(3)
+
+  const second = Socket.instances[1]!
+  second.readyState = 1
+  second.onopen?.()
+  second.onmessage?.({ data: frame })
+  expect(receive).toHaveBeenCalledTimes(2)
+  expect(live.online()).toBe(true)
+  expect(wake).not.toHaveBeenCalled()
+
+  // A replacement that fails before its baseline is an outage: fallback wakes at once.
+  stopAll()
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(3))
+  expect(live.online()).toBe(true)
+  Socket.instances[2]!.onerror?.()
+  expect(live.online()).toBe(false)
+  expect(wake).toHaveBeenCalledOnce()
+
+  // A replacement that never delivers a baseline stops reporting online after the deadline.
+  live.retry()
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(4))
+  const fourth = Socket.instances[3]!
+  fourth.readyState = 1
+  fourth.onopen?.()
+  fourth.onmessage?.({ data: frame })
+  expect(live.online()).toBe(true)
+  const again = watchRuntimeSettled(connection)
+  stopped.push(again)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(5))
+  expect(live.online()).toBe(true)
+  clock.mockReturnValue(1000 + 10000)
+  expect(live.online()).toBe(false)
+})

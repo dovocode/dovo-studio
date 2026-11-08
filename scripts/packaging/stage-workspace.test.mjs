@@ -13,7 +13,13 @@ await test('desktop staging keeps host dependencies and runtime outputs without 
     dependencies: { ws: '^8.0.0', 'electron-updater': '^6.0.0', react: '^19.0.0' },
   }
   try {
-    for (const relative of ['apps/api/dist', 'apps/desktop', 'packages', 'scripts', 'patches'])
+    for (const relative of [
+      'apps/api/dist',
+      'apps/desktop',
+      'packages/durable-connections/dist',
+      'scripts',
+      'patches',
+    ])
       await mkdir(join(root, relative), { recursive: true })
     await writeFile(join(root, 'package.json'), '{"version":"0.0.7"}')
     await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages: [apps/*, packages/*]')
@@ -21,6 +27,14 @@ await test('desktop staging keeps host dependencies and runtime outputs without 
     await writeFile(join(root, 'scripts/prepare-pty.mjs'), '')
     await writeFile(join(root, 'apps/api/package.json'), '{"name":"@dovo/api"}')
     await writeFile(join(root, 'apps/api/dist/index.js'), 'export const ready = true')
+    await writeFile(
+      join(root, 'packages/durable-connections/package.json'),
+      '{"name":"@dovo/durable-connections"}',
+    )
+    await writeFile(
+      join(root, 'packages/durable-connections/dist/index.js'),
+      'export const protocol = 1',
+    )
     const file = join(root, 'apps/desktop/package.json')
     await writeFile(file, JSON.stringify(desktop))
     const target = join(directory, 'staged')
@@ -34,6 +48,10 @@ await test('desktop staging keeps host dependencies and runtime outputs without 
     assert.equal(
       await readFile(join(target, 'apps/api/dist/index.js'), 'utf8'),
       'export const ready = true',
+    )
+    assert.equal(
+      await readFile(join(target, 'packages/durable-connections/dist/index.js'), 'utf8'),
+      'export const protocol = 1',
     )
   } finally {
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })

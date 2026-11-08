@@ -1,13 +1,16 @@
+import { mobileSharedStateStorage, mobileThreadStateStorage } from './shared-state-storage'
+import { randomUUID } from 'expo-crypto'
 import {
   createRuntimeClient,
+  retainRuntimeConnections,
   mergeAccountInternetConnection,
   isPeerAddress,
   type PeerConfig,
   type PeerRelayProvider,
   runtimeHasCustomName,
   mergeSharedSettings,
-  pendingSharedSettings,
-  sharedSettingsSyncSchema,
+  SharedStateSynchronization,
+  ThreadStateSynchronization,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
   runtimeSnapshotPath,
@@ -21,7 +24,6 @@ import {
   recoverRuntimePairings,
   type PairingProof,
   snapshotSchema,
-  runtimeSnapshotCacheSchema,
   responses,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
@@ -41,7 +43,6 @@ import {
   type RuntimeRegistry,
   type RuntimeProfile,
   type RuntimeOverview,
-  type RuntimeReadCache,
   type WorkspacePatchResult,
   type Task,
   type Repository,
@@ -92,6 +93,12 @@ import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Result, Schema, Semaphore } from 'effect'
 import { mobileReadCache } from './read-cache'
+import {
+  hydrateOfflineOverview,
+  settleMutationEffect,
+  startupReadCache,
+  type StartupReadCache,
+} from './offline-startup'
 import {
   clientScopeKey,
   startPolling,
@@ -193,6 +200,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
+  const sharedStateSync = useRef<SharedStateSynchronization | null>(null)
+  const threadStateSync = useRef<ThreadStateSynchronization | null>(null)
   const peerVersion = useSyncExternalStore(
     subscribePeerConnections,
     peerConnectionVersion,
@@ -211,8 +220,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       // Handover invalidates pending negotiation as well as open native sockets.
       // Abort the old sync ticket and reconnect now, rather than refreshing an
       // OPEN socket or waiting for a ticket issued on the previous network.
-      if (selected && !entryRef.current[selected.id]?.unauthorized)
+      if (selected && !entryRef.current[selected.id]?.unauthorized) {
         retryRuntimeSync(selected.connection)
+        sharedStateSync.current?.retry()
+        threadStateSync.current?.retry()
+      }
     }
     const network = Network.addNetworkStateListener((state) => {
       if (disposed) return
@@ -296,7 +308,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       {
         address: string
         token: string
-        cache: RuntimeReadCache
+        cache: StartupReadCache
       }
     >(),
   )
@@ -329,7 +341,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       entry = {
         address: profile.connection.address,
         token: profile.connection.token,
-        cache: mobileReadCache(profile.connection),
+        cache: startupReadCache(mobileReadCache(profile.connection)),
       }
       caches.current.set(profile.id, entry)
     }
@@ -457,7 +469,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               if (profile.connection.internet)
                 preparePeerConnection(profile.connection.internet.peer)
             }
-            setRegistry(next)
+            setRegistry(retainRuntimeConnections(current.current, next))
             setStorageError('')
           }),
         ),
@@ -745,6 +757,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const refreshEffect = useCallback(() => {
     return mobileWorkflow(function* () {
       if (profile) {
+        sharedStateSync.current?.retry()
+        threadStateSync.current?.retry()
         retryRuntimeSync(profile.connection)
         yield* refreshProfileEffect(profile)
       }
@@ -1219,25 +1233,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const callEffect = useCallback<CallEffect>(
     (path, input, schema, method) =>
       readEffect(path, input, schema, method).pipe(
-        // The mutation already committed. A failed refresh is reported in overview state.
         Effect.tap(() =>
-          profile
-            ? refreshProfileEffect(profile).pipe(Effect.catch(() => Effect.void))
-            : Effect.void,
-        ),
-        Effect.tap(() =>
-          profile
-            ? persistEntryEffect(profile.id).pipe(
-                Effect.catch((error) =>
-                  Effect.sync(() =>
-                    setStorageError(`Could not save the offline cache. ${error.message}`),
-                  ),
-                ),
-              )
-            : Effect.void,
+          profile ? settleMutationEffect(profile, refreshProfileEffect) : Effect.void,
         ),
       ),
-    [readEffect, profile, refreshProfileEffect, persistEntryEffect],
+    [readEffect, profile, refreshProfileEffect],
   )
   useEffect(() => {
     if (!ready || !appActive) return
@@ -1267,36 +1267,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         if (profile.connection.peer) preparePeerConnection(profile.connection.peer)
         if (profile.connection.internet) preparePeerConnection(profile.connection.internet.peer)
       }
-      setRegistry(saved)
+      setRegistry(retainRuntimeConnections(current.current, saved))
       setRegistryLoaded(true)
       setStorageError('')
       yield* Effect.forEach(
         saved.profiles,
         (profile) =>
           mobileWorkflow(function* () {
-            const cached = yield* cacheFor(profile).readEffect(
-              'snapshot',
-              runtimeSnapshotCacheSchema,
-            )
+            // The selected computer connects in parallel; its live state needs no offline copy.
+            if (entryRef.current[profile.id]?.connected) return
+            const cached = yield* cacheFor(profile).startupSnapshotEffect()
             if (!cached || disposed) return
-            updateEntry(profile, (entry) => ({
-              ...entry,
-              snapshot: {
-                ...cached.value.snapshot,
-                approvals: [],
-                questions: [],
-                terminals: [],
-                pendingDevices: [],
-              },
-              lastSeen: cached.value.lastSeen,
-              pulls: cached.value.pulls
-                ? {
-                    ...cached.value.pulls,
-                    partial: true,
-                  }
-                : null,
-              connected: false,
-            }))
+            updateEntry(profile, (entry) => hydrateOfflineOverview(entry, cached.value))
           }).pipe(
             Effect.catch((error) =>
               Effect.sync(() => {
@@ -1327,8 +1309,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       void commands.stop()
     }
   }, [cacheFor, updateEntry, persistRegistryEffect, restoreAttempt])
+  // Pairing recovery and the selected computer's connection need only the saved registry.
+  // Offline caches keep hydrating meanwhile and never replace newer network state.
   useEffect(() => {
-    if (!ready) return
+    if (!registryLoaded) return
     const commands = clientTaskScope()
     const recover = storageLock
       .withPermits(1)(
@@ -1351,9 +1335,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       subscription.remove()
       void commands.stop()
     }
-  }, [ready, storageLock, persistRegistryEffect, beforeReplace])
+  }, [registryLoaded, storageLock, persistRegistryEffect, beforeReplace])
   useEffect(() => {
-    if (!ready || recovering || !profile || !appActive) return
+    if (!registryLoaded || recovering || !profile || !appActive) return
     let stopped = false
     let wakeFallback = () => {}
     const live = startRuntimeSync(profile.connection, {
@@ -1415,7 +1399,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       live.stop()
       void polling.stop()
     }
-  }, [ready, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
+  }, [registryLoaded, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
   useEffect(() => {
     if (!ready || !appActive || computerRefresh === 'manual') return
     const polling = startPolling(
@@ -1525,8 +1509,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     globalModelPreferencesUpdatedAt,
   } = useMobilePreferences()
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
-  const settingsRequests = useRef(new Set<string>())
-  const failedSettingsRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
+  const [threadSyncError, setThreadSyncError] = useApplicationState('')
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   useEffect(() => {
@@ -1607,76 +1590,63 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     readRuntime,
     refreshProfile,
   ])
+  const refreshSharedProfile = useRef(refreshProfile)
+  refreshSharedProfile.current = refreshProfile
+  const sharedStateInput = useRef({ targets: overviews, ready, appActive })
+  sharedStateInput.current = { targets: overviews, ready, appActive }
   useEffect(() => {
-    const publishError = () =>
-      setSettingsSyncError(Array.from(failedSettingsRequests.current.values()).at(-1)?.error ?? '')
-    for (const id of failedSettingsRequests.current.keys())
-      if (!overviews.some((entry) => entry.profile.id === id))
-        failedSettingsRequests.current.delete(id)
-    const shared = mergeSharedSettings(
-      sharedScopedSettings,
-      ...overviews
-        .filter((entry) => entry.connected)
-        .map((entry) => entry.snapshot?.defaults?.scopedSettings?.shared ?? []),
-    )
-    if (JSON.stringify(shared) !== JSON.stringify(sharedScopedSettings))
-      updateMobilePreferences({ sharedScopedSettings: shared })
-    for (const entry of overviews) {
-      if (!entry.connected || !entry.snapshot?.settingsScopesSupported) {
-        // Older runtimes keep their settings until upgraded; never send unsupported writes.
-        failedSettingsRequests.current.delete(entry.profile.id)
-        continue
-      }
-      const pending = pendingSharedSettings(
-        shared,
-        entry.snapshot.defaults?.scopedSettings?.shared ?? [],
+    const request = (profile: RuntimeProfile, path: string, input: unknown, signal: AbortSignal) =>
+      runClientEffect(
+        createRuntimeClient(profile.connection).requestEffect(path, input, Schema.Unknown, {
+          method: 'POST',
+          timeoutMs: 15000,
+        }),
+        signal,
       )
-      if (!pending.length) {
-        failedSettingsRequests.current.delete(entry.profile.id)
-        continue
-      }
-      const fingerprint = JSON.stringify(pending)
-      if (
-        settingsRequests.current.has(entry.profile.id) ||
-        failedSettingsRequests.current.get(entry.profile.id)?.fingerprint === fingerprint
-      )
-        continue
-      settingsRequests.current.add(entry.profile.id)
-      void readRuntime(
-        entry.profile,
-        '/api/agents/settings/sync',
-        { shared: pending },
-        sharedSettingsSyncSchema,
-      )
-        .then((result) => {
-          failedSettingsRequests.current.delete(entry.profile.id)
-          publishError()
-          updateMobilePreferences({
-            sharedScopedSettings: mergeSharedSettings(
-              readMobilePreferences().sharedScopedSettings,
-              shared,
-              result.shared,
-            ),
-          })
-          return refreshProfile(entry.profile)
-        })
-        .catch((error: unknown) => {
-          if (
-            current.current.profiles.some((profile) =>
-              sameRuntimeConnection(profile.connection, entry.profile.connection),
-            ) &&
-            entryRef.current[entry.profile.id]?.connected
-          )
-            failedSettingsRequests.current.set(entry.profile.id, {
-              fingerprint,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          publishError()
-        })
-        .finally(() => settingsRequests.current.delete(entry.profile.id))
+    const synchronization = new SharedStateSynchronization({
+      storage: mobileSharedStateStorage,
+      createReplicaId: () => `app:${randomUUID()}`,
+      readShared: () => readMobilePreferences().sharedScopedSettings,
+      publish: (shared) =>
+        updateMobilePreferences({
+          sharedScopedSettings: mergeSharedSettings(
+            readMobilePreferences().sharedScopedSettings,
+            shared,
+          ),
+        }),
+      error: setSettingsSyncError,
+      intervalMs:
+        computerRefresh === 'manual' ? null : computerRefresh === 'reduced' ? 120000 : 30000,
+      request,
+      refreshed: (profile) => refreshSharedProfile.current(profile),
+    })
+    const threads = new ThreadStateSynchronization({
+      storage: mobileThreadStateStorage,
+      createReplicaId: () => `app:${randomUUID()}`,
+      request,
+      refreshed: (profile) => refreshSharedProfile.current(profile),
+      error: setThreadSyncError,
+      intervalMs:
+        computerRefresh === 'manual' ? null : computerRefresh === 'reduced' ? 120000 : 30000,
+    })
+    threadStateSync.current = threads
+    sharedStateSync.current = synchronization
+    const input = sharedStateInput.current
+    synchronization.update(input.targets, input.ready && input.appActive)
+    threads.update(input.targets, input.ready && input.appActive)
+    return () => {
+      if (sharedStateSync.current === synchronization) sharedStateSync.current = null
+      if (threadStateSync.current === threads) threadStateSync.current = null
+      void threads.stop().catch((error) => console.error('Thread state cleanup failed', error))
+      void synchronization
+        .stop()
+        .catch((error) => console.error('Shared state cleanup failed', error))
     }
-    publishError()
-  }, [sharedScopedSettings, overviews, readRuntime, refreshProfile])
+  }, [computerRefresh, setSettingsSyncError])
+  useEffect(() => {
+    sharedStateSync.current?.update(overviews, ready && appActive)
+    threadStateSync.current?.update(overviews, ready && appActive)
+  }, [overviews, sharedScopedSettings, ready, appActive])
   const pendingMessages = useCallback(
     (task: Task) => (connection ? mutations.pendingMessages(connection, task) : []),
     [connection, mutations],
@@ -1690,12 +1660,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [mutations],
   )
   const retryMutations = useCallback(
-    (owner: RuntimeProfile, confirmRenewalReplay = false) =>
-      runClientEffect(mutations.recoverEffect(owner.connection, true, confirmRenewalReplay)),
+    (owner: RuntimeProfile, confirmRenewalReplay = false, actionId?: string) =>
+      runClientEffect(
+        mutations.recoverEffect(owner.connection, true, confirmRenewalReplay, actionId),
+      ),
     [mutations],
   )
   const discardMutations = useCallback(
-    (owner: RuntimeProfile) => runClientEffect(mutations.discardEffect(owner.connection)),
+    (owner: RuntimeProfile, actionId?: string) =>
+      runClientEffect(mutations.discardEffect(owner.connection, actionId)),
     [mutations],
   )
   const refreshAllOrRestore = useCallback(async () => {
@@ -1703,6 +1676,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       setRestoreAttempt((attempt) => attempt + 1)
       return
     }
+    sharedStateSync.current?.retry()
+    threadStateSync.current?.retry()
     await refreshAll()
   }, [refreshAll])
   const readCache = useMemo(() => (profile ? cacheFor(profile) : null), [profile, cacheFor])
@@ -1710,6 +1685,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const error =
     storageError ||
     settingsSyncError ||
+    threadSyncError ||
     presetSyncError ||
     active?.error ||
     (registry.pendingPairings?.length
@@ -1877,9 +1853,7 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
     (path, input, schema, method) =>
       readEffect(path, input, schema, method).pipe(
         Effect.tap(() =>
-          profile
-            ? refreshRuntimeEffect(profile).pipe(Effect.catch(() => Effect.void))
-            : Effect.void,
+          profile ? settleMutationEffect(profile, refreshRuntimeEffect) : Effect.void,
         ),
       ),
     [readEffect, profile, refreshRuntimeEffect],

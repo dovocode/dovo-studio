@@ -477,6 +477,9 @@ importers:
       '@dovo/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@dovo/durable-connections':
+        specifier: workspace:*
+        version: link:../../packages/durable-connections
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -795,11 +798,20 @@ importers:
 
   packages/client-runtime:
     dependencies:
+      '@dovo/durable-connections':
+        specifier: workspace:*
+        version: link:../durable-connections
       effect:
         specifier: 4.0.6
         version: 4.0.6
 
   packages/design: {}
+
+  packages/durable-connections:
+    dependencies:
+      effect:
+        specifier: 4.0.6
+        version: 4.0.6
 
   packages/extension-agents:
     dependencies:
@@ -970,6 +982,9 @@ importers:
 
   packages/protocol:
     dependencies:
+      '@dovo/durable-connections':
+        specifier: workspace:*
+        version: link:../durable-connections
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -1034,6 +1049,9 @@ importers:
       '@dovo/client-runtime':
         specifier: workspace:*
         version: link:../client-runtime
+      '@dovo/durable-connections':
+        specifier: workspace:*
+        version: link:../durable-connections
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -1206,6 +1224,9 @@ importers:
       '@dovo/design':
         specifier: workspace:*
         version: link:../design
+      '@dovo/durable-connections':
+        specifier: workspace:*
+        version: link:../durable-connections
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../protocol

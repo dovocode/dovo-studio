@@ -1,4 +1,4 @@
-import { runtimeComputerName, taskFamilyInputIds } from '@dovo/protocol'
+import { runtimeComputerName, taskFamilyInputIds, preferredThreadCopies } from '@dovo/protocol'
 import type { RuntimeOverview, RuntimeSnapshot, Task, Workspace } from '@dovo/studio-core'
 
 export type TaskSource = {
@@ -53,7 +53,7 @@ export function taskSources({
   runtimes: readonly RuntimeOverview[]
 }): TaskSource[] {
   const active = runtimes.find((entry) => entry.profile.id === activeRuntimeId)
-  return [
+  const sources: TaskSource[] = [
     {
       runtimeId: activeRuntimeId,
       connection: active?.profile.connection,
@@ -79,6 +79,20 @@ export function taskSources({
           ],
     ),
   ]
+  const preferred = preferredThreadCopies(
+    sources.map((source) => ({
+      runtimeId:
+        source.snapshot?.runtimeId ?? source.connection?.runtimeId ?? source.runtimeId ?? '',
+      connected: source.online,
+      tasks: source.workspace.tasks,
+    })),
+  )
+  return sources.map((source) => {
+    const tasks = source.workspace.tasks.filter((task) => preferred.has(task))
+    return tasks.length === source.workspace.tasks.length
+      ? source
+      : { ...source, workspace: { ...source.workspace, tasks } }
+  })
 }
 
 export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
@@ -102,7 +116,8 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
           needsInput: input.has(task.id),
           projectKey: taskCollectionKey(source.runtimeId, task.repositoryId),
           projectName:
-            repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project'),
+            task.replica?.projectName ??
+            (repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project')),
         }
       })
   })

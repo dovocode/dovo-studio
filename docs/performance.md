@@ -53,6 +53,7 @@ pnpm test:conversation-history:browser
 pnpm test:pull-stability:browser
 pnpm benchmark:history
 pnpm benchmark:workspace-memory
+pnpm benchmark:replication
 pnpm benchmark:snapshot-deltas -- --baseline-ref HEAD
 ```
 
@@ -75,7 +76,8 @@ checkpoint turns took 53.6 ms and retained 2.1 MiB of additional JavaScript heap
 metadata edit took 6.1 ms without loading any complete histories; loading one complete task took 2.1
 ms. Reading 40 tasks retained 32 histories and approximately 14 MiB of encoded history data. The
 first opening of older storage derives summaries and backfills usage once; these steady-state
-measurements exclude migration.
+measurements exclude migration. This benchmark constructs WorkspaceStore alone; it does not include
+the runtime replication journal or measure total runtime memory.
 
 | Workload                                       |   Before |    After |
 | ---------------------------------------------- | -------: | -------: |
@@ -93,3 +95,48 @@ Search and paging compare the previous in-memory helpers with database queries a
 results. Delta measurements compare actual source implementations and assert equal wire output. The
 zero-file delta fixture did not improve measurably. Additional unit coverage checks migration,
 rollback, cursor ownership, Unicode, cache eviction, chunk boundaries and transcript rotation.
+
+## Shared thread replication
+
+The runtime journal reads records after its current sequence. A transaction saves new records and
+checkpoints together. A sequence index lets integrity checks count records without reading message
+bodies. The library keeps indexes for known versions, current values and the logical clock.
+
+String-store adapters use content identities to skip unchanged snapshots. No-op transactions keep
+the stored string. A changed write still serializes the full archive in native and browser JSON
+stores. The runtime SQLite adapter writes only new records.
+
+The thread list applies one page limit to local and shared threads. History queries use an indexed
+position and message-ID cursor. Each query reads at most 41 records for a 40-message page. After an
+offline gap, the client replaces a cached window that does not overlap the new window. This keeps
+older pages in order.
+
+Desktop shared threads use the existing conversation scroll and deferred rendering controls. Distant
+messages keep their measured height and release their content. Mobile shared threads use FlatList.
+Both views reject older pages when their cursor or history revision no longer matches.
+
+Build the runtime and its dependencies. Then run `pnpm benchmark:replication`. The script checks the
+SQLite and transactional JSON adapters. It uses 1,000 and 5,000 messages of 2 KiB each. It reports
+median times for idle refresh, metadata edits, history pages and thread summaries. These checks use
+CPU and in-memory storage. They do not measure native devices, network delay, startup or total
+runtime memory. The journal still keeps recovery history. This change does not compact archives or
+limit total journal memory.
+
+Unreadable replication data disables that channel. The runtime reports the error and keeps the
+records for recovery. It does not rebuild the journal or reuse old peer cursors automatically.
+
+Shared settings now use the same incremental storage approach. The outbox query reads versions after
+a SQLite row cursor. It does not parse all prior settings on an idle exchange. The benchmark also
+measures refresh and capture with 1,000 and 3,000 historical settings versions of 8 KiB each. On
+this review host, the 3,000-version median fell from 269.5 ms to 0.15–0.42 ms across isolated and
+concurrent check runs. These are CPU and in-memory SQLite measurements. They do not measure network
+or native disk latency.
+
+Automatic saved-action recovery shares one in-flight attempt per connection credential. Retry
+backoff starts at one second and grows to 30 seconds. Explicit retry bypasses the wait. A healthy
+live stream can replace its list baseline without a parallel HTTP snapshot read. This suppresses
+fallback for at most ten seconds; a failed replacement resumes fallback immediately.
+
+The Chromium durable-state fixture also mounts the mobile draft hook. It checks that renaming
+another computer preserves the draft, and changing the draft computer's token starts a new scope.
+This checks browser React behavior. It does not establish native keyboard or device behavior.

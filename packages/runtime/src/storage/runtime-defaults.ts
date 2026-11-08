@@ -6,6 +6,10 @@ import {
   runtimeDefaultsSchema,
   supportsAccess,
   permissionPolicyIssue,
+  sharedSettingsEntrySchema,
+  mergeSharedSettings,
+  initializeScopedSettings,
+  type SharedSettingsEntry,
   type TaskHarness,
 } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
@@ -31,7 +35,53 @@ function readDefaults(db: Database.Database) {
 
 /** Shared runtime preferences; task copies stay stable when these defaults change. */
 export class RuntimeDefaults {
-  constructor(private db: Database.Database) {}
+  constructor(private db: Database.Database) {
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS shared_state_versions (id TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    )
+  }
+  /** Accepted shared versions survive rapid edits and restarts before a peer can connect. */
+  private rememberShared(entries: readonly SharedSettingsEntry[]) {
+    for (const entry of entries) {
+      const id = JSON.stringify([entry.key, entry.updatedAt, entry.changeId])
+      const previous = this.db
+        .prepare('SELECT value FROM shared_state_versions WHERE id=?')
+        .pluck()
+        .get(id)
+      if (
+        typeof previous === 'string' &&
+        !isDeepStrictEqual(JSON.parse(previous), JSON.parse(JSON.stringify(entry)))
+      )
+        throw new HttpError(409, 'A shared state version was reused with different data')
+      this.db
+        .prepare('INSERT OR IGNORE INTO shared_state_versions VALUES (?,?)')
+        .run(id, JSON.stringify(entry))
+    }
+  }
+  sharedVersions(after = 0) {
+    return decode(
+      Schema.Array(mutableStruct({ sequence: Schema.Int, value: Schema.String })),
+      this.db
+        .prepare(
+          'SELECT rowid AS sequence,value FROM shared_state_versions WHERE rowid>? ORDER BY rowid',
+        )
+        .all(after),
+    ).map((row) => ({
+      sequence: row.sequence,
+      entry: decode(sharedSettingsEntrySchema, JSON.parse(row.value)),
+    }))
+  }
+  mergeShared(entries: readonly SharedSettingsEntry[]) {
+    return this.db.transaction(() => {
+      const current = this.get()
+      const scoped = initializeScopedSettings(current)
+      const merged = mergeSharedSettings(scoped.shared, entries)
+      this.rememberShared(entries)
+      if (!isDeepStrictEqual(merged, scoped.shared))
+        this.save({ ...current, scopedSettings: { ...scoped, shared: merged } }, false)
+      return merged
+    })()
+  }
   private cached() {
     // An outer transaction can roll back. Never publish its uncommitted settings
     // into the shared cache, or serve an older cached value inside it.
@@ -76,14 +126,18 @@ export class RuntimeDefaults {
         },
       }
     }
-    this.db
-      .prepare(
-        'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
-      )
-      .run(
-        'runtime-defaults',
-        JSON.stringify({ ...settings, configured: configure || settings.configured }),
-      )
+    this.db.transaction(() => {
+      this.rememberShared(previous.scopedSettings?.shared ?? [])
+      this.rememberShared(settings.scopedSettings?.shared ?? [])
+      this.db
+        .prepare(
+          'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+        )
+        .run(
+          'runtime-defaults',
+          JSON.stringify({ ...settings, configured: configure || settings.configured }),
+        )
+    })()
     defaultsCache.delete(this.db)
     return this.get()
   }

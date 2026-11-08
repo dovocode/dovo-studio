@@ -3,7 +3,13 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
-import { decode, mutableStruct, type McpServer } from '@dovo/protocol'
+import {
+  decode,
+  mutableStruct,
+  type McpServer,
+  type ManagedSkill,
+  type Agent,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
@@ -34,7 +40,7 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>) {
   if (!block || block.type !== 'text') throw new Error('Expected text')
   return block.text
 }
-async function setup(readOnly = false) {
+async function setup(readOnly = false, skills: ManagedSkill[] = [], provider?: Agent['provider']) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const owner = 'agent-interactions-test-owner-token-at-least-32-chars'
@@ -45,7 +51,9 @@ async function setup(readOnly = false) {
     ...f.workspace,
     agents: f.workspace.agents.map((agent) => ({
       ...agent,
+      ...(provider ? { provider } : {}),
       permission: readOnly ? 'read-only' : 'ask',
+      resources: { ...agent.resources, mcpServers: [], skills },
     })),
   }))
   const runs: AgentRun[] = []
@@ -257,4 +265,81 @@ it('cancels a tool question on Stop without sending an invented answer', async (
   expect(s.store.task(task.id).messages.filter((message) => message.role === 'user')).toHaveLength(
     1,
   )
+})
+
+it.each([false, true])(
+  'loads only enabled run-scoped skills on demand (read-only: %s)',
+  async (readOnly) => {
+    const content = 'Complete reviewed instructions. '.repeat(1000)
+    const { client, runs, post, credential, task, owner, gate, execution } = await setup(readOnly, [
+      {
+        name: 'review',
+        description: 'Review code reliability',
+        content,
+        enabled: true,
+        sourcePath: '/skills/review/SKILL.md',
+      },
+      {
+        name: 'disabled',
+        description: 'Disabled instructions',
+        content: 'Do not expose',
+        enabled: false,
+      },
+    ])
+    expect(runs[0].agent.instructions).toContain('review: Review code reliability')
+    expect(runs[0].agent.instructions).not.toContain(content)
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('skill_read')
+    const read = await client.callTool({ name: 'skill_read', arguments: { name: 'review' } })
+    expect(read.isError).not.toBe(true)
+    expect(JSON.parse(resultText(read))).toMatchObject({
+      content: content.trim(),
+      sourcePath: '/skills/review/SKILL.md',
+    })
+    expect(
+      (await client.callTool({ name: 'skill_read', arguments: { name: 'disabled' } })).isError,
+    ).toBe(true)
+    expect(
+      (await client.callTool({ name: 'skill_read', arguments: { name: '../../etc/passwd' } }))
+        .isError,
+    ).toBe(true)
+    for (const input of [
+      { taskId: 'other', parentRunId: credential.runId, name: 'review' },
+      { taskId: task.id, parentRunId: 'wrong', name: 'review' },
+      { taskId: task.id, name: 'review' },
+    ])
+      expect((await post('/api/agent/skill', input)).status).toBe(403)
+    expect(
+      (
+        await post(
+          '/api/agent/skill',
+          { taskId: task.id, parentRunId: credential.runId, name: 'review' },
+          owner,
+        )
+      ).status,
+    ).toBe(403)
+    gate.resolve()
+    await execution.done
+    expect(
+      (await client.callTool({ name: 'skill_read', arguments: { name: 'review' } })).isError,
+    ).toBe(true)
+  },
+)
+
+it('keeps complete skills inline for restricted modes that may disable MCP', async () => {
+  const { client, runs, gate, execution } = await setup(
+    true,
+    [
+      {
+        name: 'review',
+        description: 'Review reliability',
+        content: 'Complete offline instructions',
+        enabled: true,
+      },
+    ],
+    'cursor',
+  )
+  expect(runs[0].agent.instructions).toContain('Complete offline instructions')
+  expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('skill_read')
+  gate.resolve()
+  await execution.done
 })

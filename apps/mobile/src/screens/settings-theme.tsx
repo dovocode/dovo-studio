@@ -1,3 +1,4 @@
+import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
 import { contentColumn } from '../ui/layout/content-column'
 import { ValidationFields } from '../ui/controls/validation-fields'
 import { SettingsFooterContext } from './settings-save-bar'
@@ -87,6 +88,7 @@ export function SettingsPage({ children }: { children: ReactNode }) {
     <SettingsTheme>
       <SettingsFooterContext.Provider value={setFooter}>
         <View style={styles.screen}>
+          <PreferenceStorageNotice />
           <ValidationFields>{children}</ValidationFields>
           {footer}
         </View>

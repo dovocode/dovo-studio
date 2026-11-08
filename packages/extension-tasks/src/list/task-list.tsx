@@ -750,6 +750,7 @@ export function TaskList({
     !selectedEntries.length ||
     selectedEntries.some(
       ({ task, source }) =>
+        !!task.replica ||
         !source.online ||
         ((action === 'archive' || action === 'delete' || action === 'reopen') &&
           task.status === 'running') ||

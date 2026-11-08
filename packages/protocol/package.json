@@ -43,6 +43,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dovo/durable-connections": "workspace:*",
     "@noble/hashes": "2.4.0",
     "acorn": "8.19.0",
     "cron-parser": "^5.10.2",

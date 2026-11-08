@@ -51,6 +51,7 @@ import { Commands } from './storage/commands.js'
 import { TaskCheckout } from './scm/tasks/task-checkout.js'
 import type Database from 'better-sqlite3'
 import { WorkspaceStore } from './storage/workspace.js'
+import { SharedStateReplication } from './storage/state-replication.js'
 import { Devices } from './auth/devices.js'
 import { Pairing } from './auth/pairing.js'
 import { GitService } from './scm/git/git.js'
@@ -66,6 +67,8 @@ import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
+import { ThreadReplicationJournal } from './storage/thread-replication-journal.js'
+import { ThreadReplication } from './storage/thread-replication.js'
 export function createServices(db: Database.Database, ownerToken: string): Services {
   db.prepare("INSERT OR IGNORE INTO documents (id, value) VALUES ('runtime-identity', ?)").run(
     JSON.stringify(randomUUID()),
@@ -108,7 +111,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       : join(dirname(resolve(db.name)), 'acp'),
   )
   let artifacts: Artifacts | undefined
+  const threadJournal = new ThreadReplicationJournal(db, runtimeId)
   const store = new WorkspaceStore(db, (change) => {
+    threadJournal.capture(change)
     activity.workspace(change)
     artifacts?.workspace(change)
   })
@@ -487,6 +492,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     forgeWork,
     retrieval,
     retrievalPeers,
+    stateReplication: new SharedStateReplication(db, defaults, runtimeId, retrievalPeers),
+    threadReplication: new ThreadReplication(threadJournal, store, retrievalPeers),
     db,
     titles,
     activity,
@@ -523,6 +530,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   return services
 }
 export interface Services {
+  stateReplication: SharedStateReplication
+  threadReplication: ThreadReplication
   projectTransfers: ProjectTransfers
   remoteDesktop: RemoteDesktop
   threadWatch: ThreadWatch

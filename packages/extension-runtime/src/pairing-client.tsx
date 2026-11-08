@@ -1,4 +1,5 @@
 import { LinuxSetupGuide } from './linux-setup-guide'
+import { SavedActions } from './saved-actions'
 import {
   connectionProgress,
   runtimePeerAddress,
@@ -324,6 +325,7 @@ export function PairingClient({
                 )}
               </div>
               <div className="flex flex-wrap gap-1">
+                <SavedActions profile={entry.profile} connected={entry.connected} />
                 {mutationStatus(entry.profile).pending > 0 && (
                   <Button
                     size="sm"

@@ -157,6 +157,8 @@ export const snapshotSchema = mutableStruct({
   checkedDraftMoveSupported: Schema.optional(Schema.Literal(true)),
   threadServersSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
+  stateReplicationVersion: Schema.optional(Schema.Literal(1)),
+  threadReplicationVersion: Schema.optional(Schema.Literal(1)),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
   fullTurnSettingsSupported: Schema.optional(Schema.Boolean),

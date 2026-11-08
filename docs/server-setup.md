@@ -826,11 +826,15 @@ dovo-server start --data-dir ~/.dovo
 ```
 
 Restore verifies SQLite integrity, obtains the runtime's process lock, preserves the current
-database as another backup and replaces it atomically. It refuses a live runtime. Device pairings
-and conversation data return to the selected snapshot; host owner-token/configuration files remain
-in place. Inspect the pre-restore copy if newer work must be recovered. A structurally readable
-SQLite backup can still contain damaged conversation records; restoring it does not silently repair
-or discard those records.
+database as another backup and replaces it atomically. It refuses a live runtime. Conversation data
+returns to the selected snapshot. When the current database and backup have the same runtime
+identity, restore keeps current device pairings, revocations and paired-runtime registrations. Host
+owner-token/configuration files remain in place. A new replication generation resumes sync without
+reusing cursors from the later database. Update clients and paired runtimes together. Newer thread
+history held by a peer returns as a separate archived copy marked `(recovered)`; it does not replace
+the restored executable thread. Shared preferences still use latest-wins. Inspect the pre-restore
+copy to recover other newer work. A structurally readable SQLite backup can still contain damaged
+conversation records; restoring it does not silently repair or discard those records.
 
 If a conversation cannot hydrate, export the data without starting the runtime:
 

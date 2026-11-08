@@ -176,6 +176,7 @@ export function LauncherWorkspaceProvider({
       discardAndReload: unavailableAsync,
       pendingMessages: () => [],
       mutationStatus: () => ({ pending: 0, error: null }),
+      retryMutations: unavailableAsync,
       discardMutations: unavailableAsync,
       refreshRuntimes: async () => {
         await Promise.all(registry.profiles.map(refreshRuntime))

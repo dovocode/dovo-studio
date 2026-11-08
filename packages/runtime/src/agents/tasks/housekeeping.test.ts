@@ -97,6 +97,33 @@ it('automatically archives the main thread and all descendants together', async 
   expect(release.mock.calls.map(([id]) => id).sort()).toEqual(['child', 'nested', 'parent'])
 })
 
+it.each<Partial<Task>>([
+  { draft: 'Unsent work' },
+  {
+    draftAttachments: [
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        name: 'notes.txt',
+        mime: 'text/plain',
+        size: 1,
+      },
+    ],
+  },
+  { queue: [{ id: 'queued', role: 'user', text: 'Paused work', createdAt: daysAgo(20) }] },
+  { scheduledMessages: [{ id: 'scheduled', text: 'Follow up', at: '2026-10-30T12:00:00Z' }] },
+  { quotaContinuation: { turnId: 'turn', at: '2026-10-30T12:00:00Z', resume: true } },
+  { startAfter: { taskId: 'other', messageId: 'chained', text: 'Continue when ready' } },
+])('keeps an inactive family with pending work available: %j', async (pending) => {
+  const { s, housekeeping } = await archiveFixture()
+  // Keep the original activity time: pending work must outlive the inactivity window.
+  s.store.update((workspace) => ({
+    ...workspace,
+    tasks: workspace.tasks.map((item) => (item.id === 'nested' ? { ...item, ...pending } : item)),
+  }))
+  expect(await housekeeping.archiveInactive(now)).toEqual([])
+  expect(s.store.get().tasks.every((item) => !item.archivedAt)).toBe(true)
+})
+
 it('keeps the whole family unarchived when its activity audit cannot commit', async () => {
   const { s, housekeeping } = await archiveFixture()
   const before = s.db.prepare('SELECT value FROM documents WHERE id = ?').get('workspace')

@@ -1,4 +1,5 @@
 import { createRuntimeClient } from '../../shared/runtime-client.js'
+import { preferredThreadCopies } from './thread-replication.js'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { decode, minValue, refine } from '../../shared/schema.js'
 import { Effect, Result, Schema } from 'effect'
@@ -79,6 +80,22 @@ export const runtimeRegistrySchema = refine(
 )
 export type RuntimeProfile = Schema.Schema.Type<typeof profileSchema>
 export type RuntimeRegistry = Schema.Schema.Type<typeof runtimeRegistrySchema>
+/** Preserve view and draft scopes when a registry update leaves a connection unchanged. */
+export function retainRuntimeConnections(
+  previous: RuntimeRegistry,
+  next: RuntimeRegistry,
+): RuntimeRegistry {
+  const connections = new Map(previous.profiles.map((profile) => [profile.id, profile.connection]))
+  return {
+    ...next,
+    profiles: next.profiles.map((profile) => {
+      const before = connections.get(profile.id)
+      return before && JSON.stringify(before) === JSON.stringify(profile.connection)
+        ? { ...profile, connection: before }
+        : profile
+    }),
+  }
+}
 export function upsertRuntime(
   registry: RuntimeRegistry,
   profile: RuntimeProfile,
@@ -354,6 +371,14 @@ export function aggregateRuntimeTasks(
   now = Date.now(),
   includeInactive = false,
 ): RuntimeTask[] {
+  const preferred = preferredThreadCopies(
+    entries.map((entry) => ({
+      runtimeId:
+        entry.snapshot?.runtimeId ?? entry.profile.connection.runtimeId ?? entry.profile.id,
+      connected: entry.connected,
+      tasks: entry.snapshot?.workspace.tasks ?? [],
+    })),
+  )
   const tasks = entries.flatMap((entry) => {
     if (!entry.snapshot) return []
     const { snapshot, profile } = entry
@@ -373,6 +398,7 @@ export function aggregateRuntimeTasks(
       .filter(
         (task) =>
           !task.example &&
+          preferred.has(task) &&
           (includeInactive || (!task.archived && !task.archivedAt && !isSnoozed(task, now))),
       )
       .map((task) => ({
@@ -380,7 +406,7 @@ export function aggregateRuntimeTasks(
         runtimeId: profile.id,
         runtimeName,
         task,
-        projectName: projects.get(task.repositoryId) ?? 'No project',
+        projectName: task.replica?.projectName ?? projects.get(task.repositoryId) ?? 'No project',
         needsInput: needsInput.has(task.id),
         online: entry.connected,
         reachability,

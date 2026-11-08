@@ -26,7 +26,11 @@ import { ClaudeBackgroundTasks } from './claude-background-tasks.js'
 function claudeToolDisposition(run: AgentRun, name: string) {
   if (
     name === 'AskUserQuestion' ||
-    (['mcp__dovo_task__ask_question', 'mcp__dovo_task__todos'].includes(name) &&
+    ([
+      'mcp__dovo_task__ask_question',
+      'mcp__dovo_task__todos',
+      'mcp__dovo_task__skill_read',
+    ].includes(name) &&
       run.taskId &&
       run.agent.resources?.mcpServers.some(
         (server) =>

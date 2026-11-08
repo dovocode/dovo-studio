@@ -510,3 +510,16 @@ it('reports rejected tests and clears expired registrations', async () => {
   await expect(f.service.test(f.device)).rejects.toThrow('push token expired')
   expect(f.service.status(f.device).registered).toBe(false)
 })
+
+it('isolates an unreadable push registration without deleting it or preventing startup', () => {
+  const f = setup(true)
+  f.db.prepare('UPDATE push_devices SET value=? WHERE device_id=?').run('not-json', f.device)
+  expect(() => f.service.start()).not.toThrow()
+  expect(f.service.status(f.device)).toMatchObject({
+    registered: false,
+    error: expect.stringContaining('preserved'),
+  })
+  expect(
+    f.db.prepare('SELECT value FROM push_devices WHERE device_id=?').pluck().get(f.device),
+  ).toBe('not-json')
+})

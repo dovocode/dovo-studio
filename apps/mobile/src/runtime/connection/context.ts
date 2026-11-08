@@ -10,6 +10,7 @@ import type {
   RuntimeProfile,
   RuntimeReadCache,
   RuntimeSnapshot,
+  RuntimeMutationStatus,
   Task,
   WorkspacePatchResult,
 } from '@dovo/protocol'
@@ -110,13 +111,13 @@ export type Runtime = {
   refreshRuntimeEffect: (profile: RuntimeProfile) => Effect.Effect<void, Error>
   pendingMessages: (task: Task) => PendingMessage[]
   pendingMessagesFor: (profile: RuntimeProfile, task: Task) => PendingMessage[]
-  mutationStatus: (profile: RuntimeProfile) => {
-    pending: number
-    error: string | null
-    reviewRequired?: boolean
-  }
-  retryMutations: (profile: RuntimeProfile, confirmRenewalReplay?: boolean) => Promise<void>
-  discardMutations: (profile: RuntimeProfile) => Promise<void>
+  mutationStatus: (profile: RuntimeProfile) => RuntimeMutationStatus
+  retryMutations: (
+    profile: RuntimeProfile,
+    confirmRenewalReplay?: boolean,
+    actionId?: string,
+  ) => Promise<void>
+  discardMutations: (profile: RuntimeProfile, actionId?: string) => Promise<void>
   read: Call
   readRuntime: RuntimeRead
   cacheForRuntime: (profile: RuntimeProfile) => RuntimeReadCache

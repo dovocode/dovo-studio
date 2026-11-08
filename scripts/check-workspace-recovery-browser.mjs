@@ -34,7 +34,8 @@ window.fetch=async(url,init={})=>{
   if(path==='/api/snapshot' && window.failSnapshot && parsed.hostname==='host0.lan')throw new Error('No connection to selected computer');
   if(path==='/api/snapshot')return Response.json({...window.server,settingsScopesSupported:parsed.hostname==='host0.lan'});
   if(path==='/api/mutations/status')return Response.json({version:1});
-  if(path==='/api/tasks/message')throw new Error('Message delivery offline');
+  if(path==='/api/tasks/message'){if(window.deliverMessage===input.messageId)return Response.json({ok:true});throw new Error('Message delivery offline');}
+  if(path==='/api/tasks/cancel')return Response.json({ok:true});
   if(path==='/api/workspace') {
     if(window.autoReconcile)return Response.json({revision:window.server.revision,runtimeInstanceId:'test-instance',reconciled:true});
     if(window.failWorkspace)return Response.json({error:'Workspace conflict'},{status:409});
@@ -91,6 +92,11 @@ window.seedLegacyRecoveries=async()=>{
   await browserMutationStorage.recoverWorkspaceEdit(connection,newer);
   return {migrated,all:await browserMutationStorage.workspaceRecoveries(connection)};
 };
+window.seedReviewedAction=async()=>{
+ await browserMutationStorage.update(window.profiles[0].connection,pending=>[...pending,{id:'review-second',path:'/api/tasks/message',method:'POST',input:{id:'another-thread',messageId:'second-message',text:'Review this second message'},blocked:true,reviewAfterRenewal:true,receiptToken:'previous-device'}]);
+ await window.workspaceContext.retryMutations(window.profiles[0]).catch(()=>{});
+};
+window.stopTask=()=>window.workspaceContext.request('/api/tasks/cancel',{id:'running-task',runId:'frozen-run'},Schema.Struct({ok:Schema.Boolean}));
 window.saveMessage=()=>window.workspaceContext.request('/api/tasks/message',{taskId:'task',messageId:'saved-message',text:'Do not lose this command'},Schema.Struct({ok:Schema.Boolean}));
 window.editWorkspace=()=>window.workspaceContext.setWorkspace(value=>({...value,agents:value.agents.map(agent=>({...agent,name:'Edited'}))}));
 window.changeSettings=()=>updateAppPreferences({sharedScopedSettings:[{key:'global',updatedAt:10,changeId:'retry-settings',value:{taskDefaults:{setupCommand:'echo retry'}}}]});
@@ -128,6 +134,7 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   const page = await context.newPage()
+  page.setDefaultTimeout(15000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('http://recovery.lan/')
@@ -173,6 +180,11 @@ try {
     await page.evaluate(() => window.readDeviceHub()),
     { enabled: true, hosts: [] },
     'Device Hub reads must not wait for conflicting workspace writes',
+  )
+  assert.deepEqual(
+    await page.evaluate(() => window.stopTask()),
+    { ok: true },
+    'Stop must bypass failing desktop workspace flushes',
   )
   await page.evaluate(() => window.changeSettings())
   await page.waitForFunction(() =>
@@ -272,6 +284,34 @@ try {
   const pending = await page.evaluate(() => window.pendingCommands())
   assert.equal(pending.length, 1, 'Workspace reload must retain saved commands')
   assert.equal(pending[0].input.text, 'Do not lose this command')
+  await page.evaluate(() => window.seedReviewedAction())
+  await page.getByRole('button', { name: 'Review saved actions', exact: true }).first().click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByText('Do not lose this command', { exact: true }).waitFor()
+  const selected = dialog.locator('li').filter({ hasText: 'Review this second message' })
+  await selected.getByText('Thread: another-thread', { exact: true }).waitFor()
+  // Declining credential replay does not send or remove anything.
+  page.once('dialog', (confirmation) => confirmation.dismiss())
+  await selected.getByRole('button', { name: 'Retry action', exact: true }).click()
+  assert.equal((await page.evaluate(() => window.pendingCommands())).length, 2)
+  await page.evaluate(() => {
+    window.deliverMessage = 'second-message'
+  })
+  page.once('dialog', (confirmation) => confirmation.accept())
+  await selected.getByRole('button', { name: 'Retry action', exact: true }).click()
+  await page.waitForFunction(async () => (await window.pendingCommands()).length === 1)
+  await selected.waitFor({ state: 'detached' })
+  assert.equal(
+    (await page.evaluate(() => window.pendingCommands()))[0].input.text,
+    'Do not lose this command',
+  )
+  page.once('dialog', (confirmation) => confirmation.dismiss())
+  await dialog.getByRole('button', { name: 'Discard action', exact: true }).click()
+  assert.equal((await page.evaluate(() => window.pendingCommands())).length, 1)
+  page.once('dialog', (confirmation) => confirmation.accept())
+  await dialog.getByRole('button', { name: 'Discard action', exact: true }).click()
+  await dialog.getByText('No saved actions remain.', { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
   await page.evaluate(() => window.mountLauncher())
   await page.waitForFunction(() => !!window.launcherContext)
   assert.deepEqual(await page.evaluate(() => window.checkCacheFactories()), {
@@ -281,7 +321,7 @@ try {
   })
   assert.deepEqual(errors, [])
   console.log(
-    'Workspace recovery: six HTTP hosts, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation and saved-command preservation passed.',
+    'Workspace recovery: six HTTP hosts, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation, Stop bypass, saved-command preservation and selective action recovery passed.',
   )
 } finally {
   await browser.close()

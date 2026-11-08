@@ -59,6 +59,20 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         try: () => createServices(db, options.ownerToken),
         catch: (cause) => new RuntimeStartupError({ operation: 'service initialization', cause }),
       })
+      const startOptional = (name: string, start: () => void | Promise<void>) =>
+        Effect.tryPromise({
+          try: async () => {
+            await start()
+          },
+          catch: () => new Error(`${name} is unavailable; stored data was preserved`),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              console.error(error.message)
+              services.activity.add('runtime', 'startup', error.message, {})
+            }),
+          ),
+        )
       // Scope runs every finalizer even if one fails. This list is shutdown order;
       // register it backwards because Effect releases in last-in-first-out order.
       // Dependants stop first and SQLite remains available through the final flush.
@@ -74,6 +88,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         async (request) => (await serveRetrieval(services, request, true)).value,
       )
       const finalizers = [
+        () => services.threadReplication.stop(),
+        () => services.stateReplication.stop(),
         () => services.retrieval.stop(),
         () => housekeeping.dispose(),
         () => taskPulls.dispose(),
@@ -109,6 +125,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       ]
       for (const close of [...finalizers].reverse())
         yield* Effect.addFinalizer(() => release(close))
+      yield* startOptional('Shared state replication', () => services.stateReplication.start())
+      yield* startOptional('Thread replication', () => services.threadReplication.start())
       // In-memory runtimes are ephemeral (tests and packaging smoke checks).
       if (db.name !== ':memory:') services.browsers.prepare()
       const http = yield* Effect.acquireRelease(
@@ -139,6 +157,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                   Effect.gen(function* () {
                     const schedulers = yield* Effect.all(
                       [
+                        () => services.threadReplication.stop(),
+                        () => services.stateReplication.stop(),
                         () => services.store.usageHubs.dispose(),
                         () => services.retrieval.stop(),
                         () => services.projectTransfers.dispose(),
@@ -213,7 +233,10 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         catch: (cause) => new RuntimeStartupError({ operation: 'internet listener', cause }),
       })
       const peerAddress = peerListener.server.address()
-      if (peerAddress && typeof peerAddress !== 'string') services.peers.start(peerAddress.port)
+      if (peerAddress && typeof peerAddress !== 'string')
+        yield* startOptional('Internet peer connections', () =>
+          services.peers.start(peerAddress.port),
+        )
       if (external) {
         const listener = new ExternalListener(services, external.host, external.port)
         network = listener
@@ -231,19 +254,22 @@ export const runtimeLayer = (options: RuntimeOptions) =>
           () => services.preferences.get().autoContinueAfterRestart,
           (id) => services.jobs.ownsTask(id),
         )
-        services.liveActivities.start()
-        services.pushNotifications.start()
         services.jobs.startScheduler()
         services.tasks.startScheduler()
-        services.mcpApps.start()
-        services.artifactFeeds.start()
-        services.sharedThreads.start()
-        housekeeping.start()
-        taskPulls.start()
-        services.pullRequestWatch.start()
-        services.pipelineWatch.start()
-        services.threadWatch.start()
       })
+      for (const [name, start] of [
+        ['Live activities', () => services.liveActivities.start()],
+        ['Push notifications', () => services.pushNotifications.start()],
+        ['MCP apps', () => services.mcpApps.start()],
+        ['Artifact feeds', () => services.artifactFeeds.start()],
+        ['Shared threads', () => services.sharedThreads.start()],
+        ['Housekeeping', () => housekeeping.start()],
+        ['Task pull watcher', () => taskPulls.start()],
+        ['Pull request watcher', () => services.pullRequestWatch.start()],
+        ['Pipeline watcher', () => services.pipelineWatch.start()],
+        ['Thread watcher', () => services.threadWatch.start()],
+      ] as const)
+        yield* startOptional(name, start)
       return { services, port: address.port }
     }),
   )

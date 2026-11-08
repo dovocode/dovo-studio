@@ -43,6 +43,79 @@ function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
     recovered: () => recovered,
   }
 }
+
+it('stops a frozen run without reading, replaying or discarding an unrelated blocked journal', async () => {
+  const old = {
+    id: 'blocked',
+    path: '/api/tasks/message',
+    method: 'POST' as const,
+    input: { id: 'other', messageId: 'message', text: 'Keep this' },
+    blocked: true,
+  }
+  const f = fixture([old])
+  const read = vi.spyOn(f.storage, 'read').mockRejectedValue(new Error('Storage unavailable'))
+  const ids: Array<string | null> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      expect(urlPath(url)).toBe(`${connection.address}/api/tasks/cancel`)
+      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toEqual({
+        id: 'task',
+        runId: 'attempt',
+      })
+      ids.push(new Headers(init?.headers).get('X-Dovo-Mutation-Id'))
+      return Response.json({ ok: true })
+    }),
+  )
+  const stop = () =>
+    Effect.runPromise(
+      f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task', runId: 'attempt' }, ok),
+    )
+  await stop()
+  await stop()
+  expect(ids[0]).toMatch(/^[a-f0-9]{64}$/)
+  expect(ids[1]).toBe(ids[0])
+  expect(read).not.toHaveBeenCalled()
+  expect(f.stored()).toEqual([old])
+})
+
+it('does not hold Stop behind an in-flight journal request or save an offline Stop for later', async () => {
+  const f = fixture()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let entered!: () => void
+  const sending = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      if (urlPath(url).endsWith('/api/tasks/message')) {
+        entered()
+        await gate
+        return Response.json({ ok: true })
+      }
+      throw new TypeError('Network unavailable')
+    }),
+  )
+  const message = run(
+    f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'm' }, ok),
+  )
+  try {
+    await sending
+    const stopped = await run(
+      f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task', runId: 'attempt' }, ok),
+    )
+    expect(stopped._tag).toBe('Failure')
+    expect(f.stored().map((item) => item.path)).toEqual(['/api/tasks/message'])
+  } finally {
+    release()
+    await message
+  }
+})
 it('retires a safely rejected checklist clear so newer progress can be reviewed and cleared', async () => {
   const f = fixture()
   let stale = true
@@ -589,7 +662,12 @@ it('clears a stale local error when another client has drained the journal', asy
   expect(f.queue.status(connection).error).not.toBeNull()
   await run(f.restart().discardEffect(connection))
   await run(f.queue.recoverEffect(connection))
-  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: null,
+    actions: [],
+  })
 })
 
 it('reads durable state on each empty recovery without notifying unchanged status', async () => {
@@ -600,7 +678,12 @@ it('reads durable state on each empty recovery without notifying unchanged statu
   await run(f.queue.recoverEffect(connection))
   expect(read).toHaveBeenCalledTimes(2)
   expect(changed).not.toHaveBeenCalled()
-  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: null,
+    actions: [],
+  })
 })
 
 it('notifies changes from other writers while ignoring equivalent freshly decoded journals', async () => {
@@ -646,11 +729,17 @@ it('notifies clearing a stale error once when the durable journal is already emp
     reviewRequired: false,
     pending: 0,
     error: 'Conflict',
+    actions: [],
   })
   changed.mockClear()
   await run(f.queue.recoverEffect(connection))
   expect(changed).toHaveBeenCalledOnce()
-  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: null,
+    actions: [],
+  })
   changed.mockClear()
   await run(f.queue.recoverEffect(connection))
   expect(changed).not.toHaveBeenCalled()
@@ -759,7 +848,12 @@ it('retires rejected workspace edits without blocking subsequent model switches'
     (await run(f.queue.requestEffect(connection, '/api/workspace', input, ok, 'PATCH')))._tag,
   ).toBe('Failure')
   expect(f.stored()).toEqual([])
-  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: null,
+    actions: [],
+  })
   rejected = false
   expect(
     (await run(f.queue.requestEffect(connection, '/api/workspace', input, ok, 'PATCH')))._tag,
@@ -780,7 +874,12 @@ it('resolves older blocked validation receipts while preserving uncertain comman
   )
   expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
   expect(f.stored()).toEqual([])
-  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: null,
+    actions: [],
+  })
 })
 
 it.each([403, 404, 409, 422])(
@@ -812,7 +911,12 @@ it.each([403, 404, 409, 422])(
         )
       )._tag,
     ).toBe('Failure')
-    expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+    expect(f.queue.status(connection)).toEqual({
+      reviewRequired: false,
+      pending: 0,
+      error: null,
+      actions: [],
+    })
     confirmed = false
     await run(
       f.queue.requestEffect(
@@ -847,7 +951,12 @@ it('resolves an old rejected edit before sending a different new model selection
       ._tag,
   ).toBe('Success')
   expect(sent).toEqual(['old', 'operation-1'])
-  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: null,
+    actions: [],
+  })
 })
 it('requests an authoritative refresh after reconnect replays a reconciled workspace edit', async () => {
   const f = fixture([{ id: 'saved-edit', path: '/api/workspace', method: 'PATCH', input: {} }])
@@ -1436,7 +1545,7 @@ it('persists the first receipt credential across restarts and requires consent b
       return Response.json({ error: 'Temporary failure' }, { status: 503 })
     }),
   )
-  await run(f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task' }, ok))
+  await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'task' }, ok))
   expect(f.stored()[0]?.receiptToken).toBe(connection.token)
   const before = applied
   const changed = { ...connection, token: 'another-device' }
@@ -1534,3 +1643,290 @@ it('keeps a temporary Connect lease rejection recoverable without blocking the s
   await Effect.runPromise(f.queue.recoverEffect(connection))
   expect(f.stored()).toEqual([])
 })
+
+it('retries only the selected renewed action and keeps its neighbors under review', async () => {
+  const actions: MutationOutbox = ['first', 'second'].map((id) => ({
+    id,
+    path: '/api/tasks/message',
+    method: 'POST',
+    input: { id: 'task', messageId: id, text: id },
+    blocked: true,
+    reviewAfterRenewal: true,
+    receiptToken: 'old-device',
+  }))
+  const f = fixture(actions)
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      sent.push(JSON.parse(typeof init?.body === 'string' ? init.body : '').messageId)
+      return Response.json({ ok: true })
+    }),
+  )
+  await run(f.queue.recoverEffect(connection, true, false, 'second'))
+  expect(sent).toEqual([])
+  await Effect.runPromise(f.queue.recoverEffect(connection, true, true, 'second'))
+  expect(sent).toEqual(['second'])
+  expect(f.stored()).toEqual([actions[0]])
+  expect(f.queue.status(connection).actions).toEqual([
+    {
+      id: 'first',
+      label: 'Send message',
+      preview: 'first',
+      taskId: 'task',
+      blocked: true,
+      reviewRequired: true,
+    },
+  ])
+})
+
+it('discards only the selected action and preserves an action appended by another writer', async () => {
+  const first: MutationOutbox[number] = {
+    id: 'first',
+    path: '/api/tasks/message',
+    method: 'POST',
+    input: { text: 'Keep' },
+  }
+  const f = fixture([first])
+  await run(f.queue.assertEmptyEffect(connection))
+  const later = { ...first, id: 'later', input: { text: 'Another window' } }
+  await f.storage.update(connection, (pending) => [...pending, later])
+  await Effect.runPromise(f.queue.discardEffect(connection, first.id))
+  expect(f.stored()).toEqual([later])
+  await Effect.runPromise(f.queue.discardEffect(connection, 'missing'))
+  expect(f.stored()).toEqual([later])
+})
+
+it('never exposes settings payloads in saved action previews and bounds message previews', async () => {
+  const f = fixture([
+    {
+      id: 'settings',
+      path: '/api/agents/settings/save',
+      method: 'POST',
+      input: { text: 'secret', token: 'private' },
+    },
+    {
+      id: 'message',
+      path: '/api/tasks/message',
+      method: 'POST',
+      input: { id: 'task', text: 'a'.repeat(900) },
+    },
+  ])
+  await run(f.queue.assertEmptyEffect(connection))
+  const actions = f.queue.status(connection).actions
+  expect(actions?.[0]).toEqual({
+    id: 'settings',
+    label: 'Save agent settings',
+    blocked: false,
+    reviewRequired: false,
+  })
+  expect(actions?.[1]?.preview).toHaveLength(500)
+  expect(JSON.stringify(actions)).not.toContain('secret')
+  expect(JSON.stringify(actions)).not.toContain('private')
+})
+
+const savedMessage = (id = 'saved') => ({
+  id,
+  path: '/api/tasks/message',
+  method: 'POST' as const,
+  input: { id: 'task', messageId: id, text: 'Hello' },
+})
+/** A reachable host whose action endpoint is busy, while its snapshots keep streaming. */
+function busyHost() {
+  const host = { busy: true, sends: 0, statusReads: 0 }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/api/mutations/status')) {
+        host.statusReads++
+        return Response.json({ version: 1 })
+      }
+      host.sends++
+      return host.busy
+        ? Response.json({ error: 'Runtime is busy' }, { status: 503 })
+        : Response.json({ ok: true })
+    }),
+  )
+  return host
+}
+const automaticClock = () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(1_000_000)
+  return (offset: number) => vi.setSystemTime(1_000_000 + offset)
+}
+
+it('merges concurrent automatic recoveries into one attempt and one status update', async () => {
+  automaticClock()
+  const changed = vi.fn<() => void>()
+  const f = fixture([savedMessage()], changed)
+  const read = vi.spyOn(f.storage, 'read')
+  const host = busyHost()
+  const results = await Promise.all(
+    Array.from({ length: 20 }, () => run(f.queue.recoverEffect(connection))),
+  )
+  vi.useRealTimers()
+  expect(results.map((result) => result._tag)).toEqual(Array(20).fill('Failure'))
+  // One send with the client's two quick retries, rather than one queued attempt per snapshot.
+  expect(host.sends).toBe(3)
+  expect(host.statusReads).toBe(1)
+  expect(read).toHaveBeenCalledOnce()
+  // Loaded action, bound receipt, transient error and recovery failure.
+  expect(changed).toHaveBeenCalledTimes(4)
+  expect(f.stored()).toEqual([{ ...savedMessage(), receiptToken: connection.token }])
+  expect(f.queue.status(connection).error).toContain('Runtime is busy')
+})
+
+it('skips automatic attempts during backoff and runs one attempt for later snapshots when it ends', async () => {
+  const at = automaticClock()
+  const f = fixture([savedMessage()])
+  const host = busyHost()
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Failure')
+  expect(host.sends).toBe(3)
+  const read = vi.spyOn(f.storage, 'read')
+  at(500)
+  for (let index = 0; index < 5; index++)
+    expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(host.sends).toBe(3)
+  expect(read).not.toHaveBeenCalled()
+  expect(f.stored()).toHaveLength(1)
+  host.busy = false
+  // Later snapshots near the end of the backoff schedule exactly one deferred attempt.
+  at(990)
+  await run(f.queue.recoverEffect(connection))
+  await run(f.queue.recoverEffect(connection))
+  at(1000)
+  await vi.waitFor(() => expect(f.stored()).toEqual([]))
+  expect(host.sends).toBe(4)
+  expect(read).toHaveBeenCalledOnce()
+  expect(f.queue.status(connection).error).toBeNull()
+  vi.useRealTimers()
+})
+
+it('lets an explicit retry bypass the automatic backoff and keeps receipt identity', async () => {
+  const at = automaticClock()
+  const f = fixture([savedMessage()])
+  const ids: Array<string | null> = []
+  const host = busyHost()
+  const fetcher = vi.mocked(fetch)
+  const original = fetcher.getMockImplementation()!
+  fetcher.mockImplementation(async (url, init) => {
+    if (!urlPath(url).endsWith('/status'))
+      ids.push(new Headers(init?.headers).get('X-Dovo-Mutation-Id'))
+    return original(url, init)
+  })
+  await run(f.queue.recoverEffect(connection))
+  at(100)
+  await run(f.queue.recoverEffect(connection))
+  expect(host.sends).toBe(3)
+  host.busy = false
+  expect((await run(f.queue.recoverEffect(connection, true)))._tag).toBe('Success')
+  expect(host.sends).toBe(4)
+  expect(new Set(ids)).toEqual(new Set(['saved']))
+  expect(f.stored()).toEqual([])
+  vi.useRealTimers()
+})
+
+it('grows the automatic backoff on repeated transient failures and resets it after success', async () => {
+  const at = automaticClock()
+  const f = fixture([savedMessage('first')])
+  const host = busyHost()
+  await run(f.queue.recoverEffect(connection))
+  at(1000)
+  await run(f.queue.recoverEffect(connection))
+  expect(host.sends).toBe(6)
+  // The second failure waits two seconds.
+  at(2500)
+  await run(f.queue.recoverEffect(connection))
+  expect(host.sends).toBe(6)
+  host.busy = false
+  at(3000)
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(host.sends).toBe(7)
+  // After success, the next failure starts again from one second.
+  await f.storage.update(connection, () => [savedMessage('second')])
+  host.busy = true
+  await run(f.queue.recoverEffect(connection))
+  expect(host.sends).toBe(10)
+  host.busy = false
+  at(4000)
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(host.sends).toBe(11)
+  expect(f.stored()).toEqual([])
+  vi.useRealTimers()
+})
+
+it('does not back off after a refused connection, because a later snapshot proves reachability', async () => {
+  automaticClock()
+  const f = fixture([savedMessage()])
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('Offline')))
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Failure')
+  const host = busyHost()
+  host.busy = false
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(host.sends).toBe(1)
+  expect(f.stored()).toEqual([])
+  vi.useRealTimers()
+})
+
+it('scopes automatic sharing and backoff to the host credential and account session', async () => {
+  automaticClock()
+  const first = { ...connection, accountSession: 'session-a' }
+  const renewed = { ...connection, accountSession: 'session-b' }
+  const otherDevice = { ...connection, token: 'other-device' }
+  const f = fixture([savedMessage()])
+  const host = busyHost()
+  await run(f.queue.recoverEffect(first))
+  expect(host.sends).toBe(3)
+  // A different account session neither joins nor waits for the first session's backoff.
+  await run(f.queue.recoverEffect(renewed))
+  expect(host.sends).toBe(6)
+  host.busy = false
+  expect((await run(f.queue.recoverEffect(first)))._tag).toBe('Success')
+  expect(host.sends).toBe(6)
+  expect(f.stored()).toHaveLength(1)
+  // Another device credential has its own backoff. (This fixture shares one journal.)
+  expect((await run(f.queue.recoverEffect(otherDevice)))._tag).toBe('Success')
+  expect(host.sends).toBe(7)
+  expect(f.stored()).toEqual([])
+  vi.useRealTimers()
+})
+
+it.each([500, 426])(
+  'backs off a recoverable workspace HTTP %s while snapshots keep arriving',
+  async (status) => {
+    const at = automaticClock()
+    const f = fixture([
+      {
+        id: 'edit',
+        path: '/api/workspace',
+        method: 'PATCH',
+        input: { collection: 'agents', id: 'agent', changes: {} },
+      },
+    ])
+    let writes = 0,
+      busy = true
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url) => {
+        if (urlPath(url).endsWith('/status'))
+          return Response.json({ version: 1, workspaceMutations: 1 })
+        writes++
+        return busy
+          ? Response.json({ error: 'Try later' }, { status })
+          : Response.json({ revision: 2, runtimeInstanceId: 'runtime', outcome: 'applied' })
+      }),
+    )
+    expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Failure')
+    const first = writes
+    expect(first).toBeGreaterThan(0)
+    at(500)
+    for (let i = 0; i < 20; i++) await run(f.queue.recoverEffect(connection))
+    expect(writes).toBe(first)
+    expect(f.stored()).toHaveLength(1)
+    busy = false
+    expect((await run(f.queue.recoverEffect(connection, true)))._tag).toBe('Success')
+    expect(f.stored()).toEqual([])
+    vi.useRealTimers()
+  },
+)

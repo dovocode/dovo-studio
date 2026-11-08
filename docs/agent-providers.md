@@ -76,3 +76,31 @@ Sources: [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript),
 [Copilot SDK](https://github.com/github/copilot-sdk),
 [Grok headless and ACP integration](https://docs.x.ai/build/cli/headless-scripting),
 [Muse SDK documentation](https://meta-models.github.io/muse-code-sdk/next/).
+
+## Tool context budgets
+
+Enabled skills advertise their names and descriptions (up to 320 description characters per skill).
+Agents call `dovo_task skill_read` for the complete content and supporting-file source path before
+applying a skill. Reads use the active run credential and its captured enabled skills; disabled
+skills and arbitrary file paths cannot be read through this tool. Explicitly mentioned disabled
+skills still apply to that turn. Codex and Claude support scoped skill reads in read-only runs.
+Restricted modes that may disable MCP and runs without Dovo task tools retain complete inline skill
+instructions.
+
+Tool names, typed argument schemas and server validation remain intact. Detailed native-device
+guidance is returned by `devices`, which agents must call before using Device Hub. Tool context
+regressions are checked against the actual MCP `tools/list` response, including generated schemas:
+
+```sh
+pnpm --filter @dovo/runtime... -r build
+pnpm exec vp test packages/runtime/src/agent-tools/context-budget.test.ts packages/runtime/src/agents/execution/skill-context.test.ts
+```
+
+The core 15 tools decreased from 12,011 to 9,919 serialized characters (17%). All optional features,
+including Studio, decreased from 50,079 to 47,590 characters (5%) for the same 41 tools; enabling
+skill reads adds one small tool. Tests cap core tools at 10,000 and all tools including skill reads
+at 48,500 characters, with a separate description budget. A catalog stays within 9,500 characters
+even with 40 distinct skills merged from project and agent scopes; complete skill bodies are
+excluded from that budget because they are read on demand. These are reproducible character
+measurements, not model-specific token counts. Actual token counts vary by model/tokenizer and
+include other user/provider context.

@@ -100,6 +100,7 @@ export function acceptableOffer(
 /** Outbound-only signaling and ICE. The tunnel destination is a dedicated ordinary
  * runtime listener; it cannot select arbitrary ports or use desktop-only routes. */
 export class PeerConnections {
+  private restoreError: string | null = null
   readonly relay: RuntimeRelaySettings
   readonly internet: AccountInternet
   readonly upgrades: PeerUpgrades
@@ -153,7 +154,7 @@ export class PeerConnections {
         online: rooms.filter((room) => room.online).length,
         reconnecting:
           this.relay.connectionMode() === 'lan' ? 0 : rooms.filter((room) => !room.online).length,
-        lastError: rooms.find((room) => room.lastError)?.lastError ?? null,
+        lastError: this.restoreError ?? rooms.find((room) => room.lastError)?.lastError ?? null,
       },
       active: rooms.reduce((count, room) => count + room.peers.size, 0),
       recent: this.recent.map((entry) => ({ ...entry })),
@@ -164,9 +165,15 @@ export class PeerConnections {
     for (const row of this.db
       .prepare('SELECT device_id AS deviceId, config FROM peer_connections')
       .all()) {
-      const saved = decode(Schema.Struct({ deviceId: Schema.String, config: Schema.String }), row)
-      if (!this.internet.contains(saved.deviceId))
-        this.add(decode(peerConfigSchema, JSON.parse(saved.config)), saved.deviceId)
+      try {
+        const saved = decode(Schema.Struct({ deviceId: Schema.String, config: Schema.String }), row)
+        if (!this.internet.contains(saved.deviceId))
+          this.add(decode(peerConfigSchema, JSON.parse(saved.config)), saved.deviceId)
+      } catch {
+        this.restoreError =
+          'Some saved peer connections could not be restored. Their records were preserved.'
+        console.error(this.restoreError)
+      }
     }
     this.internet.start()
     this.reap()

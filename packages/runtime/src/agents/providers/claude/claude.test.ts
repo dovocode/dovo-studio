@@ -662,7 +662,7 @@ it('publishes successful main-thread todo hooks and excludes child hooks', async
 })
 
 it.each([true, false])(
-  'allows only configured conversation/progress tools in a read-only Claude run (managed=%s)',
+  'allows only configured conversation/progress and skill-read tools in a read-only Claude run (managed=%s)',
   async (managed) => {
     const adapter = createClaudeAdapter()
     const decisions: string[] = []
@@ -674,6 +674,7 @@ it.each([true, false])(
           for (const name of [
             'mcp__dovo_task__ask_question',
             'mcp__dovo_task__todos',
+            'mcp__dovo_task__skill_read',
             'mcp__other__todos',
             'mcp__dovo_task__linked_projects',
           ]) {
@@ -697,6 +698,7 @@ it.each([true, false])(
     try {
       await adapter.run(run)
       expect(decisions).toEqual([
+        managed ? 'allow' : 'deny',
         managed ? 'allow' : 'deny',
         managed ? 'allow' : 'deny',
         'deny',

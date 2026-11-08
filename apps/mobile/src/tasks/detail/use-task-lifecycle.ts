@@ -83,7 +83,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
   const { act, busy, error } = useAction()
   const onCurrentRuntime = runtimeId === undefined || runtimeId === activeId
   const owner = ownerProfile ? { profile: ownerProfile, connected: ownerConnected } : undefined
-  const enabled = onCurrentRuntime ? connected && !!owner : !!owner?.connected
+  const enabled = !task.replica && (onCurrentRuntime ? connected && !!owner : !!owner?.connected)
   const ownerCall = <T extends Schema.Codec<unknown, unknown>>(
     path: string,
     input: unknown,
@@ -101,7 +101,8 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
   }
   const completed = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
-  const readStateEnabled = !!owner?.connected && !!completed && !task.archived && !task.example
+  const readStateEnabled =
+    !task.replica && !!owner?.connected && !!completed && !task.archived && !task.example
   const patch = (changes: LifecycleChanges) => {
     if (!enabled) throw new Error('Reconnect to this task’s device before changing it.')
     if (!owner) throw new Error('This computer is no longer saved.')

@@ -8,7 +8,9 @@ import type { WorkspaceStore } from '../storage/workspace.js'
 import { HttpError } from '../errors.js'
 import { hashSecret, newSecret } from './devices.js'
 
+export type RunSkill = { name: string; description: string; content: string; sourcePath?: string }
 export interface RunPolicy {
+  skills?: RunSkill[]
   permissions: PermissionPolicy
   taskId: string
   runId: string
@@ -64,6 +66,7 @@ export class RunCredentials {
       permissions: { ...policy.permissions },
       readOnly: policy.readOnly || policy.sandboxMode === 'read-only',
       memoryScopes: [...policy.memoryScopes],
+      skills: policy.skills?.map((skill) => ({ ...skill })),
       signal: AbortSignal.any([signal, controller.signal]),
       controller,
       expiryTimer,

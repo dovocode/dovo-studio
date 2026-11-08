@@ -73,6 +73,7 @@ export * from './conversation/presentation/native-todos.js'
 export * from './scm/pulls/pull-presentation.js'
 export * from './conversation/presentation/markdown-links.js'
 export * from './runtime/connection/runtime-fleet.js'
+export * from './runtime/connection/replication-identity.js'
 export * from './runtime/cache/read-cache.js'
 export * from './automation/automations.js'
 export * from './scm/forges/forges.js'
@@ -330,3 +331,10 @@ export { THREAD_STARTERS } from './tasks/thread-starters.js'
 
 export * from './tasks/draft-stash.js'
 export * from './runtime/previews/thread-servers.js'
+
+export {
+  SharedStateSynchronization,
+  type SharedStateSyncOptions,
+} from './runtime/connection/shared-state-sync.js'
+export * from './runtime/connection/thread-replication.js'
+export * from './runtime/connection/thread-state-sync.js'

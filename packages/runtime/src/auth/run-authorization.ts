@@ -11,6 +11,7 @@ const allowed = new Set([
   '/api/linked-projects',
   '/api/agent/question',
   '/api/agent/todos',
+  '/api/agent/skill',
   '/api/subagents/spawn',
   '/api/subagents/list',
   '/api/subagents/send',

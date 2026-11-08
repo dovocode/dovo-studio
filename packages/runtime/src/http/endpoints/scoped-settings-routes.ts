@@ -1,10 +1,15 @@
+import {
+  validatePrompts,
+  prepareShared,
+  validateShared,
+  validateSharedEntry,
+} from '../../storage/shared-settings-validation.js'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { Effect, Struct } from 'effect'
 import type { IncomingMessage } from 'node:http'
 import {
   decode,
-  catalogSkillSource,
   scopedSettingsReadSchema,
   scopedSettingsSaveSchema,
   scopedSettingsValueSchema,
@@ -18,7 +23,6 @@ import {
   agentPresetSchema,
   sharedProjectKey,
   mergeSharedSettings,
-  type SharedSettingsEntry,
   type ScopedSettingsValue,
 } from '@dovo/protocol'
 import { RuntimeServices } from '../../runtime-services.js'
@@ -27,82 +31,6 @@ import { validateDefaultHarness } from '../../storage/runtime-defaults.js'
 import { body } from '../support/body.js'
 import { serviceResult } from '../support/effect.js'
 
-function validatePrompts(value: ScopedSettingsValue) {
-  const agents = value.agents ?? []
-  if (
-    new Set(agents.map((agent) => agent.id)).size !== agents.length ||
-    new Set(agents.map((agent) => agent.name.trim().toLowerCase())).size !== agents.length
-  )
-    throw new HttpError(400, 'Agent configurations require unique IDs and names in each scope.')
-  for (const agent of agents) {
-    validateDefaultHarness(agent)
-  }
-  const prompts = value.prompts ?? []
-  if (
-    prompts.some((prompt) => !/^[\w.-]+$/.test(prompt.name) || !prompt.text.trim()) ||
-    new Set(prompts.map((prompt) => prompt.name.toLowerCase())).size !== prompts.length
-  )
-    throw new HttpError(
-      400,
-      'Prompts require nonempty text and unique names using letters, numbers, dots, dashes or underscores.',
-    )
-}
-function prepareShared(value: ScopedSettingsValue): ScopedSettingsValue {
-  if (value.agents)
-    value = {
-      ...value,
-      agents: value.agents.map((agent) => ({
-        ...agent,
-        resources: prepareShared({ resources: agent.resources }).resources,
-      })),
-    }
-  if (!value.resources) return value
-  return {
-    ...value,
-    resources: {
-      ...value.resources,
-      skills: value.resources.skills.map((skill) => {
-        if (!skill.sourcePath) return skill
-        if (!catalogSkillSource(skill))
-          throw new HttpError(
-            400,
-            'Local skill supporting files belong to this environment. Use instructions only for shared skills, or keep the skill in an environment-specific scope.',
-          )
-        return { ...skill, sourcePath: undefined }
-      }),
-    },
-  }
-}
-function validateShared(value: ScopedSettingsValue) {
-  validatePrompts(value)
-  for (const agent of value.agents ?? []) {
-    if (agent.acpInstallationId)
-      throw new HttpError(400, 'Installed ACP agents belong to one environment.')
-    validateShared({ resources: agent.resources })
-  }
-  if (value.resources?.skills.some((skill) => skill.sourcePath))
-    throw new HttpError(400, 'Shared skills cannot contain environment-specific file paths.')
-  if (
-    value.resources?.mcpServers.some(
-      (server) =>
-        Object.keys(server.envValues ?? {}).length || Object.keys(server.headerValues ?? {}).length,
-    )
-  )
-    throw new HttpError(
-      400,
-      'Shared MCP settings must reference environment variables. Keep literal credentials in environment-specific overrides.',
-    )
-  if (value.taskDefaults?.harness?.acpInstallationId)
-    throw new HttpError(
-      400,
-      'Installed ACP agents belong to one environment. Select them in an environment-specific scope.',
-    )
-}
-function validateKey(entry: SharedSettingsEntry) {
-  if (entry.key !== 'global' && !/^project:[^/\s]+\/[^\r\n]+$/.test(entry.key))
-    throw new HttpError(400, 'Invalid shared project identity')
-  validateShared(entry.value)
-}
 export function scopedSettingsRoute(request: IncomingMessage, path: string) {
   return Effect.gen(function* () {
     const s = yield* RuntimeServices
@@ -111,11 +39,8 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
     let scoped = initializeScopedSettings(current)
     if (path === '/api/agents/settings/sync') {
       const { shared } = decode(sharedSettingsSyncSchema, raw)
-      for (const entry of shared) validateKey(entry)
-      const merged = mergeSharedSettings(scoped.shared, shared)
-      if (!isDeepStrictEqual(merged, scoped.shared))
-        s.defaults.save({ ...current, scopedSettings: { ...scoped, shared: merged } }, false)
-      return { shared: merged }
+      for (const entry of shared) validateSharedEntry(entry)
+      return { shared: s.defaults.mergeShared(shared) }
     }
     const input = decode(
       path.endsWith('/save') ? scopedSettingsSaveSchema : scopedSettingsReadSchema,

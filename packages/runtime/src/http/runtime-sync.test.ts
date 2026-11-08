@@ -1,7 +1,13 @@
+import { DurableState } from '@dovo/durable-connections'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
 import { WebSocket } from 'ws'
 import {
+  threadReplicationChannel,
+  decodeThreadRecord,
+  validateThreadVersion,
+  threadRecordKey,
+  type ThreadRecord,
   applySnapshotDelta,
   artifactReferences,
   decode,
@@ -869,4 +875,57 @@ it('exposes older recovery pages and rejects invalid cursors', async () => {
   expect(
     (await fetch(`${address}/api/workspace/recovered-edits?cursor=NaN`, { headers })).status,
   ).toBe(400)
+})
+
+it('pushes replicated thread changes without an execution workspace edit and scopes history to the selected copy', async () => {
+  const { runtime, open } = await setup()
+  const state = await DurableState.open({
+    channel: threadReplicationChannel,
+    replicaId: 'foreign',
+    storage: { load: () => undefined, save: () => {} },
+    decode: decodeThreadRecord,
+    validateVersion: validateThreadVersion,
+  })
+  cleanup.push(() => state.close())
+  const client = await open(token, 5, [], true)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  const workspaceRevision = runtime.services.store.version()
+  const identity = { ownerRuntimeId: 'foreign', threadId: 'remote-thread' }
+  const records: ThreadRecord[] = [
+    {
+      ...identity,
+      kind: 'thread',
+      ownerName: 'Other computer',
+      projectName: 'Project',
+      createdAt: '2026-01-01',
+      status: 'review',
+      historyRevision: 0,
+      removed: false,
+    },
+    { ...identity, kind: 'title', value: 'Shared conversation' },
+    {
+      ...identity,
+      kind: 'message',
+      messageId: 'remote-message',
+      position: 0,
+      message: { id: 'remote-message', role: 'assistant', text: 'Replicated history' },
+    },
+  ]
+  for (const record of records) await state.set(threadRecordKey(record), record)
+  await runtime.services.threadReplication.exchange(state.request())
+  expect(runtime.services.store.version()).toBe(workspaceRevision)
+  const delta = await client.wait('delta')
+  const copy = applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks.find(
+    (task) => task.replica,
+  )
+  expect(copy?.title).toBe('Shared conversation')
+  expect(copy?.messages).toEqual([])
+  client.frames.length = 0
+  client.socket.send(JSON.stringify({ type: 'watch', tasks: [copy?.id], scopes: [] }))
+  const detail = await client.wait('snapshot')
+  expect(detail.snapshot.workspace.tasks.find((task) => task.replica)?.messages[0]?.text).toBe(
+    'Replicated history',
+  )
+  expect(runtime.services.store.get().tasks).toHaveLength(1)
 })

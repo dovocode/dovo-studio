@@ -123,13 +123,41 @@ let loading: Promise<void> | undefined
 let edits: Partial<MobilePreferences> | undefined
 // Overlapping setItem calls are not ordered. A slow older save must not finish last.
 let persistQueue = Promise.resolve()
+let revision = 0
+let storageStatus = { pending: false, error: null as string | null }
+export const readMobilePreferenceStorage = () => storageStatus
+const setStorageStatus = (pending: boolean, error: string | null) => {
+  storageStatus = { pending, error }
+  publish()
+}
 const listeners = new Set<() => void>()
 const publish = () => listeners.forEach((listener) => listener())
 const enqueuePersist = () => {
-  persistQueue = persistQueue
-    .catch(() => undefined)
-    .then(() => AsyncStorage.setItem(key, JSON.stringify(current)))
-    .catch(() => console.warn('Could not save mobile preferences'))
+  if (!edits) return persistQueue
+  setStorageStatus(true, storageStatus.error)
+  persistQueue = persistQueue.then(async () => {
+    if (!edits) return
+    const savingRevision = revision
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(current))
+      if (savingRevision === revision) {
+        edits = undefined
+        setStorageStatus(false, null)
+      }
+    } catch {
+      setStorageStatus(
+        true,
+        'Could not save preferences on this phone. Changes are only available until the app closes.',
+      )
+    }
+  })
+  return persistQueue
+}
+export async function retryMobilePreferences(): Promise<void> {
+  await loadMobilePreferences()
+  if (!loaded) throw new Error(storageStatus.error ?? 'Could not load saved preferences')
+  await enqueuePersist()
+  if (storageStatus.error) throw new Error(storageStatus.error)
 }
 function restoredPreferences(raw: string | null): MobilePreferences {
   const saved: unknown = raw ? JSON.parse(raw) : {}
@@ -161,9 +189,15 @@ export function loadMobilePreferences(): Promise<void> {
           }
         : restored
       loaded = true
-      if (edits) enqueuePersist()
+      setStorageStatus(!!edits, null)
+      if (edits) void enqueuePersist()
     })
-    .catch(() => console.warn('Could not load mobile preferences; saved settings were preserved'))
+    .catch(() => {
+      setStorageStatus(
+        !!edits,
+        'Could not load preferences on this phone. Saved settings have been preserved; retry to load them and save any changes.',
+      )
+    })
     .finally(() => {
       loading = undefined
       publish()
@@ -176,15 +210,19 @@ export const preferencesReady = loadMobilePreferences()
 
 export const readMobilePreferences = () => current
 export function updateMobilePreferences(changes: Partial<MobilePreferences>) {
+  revision++
   edits = { ...edits, ...changes }
   current = { ...current, ...changes }
   publish()
-  if (loaded) enqueuePersist()
+  if (loaded) void enqueuePersist()
   else void loadMobilePreferences()
 }
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)
+}
+export function useMobilePreferenceStorage() {
+  return useSyncExternalStore(subscribe, readMobilePreferenceStorage)
 }
 /** Settings → General → Car mode: larger text and a calmer, glanceable app. */
 export const carZoom = 1.3

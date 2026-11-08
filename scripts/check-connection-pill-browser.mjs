@@ -3,16 +3,16 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mocks = {
-  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(){}};`,
+  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(title,message,buttons){window.alertButtons=buttons;window.alertTitle=title}};`,
   'expo-router': 'export const router={navigate(){}};',
   '@dovo/protocol': `export const connectionProgress=e=>[{label:e.connected?'Ready':'Connect',state:e.connected?'done':'failed'}];export const runtimeSyncStatus=c=>c.status;export const runtimeReachability=e=>e.connected?'online':'offline';export const retryRuntimeSync=()=>{};export const runtimeComputerName=e=>e.profile.id;`,
   '../state/application-state': "export {useState as useApplicationState} from 'react';",
   './connection-type': 'export const useConnectionTypes=()=>()=>({label:"Private · LAN / VPN"});',
   './account-context': 'export const useOptionalMobileAccount=()=>null;',
-  './provider': `import {useEffect,useSyncExternalStore} from 'react';let state={id:'host',connected:true,status:'live',pending:0,error:null};const listeners=new Set();window.connectionState=next=>{state={...state,...next};listeners.forEach(fn=>fn())};export const useRuntime=()=>{const current=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>state);useEffect(()=>{window.renderedConnection=current.status+':'+current.id+':'+current.connected+':'+current.pending},[current]);return {ready:true,overviews:[{profile:{id:current.id,connection:{address:'http://host',status:current.status}},connected:current.connected}],mutationStatus:()=>({pending:current.pending,error:current.error}),refreshAll:async()=>{}}};`,
+  './provider': `import {useEffect,useSyncExternalStore} from 'react';let state={id:'host',connected:true,status:'live',pending:0,error:null};const listeners=new Set();window.connectionState=next=>{state={...state,...next};listeners.forEach(fn=>fn())};export const useRuntime=()=>{const current=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>state);useEffect(()=>{window.renderedConnection=current.status+':'+current.id+':'+current.connected+':'+current.pending},[current]);return {ready:true,overviews:[{profile:{id:current.id,connection:{address:'http://host',status:current.status}},connected:current.connected}],mutationStatus:()=>({pending:current.pending,error:current.error,actions:current.actions,reviewRequired:current.actions?.some(a=>a.reviewRequired)}),retryMutations:async(profile,confirmed,id)=>{window.recoveryCalls.push({action:"retry",profile:profile.id,confirmed,id})},discardMutations:async(profile,id)=>{window.recoveryCalls.push({action:"discard",profile:profile.id,id})},refreshAll:async()=>{}}};`,
   '../../ui/content/text': 'export const Text=({children})=><span>{children}</span>;',
   '../../ui/controls/action':
-    'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
+    'export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;',
   '../../ui/controls/pill':
     'export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;',
   '../../ui/layout/sheet': 'export const Sheet=({children})=><div>{children}</div>;',
@@ -109,11 +109,44 @@ try {
   assert.equal(await count(), 0)
   await page.clock.runFor(1)
   await page.getByRole('button', { name: 'Saved actions · Review', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.recoveryCalls = []
+  })
+  await update({
+    status: 'live',
+    connected: true,
+    pending: 2,
+    error: 'Access changed',
+    actions: [
+      { id: 'keep', label: 'Send message', preview: 'Keep this', reviewRequired: true },
+      { id: 'selected', label: 'Send message', preview: 'Retry this only', reviewRequired: true },
+    ],
+  })
+  await page.getByRole('button', { name: 'Saved actions · Review', exact: true }).click()
+  await page.getByText('Retry this only', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Retry action', exact: true }).nth(1).click()
+  assert.deepEqual(await page.evaluate(() => window.recoveryCalls), [])
+  assert.equal(await page.evaluate(() => window.alertTitle), 'Retry this action?')
+  await page.evaluate(() =>
+    window.alertButtons.find((button) => button.text === 'Retry action').onPress(),
+  )
+  assert.deepEqual(await page.evaluate(() => window.recoveryCalls), [
+    { action: 'retry', profile: 'host', confirmed: true, id: 'selected' },
+  ])
+  await page.getByRole('button', { name: 'Discard action', exact: true }).first().click()
+  assert.equal(await page.evaluate(() => window.alertTitle), 'Discard this action?')
+  await page.evaluate(() =>
+    window.alertButtons.find((button) => button.text === 'Discard action').onPress(),
+  )
+  assert.deepEqual(await page.evaluate(() => window.recoveryCalls), [
+    { action: 'retry', profile: 'host', confirmed: true, id: 'selected' },
+    { action: 'discard', profile: 'host', id: 'keep' },
+  ])
   await update({ status: 'live', pending: 0, error: null })
   assert.equal(await count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Connection pill: 15-second HTTP grace period, recovery, host switching and existing offline/save delays passed',
+    'Connection pill: 15-second HTTP grace period, recovery, host switching and existing offline/save delays and selective recovery confirmations passed',
   )
 } finally {
   await browser.close()

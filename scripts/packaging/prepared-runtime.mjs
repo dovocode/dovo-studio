@@ -16,6 +16,7 @@ async function stamp(root) {
     'packages/runtime',
     'packages/protocol',
     'packages/client-runtime',
+    'packages/durable-connections',
     'packages/push',
   ]
   return {

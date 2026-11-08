@@ -7,6 +7,7 @@ import {
   removeRuntime,
   runtimeProfile,
   runtimeRegistrySchema,
+  retainRuntimeConnections,
   runtimeComputerName,
   runtimeHasCustomName,
   upsertRuntime,
@@ -14,6 +15,42 @@ import {
 import type { RuntimeOverview, RuntimeRegistry } from './runtime-fleet'
 import { snapshotSchema } from './runtime'
 import { taskSchema } from '../../workspace'
+
+it('keeps unchanged computer connections across decoded registry edits and resets changed credentials', () => {
+  const previous = decode(runtimeRegistrySchema, {
+    version: 1,
+    activeId: null,
+    profiles: [
+      runtimeProfile({ address: 'http://a.local:4310', token: 'a'.repeat(32) }),
+      runtimeProfile({ address: 'http://b.local:4310', token: 'b'.repeat(32) }),
+    ],
+  })
+  const renamed = retainRuntimeConnections(
+    previous,
+    decode(runtimeRegistrySchema, {
+      ...previous,
+      profiles: previous.profiles.map((profile, i) =>
+        i === 0 ? { ...profile, name: 'Renamed' } : profile,
+      ),
+    }),
+  )
+  expect(renamed.profiles[0].name).toBe('Renamed')
+  expect(renamed.profiles[0].connection).toBe(previous.profiles[0].connection)
+  expect(renamed.profiles[1].connection).toBe(previous.profiles[1].connection)
+  const renewed = retainRuntimeConnections(
+    renamed,
+    decode(runtimeRegistrySchema, {
+      ...renamed,
+      profiles: renamed.profiles.map((profile, i) =>
+        i === 1
+          ? { ...profile, connection: { ...profile.connection, token: 'new'.repeat(12) } }
+          : profile,
+      ),
+    }),
+  )
+  expect(renewed.profiles[0].connection).toBe(renamed.profiles[0].connection)
+  expect(renewed.profiles[1].connection).not.toBe(renamed.profiles[1].connection)
+})
 const profile = runtimeProfile(
   {
     address: 'http://one.local:51464',

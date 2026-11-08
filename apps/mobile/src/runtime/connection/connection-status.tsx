@@ -133,6 +133,68 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                     {status.error}
                   </Text>
                 )}
+                {(status.actions ?? []).map((action) => (
+                  <View key={action.id} style={{ gap: 6, paddingVertical: 8 }}>
+                    <Text style={styles.title}>{action.label}</Text>
+                    {!!action.taskId && (
+                      <Text style={styles.muted}>
+                        Thread:{' '}
+                        {entry.snapshot?.workspace.tasks.find((task) => task.id === action.taskId)
+                          ?.title || action.taskId}
+                      </Text>
+                    )}
+                    {!!action.preview && (
+                      <Text selectable style={styles.text}>
+                        {action.preview}
+                      </Text>
+                    )}
+                    {action.reviewRequired && (
+                      <Text style={styles.error}>
+                        Computer access changed. This action may already have run.
+                      </Text>
+                    )}
+                    <Action
+                      label="Retry action"
+                      disabled={busy || !entry.connected}
+                      onPress={() => {
+                        const retry = () =>
+                          act(() =>
+                            runtime.retryMutations(entry.profile, action.reviewRequired, action.id),
+                          )
+                        if (action.reviewRequired)
+                          Alert.alert(
+                            'Retry this action?',
+                            'Computer access changed. This action may already have run; retrying could repeat it. Check the computer before continuing.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Retry action', onPress: retry },
+                            ],
+                          )
+                        else retry()
+                      }}
+                    />
+                    <Action
+                      label="Discard action"
+                      secondary
+                      disabled={busy}
+                      onPress={() =>
+                        Alert.alert(
+                          'Discard this action?',
+                          'Unsent work will be removed from this phone. Actions already applied on the computer remain applied.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Discard action',
+                              style: 'destructive',
+                              onPress: () =>
+                                act(() => runtime.discardMutations(entry.profile, action.id)),
+                            },
+                          ],
+                        )
+                      }
+                    />
+                  </View>
+                ))}
                 <Action
                   label="Retry saved actions"
                   disabled={busy || !entry.connected}

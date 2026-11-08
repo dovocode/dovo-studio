@@ -12,6 +12,89 @@ const MAX_BYTES = 512 * 1024 * 1024
 const AUTOMATIC_RETRY_MS = 60 * 60 * 1000
 const retentionBytes = (newestSize = 0) => Math.max(MAX_BYTES, newestSize * 2)
 const failureSchema = Schema.NullOr(mutableStruct({ at: Schema.String, message: Schema.String }))
+function preservePairings(staged: Database.Database, databasePath: string) {
+  let current: Database.Database
+  try {
+    current = new Database(databasePath, { readonly: true, fileMustExist: true })
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CANTOPEN') return
+    throw error
+  }
+  try {
+    const identity = current
+      .prepare("SELECT value FROM documents WHERE id='runtime-identity'")
+      .pluck()
+      .get()
+    if (
+      identity === undefined ||
+      identity !==
+        staged.prepare("SELECT value FROM documents WHERE id='runtime-identity'").pluck().get()
+    )
+      return
+    // Device access is current security state, not workspace content to roll back.
+    const devices = decode(
+      Schema.Array(
+        Schema.Struct({
+          id: Schema.String,
+          name: Schema.String,
+          token_hash: Schema.String,
+          created_at: Schema.String,
+          revoked_at: Schema.NullOr(Schema.String),
+        }),
+      ),
+      current.prepare('SELECT * FROM devices').all(),
+    )
+    staged.exec('DELETE FROM devices')
+    const insert = staged.prepare('INSERT INTO devices VALUES (?,?,?,?,?)')
+    for (const row of devices)
+      insert.run(row.id, row.name, row.token_hash, row.created_at, row.revoked_at)
+    staged.exec(
+      'CREATE TABLE IF NOT EXISTS provisional_devices (device_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL); DELETE FROM provisional_devices',
+    )
+    if (
+      current
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='provisional_devices'")
+        .get()
+    ) {
+      const provisional = decode(
+        Schema.Array(Schema.Struct({ device_id: Schema.String, expires_at: Schema.Int })),
+        current.prepare('SELECT * FROM provisional_devices').all(),
+      )
+      const add = staged.prepare('INSERT INTO provisional_devices VALUES (?,?)')
+      for (const row of provisional) add.run(row.device_id, row.expires_at)
+    }
+    for (const table of ['retrieval_peers', 'studio_peer_grants']) {
+      if (!current.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
+        continue
+      const registrations = decode(
+        Schema.Array(Schema.Struct({ device: Schema.String, value: Schema.String })),
+        current.prepare(`SELECT device,value FROM ${table}`).all(),
+      )
+      staged.exec(
+        `CREATE TABLE IF NOT EXISTS ${table} (device TEXT PRIMARY KEY, value TEXT NOT NULL); DELETE FROM ${table}`,
+      )
+      const add = staged.prepare(`INSERT INTO ${table} VALUES (?,?)`)
+      for (const row of registrations) add.run(row.device, row.value)
+    }
+    if (
+      current
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='peer_connections'")
+        .get()
+    ) {
+      const peers = decode(
+        Schema.Array(Schema.Struct({ device_id: Schema.String, config: Schema.String })),
+        current.prepare('SELECT device_id,config FROM peer_connections').all(),
+      )
+      staged.exec(
+        'CREATE TABLE IF NOT EXISTS peer_connections (device_id TEXT PRIMARY KEY, config TEXT NOT NULL); DELETE FROM peer_connections',
+      )
+      const add = staged.prepare('INSERT INTO peer_connections VALUES (?,?)')
+      for (const row of peers) add.run(row.device_id, row.config)
+    }
+  } finally {
+    current.close()
+  }
+}
 export function verifyRuntimeBackup(path: string) {
   const db = new Database(path, { readonly: true, fileMustExist: true })
   try {
@@ -184,6 +267,26 @@ export async function restoreRuntimeBackup(databasePath: string, source: string)
   try {
     // Stage the selected source before retention can remove an older in-directory backup.
     await backupRuntimeDatabase(source, temporary)
+    // A restored journal has a new sequence history. Keep runtime identity and credentials,
+    // but give both replication channels a new actor and restart their receive checkpoints.
+    const staged = new Database(temporary)
+    try {
+      staged.transaction(() => {
+        preservePairings(staged, databasePath)
+        staged
+          .prepare(
+            'INSERT INTO documents VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+          )
+          .run('replication-generation:v1', JSON.stringify(randomUUID()))
+        staged
+          .prepare(
+            "DELETE FROM documents WHERE id IN ('thread-state-checkpoints:v1','shared-state-checkpoints:v1')",
+          )
+          .run()
+      })()
+    } finally {
+      staged.close()
+    }
     verifyRuntimeBackup(temporary)
     const backups = new RuntimeBackups(databasePath)
     // Keep the pre-restore database even if its conversation records cannot hydrate.

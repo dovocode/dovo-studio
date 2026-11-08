@@ -143,6 +143,9 @@ it('denies admin, trust, unrelated tasks and forged or missing run ownership bef
     '/api/artifacts/library',
     '/api/mcp-apps/proxy',
     '/api/tasks/message',
+    '/api/threads/state/exchange',
+    '/api/threads/replica/read',
+    '/api/threads/metadata',
   ])
     expect((await post(path, { taskId })).status).toBe(403)
   expect((await post('/api/artifacts/list', { taskId: otherId })).status).toBe(403)
@@ -825,3 +828,23 @@ it.each(['abort', 'revoke'] as const)(
     expect(driver).not.toHaveBeenCalled()
   },
 )
+
+it('snapshots skill content in the grant and admits scoped reads in read-only runs', async () => {
+  const skills = [
+    {
+      name: 'review',
+      description: 'Review',
+      content: 'Original',
+      sourcePath: '/skills/review/SKILL.md',
+    },
+  ]
+  const { post, taskId, runId, controller } = await setup({ readOnly: true, skills })
+  skills[0].content = 'Changed outside the run'
+  const input = { taskId, parentRunId: runId, name: 'review' }
+  const response = await post('/api/agent/skill', input)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ ...skills[0], content: 'Original' })
+  expect((await post('/api/agent/skill', { ...input, name: 'unknown' })).status).toBe(404)
+  controller.abort()
+  expect((await post('/api/agent/skill', input)).status).toBe(401)
+})

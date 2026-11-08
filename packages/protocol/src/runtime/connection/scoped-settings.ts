@@ -1,3 +1,4 @@
+import { mergeLatest, pendingLatest } from '@dovo/durable-connections'
 import { Schema } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
 import { mergeResources } from '../../shared/resources.js'
@@ -73,27 +74,8 @@ export function sharedProjectKey(repository: Repository | undefined) {
     ? `project:${repository.gitIdentity}`
     : undefined
 }
-const newerEntry = (entry: SharedSettingsEntry, current: SharedSettingsEntry | undefined) =>
-  !current ||
-  entry.updatedAt > current.updatedAt ||
-  (entry.updatedAt === current.updatedAt && entry.changeId > current.changeId)
-
-export function pendingSharedSettings(
-  shared: readonly SharedSettingsEntry[],
-  known: readonly SharedSettingsEntry[],
-) {
-  const byKey = new Map(known.map((entry) => [entry.key, entry]))
-  return shared.filter((entry) => newerEntry(entry, byKey.get(entry.key)))
-}
-export function mergeSharedSettings(...sources: readonly (readonly SharedSettingsEntry[])[]) {
-  const values = new Map<string, SharedSettingsEntry>()
-  for (const source of sources)
-    for (const entry of source) {
-      const current = values.get(entry.key)
-      if (newerEntry(entry, current)) values.set(entry.key, entry)
-    }
-  return [...values.values()].sort((a, b) => a.key.localeCompare(b.key))
-}
+export const pendingSharedSettings = pendingLatest<SharedSettingsEntry>
+export const mergeSharedSettings = mergeLatest<SharedSettingsEntry>
 export function settingsAtScope(
   runtime: RuntimeDefaults | undefined,
   repository: Repository | undefined,

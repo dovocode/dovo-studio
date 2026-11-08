@@ -126,10 +126,15 @@ export class PushNotifications {
   private registration(deviceId: string): PushRegistration | undefined {
     const row = this.db.prepare('SELECT value FROM push_devices WHERE device_id=?').get(deviceId)
     if (!row) return
-    return decode(
-      pushRegistrationSchema,
-      JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
-    )
+    try {
+      return decode(
+        pushRegistrationSchema,
+        JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
+      )
+    } catch {
+      this.error = 'A saved push registration is unreadable. Its record was preserved.'
+      return undefined
+    }
   }
   status(deviceId: string) {
     const registration = this.registration(deviceId)
@@ -446,9 +451,11 @@ export class PushNotifications {
     }
   }
   start() {
+    if (this.db.prepare('SELECT 1 FROM push_devices WHERE NOT json_valid(value) LIMIT 1').get())
+      this.error = 'Some saved push registrations are unreadable. Their records were preserved.'
     const managed = this.db
       .prepare(
-        "SELECT device_id FROM push_devices WHERE json_extract(value,'$.managedToken') IS NOT NULL LIMIT 1",
+        "SELECT device_id FROM push_devices WHERE CASE WHEN json_valid(value) THEN json_extract(value,'$.managedToken') END IS NOT NULL LIMIT 1",
       )
       .get()
     if ((this.relay.send || managed) && !this.scheduler && !this.stopped)

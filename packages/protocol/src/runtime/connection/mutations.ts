@@ -7,7 +7,7 @@ import {
   workspaceDraftConsumed,
 } from './workspace-reconciliation.js'
 import { runtimeSnapshotPath } from './live-sync.js'
-import { Effect, Schema, Semaphore } from 'effect'
+import { Effect, Result, Schema, Semaphore } from 'effect'
 import { decode, decodeResult, mutableArray, mutableStruct } from '../../shared/schema.js'
 import { RuntimeRequestError } from '../../shared/client.js'
 import {
@@ -28,6 +28,7 @@ import type { Task } from '../../workspace.js'
 import { savedPendingMessages } from '../../conversation/workflow/pending-message.js'
 
 const mutations = new Set([
+  '/api/threads/metadata',
   '/api/tasks/message',
   '/api/scm/pulls/link-thread',
   '/api/tasks/steer',
@@ -60,6 +61,60 @@ export const mutationOutboxSchema = mutableArray(
   }),
 )
 export type MutationOutbox = Schema.Schema.Type<typeof mutationOutboxSchema>
+export type SavedMutationAction = {
+  id: string
+  label: string
+  preview?: string
+  taskId?: string
+  blocked: boolean
+  reviewRequired: boolean
+}
+export type RuntimeMutationStatus = {
+  pending: number
+  error: string | null
+  reviewRequired?: boolean
+  actions?: SavedMutationAction[]
+}
+const actionLabels: Record<string, string> = {
+  '/api/threads/metadata': 'Change shared thread metadata',
+  '/api/tasks/message': 'Send message',
+  '/api/tasks/steer': 'Steer agent',
+  '/api/tasks/cancel': 'Stop agent',
+  '/api/tasks/lifecycle': 'Change thread state',
+  '/api/tasks/list-action': 'Change thread list',
+  '/api/tasks/viewed': 'Mark thread viewed',
+  '/api/tasks/checklist/clear': 'Clear checklist',
+  '/api/scm/pulls/link-thread': 'Link pull request',
+  '/api/workspace': 'Save workspace edit',
+  '/api/runtime/preferences/save': 'Save computer preferences',
+  '/api/agents/defaults/save': 'Save agent defaults',
+  '/api/agents/settings/save': 'Save agent settings',
+  '/api/agents/settings/sync': 'Sync agent settings',
+  '/api/agents/setup/save': 'Save agent setup',
+  '/api/agents/title-settings/save': 'Save title settings',
+  '/api/previews/browser/profiles/save': 'Save browser profiles',
+}
+function savedAction(item: MutationOutbox[number]): SavedMutationAction {
+  const input = item.input
+  const message = item.path === '/api/tasks/message' || item.path === '/api/tasks/steer'
+  const record = input && typeof input === 'object' ? input : undefined
+  return {
+    id: item.id,
+    label: actionLabels[item.path] ?? 'Saved action',
+    // Only message text is previewed. Settings payloads can contain credentials.
+    ...(message && record && 'text' in record && typeof record.text === 'string'
+      ? { preview: record.text.slice(0, 500) }
+      : {}),
+    ...(item.path.startsWith('/api/tasks/') &&
+    record &&
+    'id' in record &&
+    typeof record.id === 'string'
+      ? { taskId: record.id }
+      : {}),
+    blocked: !!item.blocked,
+    reviewRequired: !!item.reviewAfterRenewal,
+  }
+}
 export type MutationStorage = {
   read: (connection: RuntimeConnection) => Promise<unknown>
   /** Atomically read, change and commit a host/credential journal across all writers. */
@@ -87,7 +142,17 @@ type State = {
   lock: Semaphore.Semaphore
   replaced?: boolean
   renewedCredential?: string
+  /** Automatic recovery per account credential: one shared attempt and a bounded backoff. */
+  automatic: Map<string, AutomaticRecovery>
 }
+type AutomaticRecovery = {
+  run?: Promise<Result.Result<void, Error>>
+  failures: number
+  retryAt: number
+  wake?: ReturnType<typeof setTimeout>
+}
+/** 1s, 2s, 4s ... 30s between automatic attempts while the host keeps failing transiently. */
+const automaticRetryDelay = (failures: number) => Math.min(30000, 1000 * 2 ** (failures - 1))
 const connectionKey = (connection: RuntimeConnection) =>
   JSON.stringify([new URL(connection.address).origin, connection.token])
 const accountCredential = (connection: RuntimeConnection) =>
@@ -146,6 +211,7 @@ export class RuntimeMutations {
         confirmedMessages: [],
         error: null,
         lock: Effect.runSync(Semaphore.make(1)),
+        automatic: new Map(),
       }
       this.states.set(key, state)
     }
@@ -157,6 +223,7 @@ export class RuntimeMutations {
       pending: state.pending.length,
       error: state.error,
       reviewRequired: state.pending.some((item) => item.reviewAfterRenewal),
+      actions: state.pending.map(savedAction),
     }
   }
   workspaceRefreshCheckpoint(connection: RuntimeConnection) {
@@ -550,6 +617,7 @@ export class RuntimeMutations {
     retry = false,
     stopBefore?: string,
     allowBlockedCommands = false,
+    onlyId?: string,
   ) {
     return Effect.gen({ self: this }, function* () {
       if (!state.pending.length) return
@@ -557,7 +625,10 @@ export class RuntimeMutations {
       const skipped = new Set<string>()
       while (state.pending.length) {
         const item = state.pending.find(
-          (entry) => !skipped.has(entry.id) && (!blockedError || entry.path === '/api/workspace'),
+          (entry) =>
+            (!onlyId || entry.id === onlyId) &&
+            !skipped.has(entry.id) &&
+            (!blockedError || entry.path === '/api/workspace'),
         )
         if (!item || item.id === stopBefore) break
         if (item.reviewAfterRenewal) {
@@ -619,8 +690,101 @@ export class RuntimeMutations {
       }
     })
   }
-  recoverEffect(connection: RuntimeConnection, retry = false, confirmRenewalReplay = false) {
+  /** Without arguments this is an automatic recovery, as triggered by snapshots, polling and
+   * app activation. Concurrent automatic calls share one attempt. After a transient failure,
+   * automatic calls wait for a bounded backoff; one call during the backoff schedules a single
+   * attempt when it ends. An explicit retry, renewal confirmation or selected action always
+   * runs at once. */
+  recoverEffect(
+    connection: RuntimeConnection,
+    retry = false,
+    confirmRenewalReplay = false,
+    actionId?: string,
+  ) {
     const state = this.state(connection)
+    const credential = accountCredential(connection)
+    if (retry || confirmRenewalReplay || actionId !== undefined)
+      return this.recoverNow(connection, state, retry, confirmRenewalReplay, actionId).pipe(
+        this.settleAutomatic(state, credential),
+      )
+    return Effect.suspend(() => {
+      const automatic = state.automatic.get(credential) ?? { failures: 0, retryAt: 0 }
+      state.automatic.set(credential, automatic)
+      if (!automatic.run && Date.now() < automatic.retryAt) {
+        if (!automatic.wake && state.pending.length)
+          automatic.wake = setTimeout(
+            () => {
+              automatic.wake = undefined
+              void Effect.runPromise(Effect.result(this.recoverEffect(connection)))
+            },
+            Math.max(0, automatic.retryAt - Date.now()),
+          )
+        return Effect.void
+      }
+      // Detached so one interrupted caller cannot cancel the attempt that others joined.
+      const run = (automatic.run ??= Effect.runPromise(
+        Effect.result(
+          this.recoverNow(connection, state).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                automatic.run = undefined
+              }),
+            ),
+            this.settleAutomatic(state, credential),
+          ),
+        ),
+      ))
+      return Effect.promise(() => run).pipe(Effect.flatMap(Effect.fromResult))
+    })
+  }
+  /** Success ends the backoff. Only a host or tunnel that answers but cannot accept the action
+   * now (502-504, timeout, Connect lease) extends it: snapshots keep arriving in that state and
+   * each would retry. A refused connection cannot coexist with fresh snapshots, so the next one
+   * retries at once. Domain failures already block their action. A host without receipt support
+   * is checked at once after an upgrade. Recoverable workspace errors also use backoff. */
+  private settleAutomatic(state: State, credential: string) {
+    return <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            const automatic = state.automatic.get(credential)
+            clearTimeout(automatic?.wake)
+            if (automatic && !automatic.run) state.automatic.delete(credential)
+            else if (automatic)
+              Object.assign(automatic, { failures: 0, retryAt: 0, wake: undefined })
+          }),
+        ),
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            if (
+              !(error instanceof RuntimeRequestError) ||
+              error.kind === 'connection' ||
+              !transientMutation(
+                {
+                  path:
+                    state.supported && state.pending.some((item) => item.path === '/api/workspace')
+                      ? '/api/workspace'
+                      : '',
+                },
+                error,
+              )
+            )
+              return
+            const automatic = state.automatic.get(credential) ?? { failures: 0, retryAt: 0 }
+            state.automatic.set(credential, automatic)
+            automatic.failures++
+            automatic.retryAt = Date.now() + automaticRetryDelay(automatic.failures)
+          }),
+        ),
+      )
+  }
+  private recoverNow(
+    connection: RuntimeConnection,
+    state: State,
+    retry = false,
+    confirmRenewalReplay = false,
+    actionId?: string,
+  ) {
     return state.lock
       .withPermits(1)(
         Effect.gen({ self: this }, function* () {
@@ -630,10 +794,11 @@ export class RuntimeMutations {
           )
             return
           yield* this.load(connection, state)
+          if (actionId && !state.pending.some((item) => item.id === actionId)) return
           if (confirmRenewalReplay)
             yield* this.save(connection, state, (pending) =>
               pending.map((item) =>
-                item.reviewAfterRenewal
+                item.reviewAfterRenewal && (!actionId || item.id === actionId)
                   ? { ...item, reviewAfterRenewal: undefined, receiptToken: undefined }
                   : item,
               ),
@@ -660,7 +825,7 @@ export class RuntimeMutations {
                 message: 'Update this runtime before recovering saved actions.',
               }),
             )
-          yield* this.drain(connection, state, retry)
+          yield* this.drain(connection, state, retry, undefined, false, actionId)
         }),
       )
       .pipe(
@@ -672,7 +837,7 @@ export class RuntimeMutations {
         ),
       )
   }
-  discardEffect(connection: RuntimeConnection) {
+  discardEffect(connection: RuntimeConnection, actionId?: string) {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
       Effect.gen({ self: this }, function* () {
@@ -685,10 +850,17 @@ export class RuntimeMutations {
               'Computer connection changed. Review its saved actions before discarding them.',
             ),
           )
-        yield* operation(() => this.storage.clear(connection))
-        state.pending = []
-        state.confirmedMessages = []
-        state.error = null
+        if (actionId) {
+          yield* this.save(connection, state, (pending) =>
+            pending.filter((item) => item.id !== actionId),
+          )
+          state.confirmedMessages = state.confirmedMessages.filter((item) => item.id !== actionId)
+        } else {
+          yield* operation(() => this.storage.clear(connection))
+          state.pending = []
+          state.confirmedMessages = []
+        }
+        if (!state.pending.length) state.error = null
         this.changed()
       }).pipe(Effect.uninterruptible),
     )
@@ -823,6 +995,21 @@ export class RuntimeMutations {
     schema: T,
     method = 'POST',
   ) {
+    // Stop controls a specific execution attempt. It must remain available while
+    // unrelated edits or commands are blocked, and must never wait behind their sender.
+    // Keep the server receipt and frozen run token, without queuing a delayed Stop.
+    if (method === 'POST' && path === '/api/tasks/cancel') {
+      const state = this.state(connection)
+      if (
+        state.replaced ||
+        (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+      )
+        return Effect.fail(new Error('Computer access changed. Try this action again.'))
+      return createRuntimeClient(connection).requestEffect(path, input, schema, {
+        method,
+        mutationId: bytesToHex(sha256(utf8ToBytes(JSON.stringify({ path, input })))),
+      })
+    }
     if (method === 'GET' && path === '/api/workspace/recovered-edits')
       return this.workspaceRecoveriesEffect(connection).pipe(
         Effect.map((value) => decode(schema, value)),

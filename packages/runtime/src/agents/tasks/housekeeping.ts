@@ -14,6 +14,17 @@ import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktre
 
 const day = 86_400_000
 
+function hasPendingWork(task: TaskSummary) {
+  return (
+    !!task.draft.trim() ||
+    !!task.draftAttachments?.length ||
+    !!task.queue?.length ||
+    !!task.scheduledMessages?.length ||
+    !!task.quotaContinuation ||
+    !!task.startAfter
+  )
+}
+
 /** When a task last saw activity: its latest turn, update or creation. */
 function lastTaskActivity(task: TaskSummary) {
   const turn = task.history.latestTurn
@@ -44,6 +55,7 @@ export function inactiveTaskIds(
           (!member.pinned &&
             !taskIsWorking(member) &&
             !member.waitingForFeedback &&
+            !hasPendingWork(member) &&
             !busy(member) &&
             now - lastTaskActivity(member) > days * day),
       )
@@ -284,11 +296,7 @@ export class Housekeeping {
               (!member.pinned &&
                 !taskIsWorking(member) &&
                 !member.waitingForFeedback &&
-                !member.draft.trim() &&
-                !member.draftAttachments?.length &&
-                !member.queue?.length &&
-                !member.scheduledMessages?.length &&
-                !member.quotaContinuation &&
+                !hasPendingWork(member) &&
                 !taskIsBusy(this.s, member.id)),
           )
         })
@@ -329,13 +337,7 @@ export class Housekeeping {
             this.s.store.get().tasks,
             currentPolicy.inactiveDays ?? 3,
             now,
-            (member) =>
-              taskIsBusy(this.s, member.id) ||
-              !!member.queue?.length ||
-              !!member.draft.trim() ||
-              !!member.draftAttachments?.length ||
-              !!member.scheduledMessages?.length ||
-              !!member.quotaContinuation,
+            (member) => taskIsBusy(this.s, member.id),
           ).includes(task.id)
         )
       }

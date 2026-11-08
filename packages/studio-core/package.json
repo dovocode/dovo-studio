@@ -22,6 +22,7 @@
   "dependencies": {
     "@dovo/client-runtime": "workspace:*",
     "@dovo/design": "workspace:*",
+    "@dovo/durable-connections": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "@effect/atom-react": "4.0.6",
     "@noble/hashes": "2.4.0",

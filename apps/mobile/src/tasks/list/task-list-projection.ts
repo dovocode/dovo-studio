@@ -71,7 +71,7 @@ export function taskListProjection(
       next.task,
       source.snapshot?.workspace.repositories ?? [],
     )
-    next.projectName = projectDisplayName(displayProject)
+    next.projectName = next.task.replica?.projectName ?? projectDisplayName(displayProject)
     const prior = previous.get(next.key)
     const row =
       prior &&

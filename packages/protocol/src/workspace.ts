@@ -612,6 +612,15 @@ export const linkedPullRequestSchema = mutableStruct({
   title: maxValue(Schema.String, 2000),
 })
 export const taskSchema = mutableStruct({
+  /** A read-only conversation projection. Never persisted in the execution workspace. */
+  replica: Schema.optional(
+    mutableStruct({
+      ownerRuntimeId: maxValue(minValue(Schema.String, 1), 200),
+      threadId: maxValue(minValue(Schema.String, 1), 200),
+      ownerName: maxValue(Schema.String, 200),
+      projectName: maxValue(Schema.String, 400),
+    }),
+  ),
   budget: Schema.optional(
     mutableStruct({
       tokens: Schema.optional(

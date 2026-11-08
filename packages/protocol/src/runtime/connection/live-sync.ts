@@ -64,6 +64,9 @@ function settledLimit(value: Registration) {
     return undefined
   return Math.max(...[...value.settled].map((entry) => entry.limit ?? 0))
 }
+/** Matches the handshake deadline. A replacement that has not delivered its baseline by
+ * then is treated as an outage, so HTTP fallback resumes. */
+const replacementGrace = 10000
 const selectionIdentity = (tasks: Iterable<string>, limit: number | undefined) =>
   JSON.stringify([[...tasks].sort(), limit ?? null])
 /** Task lists opt in; a simultaneous full-list consumer always wins. */
@@ -318,6 +321,9 @@ export function startRuntimeSync(
   let unsupported = false
   let status: RuntimeSyncStatus = 'connecting'
   let healthySince: number | undefined
+  let replacingSince: number | undefined
+  const replacing = () =>
+    replacingSince !== undefined && Date.now() - replacingSince < replacementGrace
   const setStatus = (next: RuntimeSyncStatus) => {
     if (status === next) return
     status = next
@@ -360,12 +366,17 @@ export function startRuntimeSync(
       taskIdentity = next
       value.cursor = undefined
       if (listChanged || !taskUpdates || socket?.readyState !== 1) {
+        // A healthy stream is replaced on purpose and will deliver the new baseline. Keep
+        // reporting it online so HTTP fallback does not download the same baseline in
+        // parallel. Failure, inactivity or the handshake deadline end this grace period.
+        const wasOnline = online
         snapshot = undefined
         epoch = undefined
         sequence = undefined
         request?.abort()
         closeSocket()
-        options.onWake?.()
+        replacingSince = wasOnline ? Date.now() : undefined
+        if (!wasOnline) options.onWake?.()
         if (!connecting) void connect()
         return
       }
@@ -400,6 +411,7 @@ export function startRuntimeSync(
     invalidateRuntimeRoute(connection, 'stream')
     unsupported = false
     failures = 0
+    replacingSince = undefined
     request?.abort()
     closeSocket()
     if (retry) Effect.runFork(Fiber.interrupt(retry))
@@ -409,7 +421,8 @@ export function startRuntimeSync(
     else retryRequested = true
   }
   let retryRequested = false
-  const live = { online: () => online, watch, retry: recover, status: () => status }
+  const reportedOnline = () => online || replacing()
+  const live = { online: reportedOnline, watch, retry: recover, status: () => status }
   value.live = live
   const publish = () => {
     if (snapshot) options.onSnapshot(snapshot)
@@ -434,6 +447,7 @@ export function startRuntimeSync(
     if (healthySince !== undefined && Date.now() - healthySince >= 30000) failures = 0
     healthySince = undefined
     online = false
+    replacingSince = undefined
     if (stopped || options.active?.() === false) return
     options.onWake?.()
     if (unsupported || retry || options.active?.() === false) return
@@ -565,6 +579,7 @@ export function startRuntimeSync(
           if (resumeStarted !== undefined) resumeRoundTrip = Math.max(1, Date.now() - resumeStarted)
           resumeStarted = undefined
           online = true
+          replacingSince = undefined
           socketEstablished = true
           healthySince ??= Date.now()
           if (Date.now() - healthySince >= 30000) failures = 0
@@ -631,6 +646,7 @@ export function startRuntimeSync(
             if (options.active?.() === false) {
               request?.abort()
               closeSocket()
+              replacingSince = undefined
               return
             }
             const resumeWaited = resumeStarted === undefined ? 0 : Date.now() - resumeStarted
@@ -664,7 +680,7 @@ export function startRuntimeSync(
   void connect()
   return {
     shared: false,
-    online: () => online,
+    online: reportedOnline,
     retry: recover,
     refresh: () => {
       if (socket && Date.now() - lastSeen >= 15000) closeSocket()
@@ -684,6 +700,7 @@ export function startRuntimeSync(
       stopped = true
       request?.abort()
       online = false
+      replacingSince = undefined
       Effect.runFork(Fiber.interrupt(timer))
       if (retry) Effect.runFork(Fiber.interrupt(retry))
       closeSocket()

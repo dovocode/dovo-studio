@@ -116,6 +116,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const selecting = !car && selected.size > 0
   const toggleSelected = (key: string) =>
     setSelected((current) => {
+      if (allTasks.find((item) => item.key === key)?.task.replica) return current
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else {
@@ -524,7 +525,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
     hours?: number,
   ) => {
-    const chosen = allTasks.filter((item) => selected.has(item.key))
+    const chosen = allTasks.filter((item) => !item.task.replica && selected.has(item.key))
     if (!chosen.length || bulkBusy) return
     if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
     setBulkBusy(true)

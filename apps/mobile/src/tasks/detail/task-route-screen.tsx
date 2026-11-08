@@ -15,6 +15,7 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { TaskDetail } from './task-detail'
+import { ReplicatedThread } from './replicated-thread'
 
 function backToTasks() {
   Keyboard.dismiss()
@@ -117,6 +118,10 @@ export function TaskRouteScreen() {
       }
     />
   ) : null
+  if (task?.replica)
+    return (
+      <ReplicatedThread key={`${params.runtimeId}:${task.id}`} task={task} onBack={backToTasks} />
+    )
   if (task)
     return (
       <TaskDetail

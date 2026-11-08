@@ -11,6 +11,7 @@ import type {
   RuntimeRegistry,
   RuntimeOverview,
   RuntimeReadCache,
+  RuntimeMutationStatus,
 } from '@dovo/protocol'
 import type { TaskPreviewChanges } from './task-previews'
 import type { Workspace } from './schema'
@@ -67,8 +68,13 @@ export type WorkspaceContextValue = {
   syncConflicts: WorkspaceConflict[]
   resolveSyncConflict: (conflict: WorkspaceConflict, choice: 'local' | 'host') => Promise<void>
   pendingMessages: (task: Task, connection?: RuntimeConnection) => PendingMessage[]
-  mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
-  discardMutations: (profile: RuntimeProfile) => Promise<void>
+  mutationStatus: (profile: RuntimeProfile) => RuntimeMutationStatus
+  retryMutations: (
+    profile: RuntimeProfile,
+    confirmRenewalReplay?: boolean,
+    actionId?: string,
+  ) => Promise<void>
+  discardMutations: (profile: RuntimeProfile, actionId?: string) => Promise<void>
   pendingSync: boolean
   readCache: RuntimeReadCache | null
   readRuntime: <T extends Schema.Codec<unknown, unknown>>(

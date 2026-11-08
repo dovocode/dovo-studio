@@ -79,6 +79,7 @@ import { TaskSearchDialog, type TaskSearchMode } from './dialogs/task-search-dia
 import { StartupDraft } from './task-creation/startup-draft'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 import { SideQuestion } from './chat/thread/side-question'
+import { ReplicatedThread } from './detail/replicated-thread'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 export default function TasksView({
   entityId,
@@ -237,7 +238,7 @@ export default function TasksView({
   }, [task?.id])
   const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
   const refreshChanges = useCallback(async () => {
-    if (!task || repository?.kind || editingFile.current) return
+    if (!task || task.replica || repository?.kind || editingFile.current) return
     await store.request(
       '/api/scm/changes',
       { repositoryId: task.repositoryId, taskId: task.id },
@@ -247,6 +248,7 @@ export default function TasksView({
   const changesError = useLiveRefresh(
     connected &&
       !!task &&
+      !task.replica &&
       !task.archived &&
       !task.archivedAt &&
       !repository?.kind &&
@@ -290,6 +292,7 @@ export default function TasksView({
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
   const focusNext = useRef<TaskSurface | null>(null)
   const selectSurface = useCommittedCallback((next: TaskSurface, moveFocus = false) => {
+    if (task?.replica && next !== 'chat') return
     for (const id of [
       'pull-preview',
       'linked-pulls',
@@ -714,7 +717,7 @@ export default function TasksView({
     selectedKey: task ? taskCollectionKey(activeRuntimeId, task.id) : '',
     split: !!splitTask,
     stop: () => {
-      if (task?.status !== 'running' || !connected) return
+      if (task?.replica || task?.status !== 'running' || !connected) return
       setStopError('')
       void request(
         '/api/tasks/cancel',
@@ -850,6 +853,7 @@ export default function TasksView({
     onSelectRemote?: SelectRemoteProject,
   ) => {
     const task = storedTask?.id === currentTask.id ? storedTask : currentTask
+    if (task.replica) return <ReplicatedThread key={`${activeRuntimeId}:${task.id}`} task={task} />
     const native =
       nativeThread?.parentKey === taskCollectionKey(activeRuntimeId, task.id)
         ? nativeThread

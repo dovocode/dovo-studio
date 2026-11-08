@@ -1,10 +1,15 @@
 import {
+  browserSharedStateStorage,
+  browserThreadStateStorage,
+} from '../runtime/shared-state-storage'
+import {
   createRuntimeClient,
   runtimeComputerName,
   runtimeHasCustomName,
   mergeSharedSettings,
-  pendingSharedSettings,
-  sharedSettingsSyncSchema,
+  SharedStateSynchronization,
+  ThreadStateSynchronization,
+  randomUUID,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
   runtimeSnapshotPath,
@@ -168,9 +173,9 @@ export function WorkspaceProvider({
     null,
   )
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
-  const settingsRequests = useRef(new Set<string>())
-  const failedSettingsRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
-  const [settingsRetry, setSettingsRetry] = useState(0)
+  const [threadSyncError, setThreadSyncError] = useApplicationState('')
+  const sharedStateSync = useRef<SharedStateSynchronization | null>(null)
+  const threadStateSync = useRef<ThreadStateSynchronization | null>(null)
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   const [presetSyncError, setPresetSyncError] = useApplicationState<string | null>(null)
@@ -324,10 +329,21 @@ export function WorkspaceProvider({
     [mutations],
   )
   const discardMutations = useCallback(
-    (profile: RuntimeProfile) =>
+    (profile: RuntimeProfile, actionId?: string) =>
       runClientEffect(
         Effect.try({ try: () => assertProfile(profile), catch: connectionError }).pipe(
-          Effect.flatMap(() => mutations.discardEffect(profile.connection)),
+          Effect.flatMap(() => mutations.discardEffect(profile.connection, actionId)),
+        ),
+      ),
+    [assertProfile, mutations],
+  )
+  const retryMutations = useCallback(
+    (profile: RuntimeProfile, confirmRenewalReplay = false, actionId?: string) =>
+      runClientEffect(
+        Effect.try({ try: () => assertProfile(profile), catch: connectionError }).pipe(
+          Effect.flatMap(() =>
+            mutations.recoverEffect(profile.connection, true, confirmRenewalReplay, actionId),
+          ),
         ),
       ),
     [assertProfile, mutations],
@@ -973,6 +989,7 @@ export function WorkspaceProvider({
         yield* check
         if (
           method !== 'GET' &&
+          path !== '/api/tasks/cancel' &&
           connectionRef.current?.address === profile.connection.address &&
           connectionRef.current.token === profile.connection.token
         ) {
@@ -1016,7 +1033,7 @@ export function WorkspaceProvider({
         })
         yield* check
         if (!target) return yield* Effect.fail(new Error('Connect to a runtime first'))
-        if (method !== 'GET') yield* synchronization.flushEffect()
+        if (method !== 'GET' && path !== '/api/tasks/cancel') yield* synchronization.flushEffect()
         yield* check
         const value = yield* mutations.requestEffect(target, path, input, schema, method)
         yield* check
@@ -1291,11 +1308,10 @@ export function WorkspaceProvider({
     if (connection) retryRuntimeSync(connection)
     failedPresetRequests.current.clear()
     setPresetSyncError(null)
-    failedSettingsRequests.current.clear()
-    setSettingsSyncError('')
+    sharedStateSync.current?.retry()
+    threadStateSync.current?.retry()
     if (connection) await runClientEffect(mutations.recoverEffect(connection, true))
     await synchronization.retry()
-    setSettingsRetry((attempt) => attempt + 1)
     const profile = registryRef.current.profiles.find(
       (item) => item.id === registryRef.current.activeId,
     )
@@ -1896,74 +1912,87 @@ export function WorkspaceProvider({
     readRuntime,
     refreshRuntime,
   ])
+  const refreshSharedRuntime = useRef(refreshRuntime)
+  refreshSharedRuntime.current = refreshRuntime
+  const sharedStateInput = useRef({ targets: visibleRuntimes, ready, inputPreview })
+  sharedStateInput.current = { targets: visibleRuntimes, ready, inputPreview }
   useEffect(() => {
-    const publishError = () =>
-      setSettingsSyncError(Array.from(failedSettingsRequests.current.values()).at(-1)?.error ?? '')
-    for (const id of failedSettingsRequests.current.keys())
-      if (!visibleRuntimes.some((entry) => entry.profile.id === id))
-        failedSettingsRequests.current.delete(id)
-    const shared = mergeSharedSettings(
-      sharedScopedSettings,
-      ...visibleRuntimes
-        .filter((entry) => entry.connected)
-        .map((entry) => entry.snapshot?.defaults?.scopedSettings?.shared ?? []),
-    )
-    if (JSON.stringify(shared) !== JSON.stringify(sharedScopedSettings))
-      updateAppPreferences({ sharedScopedSettings: shared })
-    for (const entry of visibleRuntimes) {
-      if (!entry.connected || !entry.snapshot?.settingsScopesSupported) {
-        // Older runtimes keep their settings until upgraded; never send unsupported writes.
-        failedSettingsRequests.current.delete(entry.profile.id)
-        continue
-      }
-      const pending = pendingSharedSettings(
-        shared,
-        entry.snapshot.defaults?.scopedSettings?.shared ?? [],
+    const request = (profile: RuntimeProfile, path: string, input: unknown, signal: AbortSignal) =>
+      runClientEffect(
+        createRuntimeClient(profile.connection).requestEffect(path, input, Schema.Unknown, {
+          method: 'POST',
+          timeoutMs: 15000,
+        }),
+        signal,
       )
-      if (!pending.length) {
-        failedSettingsRequests.current.delete(entry.profile.id)
-        continue
-      }
-      const fingerprint = JSON.stringify(pending)
-      if (
-        settingsRequests.current.has(entry.profile.id) ||
-        failedSettingsRequests.current.get(entry.profile.id)?.fingerprint === fingerprint
+    const synchronization = new SharedStateSynchronization({
+      storage: browserSharedStateStorage,
+      createReplicaId: () => `app:${randomUUID()}`,
+      readShared: () => readAppPreferences().sharedScopedSettings,
+      publish: (shared) =>
+        updateAppPreferences({
+          sharedScopedSettings: mergeSharedSettings(
+            readAppPreferences().sharedScopedSettings,
+            shared,
+          ),
+        }),
+      error: setSettingsSyncError,
+      intervalMs: backgroundActivity === 'reduced' ? 120000 : 30000,
+      request,
+      refreshed: (profile) => refreshSharedRuntime.current(profile),
+    })
+    const threads = new ThreadStateSynchronization({
+      storage: browserThreadStateStorage,
+      createReplicaId: () => `app:${randomUUID()}`,
+      request,
+      refreshed: (profile) => refreshSharedRuntime.current(profile),
+      error: setThreadSyncError,
+      intervalMs: backgroundActivity === 'reduced' ? 120000 : 30000,
+    })
+    threadStateSync.current = threads
+    sharedStateSync.current = synchronization
+    const update = () => {
+      const input = sharedStateInput.current
+      synchronization.update(
+        input.targets,
+        input.ready && (input.inputPreview || document.visibilityState === 'visible'),
       )
-        continue
-      settingsRequests.current.add(entry.profile.id)
-      void readRuntime(
-        entry.profile,
-        '/api/agents/settings/sync',
-        { shared: pending },
-        sharedSettingsSyncSchema,
+      threads.update(
+        input.targets,
+        input.ready && (input.inputPreview || document.visibilityState === 'visible'),
       )
-        .then((result) => {
-          failedSettingsRequests.current.delete(entry.profile.id)
-          publishError()
-          updateAppPreferences({
-            sharedScopedSettings: mergeSharedSettings(
-              readAppPreferences().sharedScopedSettings,
-              shared,
-              result.shared,
-            ),
-          })
-          return refreshRuntime(entry.profile)
-        })
-        .catch((error: unknown) => {
-          if (
-            resolveRuntimeTarget(registryRef.current.profiles, entry.profile) &&
-            overviewsRef.current[entry.profile.id]?.connected
-          )
-            failedSettingsRequests.current.set(entry.profile.id, {
-              fingerprint,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          publishError()
-        })
-        .finally(() => settingsRequests.current.delete(entry.profile.id))
     }
-    publishError()
-  }, [sharedScopedSettings, visibleRuntimes, readRuntime, refreshRuntime, settingsRetry])
+    const retry = () => {
+      update()
+      synchronization.retry()
+      threads.retry()
+    }
+    update()
+    document.addEventListener('visibilitychange', update)
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      if (sharedStateSync.current === synchronization) sharedStateSync.current = null
+      if (threadStateSync.current === threads) threadStateSync.current = null
+      void threads.stop().catch((error) => console.error('Thread state cleanup failed', error))
+      document.removeEventListener('visibilitychange', update)
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
+      void synchronization
+        .stop()
+        .catch((error) => console.error('Shared state cleanup failed', error))
+    }
+  }, [backgroundActivity, setSettingsSyncError])
+  useEffect(() => {
+    sharedStateSync.current?.update(
+      visibleRuntimes,
+      ready && (inputPreview || document.visibilityState === 'visible'),
+    )
+    threadStateSync.current?.update(
+      visibleRuntimes,
+      ready && (inputPreview || document.visibilityState === 'visible'),
+    )
+  }, [visibleRuntimes, sharedScopedSettings, ready, inputPreview])
   const readCache = useMemo(
     () =>
       connection
@@ -1999,6 +2028,7 @@ export function WorkspaceProvider({
       connected,
       syncError:
         settingsSyncError ||
+        threadSyncError ||
         presetSyncError ||
         syncError ||
         (connection ? mutations.status(connection).error : null),
@@ -2022,6 +2052,7 @@ export function WorkspaceProvider({
       resolveSyncConflict,
       pendingMessages,
       mutationStatus,
+      retryMutations,
       discardMutations,
       pendingSync:
         synchronization.hasPending() || !!(connection && mutations.status(connection).pending),
@@ -2046,6 +2077,7 @@ export function WorkspaceProvider({
       syncError,
       presetSyncError,
       settingsSyncError,
+      threadSyncError,
       connect,
       cancelPairing,
       disconnect,
@@ -2063,6 +2095,7 @@ export function WorkspaceProvider({
       resolveSyncConflict,
       pendingMessages,
       mutationStatus,
+      retryMutations,
       discardMutations,
       synchronization,
       readCache,

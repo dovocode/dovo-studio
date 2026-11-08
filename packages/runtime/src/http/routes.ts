@@ -4,6 +4,7 @@ import { STUDIO_BROWSER_SCOPE, isPrivateBrowserProfile } from '@dovo/protocol'
 import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
 import { sharingWriterConfigSchema } from '@dovo/protocol'
+import { threadReplicaReadSchema, threadMetadataEditSchema } from '@dovo/protocol'
 import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
@@ -123,6 +124,7 @@ import type { PeerOrigin } from './peer-connections.js'
 import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { clearLastCrash } from '../storage/last-crash.js'
+import { StateProtocolError, STATE_MAX_EXCHANGE_BYTES } from '@dovo/durable-connections'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 // Unauthenticated routes read at most what they need before any credential is checked.
 const PAIRING_BODY_LIMIT = 4 * 1024
@@ -344,6 +346,16 @@ export function route(
       if (method === 'POST' && path === '/api/linked-projects') {
         if (!run) throw new HttpError(403, 'Linked project tools require an active agent run')
         return yield* serviceResult(linkedProjectsTool(s, yield* serviceResult(body(request))))
+      }
+      if (method === 'POST' && path === '/api/agent/skill') {
+        if (!run) throw new HttpError(403, 'Skill reads require an active agent run')
+        const input = decode(
+          Schema.Struct({ name: Schema.String }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        const skill = run.skills?.find((item) => item.name === input.name)
+        if (!skill) throw new HttpError(404, 'Skill is not enabled for this run')
+        return skill
       }
       if (method === 'POST' && (path === '/api/agent/question' || path === '/api/agent/todos')) {
         if (!run) throw new HttpError(403, 'Agent interaction tools require an active agent run')
@@ -582,6 +594,62 @@ export function route(
       if (method === 'POST' && path === '/api/retrieval/peers') {
         return s.retrievalPeers.register(device.id, yield* serviceResult(body(request, 256 * 1024)))
       }
+      if (path.startsWith('/api/threads/state/') || path === '/api/threads/replica/read') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Thread replication requires a paired human client')
+        if (method === 'GET' && path === '/api/threads/state/status')
+          return s.threadReplication.status()
+        if (method !== 'POST') throw new HttpError(405, 'Use POST for thread state requests')
+        const input = yield* serviceResult(
+          body(request, path.endsWith('/exchange') ? STATE_MAX_EXCHANGE_BYTES : 4096),
+        )
+        if (path === '/api/threads/state/exchange')
+          return yield* serviceResult(
+            s.threadReplication.exchange(input).catch((error: unknown) => {
+              if (error instanceof StateProtocolError) throw new HttpError(400, error.message)
+              throw error
+            }),
+          )
+        if (path === '/api/threads/replica/read') {
+          const read = decode(threadReplicaReadSchema, input)
+          return s.threadReplication.read(read.ownerRuntimeId, read.threadId, read.before)
+        }
+        throw new HttpError(404, 'Thread state endpoint not found')
+      }
+      if (method === 'GET' && path === '/api/state/status') return s.stateReplication.status()
+      if (method === 'POST' && path === '/api/state/exchange') {
+        const input = yield* serviceResult(body(request, STATE_MAX_EXCHANGE_BYTES))
+        return yield* serviceResult(
+          s.stateReplication.exchange(input).catch((error: unknown) => {
+            if (error instanceof StateProtocolError) throw new HttpError(400, error.message)
+            throw error
+          }),
+        )
+      }
+      if (method === 'POST' && (path === '/api/state/history' || path === '/api/state/restore')) {
+        const input = decode(
+          mutableStruct({
+            key: maxValue(minValue(Schema.String, 1), 600),
+            updatedAt: Schema.optional(Schema.Number),
+            changeId: Schema.optional(maxValue(minValue(Schema.String, 1), 1000)),
+          }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        if (path === '/api/state/history')
+          return s.store.publicValue(yield* serviceResult(s.stateReplication.history(input.key)))
+        if (
+          !Number.isSafeInteger(input.updatedAt) ||
+          input.updatedAt === undefined ||
+          input.updatedAt < 0 ||
+          !input.changeId
+        )
+          throw new HttpError(400, 'Choose a valid shared state version')
+        return s.store.publicValue(
+          yield* serviceResult(
+            s.stateReplication.restore(input.key, input.updatedAt, input.changeId),
+          ),
+        )
+      }
       if (method === 'POST' && path === '/api/retrieval/host') return s.retrieval.status()
       if (method === 'POST' && path === '/api/scm/pulls/peer') {
         if (s.retrieval.status().enabled === false)
@@ -721,6 +789,15 @@ export function route(
               '/api/previews/browser/profiles/save',
             ].includes(path) ||
               (method === 'PATCH' && path === '/api/workspace'),
+          ),
+        )
+      }
+      if (method === 'POST' && path === '/api/threads/metadata') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Thread replication requires a paired human client')
+        return yield* serviceResult(
+          s.threadReplication.metadata(
+            decode(threadMetadataEditSchema, yield* serviceResult(body(request, 4096))),
           ),
         )
       }

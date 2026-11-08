@@ -23,6 +23,7 @@
     "@assistant-ui/react-native": "0.1.50",
     "@dovo/client-runtime": "workspace:*",
     "@dovo/design": "workspace:*",
+    "@dovo/durable-connections": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@effect/atom-react": "4.0.6",

@@ -1,3 +1,4 @@
+import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
 import { iconAssets } from '../ui/controls/icon-assets'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -130,6 +131,7 @@ function WorkbenchNotices() {
   const context = useContext(SceneContext)
   return (
     <>
+      <PreferenceStorageNotice />
       {context?.shortcutSaved && (
         <Text
           style={[

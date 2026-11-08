@@ -971,6 +971,8 @@ export class WorkspaceStore {
         throw new HttpError(400, `Duplicate Jira issue link: ${link.sourceId} / ${link.issueId}`)
       issueLinks.add(key)
     }
+    if (next.tasks.some((task) => task.replica || task.id.startsWith('replica:')))
+      throw new HttpError(400, 'Replicated threads cannot enter the execution workspace')
     next.tasks = propagateDelegatedPermissions(this.workspace, next)
     next.tasks = projectDelegatedAgents(next.tasks, next.agents)
     const nextTaskIds = new Set(next.tasks.map((task) => task.id))

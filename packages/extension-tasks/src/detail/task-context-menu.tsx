@@ -126,7 +126,7 @@ export function TaskContextMenu({
   const templates = repository?.templates ?? []
   const local = source.runtimeId === store.activeRuntimeId
   const [title, setTitle] = useApplicationState(task.title)
-  const blocked = busy || pending
+  const blocked = busy || pending || !!task.replica
   const [menuOpen, setMenuOpen] = useState(false)
   const active = menuOpen || dialog !== null || pending
   useEffect(() => {

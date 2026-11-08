@@ -425,6 +425,7 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
       pendingMessages: () => [],
       mutationStatus: () => ({ pending: 0, error: null }),
       discardMutations: async () => undefined,
+      retryMutations: async () => undefined,
       pendingSync: false,
       readCache: null,
       readRuntime: async (_profile, path, input, schema) => request(path, input, schema),

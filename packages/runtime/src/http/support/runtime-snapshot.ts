@@ -111,7 +111,7 @@ export function runtimeSnapshot(
     const acpInstallations = s.acpInstallations.list()
     const catalogGenerations = modelCatalogGenerations(s.agents, acpInstallations)
     // Capture the wire view before asynchronous repository enrichment, at this revision.
-    const completeWorkspace = snapshotWorkspace(
+    const localWorkspace = snapshotWorkspace(
       s.store.publicWorkspace(),
       {
         publicTask: (id) => s.store.publicTask(id),
@@ -128,6 +128,10 @@ export function runtimeSnapshot(
         pagedHistory,
       },
     )
+    const replicaSummaries = s.threadReplication.replicas([])
+    const completeWorkspace = replicaSummaries.length
+      ? { ...localWorkspace, tasks: [...localWorkspace.tasks, ...replicaSummaries] }
+      : localWorkspace
     const page =
       settledLimit === undefined
         ? undefined
@@ -217,7 +221,24 @@ export function runtimeSnapshot(
       { concurrency: 4 },
     )
     const enrichedWorkspace = projectWorkspace(s, storedWorkspace, repositories)
-    const selectedWorkspace = enrichedWorkspace
+    const detailReplicas =
+      !overview && replicaSummaries.length
+        ? new Map(
+            s.threadReplication
+              .replicas(
+                enrichedWorkspace.tasks
+                  .filter((task) => task.replica && (!taskIds || taskIds.includes(task.id)))
+                  .map((task) => task.id),
+              )
+              .map((task) => [task.id, task]),
+          )
+        : undefined
+    const selectedWorkspace = detailReplicas
+      ? {
+          ...enrichedWorkspace,
+          tasks: enrichedWorkspace.tasks.map((task) => detailReplicas.get(task.id) ?? task),
+        }
+      : enrichedWorkspace
     return yield* serviceResult({
       ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
@@ -250,6 +271,8 @@ export function runtimeSnapshot(
       queueRestoreReceiptsSupported: true,
       threadServersSupported: process.platform === 'linux' || process.platform === 'darwin',
       settingsScopesSupported: true,
+      ...(s.stateReplication.available() ? { stateReplicationVersion: 1 as const } : {}),
+      ...(s.threadReplication.available() ? { threadReplicationVersion: 1 as const } : {}),
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,
       queuedTurnSettingsSupported: true,

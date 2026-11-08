@@ -101,8 +101,8 @@ it('persists the latest preferences when saves overlap', async () => {
   const preferences = await loadPreferences()
   await preferences.preferencesReady
   preferences.updateMobilePreferences({ taskSort: 'title' })
-  preferences.updateMobilePreferences({ taskSort: 'oldest' })
   await vi.waitFor(() => expect(calls).toBe(1))
+  preferences.updateMobilePreferences({ taskSort: 'oldest' })
   release()
   await vi.waitFor(() => expect(writes.length).toBe(2))
   expect(JSON.parse(writes.at(-1) ?? '{}').taskSort).toBe('oldest')
@@ -415,4 +415,47 @@ it('defaults both cleanup timers off and persists each timer independently on th
     browserAutoSettleMinutes: 45,
     browserCloseSettledMinutes: 120,
   })
+})
+
+it('reports failed saves and explicitly retries the latest edit', async () => {
+  storage.getItem = async () => JSON.stringify({ taskSort: 'title' })
+  storage.setItem = async () => {
+    throw new Error('Disk full')
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  preferences.updateMobilePreferences({ keepScreenOn: true })
+  await vi.waitFor(() =>
+    expect(preferences.readMobilePreferenceStorage().error).toContain('Could not save'),
+  )
+  expect(preferences.readMobilePreferenceStorage().pending).toBe(true)
+  await expect(preferences.retryMobilePreferences()).rejects.toThrow('Could not save')
+  let saved = ''
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  preferences.updateMobilePreferences({ taskSort: 'oldest' })
+  await preferences.retryMobilePreferences()
+  expect(JSON.parse(saved)).toMatchObject({ keepScreenOn: true, taskSort: 'oldest' })
+  expect(preferences.readMobilePreferenceStorage()).toEqual({ pending: false, error: null })
+})
+
+it('never writes defaults over unread settings when an explicit retry still cannot load', async () => {
+  storage.getItem = async () => {
+    throw new Error('Unavailable')
+  }
+  const save = vi.fn<(value: string) => Promise<void>>(async () => {})
+  storage.setItem = save
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  preferences.updateMobilePreferences({ keepScreenOn: true })
+  await expect(preferences.retryMobilePreferences()).rejects.toThrow('Could not load')
+  expect(save).not.toHaveBeenCalled()
+  storage.getItem = async () => JSON.stringify({ taskSort: 'title' })
+  await preferences.retryMobilePreferences()
+  expect(JSON.parse(save.mock.calls.at(-1)?.[0] ?? '{}')).toMatchObject({
+    taskSort: 'title',
+    keepScreenOn: true,
+  })
+  expect(preferences.readMobilePreferenceStorage()).toEqual({ pending: false, error: null })
 })
